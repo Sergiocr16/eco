@@ -81,32 +81,20 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
 
   const initializedRef = useRef(false);
 
-  // Si no hay burbujas al boot, crear una inicial
+  // No crear "Conversación principal" automática. Si hay burbujas guardadas,
+  // restauramos activeBubbleId si es necesario. Sin burbujas → dashboard vacío.
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
-    if (bubbles.length === 0) {
-      const initial: Bubble = {
-        id: newId('b'),
-        title: 'Conversación principal',
-        workspace: defaultWorkspace,
-        sessionId: null,
-        messages: [],
-        status: 'idle',
-        unread: 0,
-        accent: ACCENT_PALETTE[0]!,
-        pinned: false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      setBubbles([initial]);
-      setActiveBubbleId(initial.id);
-    } else if (!activeBubbleId || !bubbles.some((b) => b.id === activeBubbleId)) {
+    if (bubbles.length > 0 && (!activeBubbleId || !bubbles.some((b) => b.id === activeBubbleId))) {
       const first = bubbles[0];
       if (first) setActiveBubbleId(first.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Silenciamos defaultWorkspace para no romper sus consumidores en el render inicial
+  void defaultWorkspace;
 
   // Persist on changes
   useEffect(() => {
@@ -134,33 +122,13 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
   }, [bubbles, defaultWorkspace]);
 
   const removeBubble = useCallback((id: string) => {
-    setBubbles((prev) => {
-      const next = prev.filter((b) => b.id !== id);
-      if (next.length === 0) {
-        const fallback: Bubble = {
-          id: newId('b'),
-          title: 'Conversación principal',
-          workspace: defaultWorkspace,
-          sessionId: null,
-          messages: [],
-          status: 'idle',
-          unread: 0,
-          accent: ACCENT_PALETTE[0]!,
-          pinned: false,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        setActiveBubbleId(fallback.id);
-        return [fallback];
-      }
-      return next;
-    });
+    setBubbles((prev) => prev.filter((b) => b.id !== id));
     setActiveBubbleId((cur) => {
       if (cur !== id) return cur;
       const remaining = bubbles.filter((b) => b.id !== id);
       return remaining[0]?.id ?? null;
     });
-  }, [bubbles, defaultWorkspace]);
+  }, [bubbles]);
 
   const focusBubble = useCallback((id: string) => {
     setActiveBubbleId(id);

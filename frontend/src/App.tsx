@@ -140,8 +140,10 @@ function Shell() {
         setScreen('files'); setDetailBubbleId(null); return;
       case 'goto_history':
         setScreen('history'); setDetailBubbleId(null); return;
-      case 'create_bubble': {
-        const fresh = bubbles.createBubble({ title: action.title, focus: true });
+      case 'create_bubble':
+      case 'open_or_create': {
+        const title = action.kind === 'open_or_create' ? action.title : action.title;
+        const fresh = bubbles.createBubble({ title, focus: true });
         handleOpenAgent(fresh.id);
         return;
       }

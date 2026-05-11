@@ -6,6 +6,7 @@ export type MetaAction =
   | { kind: 'goto_files' }
   | { kind: 'goto_history' }
   | { kind: 'create_bubble'; title?: string }
+  | { kind: 'open_or_create'; title: string }
   | { kind: 'rename_active'; title: string }
   | { kind: 'close_active' }
   | { kind: 'focus_bubble'; bubbleId: string }
@@ -149,7 +150,13 @@ export function parseMetaCommand(rest: string, bubbles: Bubble[], activeBubbleId
     case 'settings':  return { kind: 'goto_settings' };
     case 'files':     return { kind: 'goto_files' };
     case 'history':   return { kind: 'goto_history' };
-    case 'create':    return { kind: 'create_bubble', title: titleFromOriginal || undefined };
+    case 'create': {
+      if (!titleFromOriginal) return { kind: 'create_bubble' };
+      // Smart 'abrir': si existe burbuja con ese nombre, focusea; sino crea.
+      const existing = findBubbleByQuery(argClean, bubbles, null);
+      if (existing) return { kind: 'focus_bubble', bubbleId: existing.id };
+      return { kind: 'open_or_create', title: titleFromOriginal };
+    }
     case 'rename': {
       if (!titleFromOriginal) return { kind: 'unknown' };
       return { kind: 'rename_active', title: titleFromOriginal };
@@ -221,6 +228,7 @@ export function describeAction(action: MetaAction, bubbles: Bubble[]): MetaActio
     case 'goto_files':     return { title: 'Archivos' };
     case 'goto_history':   return { title: 'Historial' };
     case 'create_bubble':  return { title: 'Nueva burbuja', detail: action.title ?? 'Sin título' };
+    case 'open_or_create': return { title: 'Burbuja creada', detail: action.title };
     case 'rename_active':  return { title: 'Renombrada', detail: action.title };
     case 'close_active':   return { title: 'Burbuja cerrada' };
     case 'focus_bubble': {
