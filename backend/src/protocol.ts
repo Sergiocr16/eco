@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { ClientAction } from './agent-tools.js';
 
 export const PromptMessageSchema = z.object({
   type: z.literal('prompt'),
@@ -23,4 +24,5 @@ export type ServerMessage =
   | { type: 'sdk_message'; message: SDKMessage }
   | { type: 'session_started'; sessionId: string }
   | { type: 'done' }
-  | { type: 'error'; code: string; message: string };
+  | { type: 'error'; code: string; message: string }
+  | { type: 'client_action'; action: ClientAction };

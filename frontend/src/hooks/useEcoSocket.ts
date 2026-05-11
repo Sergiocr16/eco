@@ -7,7 +7,13 @@ type ServerMsg =
   | { type: 'sdk_message'; message: SdkMessage }
   | { type: 'session_started'; sessionId: string }
   | { type: 'done' }
-  | { type: 'error'; code: string; message: string };
+  | { type: 'error'; code: string; message: string }
+  | { type: 'client_action'; action: ClientAction };
+
+export type ClientAction =
+  | { kind: 'open_bubble'; id: string; title: string; focus: boolean }
+  | { kind: 'rename_bubble'; title: string }
+  | { kind: 'close_bubble' };
 
 type SdkMessage =
   | SdkSystemInit
@@ -67,6 +73,7 @@ export type SocketHandlers = {
   onError?: (bubbleId: string | null, message: string) => void;
   onThinkingChange?: (bubbleId: string, thinking: boolean) => void;
   onExecutingChange?: (bubbleId: string, executing: boolean) => void;
+  onClientAction?: (sourceBubbleId: string, action: ClientAction) => void;
 };
 
 export type EcoSocket = {
@@ -187,6 +194,10 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
       try {
         const msg = JSON.parse(ev.data) as ServerMsg;
         if (msg.type === 'sdk_message') handleSdkMessage(msg.message);
+        else if (msg.type === 'client_action') {
+          const src = activeBubbleIdRef.current;
+          if (src) handlersRef.current.onClientAction?.(src, msg.action);
+        }
         else if (msg.type === 'session_started') {
           // already handled in system init
         } else if (msg.type === 'done') {

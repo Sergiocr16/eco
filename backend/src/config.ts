@@ -44,7 +44,7 @@ export const config = {
   allowedOrigins: parseAllowedOrigins(),
   maxPromptsPerMinute: Number(process.env.ECO_RATE_LIMIT ?? 10),
   maxPromptBytes: Number(process.env.ECO_MAX_PROMPT_BYTES ?? 50_000),
-  maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 5),
+  maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 12),
   promptTimeoutMs: Number(process.env.ECO_PROMPT_TIMEOUT_MS ?? 10 * 60 * 1000),
   wsBackpressureBytes: Number(process.env.ECO_WS_BACKPRESSURE ?? 8 * 1024 * 1024),
 };

@@ -14,8 +14,6 @@ import type { EcoStatus, Message, ToolCall } from './lib/types';
 const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
 const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
 
-const WAKE_NEW_BUBBLE = /(?:nueva|abr[íi]) (?:burbuja|conversaci[óo]n|chat|ventana|terminal)/i;
-
 export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -85,6 +83,15 @@ export function App() {
       onError: (_bubbleId, _message) => {
         // ya manejado en error state del socket
       },
+      onClientAction: (sourceBubbleId, action) => {
+        if (action.kind === 'open_bubble') {
+          bubbles.createBubble({ title: action.title, focus: action.focus });
+        } else if (action.kind === 'rename_bubble') {
+          bubbles.renameBubble(sourceBubbleId, action.title);
+        } else if (action.kind === 'close_bubble') {
+          bubbles.removeBubble(sourceBubbleId);
+        }
+      },
     },
   });
 
@@ -122,19 +129,6 @@ export function App() {
 
   function handleSend(text: string) {
     if (!activeBubble) return;
-
-    // Comando especial: el user pide nueva burbuja
-    if (WAKE_NEW_BUBBLE.test(text)) {
-      const titleMatch = text.match(/(?:para|sobre|de)\s+(.{2,80}?)(?:\.|$|,|\?|!)/i);
-      const title = titleMatch?.[1]?.trim();
-      const fresh = bubbles.createBubble({ title: title || undefined, focus: true });
-      const cleaned = text.replace(WAKE_NEW_BUBBLE, '').replace(/(?:para|sobre|de)\s+.{2,80}?(?:\.|$|,|\?|!)/i, '').trim();
-      if (cleaned.length > 2) {
-        appendAndSend(fresh.id, cleaned);
-      }
-      return;
-    }
-
     appendAndSend(activeBubble.id, text);
   }
 

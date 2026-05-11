@@ -101,6 +101,7 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
           workspace: msg.workspace,
           abortController: ac,
           resumeSessionId: msg.resumeSessionId,
+          onClientAction: (action) => send({ type: 'client_action', action }),
         });
 
         for await (const sdkMsg of q) {
