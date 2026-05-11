@@ -267,6 +267,10 @@ function Shell() {
     setDetailBubbleId(id);
     bubbles.focusBubble(id);
     setScreen('detail');
+    // Al entrar a una conversación, siempre asegurar que el mic esté escuchando
+    if (voice.isSupported && voice.state === 'off' && !voice.error) {
+      voice.start();
+    }
   }
 
   function handleBackFromDetail() {
@@ -326,9 +330,18 @@ function Shell() {
                 {screen === 'detail' && detailBubble ? (
                   <AgentDetail
                     bubble={detailBubble}
+                    workspaces={workspacesHook.list.workspaces}
                     onBack={handleBackFromDetail}
                     onSend={handleAgentDetailSend}
                     onRename={(title) => bubbles.renameBubble(detailBubble.id, title)}
+                    onClose={() => {
+                      bubbles.removeBubble(detailBubble.id);
+                      handleBackFromDetail();
+                    }}
+                    onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(detailBubble.id, ws)}
+                    onMicToggle={handleMicToggle}
+                    listening={voice.state === 'listening'}
+                    voiceInterim={voice.interimText}
                   />
                 ) : screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles}/>

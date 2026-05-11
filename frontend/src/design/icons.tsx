@@ -169,3 +169,6 @@ export const IconSun = (p: IconProps) => (
 export const IconMoon = (p: IconProps) => (
   <Base {...p}><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></Base>
 );
+export const IconCopy = (p: IconProps) => (
+  <Base {...p}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></Base>
+);

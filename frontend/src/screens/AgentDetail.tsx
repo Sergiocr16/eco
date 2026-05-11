@@ -6,28 +6,142 @@ import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel,
 } from '@/design/primitives';
 import {
-  IconArrowL, IconPause, IconPlay, IconResume, IconStop, IconMore,
+  IconArrowL, IconStop, IconMore,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic,
   IconCheck, IconX, IconBolt, IconDiff, IconExt, IconShield,
+  IconEdit, IconFolder, IconTrash, IconCopy,
   type IconProps,
 } from '@/design/icons';
 import type { Bubble, Message, ToolCall } from '@/lib/types';
 import { stateColor, STATE_LABELS, type AgentState } from '@/design/tokens';
+import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
+
+function copyTranscriptToClipboard(bubble: Bubble) {
+  const lines: string[] = [`# ${bubble.title}`, ''];
+  for (const m of bubble.messages) {
+    lines.push(`${m.role === 'user' ? 'Tú' : 'Eco'}: ${m.text}`);
+    for (const tc of m.toolCalls ?? []) {
+      lines.push(`  · ${tc.name} ${typeof tc.input === 'object' ? JSON.stringify(tc.input) : ''}`);
+      if (tc.output) lines.push(`    → ${tc.output.split('\n')[0]}`);
+    }
+    lines.push('');
+  }
+  const text = lines.join('\n');
+  try {
+    navigator.clipboard?.writeText(text);
+  } catch { /* noop */ }
+}
+
+function HeaderMenu({
+  workspaces, currentWorkspace, onClose, onRename, onChangeWorkspace,
+  onCopyTranscript, onCloseBubble,
+}: {
+  workspaces: string[];
+  currentWorkspace: string;
+  onClose: () => void;
+  onRename: () => void;
+  onChangeWorkspace: (ws: string) => void;
+  onCopyTranscript: () => void;
+  onCloseBubble: () => void;
+}) {
+  const t = useTokens();
+  const [wsOpen, setWsOpen] = useState(false);
+  useEffect(() => {
+    if (wsOpen) return;
+    const onDocClick = () => onClose();
+    document.addEventListener('click', onDocClick, { once: true });
+    return () => document.removeEventListener('click', onDocClick);
+  }, [onClose, wsOpen]);
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: 'absolute', top: 38, right: 0, zIndex: 30,
+        minWidth: 220, padding: 4,
+        background: t.bg1, border: `1px solid ${t.glassBorder}`,
+        borderRadius: 12, boxShadow: t.shadowLg,
+        display: 'flex', flexDirection: 'column',
+      }}>
+      <button type="button" onClick={onRename} style={menuItemStyleAt(t)}>
+        <IconEdit size={12}/> Renombrar burbuja
+      </button>
+      <button type="button" onClick={() => setWsOpen((v) => !v)} style={menuItemStyleAt(t)}>
+        <IconFolder size={12}/>
+        <span style={{ flex: 1 }}>Cambiar workspace</span>
+        <span style={{
+          fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+          maxWidth: 100, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{currentWorkspace.split('/').filter(Boolean).slice(-2).join('/') || '—'}</span>
+      </button>
+      {wsOpen && (
+        <div style={{
+          marginLeft: 22, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
+          maxHeight: 200, overflow: 'auto',
+          borderLeft: `1px solid ${t.glassBorder}`,
+        }}>
+          {workspaces.length === 0 ? (
+            <div style={{ padding: '6px 8px', fontSize: 11, color: t.text3 }}>
+              Sin workspaces. Agregalos en Ajustes.
+            </div>
+          ) : workspaces.map((ws) => (
+            <button
+              key={ws} type="button"
+              onClick={() => { setWsOpen(false); onChangeWorkspace(ws); }}
+              style={{
+                ...menuItemStyleAt(t), fontFamily: t.fontMono, fontSize: 11,
+                color: ws === currentWorkspace ? t.accent : t.text1,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+              {ws}
+            </button>
+          ))}
+        </div>
+      )}
+      <button type="button" onClick={onCopyTranscript} style={menuItemStyleAt(t)}>
+        <IconCopy size={12}/> Copiar conversación
+      </button>
+      <div style={{ height: 1, background: t.glassBorder, margin: '4px 8px' }}/>
+      <button type="button" onClick={onCloseBubble} style={{ ...menuItemStyleAt(t), color: t.err }}>
+        <IconTrash size={12}/> Cerrar burbuja
+      </button>
+    </div>
+  );
+}
+
+function menuItemStyleAt(t: ReturnType<typeof useTokens>): React.CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '8px 10px', borderRadius: 8, border: 0, background: 'transparent',
+    color: t.text1, fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+    textAlign: 'left' as const,
+  };
+}
 
 type Props = {
   bubble: Bubble;
+  workspaces: string[];
   onBack: () => void;
   onSend: (text: string) => void;
   onRename: (title: string) => void;
+  onClose: () => void;
+  onChangeWorkspace: (workspace: string) => void;
+  onMicToggle: () => void;
+  listening: boolean;
+  voiceInterim: string;
 };
 
 type Tab = 'chat' | 'terminal' | 'files' | 'plan';
 
-export function AgentDetail({ bubble, onBack, onSend, onRename }: Props) {
+export function AgentDetail({
+  bubble, workspaces, onBack, onSend, onRename, onClose, onChangeWorkspace,
+  onMicToggle, listening, voiceInterim,
+}: Props) {
   const t = useTokens();
   const [tab, setTab] = useState<Tab>('chat');
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
+  const [menuOpen, setMenuOpen] = useState(false);
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
 
@@ -93,18 +207,28 @@ export function AgentDetail({ bubble, onBack, onSend, onRename }: Props) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(state === 'running' || state === 'thinking' || (state as string) === 'executing') ? (
-            <Btn icon={IconPause} kind="secondary" size="sm">Pausar</Btn>
-          ) : state === 'paused' ? (
-            <Btn icon={IconPlay} kind="secondary" size="sm">Reanudar</Btn>
-          ) : state === 'error' ? (
-            <Btn icon={IconResume} kind="secondary" size="sm">Reintentar</Btn>
-          ) : (
-            <Btn icon={IconPlay} kind="secondary" size="sm">Hablar</Btn>
+        <div style={{ display: 'flex', gap: 6, position: 'relative' }}>
+          <Btn
+            icon={listening ? IconStop : IconMic}
+            kind={listening ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={onMicToggle}
+            title={listening ? 'Detener escucha' : 'Activar escucha'}
+          >
+            {listening ? 'Escuchando' : 'Hablar'}
+          </Btn>
+          <IconBtn icon={IconMore} size={32} onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}/>
+          {menuOpen && (
+            <HeaderMenu
+              workspaces={workspaces}
+              currentWorkspace={bubble.workspace}
+              onClose={() => setMenuOpen(false)}
+              onRename={() => { setMenuOpen(false); setDraft(bubble.title); setRenaming(true); }}
+              onChangeWorkspace={(ws) => { setMenuOpen(false); onChangeWorkspace(ws); }}
+              onCopyTranscript={() => { setMenuOpen(false); copyTranscriptToClipboard(bubble); }}
+              onCloseBubble={() => { setMenuOpen(false); onClose(); }}
+            />
           )}
-          <Btn icon={IconStop} kind="danger" size="sm">Detener</Btn>
-          <IconBtn icon={IconMore} size={32}/>
         </div>
       </div>
 
@@ -120,7 +244,15 @@ export function AgentDetail({ bubble, onBack, onSend, onRename }: Props) {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {tab === 'chat' && <ChatPanel bubble={bubble} onSend={onSend}/>}
+          {tab === 'chat' && (
+            <ChatPanel
+              bubble={bubble}
+              onSend={onSend}
+              onMicToggle={onMicToggle}
+              listening={listening}
+              voiceInterim={voiceInterim}
+            />
+          )}
           {tab === 'terminal' && <TerminalPanel bubble={bubble}/>}
           {tab === 'files' && <FilesPanel files={filesChanged} workspace={bubble.workspace}/>}
           {tab === 'plan' && <PlanPanel bubble={bubble}/>}
@@ -177,10 +309,20 @@ function TabBtn({ active, onClick, label, icon: Icon, badge }: {
   );
 }
 
-function ChatPanel({ bubble, onSend }: { bubble: Bubble; onSend: (text: string) => void }) {
+function ChatPanel({
+  bubble, onSend, onMicToggle, listening, voiceInterim,
+}: {
+  bubble: Bubble;
+  onSend: (text: string) => void;
+  onMicToggle: () => void;
+  listening: boolean;
+  voiceInterim: string;
+}) {
   const t = useTokens();
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const suggestions = useQuickSuggestions();
+  const displayValue = voiceInterim || draft;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -211,12 +353,17 @@ function ChatPanel({ bubble, onSend }: { bubble: Bubble; onSend: (text: string) 
       <div style={{ padding: '12px 24px 18px', borderTop: `1px solid ${t.glassBorder}` }}>
         <Glass radius={16} style={{ padding: 6, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
           <textarea
-            value={draft}
+            value={displayValue}
             onChange={(e) => setDraft(e.target.value)}
+            readOnly={!!voiceInterim}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
             }}
-            placeholder={`Escríbele a ${bubble.title}…`}
+            placeholder={
+              listening
+                ? `Escuchando · habla normal o decí «Eco» para comandos`
+                : `Escríbele a ${bubble.title}…`
+            }
             rows={1}
             style={{
               flex: 1, background: 'transparent', border: 0, outline: 'none', resize: 'none',
@@ -225,7 +372,13 @@ function ChatPanel({ bubble, onSend }: { bubble: Bubble; onSend: (text: string) 
               lineHeight: 1.5,
             }}
           />
-          <IconBtn icon={IconMic} size={32}/>
+          <IconBtn
+            icon={listening ? IconStop : IconMic}
+            size={32}
+            active={listening}
+            title={listening ? 'Detener escucha' : 'Activar escucha'}
+            onClick={onMicToggle}
+          />
           <button
             type="button"
             onClick={submit}
@@ -240,20 +393,22 @@ function ChatPanel({ bubble, onSend }: { bubble: Bubble; onSend: (text: string) 
             <IconSend size={14}/>
           </button>
         </Glass>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-          {['¿Cómo va?', 'Resume', 'Pausá y revisá', 'Continuá'].map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setDraft(s)}
-              style={{
-                padding: '5px 11px', borderRadius: 999,
-                background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                color: t.text1, fontSize: 11.5, cursor: 'pointer',
-                fontFamily: t.fontSans,
-              }}>{s}</button>
-          ))}
-        </div>
+        {suggestions.suggestions.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+            {suggestions.suggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setDraft(s)}
+                style={{
+                  padding: '5px 11px', borderRadius: 999,
+                  background: t.bg2, border: `1px solid ${t.glassBorder}`,
+                  color: t.text1, fontSize: 11.5, cursor: 'pointer',
+                  fontFamily: t.fontSans,
+                }}>{s}</button>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

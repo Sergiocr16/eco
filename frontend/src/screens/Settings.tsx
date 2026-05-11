@@ -12,6 +12,7 @@ import {
 import { EcoMark } from '@/design/EcoMark';
 import { useTTS, type UnifiedVoice } from '@/hooks/useTTS';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 
 type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appearance' | 'about';
 
@@ -109,7 +110,7 @@ function SectionGeneral() {
   return (
     <div style={{ maxWidth: 720 }}>
       <Header title="General" sub="Comportamiento global de Eco."/>
-      <GeneralToggleRow icon={IconBolt} title="Abrir Eco al iniciar sesión" storageKey="eco.start.boot" defaultOn/>
+      <GeneralToggleRow icon={IconBolt} title="Escuchar al abrir Eco" storageKey="eco.voice.autostart" defaultOn/>
       <GeneralToggleRow icon={IconLayers} title="Mantener Eco en la barra de menú" storageKey="eco.menubar" defaultOn/>
       <Row icon={IconCommand} title="Atajo global" desc="Pulsá esta combinación para invocar Eco."
         control={<KbdRow keys={['⌥', '⇧', 'E']}/>}/>
@@ -121,6 +122,93 @@ function SectionGeneral() {
             { value: 'pt', label: 'Português' },
           ]}/>
         }/>
+
+      <div style={{ marginTop: 24 }}>
+        <SuggestionsEditor/>
+      </div>
+    </div>
+  );
+}
+
+function SuggestionsEditor() {
+  const t = useTokens();
+  const s = useQuickSuggestions();
+  const [draft, setDraft] = useState('');
+
+  function handleAdd() {
+    const v = draft.trim();
+    if (!v) return;
+    s.add(v);
+    setDraft('');
+  }
+
+  return (
+    <div>
+      <SectionLabel
+        count={s.suggestions.length}
+        action={
+          <button
+            type="button"
+            onClick={s.reset}
+            style={{
+              fontSize: 11, color: t.text2, background: 'transparent',
+              border: 0, cursor: 'pointer', fontFamily: t.fontSans,
+            }}>Restablecer</button>
+        }>
+        Sugerencias rápidas
+      </SectionLabel>
+      <p style={{ fontSize: 12, color: t.text2, marginTop: -4, marginBottom: 12, lineHeight: 1.5 }}>
+        Aparecen debajo del input de cada conversación. Click → se copia al draft.
+      </p>
+
+      <Glass radius={12} style={{ padding: 6, marginBottom: 12, display: 'flex', gap: 6 }}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+          placeholder="Agregar nueva sugerencia (ej: 'Generá tests')"
+          style={{
+            flex: 1, background: 'transparent', border: 0, outline: 'none',
+            fontFamily: t.fontSans, fontSize: 13.5, color: t.text0, padding: '8px 10px',
+          }}
+        />
+        <Btn kind="primary" size="sm" onClick={handleAdd} disabled={!draft.trim()}>
+          Agregar
+        </Btn>
+      </Glass>
+
+      {s.suggestions.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: t.text2, padding: '12px 4px' }}>
+          Sin sugerencias. Agregá una arriba.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {s.suggestions.map((sug, i) => (
+            <div key={`${sug}-${i}`} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 10px', borderRadius: 10,
+              background: t.bg2, border: `1px solid ${t.glassBorder}`,
+            }}>
+              <span style={{
+                flex: 1, fontFamily: t.fontSans, fontSize: 13, color: t.text0,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>{sug}</span>
+              <button
+                type="button"
+                onClick={() => s.remove(i)}
+                style={{
+                  width: 28, height: 28, borderRadius: 8, border: 0,
+                  background: 'transparent', color: t.text2, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+                title="Quitar"
+              >
+                <IconTrash size={12}/>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
