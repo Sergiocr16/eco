@@ -6,88 +6,49 @@ import { MessageBubble } from './components/MessageBubble';
 import { InputBar } from './components/InputBar';
 import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
-import type { EcoStatus, Message } from './lib/types';
+import { useEcoSocket } from './hooks/useEcoSocket';
+import type { EcoStatus } from './lib/types';
 
-const DUMMY_MESSAGES: Message[] = [
-  {
-    id: '1',
-    role: 'user',
-    text: '¿Qué archivos hay en mi proyecto Aditum?',
-    createdAt: Date.now() - 60000,
-  },
-  {
-    id: '2',
-    role: 'assistant',
-    text: 'Voy a revisar el directorio.',
-    toolCalls: [
-      {
-        id: 't1',
-        name: 'LS',
-        input: { path: '/Users/sergio/projects/aditum-jh' },
-        status: 'success',
-        output: 'src/\npackage.json\nREADME.md\npom.xml\nbower.json\nsrc/main/webapp/\nsrc/main/java/\n...',
-      },
-      {
-        id: 't2',
-        name: 'Glob',
-        input: { pattern: '**/*.ts' },
-        status: 'success',
-        output: '47 archivos TypeScript encontrados.\n\nsrc/main/webapp/app/...\nsrc/types/...',
-      },
-    ],
-    createdAt: Date.now() - 30000,
-  },
-  {
-    id: '3',
-    role: 'assistant',
-    text: 'Encontré 47 archivos TypeScript en src/. ¿Querés que te resuma alguno en particular?',
-    createdAt: Date.now() - 5000,
-  },
-];
+// Backend URL: si VITE_ECO_BACKEND está seteado lo usa; sino usa rutas relativas
+// (que en dev son proxyeadas por Vite a localhost:7000, en Tauri van al backend embebido).
+const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
+const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
 
 export function App() {
-  const [status, setStatus] = useState<EcoStatus>('idle');
-  const [messages, setMessages] = useState<Message[]>(DUMMY_MESSAGES);
-  const [workspace] = useState('/Users/sergio/projects/aditum-jh');
+  const [workspace] = useState('');
 
-  const voice = useVoice({
-    language: 'es-419',
-    onCommand: handleVoiceCommand,
-  });
+  const socket = useEcoSocket({ url: BACKEND, token: TOKEN });
+  const voice = useVoice({ language: 'es-419', onCommand: handleVoiceCommand });
   const tts = useTTS();
 
   const listening = voice.state === 'watching' || voice.state === 'capturing';
   const lastSpokenRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (voice.state === 'capturing') setStatus('listening');
-    else if (tts.speaking) setStatus('speaking');
-    else if (voice.state === 'watching' && (status === 'listening' || status === 'speaking')) setStatus('idle');
-  }, [voice.state, tts.speaking, status]);
+  const status: EcoStatus = (() => {
+    if (socket.status === 'error') return 'error';
+    if (voice.state === 'capturing') return 'listening';
+    if (socket.executing) return 'executing';
+    if (socket.thinking) return 'thinking';
+    if (tts.speaking) return 'speaking';
+    return 'idle';
+  })();
 
   useEffect(() => {
     if (!tts.enabled) return;
-    const last = messages[messages.length - 1];
+    const last = socket.messages[socket.messages.length - 1];
     if (!last || last.role !== 'assistant' || !last.text) return;
+    if (socket.thinking || socket.executing) return; // esperar a terminar
     if (lastSpokenRef.current === last.id) return;
     lastSpokenRef.current = last.id;
     tts.speak(last.text);
-  }, [messages, tts]);
+  }, [socket.messages, socket.thinking, socket.executing, tts]);
 
   function handleVoiceCommand(text: string) {
-    handleSend(text);
+    socket.send(text, workspace || undefined);
   }
 
   function handleSend(text: string) {
-    const msg: Message = {
-      id: String(Date.now()),
-      role: 'user',
-      text,
-      createdAt: Date.now(),
-    };
-    setMessages((m) => [...m, msg]);
-    setStatus('thinking');
-    setTimeout(() => setStatus('idle'), 2400);
+    socket.send(text, workspace || undefined);
   }
 
   function handleMicToggle() {
@@ -99,38 +60,47 @@ export function App() {
     <div className="relative h-screen w-screen overflow-hidden bg-[var(--color-eco-bg-deep)]">
       <GradientMesh />
 
-      {/* Brand corner */}
+      {/* Brand + connection state */}
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-        className="absolute top-6 left-7 z-30 select-none"
+        className="absolute top-6 left-7 z-30 select-none flex items-baseline gap-3"
       >
-        <div className="flex items-baseline gap-2">
-          <span
-            className="text-display text-[15px] text-eco-text/80"
-            style={{ letterSpacing: '-0.02em' }}
-          >
-            Eco
-          </span>
-          <span className="text-[10px] text-eco-text-faint font-mono tracking-wider uppercase">
-            v0.1
-          </span>
-        </div>
+        <span
+          className="text-display text-[15px] text-eco-text/80"
+          style={{ letterSpacing: '-0.02em' }}
+        >
+          Eco
+        </span>
+        <span className="text-[10px] text-eco-text-faint font-mono tracking-wider uppercase">
+          v0.1
+        </span>
+        <ConnectionPill status={socket.status} />
       </motion.div>
+
+      {socket.error && (
+        <div className="absolute top-6 right-7 z-30 glass px-3 py-2 rounded-xl text-[12px] text-eco-text-muted max-w-sm">
+          {socket.error}
+        </div>
+      )}
 
       {/* Hero: orb + status */}
       <div className="relative z-10 flex flex-col items-center pt-[10vh] pb-[3vh]">
         <StatusOrb status={status} />
       </div>
 
-      {/* Conversation panel — centered, max width */}
+      {/* Conversation panel */}
       <div className="relative z-10 mx-auto max-w-3xl px-6 pb-[110px]" style={{ height: 'calc(100vh - 38vh)' }}>
         <div className="h-full overflow-y-auto invisible-scroll">
           <div className="flex flex-col gap-5 pb-6">
-            {messages.map((m, i) => (
-              <MessageBubble key={m.id} message={m} index={i} />
-            ))}
+            {socket.messages.length === 0 ? (
+              <EmptyState />
+            ) : (
+              socket.messages.map((m, i) => (
+                <MessageBubble key={m.id} message={m} index={i} />
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -150,5 +120,45 @@ export function App() {
         onWorkspaceClick={() => {}}
       />
     </div>
+  );
+}
+
+function ConnectionPill({ status }: { status: 'disconnected' | 'connecting' | 'connected' | 'error' }) {
+  const map = {
+    connected: { color: 'oklch(0.74 0.16 160)', label: 'conectado' },
+    connecting: { color: 'oklch(0.78 0.14 80)', label: 'conectando…' },
+    disconnected: { color: 'oklch(0.65 0.03 240)', label: 'sin conexión' },
+    error: { color: 'oklch(0.68 0.18 25)', label: 'error' },
+  } as const;
+  const v = map[status];
+  return (
+    <span className="flex items-center gap-1.5 text-[10px] text-eco-text-faint font-mono uppercase tracking-wider">
+      <span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{
+          background: v.color,
+          animation: status === 'connecting' ? 'pulse-dot 1.4s ease-in-out infinite' : undefined,
+          boxShadow: status === 'connected' ? `0 0 8px ${v.color}` : undefined,
+        }}
+      />
+      {v.label}
+    </span>
+  );
+}
+
+function EmptyState() {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1, delay: 0.5 }}
+      className="self-center text-center pt-12"
+    >
+      <p className="text-eco-text-muted text-[14px] tracking-tight max-w-md">
+        Hola. Empezá una conversación escribiendo abajo o
+        <br />
+        activá el micrófono y decí <span className="text-eco-text">«Eco»</span> seguido de tu pedido.
+      </p>
+    </motion.div>
   );
 }

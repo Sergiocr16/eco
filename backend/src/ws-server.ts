@@ -17,6 +17,10 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
     server: httpServer,
     path: '/ws',
     maxPayload: 128 * 1024,
+    handleProtocols: (protocols) => {
+      const tokenProto = [...protocols].find((p) => p.startsWith('eco.token.'));
+      return tokenProto ?? false;
+    },
     verifyClient: (info, callback) => {
       if (!hostAllowed(info.req.headers.host)) {
         return callback(false, 403, 'Host no permitido');

@@ -22,3 +22,5 @@ export type Workspace = {
   path: string;
   label: string;
 };
+
+export type SocketStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
