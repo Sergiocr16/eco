@@ -184,6 +184,11 @@ function Shell() {
     sendTo(detailBubbleId, text);
   }
 
+  function handleCreateAgent(title?: string) {
+    const fresh = bubbles.createBubble({ title, focus: true });
+    handleOpenAgent(fresh.id);
+  }
+
   const activeCount = bubbles.bubbles.filter((b) =>
     ['running', 'thinking', 'executing', 'waiting'].includes(b.status as string),
   ).length;
@@ -214,6 +219,7 @@ function Shell() {
                     bubble={detailBubble}
                     onBack={handleBackFromDetail}
                     onSend={handleAgentDetailSend}
+                    onRename={(title) => bubbles.renameBubble(detailBubble.id, title)}
                   />
                 ) : screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles}/>
@@ -232,11 +238,10 @@ function Shell() {
                     onSend={handleDashboardSend}
                     onMicToggle={handleMicToggle}
                     onOpenAgent={handleOpenAgent}
-                    onCreateAgent={() => {
-                      const fresh = bubbles.createBubble({ focus: true });
-                      handleOpenAgent(fresh.id);
-                    }}
+                    onCreateAgent={handleCreateAgent}
                     onFocus={(id) => bubbles.focusBubble(id)}
+                    onRename={(id, title) => bubbles.renameBubble(id, title)}
+                    onRemove={(id) => bubbles.removeBubble(id)}
                   />
                 )}
               </div>

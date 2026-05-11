@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTokens } from '@/design/theme';
 import {
   Glass, IconBtn, StatusDot, Pill, Kbd, AgentGlyph, SectionLabel,
@@ -6,7 +6,7 @@ import {
 import {
   IconWave, IconMic, IconSend, IconPlus, IconGrid, IconGraph, IconExt,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal,
-  IconClock, IconAlert, IconZap, IconCpu, IconFile,
+  IconClock, IconAlert, IconZap, IconCpu, IconFile, IconEdit, IconTrash,
 } from '@/design/icons';
 import type { Bubble, VoiceState } from '@/lib/types';
 import { stateColor, type AgentState, STATE_LABELS } from '@/design/tokens';
@@ -20,14 +20,16 @@ type Props = {
   onSend: (text: string) => void;
   onMicToggle: () => void;
   onOpenAgent: (id: string) => void;
-  onCreateAgent: () => void;
+  onCreateAgent: (title?: string) => void;
   onFocus: (id: string) => void;
+  onRename: (id: string, title: string) => void;
+  onRemove: (id: string) => void;
   voiceError?: string | null;
 };
 
 export function Dashboard(props: Props) {
   const t = useTokens();
-  const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, interimText, voiceError } = props;
+  const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, interimText, voiceError } = props;
   const [view, setView] = useState<'grid' | 'graph'>('grid');
 
   const active = bubbles.filter((b) => ['running', 'thinking', 'waiting'].includes(b.status as string));
@@ -91,9 +93,15 @@ export function Dashboard(props: Props) {
             gap: 14,
           }}>
             {bubbles.map((b) => (
-              <AgentBubble key={b.id} bubble={b} onClick={() => onOpenAgent(b.id)}/>
+              <AgentBubble
+                key={b.id}
+                bubble={b}
+                onClick={() => onOpenAgent(b.id)}
+                onRename={(title) => onRename(b.id, title)}
+                onRemove={() => onRemove(b.id)}
+              />
             ))}
-            <NewAgentCard onClick={onCreateAgent}/>
+            <NewAgentCard onCreate={onCreateAgent}/>
           </div>
         ) : (
           <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
@@ -186,32 +194,57 @@ function VoiceOrb({ state, onClick }: { state: VoiceState; onClick: () => void }
   );
 }
 
-function AgentBubble({ bubble, onClick }: { bubble: Bubble; onClick: () => void }) {
+function AgentBubble({
+  bubble, onClick, onRename, onRemove,
+}: {
+  bubble: Bubble;
+  onClick: () => void;
+  onRename: (title: string) => void;
+  onRemove: () => void;
+}) {
   const t = useTokens();
   const [hover, setHover] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(bubble.title);
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
   const lastMsg = bubble.messages[bubble.messages.length - 1];
-  const lastText = lastMsg?.text || bubble.title;
+  const lastText = lastMsg?.text || 'Sin mensajes aún';
   const minutesAgo = Math.max(1, Math.round((Date.now() - bubble.updatedAt) / 60000));
   const tStr = minutesAgo < 60 ? `${minutesAgo}m` : `${Math.round(minutesAgo / 60)}h`;
   const workspaceLabel = (bubble.workspace || '').split('/').filter(Boolean).slice(-2).join('/');
 
+  useEffect(() => { setDraft(bubble.title); }, [bubble.title]);
+
+  function commitRename() {
+    const v = draft.trim();
+    if (v && v !== bubble.title) onRename(v);
+    setRenaming(false);
+  }
+
+  function startRename(e?: React.MouseEvent) {
+    e?.stopPropagation();
+    setDraft(bubble.title);
+    setRenaming(true);
+    setMenuOpen(false);
+  }
+
   return (
     <div
-      onClick={onClick}
+      onClick={() => !renaming && onClick()}
       onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseLeave={() => { setHover(false); setMenuOpen(false); }}
       style={{
         position: 'relative',
         background: t.bg2,
         border: `0.5px solid ${hover ? t.glassBorderHi : t.glassBorder}`,
         borderRadius: 18,
         padding: '18px 18px 14px',
-        cursor: 'pointer',
+        cursor: renaming ? 'default' : 'pointer',
         transition: 'all 200ms ease',
         boxShadow: hover ? t.shadowMd : 'none',
-        overflow: 'hidden',
+        overflow: 'visible',
         minHeight: 200,
         display: 'flex', flexDirection: 'column',
       }}
@@ -219,17 +252,54 @@ function AgentBubble({ bubble, onClick }: { bubble: Bubble; onClick: () => void 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
         <AgentGlyph size={38} state={state}/>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, color: t.text0,
-            letterSpacing: -0.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>{bubble.title}</div>
+          {renaming ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+                if (e.key === 'Escape') { setDraft(bubble.title); setRenaming(false); }
+              }}
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                background: t.bg3, border: `1px solid ${t.accent}`,
+                borderRadius: 8, padding: '4px 8px',
+                fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, color: t.text0,
+                outline: 'none',
+              }}
+            />
+          ) : (
+            <div
+              onDoubleClick={(e) => startRename(e)}
+              title="Doble click para renombrar"
+              style={{
+                fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, color: t.text0,
+                letterSpacing: -0.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>{bubble.title}</div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
             <span style={{ fontSize: 11.5, color: t.text2 }}>Agente</span>
             <span style={{ color: t.text3 }}>·</span>
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tStr}</span>
           </div>
         </div>
-        <IconBtn icon={IconMore} size={26}/>
+        <div style={{ position: 'relative' }}>
+          <IconBtn
+            icon={IconMore}
+            size={26}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+          />
+          {menuOpen && (
+            <BubbleMenu
+              onClose={() => setMenuOpen(false)}
+              onRename={startRename}
+              onRemove={(e) => { e.stopPropagation(); onRemove(); setMenuOpen(false); }}
+            />
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
@@ -264,12 +334,86 @@ function AgentBubble({ bubble, onClick }: { bubble: Bubble; onClick: () => void 
   );
 }
 
-function NewAgentCard({ onClick }: { onClick: () => void }) {
+function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
   const t = useTokens();
   const [h, setH] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (naming) inputRef.current?.focus();
+  }, [naming]);
+
+  function submit() {
+    const v = draft.trim();
+    onCreate(v || undefined);
+    setDraft('');
+    setNaming(false);
+  }
+
+  if (naming) {
+    return (
+      <div
+        style={{
+          border: `1px solid ${t.accentDim}`,
+          borderRadius: 18, minHeight: 200,
+          background: t.accentFaint,
+          padding: 22,
+          display: 'flex', flexDirection: 'column', gap: 14,
+        }}
+      >
+        <div style={{
+          width: 44, height: 44, borderRadius: '50%',
+          background: t.bg3, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1px solid ${t.glassBorder}`, color: t.accent,
+        }}>
+          <IconPlus size={22}/>
+        </div>
+        <div style={{ fontSize: 12.5, color: t.text2 }}>Nombre de la burbuja</div>
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Ej: Refactor auth, Investigar bug..."
+          onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+            if (e.key === 'Enter') submit();
+            if (e.key === 'Escape') { setDraft(''); setNaming(false); }
+          }}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            background: t.bg2, border: `1px solid ${t.glassBorder}`,
+            borderRadius: 10, padding: '10px 12px',
+            fontFamily: t.fontSans, fontSize: 13.5, color: t.text0,
+            outline: 'none',
+          }}
+        />
+        <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+          <button
+            type="button"
+            onClick={() => { setDraft(''); setNaming(false); }}
+            style={{
+              flex: 1, height: 32, borderRadius: 999, border: `1px solid ${t.glassBorder}`,
+              background: 'transparent', color: t.text1, fontFamily: t.fontSans, fontSize: 12.5,
+              cursor: 'pointer',
+            }}>Cancelar</button>
+          <button
+            type="button"
+            onClick={submit}
+            style={{
+              flex: 1, height: 32, borderRadius: 999, border: `1px solid ${t.accent}`,
+              background: t.accent, color: t.accentOn, fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+              cursor: 'pointer',
+            }}>Crear</button>
+        </div>
+        <div style={{ fontSize: 10.5, color: t.text3 }}>↩ enter para crear · esc para cancelar</div>
+      </div>
+    );
+  }
+
   return (
     <div
-      onClick={onClick}
+      onClick={() => setNaming(true)}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
         border: `1px dashed ${h ? t.accentDim : t.glassBorder}`,
@@ -287,12 +431,55 @@ function NewAgentCard({ onClick }: { onClick: () => void }) {
       }}>
         <IconPlus size={22}/>
       </div>
-      <div style={{ fontSize: 13, fontWeight: 500 }}>Nuevo agente</div>
+      <div style={{ fontSize: 13, fontWeight: 500 }}>Nueva burbuja</div>
       <div style={{ fontSize: 11, color: t.text3 }}>
-        Pulsa o di <span style={{ color: t.text1 }}>"Eco, crea un agente"</span>
+        Click para nombrarla o decí <span style={{ color: t.text1 }}>"Eco, abrí una burbuja"</span>
       </div>
     </div>
   );
+}
+
+function BubbleMenu({
+  onClose, onRename, onRemove,
+}: {
+  onClose: () => void;
+  onRename: (e: React.MouseEvent) => void;
+  onRemove: (e: React.MouseEvent) => void;
+}) {
+  const t = useTokens();
+  useEffect(() => {
+    const onDocClick = () => onClose();
+    document.addEventListener('click', onDocClick, { once: true });
+    return () => document.removeEventListener('click', onDocClick);
+  }, [onClose]);
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: 'absolute', top: 30, right: 0, zIndex: 30,
+        minWidth: 160, padding: 4,
+        background: t.bg1, border: `1px solid ${t.glassBorder}`,
+        borderRadius: 12, boxShadow: t.shadowLg,
+        display: 'flex', flexDirection: 'column',
+      }}
+    >
+      <button type="button" onClick={onRename} style={menuItemStyle(t)}>
+        <IconEdit size={12}/> Renombrar
+      </button>
+      <button type="button" onClick={onRemove} style={{ ...menuItemStyle(t), color: t.err }}>
+        <IconTrash size={12}/> Cerrar burbuja
+      </button>
+    </div>
+  );
+}
+
+function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '8px 10px', borderRadius: 8, border: 0, background: 'transparent',
+    color: t.text1, fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+    textAlign: 'left',
+  };
 }
 
 function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (id: string) => void }) {

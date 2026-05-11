@@ -16,15 +16,26 @@ type Props = {
   bubble: Bubble;
   onBack: () => void;
   onSend: (text: string) => void;
+  onRename: (title: string) => void;
 };
 
 type Tab = 'chat' | 'terminal' | 'files' | 'plan';
 
-export function AgentDetail({ bubble, onBack, onSend }: Props) {
+export function AgentDetail({ bubble, onBack, onSend, onRename }: Props) {
   const t = useTokens();
   const [tab, setTab] = useState<Tab>('chat');
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(bubble.title);
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
+
+  useEffect(() => { setDraft(bubble.title); }, [bubble.title]);
+
+  function commitRename() {
+    const v = draft.trim();
+    if (v && v !== bubble.title) onRename(v);
+    setRenaming(false);
+  }
 
   const filesChanged = collectFilesChanged(bubble);
 
@@ -38,10 +49,33 @@ export function AgentDetail({ bubble, onBack, onSend }: Props) {
         <AgentGlyph size={40} state={state}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2 style={{
-              margin: 0, fontFamily: t.fontSans, fontSize: 18, fontWeight: 600,
-              color: t.text0, letterSpacing: -0.3,
-            }}>{bubble.title}</h2>
+            {renaming ? (
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+                  if (e.key === 'Escape') { setDraft(bubble.title); setRenaming(false); }
+                }}
+                style={{
+                  background: t.bg3, border: `1px solid ${t.accent}`,
+                  borderRadius: 8, padding: '4px 10px',
+                  fontFamily: t.fontSans, fontSize: 18, fontWeight: 600,
+                  color: t.text0, letterSpacing: -0.3, outline: 'none',
+                  minWidth: 200, maxWidth: 380,
+                }}
+              />
+            ) : (
+              <h2
+                onDoubleClick={() => { setDraft(bubble.title); setRenaming(true); }}
+                title="Doble click para renombrar"
+                style={{
+                  margin: 0, fontFamily: t.fontSans, fontSize: 18, fontWeight: 600,
+                  color: t.text0, letterSpacing: -0.3, cursor: 'text',
+                }}>{bubble.title}</h2>
+            )}
             <Pill color={sColor}>{STATE_LABELS[state] || 'Listo'}</Pill>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
