@@ -9,6 +9,7 @@ import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tt
 import { listSkills } from './skills.js';
 import { addWorkspace, readStore as readWorkspaceStore, removeWorkspace } from './workspaces-store.js';
 import { runShell, ShellRequestSchema } from './shell.js';
+import { fileDiff, DiffRequestSchema } from './file-diff.js';
 import { z } from 'zod';
 
 const authToken = getOrCreateToken();
@@ -113,6 +114,19 @@ app.post('/voice/transcribed', (req: Request, res: Response) => {
   if (!text) return res.status(400).json({ error: 'Texto vacío' });
   broadcastServerMessage({ type: 'voice_transcribed', text, ts: Date.now() });
   res.json({ ok: true });
+});
+
+app.post('/file/diff', async (req: Request, res: Response) => {
+  const parsed = DiffRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  try {
+    const result = await fileDiff(parsed.data);
+    res.json(result);
+  } catch (err) {
+    const status = (err as { httpStatus?: number }).httpStatus ?? 500;
+    const message = err instanceof Error ? err.message : 'Error';
+    res.status(status).json({ error: message });
+  }
 });
 
 const shellConcurrency = { active: 0, max: 3 };

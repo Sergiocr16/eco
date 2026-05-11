@@ -22,6 +22,7 @@ export default defineConfig({
       '/skills': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/workspaces': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/shell': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/file': { target: 'http://127.0.0.1:7000', changeOrigin: false },
     },
   },
 });

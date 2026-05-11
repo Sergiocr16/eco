@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useTokens } from '@/design/theme';
+import { DiffViewer } from '@/components/DiffViewer';
 import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel,
 } from '@/design/primitives';
@@ -121,7 +122,7 @@ export function AgentDetail({ bubble, onBack, onSend, onRename }: Props) {
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {tab === 'chat' && <ChatPanel bubble={bubble} onSend={onSend}/>}
           {tab === 'terminal' && <TerminalPanel bubble={bubble}/>}
-          {tab === 'files' && <FilesPanel files={filesChanged}/>}
+          {tab === 'files' && <FilesPanel files={filesChanged} workspace={bubble.workspace}/>}
           {tab === 'plan' && <PlanPanel bubble={bubble}/>}
         </div>
         <AgentSidebar bubble={bubble}/>
@@ -632,8 +633,9 @@ function normalizePosixPath(p: string): string {
   return '/' + out.join('/');
 }
 
-function FilesPanel({ files }: { files: FileChange[] }) {
+function FilesPanel({ files, workspace }: { files: FileChange[]; workspace: string }) {
   const t = useTokens();
+  const [diffPath, setDiffPath] = useState<string | null>(null);
   if (files.length === 0) {
     return (
       <div style={{
@@ -645,33 +647,41 @@ function FilesPanel({ files }: { files: FileChange[] }) {
     );
   }
   return (
-    <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-      <SectionLabel count={files.length}>Archivos modificados</SectionLabel>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {files.map((f, i) => (
-          <Glass key={i} radius={12} hover style={{
-            padding: 14, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
-          }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: t.bg3, color: t.text1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}><IconFile size={16}/></div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+    <>
+      <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+        <SectionLabel count={files.length}>Archivos modificados</SectionLabel>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {files.map((f, i) => (
+            <Glass key={i} radius={12} hover style={{
+              padding: 14, display: 'flex', alignItems: 'center', gap: 12,
+            }}>
               <div style={{
-                fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{f.path}</div>
-              <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Pill color={f.change === 'creado' ? t.ok : t.accent}>{f.change}</Pill>
+                width: 36, height: 36, borderRadius: 10,
+                background: t.bg3, color: t.text1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}><IconFile size={16}/></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontFamily: t.fontMono, fontSize: 13, color: t.text0,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>{f.path}</div>
+                <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Pill color={f.change === 'creado' ? t.ok : t.accent}>{f.change}</Pill>
+                </div>
               </div>
-            </div>
-            <Btn kind="ghost" size="sm" icon={IconDiff}>Diff</Btn>
-            <IconBtn icon={IconExt} size={28} title="Abrir en editor"/>
-          </Glass>
-        ))}
+              <Btn kind="ghost" size="sm" icon={IconDiff} onClick={() => setDiffPath(f.path)}>Diff</Btn>
+              <IconBtn icon={IconExt} size={28} title="Abrir en editor"/>
+            </Glass>
+          ))}
+        </div>
       </div>
-    </div>
+      <DiffViewer
+        open={!!diffPath}
+        path={diffPath}
+        workspace={workspace}
+        onClose={() => setDiffPath(null)}
+      />
+    </>
   );
 }
 
