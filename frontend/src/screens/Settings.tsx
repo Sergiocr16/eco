@@ -7,10 +7,11 @@ import {
 import {
   IconSettings, IconKey, IconMic, IconFolder, IconShield, IconLayers,
   IconInfo, IconCheck, IconCpu, IconTerminal, IconWave, IconGlobe,
-  IconCommand, IconBolt, IconHistory, IconLock, IconTrash, type IconProps,
+  IconCommand, IconBolt, IconHistory, IconLock, IconTrash, IconPlus, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
 import { useTTS, type UnifiedVoice } from '@/hooks/useTTS';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
 
 type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appearance' | 'about';
 
@@ -267,12 +268,105 @@ function VoiceGroup({ label, voices, selected, onSelect, onTest }: {
 
 function SectionFolders() {
   const t = useTokens();
+  const ws = useWorkspaces();
+  const [draft, setDraft] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    const v = draft.trim();
+    if (!v) return;
+    setAdding(true);
+    setAddError(null);
+    const result = await ws.add(v);
+    setAdding(false);
+    if (result.ok) {
+      setDraft('');
+    } else {
+      setAddError(result.error);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 720 }}>
-      <Header title="Carpetas autorizadas" sub="Eco solo puede leer y escribir dentro de estas rutas."/>
-      <p style={{ fontSize: 12, color: t.text2, marginBottom: 12 }}>
-        Configurá los workspaces permitidos en <code style={{ fontFamily: t.fontMono, color: t.text1 }}>backend/.env</code> con la variable <code style={{ fontFamily: t.fontMono, color: t.text1 }}>ECO_WORKSPACES</code>. Próximamente: gestión inline desde aquí.
-      </p>
+      <Header title="Carpetas autorizadas" sub="Eco solo puede leer y escribir dentro de estas rutas. Los workspaces de .env aparecen marcados como bloqueados."/>
+
+      <Glass radius={14} style={{ padding: 12, marginBottom: 18 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ color: t.text2 }}><IconFolder size={16}/></div>
+          <input
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setAddError(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+            placeholder="/Users/sergio/projects/aditum-jh"
+            style={{
+              flex: 1, background: 'transparent', border: 0, outline: 'none',
+              fontFamily: t.fontMono, fontSize: 13, color: t.text0, padding: '8px 4px',
+            }}
+          />
+          <Btn kind="primary" size="sm" icon={IconPlus} onClick={handleAdd} disabled={adding || !draft.trim()}>
+            {adding ? 'Agregando…' : 'Agregar'}
+          </Btn>
+        </div>
+        {addError && (
+          <div style={{ marginTop: 8, fontSize: 12, color: t.err }}>{addError}</div>
+        )}
+        <div style={{ marginTop: 8, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
+          La ruta debe ser absoluta y existir. Se bloquean rutas del sistema (<code style={{ fontFamily: t.fontMono }}>/etc</code>, <code style={{ fontFamily: t.fontMono }}>/sys</code>, <code style={{ fontFamily: t.fontMono }}>/proc</code>, etc.).
+        </div>
+      </Glass>
+
+      {ws.loading ? (
+        <div style={{ fontSize: 13, color: t.text2 }}>Cargando…</div>
+      ) : ws.list.workspaces.length === 0 ? (
+        <div style={{ fontSize: 13, color: t.text2, padding: 24, textAlign: 'center' }}>
+          Sin carpetas autorizadas. Agregá una arriba para empezar.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {ws.list.workspaces.map((p) => {
+            const fromEnv = ws.list.fromEnv.includes(p);
+            return (
+              <Glass key={p} radius={12} style={{
+                padding: 14, display: 'flex', alignItems: 'center', gap: 12,
+              }}>
+                <div style={{ color: t.accent }}><IconFolder size={18}/></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: t.fontMono, fontSize: 13, color: t.text0,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>{p}</div>
+                  <div style={{ marginTop: 3, fontSize: 11, color: t.text2 }}>
+                    {fromEnv ? 'Desde backend/.env · no editable' : 'Agregada desde la app'}
+                  </div>
+                </div>
+                {fromEnv ? (
+                  <div style={{
+                    fontSize: 10.5, padding: '4px 8px', borderRadius: 999,
+                    background: t.bg3, color: t.text2,
+                    fontFamily: t.fontMono, letterSpacing: 0.4, textTransform: 'uppercase',
+                  }}>env</div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => ws.remove(p)}
+                    title="Quitar"
+                    style={{
+                      width: 30, height: 30, borderRadius: 8, border: 0,
+                      background: 'transparent', color: t.text2, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                    <IconTrash size={14}/>
+                  </button>
+                )}
+              </Glass>
+            );
+          })}
+        </div>
+      )}
+      {ws.error && (
+        <div style={{ marginTop: 14, fontSize: 12, color: t.err }}>{ws.error}</div>
+      )}
     </div>
   );
 }

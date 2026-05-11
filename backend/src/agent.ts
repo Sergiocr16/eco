@@ -101,6 +101,9 @@ export function runAgent(opts: AgentRunOptions): Query {
     throw new Error('Workspace no permitido.');
   }
   const cwd = requested ?? defaultWorkspace();
+  if (!cwd) {
+    throw new Error('No hay workspace configurado.');
+  }
 
   const mcpServers = opts.onClientAction
     ? { eco: buildEcoMcpServer({ onClientAction: opts.onClientAction }) }

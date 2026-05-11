@@ -7,8 +7,9 @@ type Props = {
 
 export function EcoMark({ size = 56, mono = false }: Props) {
   const id = useId().replace(/:/g, '');
-  const color1 = mono ? 'currentColor' : 'oklch(82% 0.14 170)';
-  const color2 = mono ? 'currentColor' : 'oklch(74% 0.13 158)';
+  // Colores oficiales del brand (ver frontend/public/brand/colors.txt)
+  const color1 = mono ? 'currentColor' : '#48E0D4';
+  const color2 = mono ? 'currentColor' : '#76F2A4';
   return (
     <svg width={size} height={size} viewBox="0 0 56 56" fill="none" aria-label="Eco">
       <defs>

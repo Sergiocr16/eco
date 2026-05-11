@@ -2,8 +2,9 @@ import 'dotenv/config';
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve, sep, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
+import { readStore as readWorkspaceStore } from './workspaces-store.js';
 
-function parseWorkspaces(): string[] {
+function parseEnvWorkspaces(): string[] {
   const raw = process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? `${homedir()}/projects/eco-test`;
   return raw
     .split(',')
@@ -11,12 +12,15 @@ function parseWorkspaces(): string[] {
     .filter(Boolean)
     .map((p) => {
       const abs = resolve(p);
-      try {
-        return realpathSync(abs);
-      } catch {
-        return abs;
-      }
+      try { return realpathSync(abs); } catch { return abs; }
     });
+}
+
+function loadWorkspaces(): string[] {
+  const env = parseEnvWorkspaces();
+  const stored = readWorkspaceStore();
+  const combined = [...env, ...stored];
+  return Array.from(new Set(combined));
 }
 
 function parseAllowedOrigins(): string[] {
@@ -44,7 +48,7 @@ function parseSkillSources(): Array<'user' | 'project' | 'local'> {
 }
 
 export const config = {
-  workspaces: parseWorkspaces(),
+  get workspaces(): string[] { return loadWorkspaces(); },
   port: Number(process.env.ECO_PORT ?? 7000),
   host: process.env.ECO_HOST ?? '127.0.0.1',
   claudeCliPath: process.env.CLAUDE_CLI_PATH ?? `${homedir()}/.local/bin/claude`,
@@ -81,12 +85,12 @@ export function isInsideWorkspace(filePath: string | undefined, workspace: strin
   return resolved === realWorkspace || resolved.startsWith(realWorkspace + sep);
 }
 
-export function defaultWorkspace(): string {
-  return config.workspaces[0]!;
+export function defaultWorkspace(): string | null {
+  return loadWorkspaces()[0] ?? null;
 }
 
-if (config.workspaces.length === 0) {
-  throw new Error('ECO_WORKSPACES vacío. Configurá al menos un workspace permitido.');
+if (loadWorkspaces().length === 0) {
+  console.warn('⚠️  Sin workspaces configurados. Agregá uno desde Ajustes o ECO_WORKSPACES.');
 }
 
 if (!existsSync(config.claudeCliPath)) {

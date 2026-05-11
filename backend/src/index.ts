@@ -7,6 +7,8 @@ import { attachWebSocket } from './ws-server.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
 import { listSkills } from './skills.js';
+import { addWorkspace, readStore as readWorkspaceStore, removeWorkspace } from './workspaces-store.js';
+import { z } from 'zod';
 
 const authToken = getOrCreateToken();
 
@@ -72,6 +74,31 @@ app.get('/tts/voices', (_req, res) => {
 app.get('/skills', (req: Request, res: Response) => {
   const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : undefined;
   res.json({ skills: listSkills(workspace), sources: config.skillSources });
+});
+
+const AddWorkspaceSchema = z.object({ path: z.string().min(1).max(4096) });
+
+app.get('/workspaces', (_req: Request, res: Response) => {
+  res.json({
+    workspaces: config.workspaces,
+    fromEnv: (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    editable: readWorkspaceStore(),
+  });
+});
+
+app.post('/workspaces', (req: Request, res: Response) => {
+  const parsed = AddWorkspaceSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  const result = addWorkspace(parsed.data.path);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  res.json({ ok: true, path: result.path, workspaces: config.workspaces });
+});
+
+app.delete('/workspaces', (req: Request, res: Response) => {
+  const parsed = AddWorkspaceSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  removeWorkspace(parsed.data.path);
+  res.json({ ok: true, workspaces: config.workspaces });
 });
 
 const ttsConcurrency = { active: 0, max: 2 };

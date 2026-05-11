@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg">
+  <title>Eco Logo</title>
+  <desc>Logo oficial del asistente Eco — versión con fondo oscuro.</desc>
+
+  <defs>
+    <linearGradient id="ecoGradient" x1="250" y1="250" x2="950" y2="950" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#48E0D4"/>
+      <stop offset="100%" stop-color="#76F2A4"/>
+    </linearGradient>
+
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect id="background" width="1200" height="1200" rx="80" fill="#0D1016"/>
+
+  <g id="eco-icon" transform="translate(0, -20)">
+    <path id="echo-ring"
+          d="M 377 618 A 222 222 0 1 1 566 790"
+          fill="none"
+          stroke="url(#ecoGradient)"
+          stroke-width="44"
+          stroke-linecap="round"
+          filter="url(#softGlow)"/>
+    <circle id="echo-dot"
+            cx="397" cy="705" r="31"
+            fill="url(#ecoGradient)"
+            filter="url(#softGlow)"/>
+  </g>
+
+  <g id="eco-wordmark">
+    <text id="eco-text"
+          x="600" y="875" text-anchor="middle"
+          font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif"
+          font-size="130" font-weight="300" letter-spacing="46"
+          fill="#F5F7FA">eco</text>
+  </g>
+</svg>

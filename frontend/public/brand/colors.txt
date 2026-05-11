@@ -1,0 +1,9 @@
+Eco Logo Colors
+
+Background: #0D1016
+Gradient start: #48E0D4
+Gradient end: #76F2A4
+Text: #F5F7FA
+
+CSS gradient:
+linear-gradient(135deg, #48E0D4 0%, #76F2A4 100%)
