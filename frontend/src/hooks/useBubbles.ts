@@ -72,6 +72,7 @@ export type UseBubblesResult = {
   setBubbleStatus: (id: string, status: Bubble['status']) => void;
   setBubbleSessionId: (id: string, sessionId: string) => void;
   setBubbleMessages: (id: string, updater: (messages: Message[]) => Message[]) => void;
+  setBubbleWorkspace: (id: string, workspace: string) => void;
 };
 
 export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
@@ -212,6 +213,12 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, messages: updater(b.messages), updatedAt: Date.now() } : b));
   }, []);
 
+  const setBubbleWorkspace = useCallback((id: string, workspace: string) => {
+    setBubbles((prev) => prev.map((b) =>
+      b.id === id ? { ...b, workspace, sessionId: null, updatedAt: Date.now() } : b,
+    ));
+  }, []);
+
   const activeBubble = bubbles.find((b) => b.id === activeBubbleId) ?? null;
 
   return {
@@ -228,5 +235,6 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     setBubbleStatus,
     setBubbleSessionId,
     setBubbleMessages,
+    setBubbleWorkspace,
   };
 }

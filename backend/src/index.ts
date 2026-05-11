@@ -8,6 +8,7 @@ import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
 import { listSkills } from './skills.js';
 import { addWorkspace, readStore as readWorkspaceStore, removeWorkspace } from './workspaces-store.js';
+import { runShell, ShellRequestSchema } from './shell.js';
 import { z } from 'zod';
 
 const authToken = getOrCreateToken();
@@ -99,6 +100,27 @@ app.delete('/workspaces', (req: Request, res: Response) => {
   if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
   removeWorkspace(parsed.data.path);
   res.json({ ok: true, workspaces: config.workspaces });
+});
+
+const shellConcurrency = { active: 0, max: 3 };
+
+app.post('/shell', async (req: Request, res: Response) => {
+  const parsed = ShellRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (shellConcurrency.active >= shellConcurrency.max) {
+    return res.status(429).json({ error: 'Demasiados comandos concurrentes' });
+  }
+  shellConcurrency.active += 1;
+  try {
+    const result = await runShell(parsed.data);
+    res.json(result);
+  } catch (err) {
+    const status = (err as { httpStatus?: number }).httpStatus ?? 500;
+    const message = err instanceof Error ? err.message : 'Error de shell';
+    res.status(status).json({ error: message });
+  } finally {
+    shellConcurrency.active -= 1;
+  }
 });
 
 const ttsConcurrency = { active: 0, max: 2 };

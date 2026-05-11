@@ -19,6 +19,9 @@ export default defineConfig({
       '/health': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/info': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/tts': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/skills': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/workspaces': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/shell': { target: 'http://127.0.0.1:7000', changeOrigin: false },
     },
   },
 });

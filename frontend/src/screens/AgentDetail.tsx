@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { apiFetch } from '@/lib/api';
 import { useTokens } from '@/design/theme';
 import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel,
@@ -386,48 +387,249 @@ function EmptyChat({ title }: { title: string }) {
   );
 }
 
+type TermLine =
+  | { kind: 'system'; text: string; color?: string }
+  | { kind: 'prompt'; cwd: string; command: string }
+  | { kind: 'stdout'; text: string }
+  | { kind: 'stderr'; text: string }
+  | { kind: 'meta'; text: string };
+
 function TerminalPanel({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
-  const lines: { c: string; t: string }[] = [];
-  lines.push({ c: t.text3, t: `eco-shell · ${bubble.workspace || '/tmp/eco-test'}` });
-  lines.push({ c: t.accent, t: `◆ Sesión: ${bubble.title}` });
-  lines.push({ c: t.text2, t: '' });
-  for (const m of bubble.messages) {
-    for (const tc of m.toolCalls ?? []) {
-      const cmd = (tc.input as { command?: unknown }).command;
-      if (tc.name === 'Bash' && typeof cmd === 'string') {
-        lines.push({ c: t.text2, t: `$ ${cmd}` });
-        if (tc.output) {
-          for (const line of tc.output.split('\n').slice(0, 8)) {
-            lines.push({ c: tc.status === 'success' ? t.text1 : t.err, t: line });
-          }
-        }
-      } else if (tc.name) {
-        lines.push({ c: t.text2, t: `→ ${tc.name} ${summarizeInput(tc.input)}` });
+  const [lines, setLines] = useState<TermLine[]>(() => [
+    { kind: 'system', text: `eco-shell · ${bubble.workspace || '(sin workspace)'}` },
+    { kind: 'system', text: `◆ Sesión: ${bubble.title} · escribí 'help' para ayuda` },
+  ]);
+  const [cwd, setCwd] = useState(bubble.workspace || '');
+  const [command, setCommand] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [lines]);
+
+  useEffect(() => {
+    if (bubble.workspace && !cwd) setCwd(bubble.workspace);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bubble.workspace]);
+
+  const cwdLabel = useMemo(() => {
+    if (!bubble.workspace) return cwd;
+    if (cwd === bubble.workspace) return '.';
+    if (cwd.startsWith(bubble.workspace + '/')) return cwd.slice(bubble.workspace.length + 1);
+    return cwd;
+  }, [cwd, bubble.workspace]);
+
+  async function exec(rawCmd: string) {
+    const trimmed = rawCmd.trim();
+    if (!trimmed) return;
+
+    // history
+    setHistory((h) => [...h, trimmed].slice(-100));
+    setHistoryIdx(-1);
+
+    // builtins
+    if (trimmed === 'clear' || trimmed === 'cls') {
+      setLines([]);
+      return;
+    }
+    if (trimmed === 'help') {
+      pushLines([
+        { kind: 'prompt', cwd: cwdLabel, command: trimmed },
+        { kind: 'stdout', text: [
+          'Comandos disponibles:',
+          '  clear, cls       — limpia la terminal',
+          '  cd <ruta>        — cambia el directorio (sin salir del workspace)',
+          '  pwd              — muestra el directorio actual',
+          '  help             — esta ayuda',
+          '  <cualquier otro> — se ejecuta en shell con timeout 30s',
+        ].join('\n') },
+      ]);
+      return;
+    }
+    if (trimmed === 'pwd') {
+      pushLines([
+        { kind: 'prompt', cwd: cwdLabel, command: trimmed },
+        { kind: 'stdout', text: cwd },
+      ]);
+      return;
+    }
+    if (trimmed.startsWith('cd ') || trimmed === 'cd') {
+      const target = trimmed === 'cd' ? bubble.workspace : trimmed.slice(3).trim();
+      if (!target) return;
+      const newCwd = resolveLikePosix(cwd, target);
+      if (!bubble.workspace || (newCwd !== bubble.workspace && !newCwd.startsWith(bubble.workspace + '/'))) {
+        pushLines([
+          { kind: 'prompt', cwd: cwdLabel, command: trimmed },
+          { kind: 'stderr', text: `cd: ${target}: fuera del workspace` },
+        ]);
+        return;
       }
+      setCwd(newCwd);
+      pushLines([{ kind: 'prompt', cwd: cwdLabel, command: trimmed }]);
+      return;
+    }
+
+    pushLines([{ kind: 'prompt', cwd: cwdLabel, command: trimmed }]);
+    setBusy(true);
+    try {
+      const res = await apiFetch('/shell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: trimmed, cwd, workspace: bubble.workspace }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        pushLines([{ kind: 'stderr', text: data.error ?? `HTTP ${res.status}` }]);
+        return;
+      }
+      const result = data as { stdout: string; stderr: string; exitCode: number | null; truncated: boolean; durationMs: number };
+      if (result.stdout) pushLines([{ kind: 'stdout', text: result.stdout.replace(/\n$/, '') }]);
+      if (result.stderr) pushLines([{ kind: 'stderr', text: result.stderr.replace(/\n$/, '') }]);
+      const meta: string[] = [];
+      if (result.exitCode !== 0 && result.exitCode !== null) meta.push(`exit ${result.exitCode}`);
+      if (result.truncated) meta.push('output truncado');
+      meta.push(`${result.durationMs}ms`);
+      pushLines([{ kind: 'meta', text: meta.join(' · ') }]);
+    } catch (e) {
+      pushLines([{ kind: 'stderr', text: e instanceof Error ? e.message : 'Error' }]);
+    } finally {
+      setBusy(false);
     }
   }
-  if (lines.length <= 3) {
-    lines.push({ c: t.text3, t: 'Aún no hay actividad de terminal en esta burbuja.' });
+
+  function pushLines(more: TermLine[]) {
+    setLines((prev) => [...prev, ...more]);
   }
+
+  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' && !busy) {
+      e.preventDefault();
+      const v = command;
+      setCommand('');
+      void exec(v);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (history.length === 0) return;
+      const next = historyIdx === -1 ? history.length - 1 : Math.max(0, historyIdx - 1);
+      setHistoryIdx(next);
+      setCommand(history[next] ?? '');
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIdx === -1) return;
+      const next = historyIdx + 1;
+      if (next >= history.length) {
+        setHistoryIdx(-1);
+        setCommand('');
+      } else {
+        setHistoryIdx(next);
+        setCommand(history[next] ?? '');
+      }
+    } else if (e.key === 'l' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      setLines([]);
+    }
+  }
+
   return (
     <div style={{
-      flex: 1, overflow: 'auto', padding: '20px 24px',
-      fontFamily: t.fontMono, fontSize: 12.5, lineHeight: 1.65,
+      flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
       background: t.bg0,
     }}>
-      {lines.map((l, i) => (
-        <div key={i} style={{ color: l.c, whiteSpace: 'pre-wrap' }}>{l.t || ' '}</div>
-      ))}
-      <div style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>
-        <span style={{ color: t.accent, marginRight: 8 }}>›</span>
-        <span style={{
-          width: 7, height: 14, background: t.accent, display: 'inline-block',
-          animation: 'eco-shimmer 1.1s ease-in-out infinite',
-        }}/>
+      <div
+        ref={scrollRef}
+        onClick={() => inputRef.current?.focus()}
+        style={{
+          flex: 1, overflow: 'auto', padding: '20px 24px',
+          fontFamily: t.fontMono, fontSize: 12.5, lineHeight: 1.65,
+          cursor: 'text',
+        }}>
+        {lines.map((l, i) => <TermLineRow key={i} line={l}/>)}
+        {busy && (
+          <div style={{ color: t.accent, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%', background: t.accent,
+              animation: 'eco-shimmer 0.9s ease-in-out infinite',
+            }}/>
+            ejecutando…
+          </div>
+        )}
       </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (busy) return;
+          const v = command; setCommand('');
+          void exec(v);
+        }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '10px 24px', borderTop: `1px solid ${t.glassBorder}`,
+          background: t.bg1,
+          fontFamily: t.fontMono, fontSize: 13,
+        }}>
+        <span style={{ color: t.accent, flexShrink: 0 }}>{cwdLabel} ›</span>
+        <input
+          ref={inputRef}
+          autoFocus
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          onKeyDown={onKey}
+          disabled={busy}
+          placeholder={busy ? 'ejecutando…' : 'escribí un comando'}
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
+          style={{
+            flex: 1, background: 'transparent', border: 0, outline: 'none',
+            fontFamily: 'inherit', fontSize: 'inherit', color: t.text0,
+            padding: '4px 0', caretColor: t.accent,
+          }}/>
+      </form>
     </div>
   );
+}
+
+function TermLineRow({ line }: { line: TermLine }) {
+  const t = useTokens();
+  if (line.kind === 'prompt') {
+    return (
+      <div style={{ display: 'flex', gap: 6 }}>
+        <span style={{ color: t.accent }}>{line.cwd} ›</span>
+        <span style={{ color: t.text0 }}>{line.command}</span>
+      </div>
+    );
+  }
+  if (line.kind === 'stderr') {
+    return <div style={{ color: t.err, whiteSpace: 'pre-wrap' }}>{line.text}</div>;
+  }
+  if (line.kind === 'meta') {
+    return <div style={{ color: t.text3, fontSize: 11, marginBottom: 6 }}>{line.text}</div>;
+  }
+  if (line.kind === 'system') {
+    return <div style={{ color: t.text3, whiteSpace: 'pre-wrap' }}>{line.text}</div>;
+  }
+  return <div style={{ color: t.text1, whiteSpace: 'pre-wrap' }}>{line.text || ' '}</div>;
+}
+
+function resolveLikePosix(cwd: string, target: string): string {
+  if (target.startsWith('/')) return normalizePosixPath(target);
+  return normalizePosixPath(cwd + '/' + target);
+}
+
+function normalizePosixPath(p: string): string {
+  const parts = p.split('/');
+  const out: string[] = [];
+  for (const s of parts) {
+    if (s === '' || s === '.') continue;
+    if (s === '..') out.pop();
+    else out.push(s);
+  }
+  return '/' + out.join('/');
 }
 
 function FilesPanel({ files }: { files: FileChange[] }) {

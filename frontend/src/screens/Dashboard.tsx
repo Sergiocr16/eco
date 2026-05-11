@@ -24,12 +24,14 @@ type Props = {
   onFocus: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onRemove: (id: string) => void;
+  onChangeWorkspace: (id: string, workspace: string) => void;
+  availableWorkspaces: string[];
   voiceError?: string | null;
 };
 
 export function Dashboard(props: Props) {
   const t = useTokens();
-  const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, interimText, voiceError } = props;
+  const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, availableWorkspaces, interimText, voiceError } = props;
   const [view, setView] = useState<'grid' | 'graph'>('grid');
 
   const active = bubbles.filter((b) => ['running', 'thinking', 'waiting'].includes(b.status as string));
@@ -39,7 +41,13 @@ export function Dashboard(props: Props) {
 
   return (
     <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
-      <DashboardRail bubbles={bubbles} activeBubbleId={activeBubbleId} onFocus={onFocus}/>
+      <DashboardRail
+        bubbles={bubbles}
+        activeBubbleId={activeBubbleId}
+        availableWorkspaces={availableWorkspaces}
+        onFocus={onFocus}
+        onOpenAgent={onOpenAgent}
+      />
 
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column',
@@ -96,9 +104,11 @@ export function Dashboard(props: Props) {
               <AgentBubble
                 key={b.id}
                 bubble={b}
+                workspaces={availableWorkspaces}
                 onClick={() => onOpenAgent(b.id)}
                 onRename={(title) => onRename(b.id, title)}
                 onRemove={() => onRemove(b.id)}
+                onChangeWorkspace={(ws) => onChangeWorkspace(b.id, ws)}
               />
             ))}
             <NewAgentCard onCreate={onCreateAgent}/>
@@ -195,12 +205,14 @@ function VoiceOrb({ state, onClick }: { state: VoiceState; onClick: () => void }
 }
 
 function AgentBubble({
-  bubble, onClick, onRename, onRemove,
+  bubble, workspaces, onClick, onRename, onRemove, onChangeWorkspace,
 }: {
   bubble: Bubble;
+  workspaces: string[];
   onClick: () => void;
   onRename: (title: string) => void;
   onRemove: () => void;
+  onChangeWorkspace: (ws: string) => void;
 }) {
   const t = useTokens();
   const [hover, setHover] = useState(false);
@@ -213,7 +225,6 @@ function AgentBubble({
   const lastText = lastMsg?.text || 'Sin mensajes aún';
   const minutesAgo = Math.max(1, Math.round((Date.now() - bubble.updatedAt) / 60000));
   const tStr = minutesAgo < 60 ? `${minutesAgo}m` : `${Math.round(minutesAgo / 60)}h`;
-  const workspaceLabel = (bubble.workspace || '').split('/').filter(Boolean).slice(-2).join('/');
 
   useEffect(() => { setDraft(bubble.title); }, [bubble.title]);
 
@@ -315,10 +326,11 @@ function AgentBubble({
       }}>{lastText}</div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto' }}>
-        <span style={{
-          flex: 1, fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{workspaceLabel || '—'}</span>
+        <WorkspaceChip
+          workspace={bubble.workspace}
+          workspaces={workspaces}
+          onChange={onChangeWorkspace}
+        />
         <div style={{ display: 'flex', gap: 2 }}>
           {state === 'running' || state === 'thinking' ? (
             <IconBtn icon={IconPause} size={26} title="Pausar"/>
@@ -435,6 +447,74 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
       <div style={{ fontSize: 11, color: t.text3 }}>
         Click para nombrarla o decí <span style={{ color: t.text1 }}>"Eco, abrí una burbuja"</span>
       </div>
+    </div>
+  );
+}
+
+function WorkspaceChip({
+  workspace, workspaces, onChange,
+}: {
+  workspace: string;
+  workspaces: string[];
+  onChange: (ws: string) => void;
+}) {
+  const t = useTokens();
+  const [open, setOpen] = useState(false);
+  const label = workspace
+    ? workspace.split('/').filter(Boolean).slice(-2).join('/')
+    : 'sin carpeta';
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener('click', close, { once: true });
+    return () => document.removeEventListener('click', close);
+  }, [open]);
+  return (
+    <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        title={workspace || 'Asignar carpeta'}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          background: t.bg3, border: `1px solid ${t.glassBorder}`,
+          borderRadius: 999, padding: '4px 10px',
+          fontFamily: t.fontMono, fontSize: 10.5, color: workspace ? t.text1 : t.text3,
+          cursor: 'pointer', maxWidth: '100%', minWidth: 0,
+        }}>
+        <IconFolder size={10}/>
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {label}
+        </span>
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute', bottom: '110%', left: 0, zIndex: 30,
+            minWidth: 240, maxWidth: 320, padding: 4,
+            background: t.bg1, border: `1px solid ${t.glassBorder}`,
+            borderRadius: 12, boxShadow: t.shadowLg,
+            display: 'flex', flexDirection: 'column',
+          }}>
+          {workspaces.length === 0 ? (
+            <div style={{ padding: 10, fontSize: 11.5, color: t.text3 }}>
+              Sin workspaces. Agregalos en Ajustes → Carpetas.
+            </div>
+          ) : workspaces.map((ws) => (
+            <button
+              key={ws} type="button"
+              onClick={() => { onChange(ws); setOpen(false); }}
+              style={{
+                ...menuItemStyle(t), fontFamily: t.fontMono, fontSize: 11.5,
+                color: ws === workspace ? t.accent : t.text1,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+              <IconFolder size={11}/> {ws}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -678,15 +758,22 @@ function CommandBar({
 }
 
 function DashboardRail({
-  bubbles, activeBubbleId, onFocus,
+  bubbles, activeBubbleId, availableWorkspaces, onFocus, onOpenAgent,
 }: {
   bubbles: Bubble[];
   activeBubbleId: string | null;
+  availableWorkspaces: string[];
   onFocus: (id: string) => void;
+  onOpenAgent: (id: string) => void;
 }) {
   const t = useTokens();
   const recent = [...bubbles].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
-  const folders = Array.from(new Set(bubbles.map((b) => b.workspace).filter(Boolean)));
+  // Combinar carpetas que tienen burbujas con todas las disponibles
+  const usedFolders = new Set(bubbles.map((b) => b.workspace).filter(Boolean));
+  const folders = Array.from(new Set([
+    ...Array.from(usedFolders),
+    ...availableWorkspaces.filter((w) => !usedFolders.has(w)),
+  ]));
 
   return (
     <div style={{
@@ -712,9 +799,20 @@ function DashboardRail({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {folders.length === 0 ? (
             <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>Sin carpetas seleccionadas.</div>
-          ) : folders.map((f) => (
-            <FolderRow key={f} path={f}/>
-          ))}
+          ) : folders.map((f) => {
+            const inFolder = bubbles.filter((b) => b.workspace === f);
+            return (
+              <FolderRow
+                key={f}
+                path={f}
+                count={inFolder.length}
+                onClick={() => {
+                  const target = inFolder.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+                  if (target) onOpenAgent(target.id);
+                }}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -770,24 +868,35 @@ function RecentRow({ bubble, active, onClick }: { bubble: Bubble; active: boolea
   );
 }
 
-function FolderRow({ path }: { path: string }) {
+function FolderRow({ path, count, onClick }: { path: string; count: number; onClick: () => void }) {
   const t = useTokens();
   const [h, setH] = useState(false);
+  const empty = count === 0;
   return (
     <div
+      onClick={empty ? undefined : onClick}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      title={empty ? `${path} · sin burbujas` : `${path} · abrir burbuja más reciente`}
       style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
-        background: h ? t.bg3 : 'transparent',
+        padding: '8px 10px', borderRadius: 10,
+        cursor: empty ? 'default' : 'pointer',
+        background: !empty && h ? t.bg3 : 'transparent',
+        opacity: empty ? 0.55 : 1,
       }}>
-      <div style={{ color: t.accent }}>
+      <div style={{ color: count > 0 ? t.accent : t.text2 }}>
         <IconFolder size={14}/>
       </div>
       <span style={{
         flex: 1, fontFamily: t.fontMono, fontSize: 11.5, color: t.text1,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{path}</span>
+      {count > 0 && (
+        <span style={{
+          padding: '1px 6px', background: t.accentFaint, color: t.accent,
+          borderRadius: 999, fontSize: 10, fontWeight: 500,
+        }}>{count}</span>
+      )}
     </div>
   );
 }

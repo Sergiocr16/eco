@@ -10,6 +10,7 @@ import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
 import { useEcoSocket } from './hooks/useEcoSocket';
+import { useWorkspaces } from './hooks/useWorkspaces';
 import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
 
 const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
@@ -28,7 +29,9 @@ function Shell() {
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
 
-  const bubbles = useBubbles('');
+  const workspacesHook = useWorkspaces();
+  const defaultWs = workspacesHook.list.workspaces[0] ?? '';
+  const bubbles = useBubbles(defaultWs);
   const tts = useTTS();
   const lastSpokenRef = useRef<string | null>(null);
 
@@ -242,6 +245,8 @@ function Shell() {
                     onFocus={(id) => bubbles.focusBubble(id)}
                     onRename={(id, title) => bubbles.renameBubble(id, title)}
                     onRemove={(id) => bubbles.removeBubble(id)}
+                    onChangeWorkspace={(id, ws) => bubbles.setBubbleWorkspace(id, ws)}
+                    availableWorkspaces={workspacesHook.list.workspaces}
                   />
                 )}
               </div>
