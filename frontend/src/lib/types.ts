@@ -1,5 +1,7 @@
 export type EcoStatus = 'idle' | 'listening' | 'thinking' | 'executing' | 'speaking' | 'error';
 
+export type VoiceState = 'idle' | 'listening' | 'thinking' | 'executing' | 'speaking';
+
 export type ChatRole = 'user' | 'assistant';
 
 export type ToolCall = {
@@ -25,7 +27,7 @@ export type Workspace = {
 
 export type SocketStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-export type BubbleStatus = 'idle' | 'thinking' | 'executing';
+export type BubbleStatus = 'idle' | 'pending' | 'running' | 'waiting' | 'paused' | 'done' | 'error' | 'thinking' | 'executing';
 
 export type Bubble = {
   id: string;

@@ -1,26 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'motion/react';
-import { GradientMesh } from './components/GradientMesh';
-import { StatusOrb } from './components/StatusOrb';
-import { BubbleWorkspace } from './components/BubbleWorkspace';
-import { InputBar } from './components/InputBar';
-import { SettingsPanel } from './components/SettingsPanel';
+import { useEffect, useRef, useState } from 'react';
+import { ThemeProvider, useTokens } from './design/theme';
+import { MacWindow } from './components/MacWindow';
+import { AppSidebar, type Screen } from './components/AppSidebar';
+import { Dashboard } from './screens/Dashboard';
+import { AgentDetail } from './screens/AgentDetail';
+import { Settings } from './screens/Settings';
+import { FileExplorer } from './screens/FileExplorer';
 import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
 import { useEcoSocket } from './hooks/useEcoSocket';
-import { useSkills } from './hooks/useSkills';
-import type { EcoStatus, Message, ToolCall } from './lib/types';
+import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
 
 const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
 const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
 
 export function App() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  return (
+    <ThemeProvider>
+      <Shell/>
+    </ThemeProvider>
+  );
+}
+
+function Shell() {
+  const t = useTokens();
+  const [screen, setScreen] = useState<Screen>('dashboard');
+  const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
 
   const bubbles = useBubbles('');
   const tts = useTTS();
-  const skillsHook = useSkills(bubbles.activeBubble?.workspace);
+  const lastSpokenRef = useRef<string | null>(null);
 
   const socket = useEcoSocket({
     url: BACKEND,
@@ -33,16 +43,11 @@ export function App() {
         bubbles.setBubbleMessages(bubbleId, (msgs) => {
           const idx = msgs.findIndex((m) => m.id === assistantMessageId);
           if (idx >= 0) {
-            return msgs.map((m, i) =>
-              i === idx ? { ...m, text: m.text + text } : m,
-            );
+            return msgs.map((m, i) => i === idx ? { ...m, text: m.text + text } : m);
           }
           const newMsg: Message = {
             id: assistantMessageId,
-            role: 'assistant',
-            text,
-            toolCalls: [],
-            createdAt: Date.now(),
+            role: 'assistant', text, toolCalls: [], createdAt: Date.now(),
           };
           return [...msgs, newMsg];
         });
@@ -54,11 +59,8 @@ export function App() {
             return msgs.map((m, i) => i === idx ? { ...m, toolCalls: [...(m.toolCalls ?? []), toolCall] } : m);
           }
           const newMsg: Message = {
-            id: assistantMessageId,
-            role: 'assistant',
-            text: '',
-            toolCalls: [toolCall],
-            createdAt: Date.now(),
+            id: assistantMessageId, role: 'assistant', text: '',
+            toolCalls: [toolCall], createdAt: Date.now(),
           };
           return [...msgs, newMsg];
         });
@@ -67,24 +69,22 @@ export function App() {
         bubbles.setBubbleMessages(bubbleId, (msgs) =>
           msgs.map((m) => ({
             ...m,
-            toolCalls: m.toolCalls?.map((t: ToolCall) =>
-              t.id === toolUseId ? { ...t, output, status } : t,
+            toolCalls: m.toolCalls?.map((tc: ToolCall) =>
+              tc.id === toolUseId ? { ...tc, output, status } : tc,
             ),
           })),
         );
       },
       onThinkingChange: (bubbleId, thinking) => {
-        bubbles.setBubbleStatus(bubbleId, thinking ? 'thinking' : 'idle');
+        const status: BubbleStatus = thinking ? 'thinking' : 'idle';
+        bubbles.setBubbleStatus(bubbleId, status);
       },
       onExecutingChange: (bubbleId, executing) => {
-        bubbles.setBubbleStatus(bubbleId, executing ? 'executing' : 'idle');
+        const status: BubbleStatus = executing ? 'executing' : 'idle';
+        bubbles.setBubbleStatus(bubbleId, status);
       },
-      onDone: (bubbleId) => {
-        bubbles.setBubbleStatus(bubbleId, 'idle');
-      },
-      onError: (_bubbleId, _message) => {
-        // ya manejado en error state del socket
-      },
+      onDone: (bubbleId) => bubbles.setBubbleStatus(bubbleId, 'idle'),
+      onError: () => { /* ya manejado en socket.error */ },
       onClientAction: (sourceBubbleId, action) => {
         if (action.kind === 'open_bubble') {
           bubbles.createBubble({ title: action.title, focus: action.focus });
@@ -97,58 +97,72 @@ export function App() {
     },
   });
 
-  const voice = useVoice({ language: 'es-419', onCommand: handleVoiceCommand });
+  const voice = useVoice({
+    language: 'es-419',
+    onCommand: (text: string) => {
+      const target = detailBubbleId || bubbles.activeBubbleId;
+      if (!target) return;
+      sendTo(target, text);
+    },
+  });
 
-  const listening = voice.state === 'watching' || voice.state === 'capturing';
-  const activeBubble = bubbles.activeBubble;
-
-  const lastSpokenRef = useRef<string | null>(null);
-
-  const status: EcoStatus = useMemo(() => {
-    if (socket.status === 'error') return 'error';
-    if (voice.state === 'capturing') return 'listening';
-    if (activeBubble?.status === 'executing') return 'executing';
-    if (activeBubble?.status === 'thinking') return 'thinking';
-    if (tts.speaking) return 'speaking';
-    return 'idle';
-  }, [socket.status, voice.state, activeBubble?.status, tts.speaking]);
-
-  useEffect(() => {
-    if (!tts.enabled) return;
-    if (!activeBubble) return;
-    if (activeBubble.status !== 'idle') return; // esperar que termine
-    const last = activeBubble.messages[activeBubble.messages.length - 1];
-    if (!last || last.role !== 'assistant' || !last.text) return;
-    const key = `${activeBubble.id}:${last.id}`;
-    if (lastSpokenRef.current === key) return;
-    lastSpokenRef.current = key;
-    tts.speak(last.text);
-  }, [activeBubble, tts]);
-
-  function handleVoiceCommand(text: string) {
-    handleSend(text);
-  }
-
-  function handleSend(text: string) {
-    if (!activeBubble) return;
-    appendAndSend(activeBubble.id, text);
-  }
-
-  function appendAndSend(bubbleId: string, text: string) {
+  function sendTo(bubbleId: string, text: string) {
     const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
     if (!bubble) return;
     bubbles.appendMessage(bubbleId, {
       id: `u_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      role: 'user',
-      text,
-      createdAt: Date.now(),
+      role: 'user', text, createdAt: Date.now(),
     });
     socket.send({
-      bubbleId,
-      text,
+      bubbleId, text,
       workspace: bubble.workspace || undefined,
       resumeSessionId: bubble.sessionId,
     });
+  }
+
+  const detailBubble: Bubble | null = detailBubbleId
+    ? bubbles.bubbles.find((b) => b.id === detailBubbleId) ?? null
+    : null;
+
+  // TTS automático del último mensaje del assistant cuando termina
+  useEffect(() => {
+    if (!tts.enabled) return;
+    const focusBubble = detailBubble ?? bubbles.activeBubble;
+    if (!focusBubble) return;
+    if (focusBubble.status !== 'idle') return;
+    const last = focusBubble.messages[focusBubble.messages.length - 1];
+    if (!last || last.role !== 'assistant' || !last.text) return;
+    const key = `${focusBubble.id}:${last.id}`;
+    if (lastSpokenRef.current === key) return;
+    lastSpokenRef.current = key;
+    tts.speak(last.text);
+  }, [detailBubble, bubbles.activeBubble, tts]);
+
+  // Voice state derivado para el orbe
+  const focusBubble = detailBubble ?? bubbles.activeBubble;
+  const voiceStateForOrb: VoiceState = (() => {
+    if (voice.state === 'capturing') return 'listening';
+    if (focusBubble?.status === 'executing') return 'executing';
+    if (focusBubble?.status === 'thinking') return 'thinking';
+    if (tts.speaking) return 'speaking';
+    if (voice.state === 'watching') return 'listening';
+    return 'idle';
+  })();
+
+  function handleScreenChange(s: Screen) {
+    if (s === 'dashboard') setDetailBubbleId(null);
+    setScreen(s);
+  }
+
+  function handleOpenAgent(id: string) {
+    setDetailBubbleId(id);
+    bubbles.focusBubble(id);
+    setScreen('detail');
+  }
+
+  function handleBackFromDetail() {
+    setDetailBubbleId(null);
+    setScreen('dashboard');
   }
 
   function handleMicToggle() {
@@ -156,117 +170,159 @@ export function App() {
     else voice.stop();
   }
 
+  function handleDashboardSend(text: string) {
+    if (!bubbles.activeBubble) {
+      const fresh = bubbles.createBubble({ focus: true });
+      sendTo(fresh.id, text);
+    } else {
+      sendTo(bubbles.activeBubble.id, text);
+    }
+  }
+
+  function handleAgentDetailSend(text: string) {
+    if (!detailBubbleId) return;
+    sendTo(detailBubbleId, text);
+  }
+
+  const activeCount = bubbles.bubbles.filter((b) =>
+    ['running', 'thinking', 'executing', 'waiting'].includes(b.status as string),
+  ).length;
+
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[var(--color-eco-bg-deep)]">
-      <GradientMesh />
+    <>
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 0,
+        background: t.desktopBg,
+      }}/>
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 1,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}>
+        <div style={{ width: '100%', height: '100%', maxWidth: 1480, maxHeight: 940 }}>
+          <MacWindow title={titleFor(screen, detailBubble?.title)}>
+            <div style={{ display: 'flex', height: '100%' }}>
+              <AppSidebar
+                screen={screen === 'detail' ? 'dashboard' : screen}
+                onScreenChange={handleScreenChange}
+                agentCount={activeCount}
+              />
+              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                <ScreenError error={socket.error}/>
+                {screen === 'detail' && detailBubble ? (
+                  <AgentDetail
+                    bubble={detailBubble}
+                    onBack={handleBackFromDetail}
+                    onSend={handleAgentDetailSend}
+                  />
+                ) : screen === 'files' ? (
+                  <FileExplorer bubbles={bubbles.bubbles}/>
+                ) : screen === 'settings' ? (
+                  <Settings/>
+                ) : screen === 'history' ? (
+                  <HistoryScreen bubbles={bubbles.bubbles} onOpen={handleOpenAgent}/>
+                ) : (
+                  <Dashboard
+                    bubbles={bubbles.bubbles}
+                    activeBubbleId={bubbles.activeBubbleId}
+                    voiceState={voiceStateForOrb}
+                    listening={voice.state === 'watching' || voice.state === 'capturing'}
+                    interimText={voice.state === 'capturing' ? voice.transcript : ''}
+                    voiceError={voice.error}
+                    onSend={handleDashboardSend}
+                    onMicToggle={handleMicToggle}
+                    onOpenAgent={handleOpenAgent}
+                    onCreateAgent={() => {
+                      const fresh = bubbles.createBubble({ focus: true });
+                      handleOpenAgent(fresh.id);
+                    }}
+                    onFocus={(id) => bubbles.focusBubble(id)}
+                  />
+                )}
+              </div>
+            </div>
+          </MacWindow>
+        </div>
+      </div>
+    </>
+  );
+}
 
-      {/* Brand + connection */}
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-        className="absolute top-5 left-7 z-30 select-none flex items-baseline gap-3"
-      >
-        <span className="text-display text-[15px] text-eco-text/80" style={{ letterSpacing: '-0.02em' }}>
-          Eco
-        </span>
-        <span className="text-[10px] text-eco-text-faint font-mono tracking-wider uppercase">v0.1</span>
-        <ConnectionPill status={socket.status} />
-      </motion.div>
+function titleFor(screen: Screen, detailTitle?: string): string {
+  if (screen === 'detail' && detailTitle) return `Eco — ${detailTitle}`;
+  if (screen === 'files') return 'Eco — Archivos';
+  if (screen === 'history') return 'Eco — Historial';
+  if (screen === 'settings') return 'Eco — Ajustes';
+  return 'Eco — Centro de control';
+}
 
-      {socket.error && (
-        <div className="absolute top-5 right-7 z-30 glass px-3 py-2 rounded-xl text-[12px] text-eco-text-muted max-w-sm">
-          {socket.error}
+function ScreenError({ error }: { error: string | null }) {
+  const t = useTokens();
+  if (!error) return null;
+  return (
+    <div style={{
+      position: 'absolute', top: 12, right: 24, zIndex: 30,
+      background: `color-mix(in oklch, ${t.err} 14%, ${t.bg1})`,
+      border: `1px solid color-mix(in oklch, ${t.err} 30%, transparent)`,
+      color: t.err, padding: '8px 12px', borderRadius: 10,
+      fontSize: 12, fontFamily: t.fontSans,
+    }}>{error}</div>
+  );
+}
+
+function HistoryScreen({ bubbles, onOpen }: { bubbles: Bubble[]; onOpen: (id: string) => void }) {
+  const t = useTokens();
+  const allMsgs: Array<{ bubble: Bubble; msg: Message }> = [];
+  for (const b of bubbles) {
+    for (const m of b.messages) allMsgs.push({ bubble: b, msg: m });
+  }
+  allMsgs.sort((a, b) => b.msg.createdAt - a.msg.createdAt);
+  return (
+    <div style={{ padding: '28px 32px', overflow: 'auto', height: '100%' }}>
+      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
+        Historial
+      </h2>
+      <p style={{ margin: '4px 0 22px', fontSize: 13, color: t.text2 }}>
+        Mensajes de todas las burbujas, ordenados por fecha.
+      </p>
+      {allMsgs.length === 0 ? (
+        <div style={{ fontSize: 13, color: t.text2, padding: 24 }}>Sin historial todavía.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {allMsgs.slice(0, 100).map(({ bubble, msg }) => (
+            <button
+              key={`${bubble.id}-${msg.id}`} type="button"
+              onClick={() => onOpen(bubble.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '12px 14px', background: t.bg2, border: `1px solid ${t.glassBorder}`,
+                borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+              }}>
+              <span style={{
+                fontFamily: t.fontMono, fontSize: 11, color: t.text2,
+                width: 50, flexShrink: 0,
+              }}>{relTime(msg.createdAt)}</span>
+              <span style={{
+                fontFamily: t.fontSans, fontSize: 12.5, color: t.text1, fontWeight: 500,
+                width: 120, flexShrink: 0,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>{bubble.title}</span>
+              <span style={{
+                flex: 1, fontFamily: t.fontSans, fontSize: 12.5,
+                color: msg.role === 'user' ? t.text0 : t.text1,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>{msg.role === 'user' ? 'Tú: ' : '→ '}{msg.text.slice(0, 120)}</span>
+            </button>
+          ))}
         </div>
       )}
-
-      <div className="absolute top-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-        <StatusOrbCompact status={status} />
-      </div>
-
-      {/* Workspace: burbujas en stage manager */}
-      <div className="absolute inset-0 top-[80px] bottom-[100px]">
-        <BubbleWorkspace
-          bubbles={bubbles.bubbles}
-          activeBubble={activeBubble}
-          onFocus={bubbles.focusBubble}
-          onClose={bubbles.removeBubble}
-          onTogglePin={bubbles.togglePin}
-          onRename={bubbles.renameBubble}
-          onCreate={() => bubbles.createBubble({ focus: true })}
-        />
-      </div>
-
-      <InputBar
-        workspace={activeBubble?.workspace ?? ''}
-        listening={listening}
-        interimText={voice.state === 'capturing' ? voice.transcript : ''}
-        voiceError={voice.error}
-        voiceUnsupported={voice.state === 'unsupported'}
-        ttsEnabled={tts.enabled}
-        ttsSupported={tts.isSupported}
-        ttsSpeaking={tts.speaking}
-        skills={skillsHook.skills}
-        onTtsToggle={() => tts.setEnabled(!tts.enabled)}
-        onSettingsClick={() => setSettingsOpen(true)}
-        onSend={handleSend}
-        onMicToggle={handleMicToggle}
-        onWorkspaceClick={() => setSettingsOpen(true)}
-      />
-
-      <SettingsPanel
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        ttsEnabled={tts.enabled}
-        ttsSpeaking={tts.speaking}
-        ttsVoices={tts.voices}
-        ttsSelectedVoiceURI={tts.selectedVoiceURI}
-        onTtsToggle={() => tts.setEnabled(!tts.enabled)}
-        onTtsVoiceChange={tts.selectVoice}
-        onTtsTestVoice={(uri) => {
-          const previous = tts.selectedVoiceURI;
-          tts.selectVoice(uri);
-          const wasEnabled = tts.enabled;
-          if (!wasEnabled) tts.setEnabled(true);
-          setTimeout(() => tts.speak('Hola, soy Eco. Esta es mi voz.'), 50);
-          setTimeout(() => {
-            if (!wasEnabled) tts.setEnabled(false);
-            if (previous) tts.selectVoice(previous);
-          }, 4500);
-        }}
-        workspaces={[activeBubble?.workspace || '/tmp/eco-test']}
-      />
     </div>
   );
 }
 
-function StatusOrbCompact({ status }: { status: EcoStatus }) {
-  return (
-    <div className="pointer-events-auto">
-      <StatusOrb status={status} />
-    </div>
-  );
-}
-
-function ConnectionPill({ status }: { status: 'disconnected' | 'connecting' | 'connected' | 'error' }) {
-  const map = {
-    connected: { color: 'oklch(0.74 0.16 160)', label: 'conectado' },
-    connecting: { color: 'oklch(0.78 0.14 80)', label: 'conectando…' },
-    disconnected: { color: 'oklch(0.65 0.03 240)', label: 'sin conexión' },
-    error: { color: 'oklch(0.68 0.18 25)', label: 'error' },
-  } as const;
-  const v = map[status];
-  return (
-    <span className="flex items-center gap-1.5 text-[10px] text-eco-text-faint font-mono uppercase tracking-wider">
-      <span
-        className="h-1.5 w-1.5 rounded-full"
-        style={{
-          background: v.color,
-          animation: status === 'connecting' ? 'pulse-dot 1.4s ease-in-out infinite' : undefined,
-          boxShadow: status === 'connected' ? `0 0 8px ${v.color}` : undefined,
-        }}
-      />
-      {v.label}
-    </span>
-  );
+function relTime(ts: number): string {
+  const m = Math.max(1, Math.round((Date.now() - ts) / 60000));
+  if (m < 60) return `${m}m`;
+  if (m < 60 * 24) return `${Math.round(m / 60)}h`;
+  return `${Math.round(m / (60 * 24))}d`;
 }
