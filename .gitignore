@@ -24,3 +24,5 @@ listener/models/
 backend/piper/piper/
 backend/piper/voices/*.onnx
 backend/piper/*.tar.gz
+listener/.venv/
+listener/models/

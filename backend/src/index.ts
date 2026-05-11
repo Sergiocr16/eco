@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { createServer } from 'node:http';
 import { config } from './config.js';
-import { attachWebSocket } from './ws-server.js';
+import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
 import { listSkills } from './skills.js';
@@ -100,6 +100,19 @@ app.delete('/workspaces', (req: Request, res: Response) => {
   if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
   removeWorkspace(parsed.data.path);
   res.json({ ok: true, workspaces: config.workspaces });
+});
+
+const VoiceTranscribedSchema = z.object({
+  text: z.string().min(1).max(4000),
+});
+
+app.post('/voice/transcribed', (req: Request, res: Response) => {
+  const parsed = VoiceTranscribedSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  const text = parsed.data.text.trim();
+  if (!text) return res.status(400).json({ error: 'Texto vacío' });
+  broadcastServerMessage({ type: 'voice_transcribed', text, ts: Date.now() });
+  res.json({ ok: true });
 });
 
 const shellConcurrency = { active: 0, max: 3 };

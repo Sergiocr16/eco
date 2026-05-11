@@ -13,6 +13,12 @@ function hostAllowed(host: string | undefined): boolean {
   return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
 }
 
+let broadcastFn: ((msg: ServerMessage) => void) | null = null;
+
+export function broadcastServerMessage(msg: ServerMessage): void {
+  broadcastFn?.(msg);
+}
+
 export function attachWebSocket(httpServer: Server, authToken: string) {
   const wss = new WebSocketServer({
     server: httpServer,
@@ -42,6 +48,15 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       callback(true);
     },
   });
+
+  broadcastFn = (msg: ServerMessage) => {
+    const data = JSON.stringify(msg);
+    for (const client of wss.clients) {
+      if (client.readyState === client.OPEN) {
+        try { client.send(data); } catch { /* noop */ }
+      }
+    }
+  };
 
   wss.on('connection', (ws) => {
     let activeAbort: AbortController | null = null;

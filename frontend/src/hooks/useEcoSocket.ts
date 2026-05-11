@@ -8,7 +8,8 @@ type ServerMsg =
   | { type: 'session_started'; sessionId: string }
   | { type: 'done' }
   | { type: 'error'; code: string; message: string }
-  | { type: 'client_action'; action: ClientAction };
+  | { type: 'client_action'; action: ClientAction }
+  | { type: 'voice_transcribed'; text: string; ts: number };
 
 export type ClientAction =
   | { kind: 'open_bubble'; id: string; title: string; focus: boolean }
@@ -74,6 +75,7 @@ export type SocketHandlers = {
   onThinkingChange?: (bubbleId: string, thinking: boolean) => void;
   onExecutingChange?: (bubbleId: string, executing: boolean) => void;
   onClientAction?: (sourceBubbleId: string, action: ClientAction) => void;
+  onVoiceTranscribed?: (text: string) => void;
 };
 
 export type EcoSocket = {
@@ -197,6 +199,9 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         else if (msg.type === 'client_action') {
           const src = activeBubbleIdRef.current;
           if (src) handlersRef.current.onClientAction?.(src, msg.action);
+        }
+        else if (msg.type === 'voice_transcribed') {
+          handlersRef.current.onVoiceTranscribed?.(msg.text);
         }
         else if (msg.type === 'session_started') {
           // already handled in system init

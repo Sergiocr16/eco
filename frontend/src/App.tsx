@@ -11,6 +11,7 @@ import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
+import { parseMetaCommand, stripWakePrefix } from './lib/meta-commands';
 import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
 
 const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
@@ -97,16 +98,72 @@ function Shell() {
           bubbles.removeBubble(sourceBubbleId);
         }
       },
+      onVoiceTranscribed: (text) => handleIncomingVoiceText(text),
     },
   });
 
+  function handleIncomingVoiceText(text: string) {
+    const { isMeta, rest } = stripWakePrefix(text);
+    if (isMeta && rest) {
+      const action = parseMetaCommand(rest, bubbles.bubbles);
+      if (handleMetaAction(action, rest)) return;
+      // No matcheó comando meta — fallback: enviar a la burbuja activa con prefijo conservado
+      const target = detailBubbleId || bubbles.activeBubbleId;
+      if (target) sendTo(target, rest);
+      return;
+    }
+    // Sin wake — entrada directa a la burbuja activa
+    const target = detailBubbleId || bubbles.activeBubbleId;
+    if (target) sendTo(target, text);
+  }
+
+  function handleMetaAction(action: ReturnType<typeof parseMetaCommand>, originalText: string): boolean {
+    switch (action.kind) {
+      case 'goto_dashboard':
+      case 'list_bubbles':
+        setScreen('dashboard'); setDetailBubbleId(null); return true;
+      case 'goto_settings':
+        setScreen('settings'); setDetailBubbleId(null); return true;
+      case 'goto_files':
+        setScreen('files'); setDetailBubbleId(null); return true;
+      case 'goto_history':
+        setScreen('history'); setDetailBubbleId(null); return true;
+      case 'create_bubble': {
+        const fresh = bubbles.createBubble({ title: action.title, focus: true });
+        handleOpenAgent(fresh.id);
+        if (action.followUp) sendTo(fresh.id, action.followUp);
+        return true;
+      }
+      case 'rename_active': {
+        const target = detailBubbleId || bubbles.activeBubbleId;
+        if (target) bubbles.renameBubble(target, action.title);
+        return true;
+      }
+      case 'close_active': {
+        const target = detailBubbleId || bubbles.activeBubbleId;
+        if (target) {
+          bubbles.removeBubble(target);
+          setDetailBubbleId(null);
+          setScreen('dashboard');
+        }
+        return true;
+      }
+      case 'focus_bubble':
+        handleOpenAgent(action.bubbleId);
+        return true;
+      case 'help':
+        // No abre ninguna burbuja, sólo registra acción para el orbe
+        console.info('Meta: help', originalText);
+        return true;
+      case 'noop':
+      default:
+        return false;
+    }
+  }
+
   const voice = useVoice({
     language: 'es-419',
-    onCommand: (text: string) => {
-      const target = detailBubbleId || bubbles.activeBubbleId;
-      if (!target) return;
-      sendTo(target, text);
-    },
+    onCommand: (text: string) => handleIncomingVoiceText(`eco ${text}`),
   });
 
   function sendTo(bubbleId: string, text: string) {

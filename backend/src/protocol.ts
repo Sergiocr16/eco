@@ -25,4 +25,5 @@ export type ServerMessage =
   | { type: 'session_started'; sessionId: string }
   | { type: 'done' }
   | { type: 'error'; code: string; message: string }
-  | { type: 'client_action'; action: ClientAction };
+  | { type: 'client_action'; action: ClientAction }
+  | { type: 'voice_transcribed'; text: string; ts: number };
