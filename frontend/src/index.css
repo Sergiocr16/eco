@@ -1,0 +1,246 @@
+@import "tailwindcss";
+
+@theme {
+  /* Surface colors — deep nocturnal palette, never pure black */
+  --color-eco-bg: oklch(0.13 0.02 270);
+  --color-eco-bg-elevated: oklch(0.17 0.02 270);
+  --color-eco-bg-deep: oklch(0.08 0.015 280);
+
+  /* Glass tokens — translucent layers */
+  --color-eco-glass: rgb(255 255 255 / 0.045);
+  --color-eco-glass-strong: rgb(255 255 255 / 0.08);
+  --color-eco-glass-soft: rgb(255 255 255 / 0.025);
+  --color-eco-glass-border: rgb(255 255 255 / 0.09);
+  --color-eco-glass-highlight: rgb(255 255 255 / 0.16);
+
+  /* Text */
+  --color-eco-text: oklch(0.97 0.005 270);
+  --color-eco-text-muted: oklch(0.72 0.01 270);
+  --color-eco-text-faint: oklch(0.5 0.01 270);
+
+  /* Accents — Eco's "soul" */
+  --color-eco-accent: oklch(0.78 0.14 80);
+  --color-eco-accent-warm: oklch(0.74 0.16 60);
+  --color-eco-accent-cool: oklch(0.72 0.12 240);
+
+  /* Status colors */
+  --color-status-idle: oklch(0.65 0.03 240);
+  --color-status-listening: oklch(0.78 0.18 200);
+  --color-status-thinking: oklch(0.78 0.14 80);
+  --color-status-executing: oklch(0.74 0.16 160);
+  --color-status-error: oklch(0.68 0.18 25);
+
+  /* Mesh blob colors */
+  --color-mesh-1: oklch(0.5 0.2 280);
+  --color-mesh-2: oklch(0.55 0.18 220);
+  --color-mesh-3: oklch(0.6 0.16 80);
+  --color-mesh-4: oklch(0.48 0.18 320);
+
+  /* Bubbles */
+  --color-bubble-user: rgb(255 220 170 / 0.08);
+  --color-bubble-user-border: rgb(255 200 130 / 0.18);
+  --color-bubble-assistant: rgb(180 200 255 / 0.05);
+  --color-bubble-assistant-border: rgb(180 200 255 / 0.14);
+
+  /* Radii */
+  --radius-card: 1.25rem;
+  --radius-bubble: 1.5rem;
+  --radius-pill: 9999px;
+  --radius-sm: 0.625rem;
+
+  /* Fonts */
+  --font-display: "SF Pro Display", "Inter Display", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif;
+  --font-text: "SF Pro Text", "Inter", -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Menlo", "Consolas", monospace;
+
+  /* Easings — Apple-like */
+  --ease-glass: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-emphasis: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background: var(--color-eco-bg-deep);
+    color: var(--color-eco-text);
+    font-family: var(--font-text);
+    font-weight: 400;
+    overflow: hidden;
+    letter-spacing: -0.005em;
+  }
+
+  ::selection {
+    background: rgb(222 182 110 / 0.35);
+    color: var(--color-eco-text);
+  }
+
+  /* Subtle film grain for depth */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0.025;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+@layer utilities {
+  /* Liquid Glass material — soft, default for cards */
+  .glass {
+    background: var(--color-eco-glass);
+    backdrop-filter: blur(32px) saturate(160%);
+    -webkit-backdrop-filter: blur(32px) saturate(160%);
+    box-shadow:
+      inset 0 0 0 1px var(--color-eco-glass-border),
+      inset 0 1px 0 var(--color-eco-glass-highlight),
+      0 8px 32px -8px rgb(0 0 0 / 0.4),
+      0 2px 6px -2px rgb(0 0 0 / 0.3);
+  }
+
+  /* Stronger glass — for primary surfaces like InputBar */
+  .glass-strong {
+    background: var(--color-eco-glass-strong);
+    backdrop-filter: blur(44px) saturate(180%);
+    -webkit-backdrop-filter: blur(44px) saturate(180%);
+    box-shadow:
+      inset 0 0 0 1px var(--color-eco-glass-border),
+      inset 0 1px 0 var(--color-eco-glass-highlight),
+      0 -8px 48px -12px rgb(0 0 0 / 0.5),
+      0 -2px 12px -4px rgb(0 0 0 / 0.3);
+  }
+
+  /* Whisper glass — for tool call cards */
+  .glass-soft {
+    background: var(--color-eco-glass-soft);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.05),
+      inset 0 1px 0 rgb(255 255 255 / 0.08);
+  }
+
+  /* Bubbles */
+  .bubble-user {
+    background: var(--color-bubble-user);
+    backdrop-filter: blur(32px) saturate(170%);
+    -webkit-backdrop-filter: blur(32px) saturate(170%);
+    box-shadow:
+      inset 0 0 0 1px var(--color-bubble-user-border),
+      inset 0 1px 0 rgb(255 220 180 / 0.22),
+      0 8px 32px -10px rgb(0 0 0 / 0.4);
+  }
+
+  .bubble-assistant {
+    background: var(--color-bubble-assistant);
+    backdrop-filter: blur(32px) saturate(170%);
+    -webkit-backdrop-filter: blur(32px) saturate(170%);
+    box-shadow:
+      inset 0 0 0 1px var(--color-bubble-assistant-border),
+      inset 0 1px 0 rgb(200 220 255 / 0.18),
+      0 8px 32px -10px rgb(0 0 0 / 0.4);
+  }
+
+  /* Status glow — applied as outer shadow on orb */
+  .glow-listening {
+    box-shadow: 0 0 80px -8px var(--color-status-listening),
+      0 0 32px -4px var(--color-status-listening);
+  }
+  .glow-thinking {
+    box-shadow: 0 0 80px -8px var(--color-status-thinking),
+      0 0 32px -4px var(--color-status-thinking);
+  }
+  .glow-executing {
+    box-shadow: 0 0 80px -8px var(--color-status-executing),
+      0 0 32px -4px var(--color-status-executing);
+  }
+  .glow-idle {
+    box-shadow: 0 0 60px -10px var(--color-status-idle),
+      0 0 24px -6px var(--color-status-idle);
+  }
+
+  /* Typography helpers */
+  .text-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.022em;
+    font-weight: 500;
+  }
+
+  /* Scrollbar — invisible until hover */
+  .invisible-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+  .invisible-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .invisible-scroll::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.08);
+    border-radius: 9999px;
+    transition: background 0.3s;
+  }
+  .invisible-scroll:hover::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.18);
+  }
+}
+
+/* === Animations === */
+
+@keyframes breathing {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.04) rotate(180deg);
+    opacity: 1;
+  }
+}
+
+@keyframes drift-1 {
+  0%, 100% { transform: translate(0%, 0%) scale(1); }
+  33% { transform: translate(8%, -12%) scale(1.1); }
+  66% { transform: translate(-6%, 8%) scale(0.95); }
+}
+
+@keyframes drift-2 {
+  0%, 100% { transform: translate(0%, 0%) scale(1.05); }
+  50% { transform: translate(-10%, 14%) scale(0.92); }
+}
+
+@keyframes drift-3 {
+  0%, 100% { transform: translate(0%, 0%) scale(0.95); }
+  40% { transform: translate(12%, 10%) scale(1.1); }
+  80% { transform: translate(-8%, -6%) scale(1.02); }
+}
+
+@keyframes drift-4 {
+  0%, 100% { transform: translate(0%, 0%) scale(1); }
+  50% { transform: translate(6%, 6%) scale(1.08); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
