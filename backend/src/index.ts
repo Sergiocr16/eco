@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { config } from './config.js';
 import { attachWebSocket } from './ws-server.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
+import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
 
 const authToken = getOrCreateToken();
 
@@ -55,7 +56,45 @@ app.get('/info', (_req, res) => {
   res.json({
     workspaces: config.workspaces,
     model: config.model,
+    tts: {
+      piperAvailable: isPiperAvailable(),
+      voices: isPiperAvailable() ? listVoices() : [],
+    },
   });
+});
+
+app.get('/tts/voices', (_req, res) => {
+  if (!isPiperAvailable()) return res.status(503).json({ error: 'Piper no instalado' });
+  res.json({ voices: listVoices() });
+});
+
+const ttsConcurrency = { active: 0, max: 2 };
+
+app.post('/tts', async (req: Request, res: Response) => {
+  if (!isPiperAvailable()) return res.status(503).json({ error: 'Piper no instalado' });
+  const parsed = TTSRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (ttsConcurrency.active >= ttsConcurrency.max) {
+    return res.status(429).json({ error: 'Demasiadas síntesis concurrentes' });
+  }
+  ttsConcurrency.active += 1;
+  const controller = new AbortController();
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort();
+  });
+  try {
+    const wav = await synthesize(parsed.data, controller.signal);
+    res.setHeader('Content-Type', 'audio/wav');
+    res.setHeader('Content-Length', wav.length.toString());
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(wav);
+  } catch (err) {
+    const safe = err instanceof Error && /timeout/i.test(err.message) ? 'TTS timeout' : 'Error de síntesis';
+    console.error('[tts] error:', err instanceof Error ? err.message : err);
+    if (!res.headersSent) res.status(500).json({ error: safe });
+  } finally {
+    ttsConcurrency.active -= 1;
+  }
 });
 
 const server = createServer(app);

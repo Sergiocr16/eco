@@ -4,6 +4,8 @@ import { Mic, FolderOpen, ArrowUp, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { VoiceMenu } from './VoiceMenu';
 
+import type { UnifiedVoice } from '@/hooks/useTTS';
+
 type Props = {
   workspace: string;
   listening: boolean;
@@ -13,11 +15,11 @@ type Props = {
   ttsEnabled?: boolean;
   ttsSupported?: boolean;
   ttsSpeaking?: boolean;
-  ttsVoices?: SpeechSynthesisVoice[];
+  ttsVoices?: UnifiedVoice[];
   ttsSelectedVoiceURI?: string | null;
   onTtsToggle?: () => void;
-  onTtsVoiceChange?: (uri: string) => void;
-  onTtsTestVoice?: (uri: string) => void;
+  onTtsVoiceChange?: (id: string) => void;
+  onTtsTestVoice?: (id: string) => void;
   onSend: (text: string) => void;
   onMicToggle: () => void;
   onWorkspaceClick: () => void;

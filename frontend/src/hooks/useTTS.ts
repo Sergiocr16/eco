@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiFetch } from '@/lib/api';
 
-const STORAGE_KEY = 'eco.tts.enabled';
+const STORAGE_ENABLED = 'eco.tts.enabled';
+const STORAGE_VOICE = 'eco.tts.voice';
+
+export type UnifiedVoice = {
+  id: string;
+  name: string;
+  language: string;
+  kind: 'piper' | 'browser';
+  premium: boolean;
+};
 
 export type TTSHook = {
   enabled: boolean;
   speaking: boolean;
   isSupported: boolean;
-  voices: SpeechSynthesisVoice[];
+  piperAvailable: boolean;
+  voices: UnifiedVoice[];
   selectedVoiceURI: string | null;
   setEnabled: (v: boolean) => void;
   selectVoice: (uri: string) => void;
@@ -14,88 +25,194 @@ export type TTSHook = {
   cancel: () => void;
 };
 
-function pickDefaultSpanishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  if (voices.length === 0) return null;
-  const isEs = (v: SpeechSynthesisVoice) => v.lang?.toLowerCase().startsWith('es');
-  const isLocal = (v: SpeechSynthesisVoice) => v.localService === true;
-  const score = (v: SpeechSynthesisVoice) => {
-    let s = 0;
-    if (isEs(v)) s += 100;
-    if (isLocal(v)) s += 50;
-    if (/m[oó]nica|paulina|jorge|enhanced|premium|siri/i.test(v.name)) s += 30;
-    if (v.default) s += 5;
-    return s;
-  };
-  return [...voices].sort((a, b) => score(b) - score(a))[0] ?? null;
+type PiperVoice = {
+  id: string;
+  name: string;
+  language: string;
+  quality: string;
+  bytes: number;
+};
+
+const PREMIUM_HINT = /\(?(premium|enhanced|neural|siri)\)?/i;
+
+function loadEnabled(): boolean {
+  try { return window.localStorage.getItem(STORAGE_ENABLED) === '1'; } catch { return false; }
+}
+function loadVoice(): string | null {
+  try { return window.localStorage.getItem(STORAGE_VOICE); } catch { return null; }
+}
+
+async function fetchPiperVoices(): Promise<PiperVoice[]> {
+  try {
+    const res = await apiFetch('/tts/voices');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.voices) ? data.voices : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchTTS(text: string, voice: string): Promise<Blob | null> {
+  try {
+    const res = await apiFetch('/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice }),
+    });
+    if (!res.ok) return null;
+    return await res.blob();
+  } catch {
+    return null;
+  }
 }
 
 export function useTTS(): TTSHook {
-  const isSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  const [enabled, setEnabledState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage?.getItem(STORAGE_KEY) === '1';
-  });
-  const [speaking, setSpeaking] = useState(false);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const browserSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
+  const [enabled, setEnabledState] = useState<boolean>(loadEnabled);
+  const [speaking, setSpeaking] = useState(false);
+  const [piperVoices, setPiperVoices] = useState<PiperVoice[]>([]);
+  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | null>(loadVoice);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const reqIdRef = useRef(0);
+
+  // Load Piper voices once
   useEffect(() => {
-    if (!isSupported) return;
-    const sync = () => {
-      const v = window.speechSynthesis.getVoices();
-      setVoices(v);
-      setSelectedVoiceURI((current) => {
-        if (current && v.some((x) => x.voiceURI === current)) return current;
-        const pick = pickDefaultSpanishVoice(v);
-        return pick?.voiceURI ?? null;
-      });
-    };
+    fetchPiperVoices().then(setPiperVoices);
+  }, []);
+
+  // Subscribe to browser voices
+  useEffect(() => {
+    if (!browserSupported) return;
+    const sync = () => setBrowserVoices(window.speechSynthesis.getVoices());
     sync();
     window.speechSynthesis.addEventListener('voiceschanged', sync);
     return () => window.speechSynthesis.removeEventListener('voiceschanged', sync);
-  }, [isSupported]);
+  }, [browserSupported]);
+
+  const voices: UnifiedVoice[] = [
+    ...piperVoices.map((v) => ({
+      id: `piper:${v.id}`,
+      name: v.name,
+      language: v.language,
+      kind: 'piper' as const,
+      premium: true,
+    })),
+    ...browserVoices.map((v) => ({
+      id: `browser:${v.voiceURI}`,
+      name: v.name.replace(PREMIUM_HINT, '').trim(),
+      language: v.lang,
+      kind: 'browser' as const,
+      premium: PREMIUM_HINT.test(v.name),
+    })),
+  ];
+
+  // Pick a default if none selected
+  useEffect(() => {
+    if (selectedVoiceURI) {
+      const stillExists = voices.some((v) => v.id === selectedVoiceURI);
+      if (stillExists) return;
+    }
+    const isEs = (v: UnifiedVoice) => v.language?.toLowerCase().startsWith('es');
+    const sortByScore = (a: UnifiedVoice, b: UnifiedVoice) => {
+      let sA = 0, sB = 0;
+      if (a.kind === 'piper') sA += 200;
+      if (b.kind === 'piper') sB += 200;
+      if (isEs(a)) sA += 100;
+      if (isEs(b)) sB += 100;
+      if (a.premium) sA += 50;
+      if (b.premium) sB += 50;
+      return sB - sA;
+    };
+    const sorted = [...voices].sort(sortByScore);
+    const pick = sorted[0];
+    if (pick) {
+      setSelectedVoiceURI(pick.id);
+      try { window.localStorage.setItem(STORAGE_VOICE, pick.id); } catch { /* noop */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voices.length]);
 
   const setEnabled = useCallback((v: boolean) => {
     setEnabledState(v);
-    try { window.localStorage?.setItem(STORAGE_KEY, v ? '1' : '0'); } catch { /* noop */ }
-    if (!v && isSupported) window.speechSynthesis.cancel();
-  }, [isSupported]);
+    try { window.localStorage.setItem(STORAGE_ENABLED, v ? '1' : '0'); } catch { /* noop */ }
+    if (!v) {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      if (browserSupported) window.speechSynthesis.cancel();
+      setSpeaking(false);
+    }
+  }, [browserSupported]);
 
-  const selectVoice = useCallback((uri: string) => {
-    setSelectedVoiceURI(uri);
+  const selectVoice = useCallback((id: string) => {
+    setSelectedVoiceURI(id);
+    try { window.localStorage.setItem(STORAGE_VOICE, id); } catch { /* noop */ }
   }, []);
 
   const cancel = useCallback(() => {
-    if (!isSupported) return;
-    window.speechSynthesis.cancel();
+    audioRef.current?.pause();
+    audioRef.current = null;
+    if (browserSupported) window.speechSynthesis.cancel();
     setSpeaking(false);
-  }, [isSupported]);
+  }, [browserSupported]);
 
-  const speak = useCallback((text: string) => {
-    if (!isSupported || !enabled || !text.trim()) return;
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const voice = voices.find((v) => v.voiceURI === selectedVoiceURI);
-    if (voice) { u.voice = voice; u.lang = voice.lang; }
-    else { u.lang = 'es-419'; }
-    u.rate = 1.02;
-    u.pitch = 1.0;
-    u.volume = 1.0;
-    u.onstart = () => setSpeaking(true);
-    u.onend = () => setSpeaking(false);
-    u.onerror = () => setSpeaking(false);
-    utteranceRef.current = u;
-    synth.speak(u);
-  }, [enabled, isSupported, selectedVoiceURI, voices]);
+  const speak = useCallback(async (text: string) => {
+    if (!enabled || !text.trim() || !selectedVoiceURI) return;
 
-  useEffect(() => () => { if (isSupported) window.speechSynthesis.cancel(); }, [isSupported]);
+    const myReq = ++reqIdRef.current;
+    cancel();
+
+    const [kind, raw] = selectedVoiceURI.split(/:(.+)/, 2);
+    if (kind === 'piper' && raw) {
+      setSpeaking(true);
+      const blob = await fetchTTS(text, raw);
+      if (myReq !== reqIdRef.current) return; // user cambió mientras esperaba
+      if (!blob) {
+        setSpeaking(false);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        if (myReq === reqIdRef.current) setSpeaking(false);
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        if (myReq === reqIdRef.current) setSpeaking(false);
+        URL.revokeObjectURL(url);
+      };
+      audio.play().catch(() => {
+        setSpeaking(false);
+        URL.revokeObjectURL(url);
+      });
+      return;
+    }
+
+    if (kind === 'browser' && raw && browserSupported) {
+      const synth = window.speechSynthesis;
+      const voice = browserVoices.find((v) => v.voiceURI === raw);
+      const u = new SpeechSynthesisUtterance(text);
+      if (voice) { u.voice = voice; u.lang = voice.lang; }
+      else { u.lang = 'es-419'; }
+      u.rate = 1.02;
+      u.onstart = () => { if (myReq === reqIdRef.current) setSpeaking(true); };
+      u.onend = () => { if (myReq === reqIdRef.current) setSpeaking(false); };
+      u.onerror = () => { if (myReq === reqIdRef.current) setSpeaking(false); };
+      synth.speak(u);
+    }
+  }, [browserSupported, browserVoices, cancel, enabled, selectedVoiceURI]);
+
+  useEffect(() => () => { cancel(); }, [cancel]);
 
   return {
     enabled,
     speaking,
-    isSupported,
+    isSupported: browserSupported || piperVoices.length > 0,
+    piperAvailable: piperVoices.length > 0,
     voices,
     selectedVoiceURI,
     setEnabled,

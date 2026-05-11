@@ -1,63 +1,39 @@
 import { useMemo, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, Sparkles, Volume2 } from 'lucide-react';
+import { ChevronDown, Sparkles, Volume2, Cpu, Globe } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import type { UnifiedVoice } from '@/hooks/useTTS';
 
-const PREMIUM_HINT = /\(?(premium|enhanced|neural|siri)\)?/i;
 const SPANISH = /^es/i;
 
-type Voice = {
-  voiceURI: string;
-  name: string;
-  lang: string;
-  isPremium: boolean;
-};
-
 type Props = {
-  voices: SpeechSynthesisVoice[];
+  voices: UnifiedVoice[];
   selectedURI: string | null;
-  onSelect: (uri: string) => void;
-  onTestVoice: (uri: string) => void;
+  onSelect: (id: string) => void;
+  onTestVoice: (id: string) => void;
 };
-
-function classify(v: SpeechSynthesisVoice): Voice {
-  return {
-    voiceURI: v.voiceURI,
-    name: v.name,
-    lang: v.lang,
-    isPremium: PREMIUM_HINT.test(v.name),
-  };
-}
 
 export function VoiceMenu({ voices, selectedURI, onSelect, onTestVoice }: Props) {
   const [open, setOpen] = useState(false);
 
-  const { spanish, otherLang, hasPremiumSpanish } = useMemo(() => {
-    const classified = voices.map(classify);
-    const spanish = classified
-      .filter((v) => SPANISH.test(v.lang))
-      .sort((a, b) => {
-        if (a.isPremium && !b.isPremium) return -1;
-        if (!a.isPremium && b.isPremium) return 1;
-        return a.name.localeCompare(b.name);
-      });
-    const otherLang = classified
-      .filter((v) => !SPANISH.test(v.lang))
-      .sort((a, b) => {
-        if (a.isPremium && !b.isPremium) return -1;
-        if (!a.isPremium && b.isPremium) return 1;
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, 8);
+  const { piperEs, piperOther, browserEs, browserOther } = useMemo(() => {
+    const piper = voices.filter((v) => v.kind === 'piper');
+    const browser = voices.filter((v) => v.kind === 'browser');
+    const sortName = (a: UnifiedVoice, b: UnifiedVoice) => {
+      if (a.premium && !b.premium) return -1;
+      if (!a.premium && b.premium) return 1;
+      return a.name.localeCompare(b.name);
+    };
     return {
-      spanish,
-      otherLang,
-      hasPremiumSpanish: spanish.some((v) => v.isPremium),
+      piperEs: piper.filter((v) => SPANISH.test(v.language)).sort(sortName),
+      piperOther: piper.filter((v) => !SPANISH.test(v.language)).sort(sortName),
+      browserEs: browser.filter((v) => SPANISH.test(v.language)).sort(sortName),
+      browserOther: browser.filter((v) => !SPANISH.test(v.language)).sort(sortName).slice(0, 6),
     };
   }, [voices]);
 
-  const selected = voices.find((v) => v.voiceURI === selectedURI);
-  const label = selected?.name?.replace(PREMIUM_HINT, '').trim() ?? 'Voz';
+  const selected = voices.find((v) => v.id === selectedURI);
+  const label = selected?.name ?? 'Voz';
 
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
@@ -78,10 +54,13 @@ export function VoiceMenu({ voices, selectedURI, onSelect, onTestVoice }: Props)
         <DropdownMenu.Content
           align="end"
           sideOffset={8}
-          className="z-50 min-w-[280px] max-w-[360px] glass-strong rounded-[16px] p-1.5 overflow-hidden"
+          className="z-50 min-w-[300px] max-w-[380px] rounded-[16px] p-1.5 overflow-hidden"
           style={{
-            background: 'rgba(15, 15, 22, 0.85)',
+            background: 'rgba(15, 15, 22, 0.92)',
+            backdropFilter: 'blur(40px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(40px) saturate(180%)',
             border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 20px 60px -10px rgba(0,0,0,0.7)',
           }}
         >
           <div className="px-3 py-2 flex items-center gap-2 border-b border-white/[0.06] mb-1">
@@ -91,45 +70,49 @@ export function VoiceMenu({ voices, selectedURI, onSelect, onTestVoice }: Props)
             </span>
           </div>
 
-          {spanish.length > 0 ? (
-            <Section title="Español">
-              {spanish.map((v) => (
-                <Item
-                  key={v.voiceURI}
-                  voice={v}
-                  selected={v.voiceURI === selectedURI}
-                  onSelect={() => onSelect(v.voiceURI)}
-                  onTest={() => onTestVoice(v.voiceURI)}
-                />
-              ))}
-            </Section>
-          ) : (
-            <div className="px-3 py-3 text-[12px] text-eco-text-faint">
-              No hay voces en español disponibles.
-            </div>
-          )}
-
-          {otherLang.length > 0 && (
-            <Section title="Otras voces">
-              {otherLang.map((v) => (
-                <Item
-                  key={v.voiceURI}
-                  voice={v}
-                  selected={v.voiceURI === selectedURI}
-                  onSelect={() => onSelect(v.voiceURI)}
-                  onTest={() => onTestVoice(v.voiceURI)}
-                />
+          {piperEs.length > 0 && (
+            <Section title="Neural local" icon={<Cpu size={10} strokeWidth={2} />}>
+              {piperEs.map((v) => (
+                <Item key={v.id} voice={v} selected={v.id === selectedURI}
+                  onSelect={() => onSelect(v.id)} onTest={() => onTestVoice(v.id)} />
               ))}
             </Section>
           )}
 
-          {!hasPremiumSpanish && (
+          {piperOther.length > 0 && (
+            <Section title="Neural · otros idiomas" icon={<Cpu size={10} strokeWidth={2} />}>
+              {piperOther.map((v) => (
+                <Item key={v.id} voice={v} selected={v.id === selectedURI}
+                  onSelect={() => onSelect(v.id)} onTest={() => onTestVoice(v.id)} />
+              ))}
+            </Section>
+          )}
+
+          {browserEs.length > 0 && (
+            <Section title="Sistema · español" icon={<Globe size={10} strokeWidth={2} />}>
+              {browserEs.slice(0, 8).map((v) => (
+                <Item key={v.id} voice={v} selected={v.id === selectedURI}
+                  onSelect={() => onSelect(v.id)} onTest={() => onTestVoice(v.id)} />
+              ))}
+            </Section>
+          )}
+
+          {browserOther.length > 0 && (
+            <Section title="Sistema · otros" icon={<Globe size={10} strokeWidth={2} />}>
+              {browserOther.map((v) => (
+                <Item key={v.id} voice={v} selected={v.id === selectedURI}
+                  onSelect={() => onSelect(v.id)} onTest={() => onTestVoice(v.id)} />
+              ))}
+            </Section>
+          )}
+
+          {piperEs.length === 0 && (
             <div className="m-1 px-3 py-2.5 rounded-lg bg-[var(--color-eco-accent)]/8 border border-[var(--color-eco-accent)]/15">
               <div className="flex items-start gap-2">
                 <Sparkles size={11} strokeWidth={1.8} className="text-[var(--color-eco-accent)] mt-0.5 shrink-0" />
                 <div className="text-[11.5px] text-eco-text-muted leading-relaxed">
-                  <span className="text-[var(--color-eco-accent)] font-medium">Mejorá la voz.</span>{' '}
-                  En tu Mac: <span className="font-mono text-[10.5px]">System Settings → Accessibility → Spoken Content → System Voice → Manage Voices</span> y descargá <span className="font-medium">Mónica (Premium)</span>, <span className="font-medium">Paulina (Premium)</span> o <span className="font-medium">Marisol (Premium)</span>. Después recargá esta página.
+                  Las voces neurales locales de Eco no están instaladas todavía.
+                  Las del sistema funcionan pero suenan menos naturales.
                 </div>
               </div>
             </div>
@@ -140,10 +123,11 @@ export function VoiceMenu({ voices, selectedURI, onSelect, onTestVoice }: Props)
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="px-1.5 py-0.5">
-      <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-eco-text-faint font-mono">
+      <div className="px-2 py-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-eco-text-faint font-mono">
+        {icon}
         {title}
       </div>
       <div className="flex flex-col gap-0.5">{children}</div>
@@ -154,7 +138,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Item({
   voice, selected, onSelect, onTest,
 }: {
-  voice: Voice;
+  voice: UnifiedVoice;
   selected: boolean;
   onSelect: () => void;
   onTest: () => void;
@@ -165,7 +149,7 @@ function Item({
       className={cn(
         "group flex items-center justify-between gap-3 px-2.5 py-2 rounded-md cursor-pointer outline-none",
         "transition-colors",
-        selected ? "bg-[var(--color-eco-accent)]/10" : "hover:bg-white/[0.06]",
+        selected ? "bg-[var(--color-eco-accent)]/12" : "hover:bg-white/[0.06]",
       )}
     >
       <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -180,14 +164,19 @@ function Item({
             "text-[13px] truncate tracking-tight",
             selected ? "text-eco-text" : "text-eco-text-muted",
           )}>
-            {voice.name.replace(PREMIUM_HINT, '').trim()}
-            {voice.isPremium && (
+            {voice.name}
+            {voice.kind === 'piper' && (
               <span className="ml-1.5 text-[9.5px] text-[var(--color-eco-accent)] font-mono uppercase tracking-wider">
+                Neural
+              </span>
+            )}
+            {voice.kind === 'browser' && voice.premium && (
+              <span className="ml-1.5 text-[9.5px] text-eco-text-muted font-mono uppercase tracking-wider">
                 Premium
               </span>
             )}
           </span>
-          <span className="text-[10px] text-eco-text-faint font-mono">{voice.lang}</span>
+          <span className="text-[10px] text-eco-text-faint font-mono">{voice.language}</span>
         </div>
       </div>
       <button
