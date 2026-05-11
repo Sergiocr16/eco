@@ -9,7 +9,8 @@ const globalPromptTimestamps: number[] = [];
 
 function hostAllowed(host: string | undefined): boolean {
   if (!host) return false;
-  return host === `127.0.0.1:${config.port}` || host === `localhost:${config.port}`;
+  const hostname = host.split(':')[0]?.toLowerCase();
+  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
 }
 
 export function attachWebSocket(httpServer: Server, authToken: string) {

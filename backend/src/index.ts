@@ -24,9 +24,9 @@ app.use(express.json({ limit: '128kb' }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const host = req.headers.host;
-  const expectedA = `127.0.0.1:${config.port}`;
-  const expectedB = `localhost:${config.port}`;
-  if (host !== expectedA && host !== expectedB) {
+  if (!host) return res.status(403).json({ error: 'Host header requerido' });
+  const hostname = host.split(':')[0]?.toLowerCase();
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '[::1]') {
     return res.status(403).json({ error: 'Host no permitido' });
   }
   next();
