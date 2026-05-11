@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { Mic, FolderOpen, ArrowUp, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { VoiceMenu } from './VoiceMenu';
 
 type Props = {
   workspace: string;
@@ -12,7 +13,11 @@ type Props = {
   ttsEnabled?: boolean;
   ttsSupported?: boolean;
   ttsSpeaking?: boolean;
+  ttsVoices?: SpeechSynthesisVoice[];
+  ttsSelectedVoiceURI?: string | null;
   onTtsToggle?: () => void;
+  onTtsVoiceChange?: (uri: string) => void;
+  onTtsTestVoice?: (uri: string) => void;
   onSend: (text: string) => void;
   onMicToggle: () => void;
   onWorkspaceClick: () => void;
@@ -27,7 +32,11 @@ export function InputBar({
   ttsEnabled = false,
   ttsSupported = true,
   ttsSpeaking = false,
+  ttsVoices = [],
+  ttsSelectedVoiceURI = null,
   onTtsToggle,
+  onTtsVoiceChange,
+  onTtsTestVoice,
   onSend,
   onMicToggle,
   onWorkspaceClick,
@@ -75,31 +84,44 @@ export function InputBar({
         />
 
         {ttsSupported && (
-          <button
-            type="button"
-            onClick={onTtsToggle}
-            title={ttsEnabled ? 'Voz activada · Eco te habla' : 'Voz desactivada'}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-full transition-all",
-              ttsEnabled
-                ? "bg-[var(--color-eco-accent)]/20 hover:bg-[var(--color-eco-accent)]/30"
-                : "bg-white/[0.04] hover:bg-white/[0.08]",
-            )}
-            aria-label={ttsEnabled ? 'Desactivar voz' : 'Activar voz'}
-          >
-            {ttsEnabled ? (
-              <Volume2
-                size={13}
-                strokeWidth={1.6}
-                className={cn(
-                  "text-[var(--color-eco-accent)]",
-                  ttsSpeaking && "animate-pulse",
-                )}
+          <div className={cn(
+            "flex items-center rounded-full transition-all pl-1",
+            ttsEnabled
+              ? "bg-[var(--color-eco-accent)]/15"
+              : "bg-white/[0.04]",
+          )}>
+            <button
+              type="button"
+              onClick={onTtsToggle}
+              title={ttsEnabled ? 'Voz activada' : 'Voz desactivada'}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                ttsEnabled ? "hover:bg-[var(--color-eco-accent)]/20" : "hover:bg-white/[0.05]",
+              )}
+              aria-label={ttsEnabled ? 'Desactivar voz' : 'Activar voz'}
+            >
+              {ttsEnabled ? (
+                <Volume2
+                  size={13}
+                  strokeWidth={1.6}
+                  className={cn(
+                    "text-[var(--color-eco-accent)]",
+                    ttsSpeaking && "animate-pulse",
+                  )}
+                />
+              ) : (
+                <VolumeX size={13} strokeWidth={1.6} className="text-eco-text-faint" />
+              )}
+            </button>
+            {ttsEnabled && onTtsVoiceChange && onTtsTestVoice && (
+              <VoiceMenu
+                voices={ttsVoices}
+                selectedURI={ttsSelectedVoiceURI}
+                onSelect={onTtsVoiceChange}
+                onTestVoice={onTtsTestVoice}
               />
-            ) : (
-              <VolumeX size={13} strokeWidth={1.6} className="text-eco-text-faint" />
             )}
-          </button>
+          </div>
         )}
 
         <button

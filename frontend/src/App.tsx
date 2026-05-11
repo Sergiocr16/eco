@@ -114,7 +114,21 @@ export function App() {
         ttsEnabled={tts.enabled}
         ttsSupported={tts.isSupported}
         ttsSpeaking={tts.speaking}
+        ttsVoices={tts.voices}
+        ttsSelectedVoiceURI={tts.selectedVoiceURI}
         onTtsToggle={() => tts.setEnabled(!tts.enabled)}
+        onTtsVoiceChange={tts.selectVoice}
+        onTtsTestVoice={(uri) => {
+          const previous = tts.selectedVoiceURI;
+          tts.selectVoice(uri);
+          const wasEnabled = tts.enabled;
+          if (!wasEnabled) tts.setEnabled(true);
+          setTimeout(() => tts.speak('Hola, soy Eco. Esta es mi voz.'), 50);
+          setTimeout(() => {
+            if (!wasEnabled) tts.setEnabled(false);
+            if (previous) tts.selectVoice(previous);
+          }, 4500);
+        }}
         onSend={handleSend}
         onMicToggle={handleMicToggle}
         onWorkspaceClick={() => {}}
