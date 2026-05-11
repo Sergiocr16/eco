@@ -13,6 +13,7 @@ import { useWorkspaces } from './hooks/useWorkspaces';
 import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
+import { WorkspacePicker } from './components/WorkspacePicker';
 import { useTheme } from './design/theme';
 import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
 
@@ -34,6 +35,7 @@ function Shell() {
   const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackPayload | null>(null);
   const [overlay, setOverlay] = useState<'status' | 'help' | null>(null);
+  const [wsPickerForBubble, setWsPickerForBubble] = useState<string | null>(null);
 
   const workspacesHook = useWorkspaces();
   const defaultWs = workspacesHook.list.workspaces[0] ?? '';
@@ -297,8 +299,10 @@ function Shell() {
   }
 
   function handleCreateAgent(title?: string) {
-    const fresh = bubbles.createBubble({ title, focus: true });
+    // Crear sin workspace por default. Pedir al usuario que elija.
+    const fresh = bubbles.createBubble({ title, workspace: '', focus: true });
     handleOpenAgent(fresh.id);
+    setWsPickerForBubble(fresh.id);
   }
 
   const activeCount = bubbles.bubbles.filter((b) =>
@@ -373,6 +377,16 @@ function Shell() {
         bubbles={bubbles.bubbles}
         onClose={() => setOverlay(null)}
         onSelect={(id) => { setOverlay(null); handleOpenAgent(id); }}
+      />
+      <WorkspacePicker
+        open={wsPickerForBubble !== null}
+        bubbleTitle={wsPickerForBubble ? (bubbles.bubbles.find((b) => b.id === wsPickerForBubble)?.title ?? '') : ''}
+        onPick={(ws) => {
+          if (wsPickerForBubble) bubbles.setBubbleWorkspace(wsPickerForBubble, ws);
+          setWsPickerForBubble(null);
+        }}
+        onSkip={() => setWsPickerForBubble(null)}
+        onClose={() => setWsPickerForBubble(null)}
       />
     </>
   );
