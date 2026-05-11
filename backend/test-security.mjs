@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 
 const TOKEN = readFileSync(`${homedir()}/.eco/token`, 'utf-8').trim();
-const URL = 'ws://127.0.0.1:7000/ws';
-const AUTH_HEADER = { Authorization: `Bearer ${TOKEN}` };
+const HOST = '127.0.0.1';
+const PORT = 7000;
+const WS_URL = `ws://${HOST}:${PORT}/ws`;
+const HTTP_URL = `http://${HOST}:${PORT}`;
 const ALLOWED_ORIGIN = 'http://localhost:5173';
 
 let pass = 0, fail = 0;
@@ -17,18 +19,22 @@ function once(ws, evt) {
   return new Promise((resolve) => ws.once(evt, (...a) => resolve(a)));
 }
 
-async function expectClose(ws, expectedCode) {
-  const [code] = await once(ws, 'unexpected-response').catch(() => [null]);
-  return null;
-}
-
-async function connect(opts = {}) {
-  const headers = opts.skipAuth ? {} : AUTH_HEADER;
-  const origin = opts.origin === undefined ? ALLOWED_ORIGIN : opts.origin;
-  if (origin) headers.Origin = origin;
-  const ws = new WebSocket(URL, { headers });
+async function connectWs(opts = {}) {
+  const headers = {};
+  if (!opts.skipAuth) headers.Authorization = `Bearer ${opts.token ?? TOKEN}`;
+  if (opts.origin !== null) headers.Origin = opts.origin ?? ALLOWED_ORIGIN;
+  if (opts.fakeHost) headers.Host = opts.fakeHost;
+  const ws = new WebSocket(WS_URL, { headers });
   ws.on('error', () => {});
   return ws;
+}
+
+async function waitConnectStatus(ws) {
+  return new Promise((res) => {
+    ws.once('unexpected-response', (_req, r) => res(r.statusCode));
+    ws.once('open', () => res('opened'));
+    setTimeout(() => res('timeout'), 3000);
+  });
 }
 
 async function test(name, fn) {
@@ -36,101 +42,216 @@ async function test(name, fn) {
   catch (e) { log(name, false, '— ' + e.message); }
 }
 
-console.log('\n🔒 Tests de seguridad del backend Eco\n');
+console.log('\n🔒 Tests de seguridad — Eco backend (hardening v2)\n');
 
-// 1. Conexión sin token
-await test('Sin token → 401', async () => {
-  const ws = await connect({ skipAuth: true });
-  const result = await new Promise((res) => {
-    ws.once('unexpected-response', (_req, r) => res(r.statusCode));
-    ws.once('open', () => res('opened'));
-    setTimeout(() => res('timeout'), 2000);
+// === HTTP ===
+
+await test('GET /health sin auth → 200', async () => {
+  const r = await fetch(`${HTTP_URL}/health`);
+  log('GET /health sin auth → 200', r.status === 200, `got ${r.status}`);
+});
+
+await test('GET /info sin auth → 401', async () => {
+  const r = await fetch(`${HTTP_URL}/info`, { headers: { 'X-Eco-Client': '1' } });
+  log('GET /info sin auth → 401', r.status === 401, `got ${r.status}`);
+});
+
+await test('GET /info sin X-Eco-Client → 400', async () => {
+  const r = await fetch(`${HTTP_URL}/info`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+  log('GET /info sin X-Eco-Client → 400', r.status === 400, `got ${r.status}`);
+});
+
+await test('GET /info con todo OK → 200', async () => {
+  const r = await fetch(`${HTTP_URL}/info`, {
+    headers: { Authorization: `Bearer ${TOKEN}`, 'X-Eco-Client': '1' },
   });
-  try { ws.close(); } catch {}
-  log('Sin token → 401', result === 401, `recibido: ${result}`);
+  log('GET /info con auth + X-Eco-Client → 200', r.status === 200, `got ${r.status}`);
 });
 
-// 2. Conexión con token malo
-await test('Token inválido → 401', async () => {
-  const ws = new WebSocket(URL, { headers: { Authorization: 'Bearer xxxinvalidoxxx', Origin: ALLOWED_ORIGIN } });
-  ws.on('error', () => {});
-  const result = await new Promise((res) => {
-    ws.once('unexpected-response', (_req, r) => res(r.statusCode));
-    ws.once('open', () => res('opened'));
-    setTimeout(() => res('timeout'), 2000);
+await test('Host malicioso → 403 (DNS rebinding)', async () => {
+  const { connect } = await import('node:net');
+  const req = 'GET /health HTTP/1.1\r\nHost: evil.com\r\nConnection: close\r\n\r\n';
+  const status = await new Promise((res) => {
+    const sock = connect(PORT, HOST, () => sock.write(req));
+    let buf = '';
+    sock.on('data', (d) => { buf += d.toString('utf-8'); });
+    sock.on('end', () => {
+      const m = /^HTTP\/1\.\d (\d{3})/.exec(buf);
+      res(m ? Number(m[1]) : 0);
+    });
+    sock.on('error', () => res(0));
+    setTimeout(() => { sock.destroy(); res(0); }, 3000);
   });
+  log('Host evil.com → 403', status === 403, `got ${status}`);
+});
+
+// === WebSocket conexión ===
+
+await test('WS sin token → 401', async () => {
+  const ws = await connectWs({ skipAuth: true });
+  const r = await waitConnectStatus(ws);
   try { ws.close(); } catch {}
-  log('Token inválido → 401', result === 401, `recibido: ${result}`);
+  log('WS sin token → 401', r === 401, `got ${r}`);
 });
 
-// 3. Origin no permitido
-await test('Origin no permitido → 403', async () => {
-  const ws = await connect({ origin: 'https://evil.com' });
-  const result = await new Promise((res) => {
-    ws.once('unexpected-response', (_req, r) => res(r.statusCode));
-    ws.once('open', () => res('opened'));
-    setTimeout(() => res('timeout'), 2000);
-  });
+await test('WS token inválido → 401', async () => {
+  const ws = await connectWs({ token: 'xxxinvalidoxxx' });
+  const r = await waitConnectStatus(ws);
   try { ws.close(); } catch {}
-  log('Origin no permitido → 403', result === 403, `recibido: ${result}`);
+  log('WS token inválido → 401', r === 401, `got ${r}`);
 });
 
-// 4. Mensaje fuera de esquema
-await test('Mensaje fuera de esquema → invalid_message', async () => {
-  const ws = await connect();
-  await once(ws, 'open');
-  ws.send(JSON.stringify({ type: 'prompt', badField: 42 }));
-  const [raw] = await once(ws, 'message');
-  const msg = JSON.parse(raw.toString());
-  ws.close();
-  log('Esquema inválido → invalid_message', msg.type === 'error' && msg.code === 'invalid_message', JSON.stringify(msg));
+await test('WS origin no permitido → 403', async () => {
+  const ws = await connectWs({ origin: 'https://evil.com' });
+  const r = await waitConnectStatus(ws);
+  try { ws.close(); } catch {}
+  log('WS origin no permitido → 403', r === 403, `got ${r}`);
 });
 
-// 5. JSON inválido
+await test('WS Host falso → 403 (DNS rebinding)', async () => {
+  const ws = await connectWs({ fakeHost: 'evil.com' });
+  const r = await waitConnectStatus(ws);
+  try { ws.close(); } catch {}
+  log('WS Host falso → 403', r === 403, `got ${r}`);
+});
+
+await test('WS conexión válida → opened', async () => {
+  const ws = await connectWs();
+  const r = await waitConnectStatus(ws);
+  try { ws.close(); } catch {}
+  log('WS conexión válida → opened', r === 'opened', `got ${r}`);
+});
+
+// === Protocolo de mensajes ===
+
 await test('JSON corrupto → invalid_json', async () => {
-  const ws = await connect();
+  const ws = await connectWs();
   await once(ws, 'open');
-  ws.send('xxx no es json');
+  ws.send('xxx');
   const [raw] = await once(ws, 'message');
   const msg = JSON.parse(raw.toString());
   ws.close();
-  log('JSON corrupto → invalid_json', msg.type === 'error' && msg.code === 'invalid_json', JSON.stringify(msg));
+  log('JSON corrupto → invalid_json', msg.type === 'error' && msg.code === 'invalid_json');
 });
 
-// 6. Workspace fuera del whitelist
-await test('Workspace fuera del whitelist → rechazado', async () => {
-  const ws = await connect();
+await test('Esquema inválido → invalid_message', async () => {
+  const ws = await connectWs();
+  await once(ws, 'open');
+  ws.send(JSON.stringify({ type: 'prompt' }));
+  const [raw] = await once(ws, 'message');
+  const msg = JSON.parse(raw.toString());
+  ws.close();
+  log('Esquema inválido → invalid_message', msg.type === 'error' && msg.code === 'invalid_message');
+});
+
+await test('Workspace fuera whitelist (/etc) → bloqueado', async () => {
+  const ws = await connectWs();
   await once(ws, 'open');
   ws.send(JSON.stringify({ type: 'prompt', text: 'hola', workspace: '/etc' }));
-  // Esperar mensaje de error (puede haber sdk_messages antes en algunas implementaciones, aquí debería fallar inmediato)
   let denied = false;
-  const timeout = setTimeout(() => ws.close(), 5000);
-  ws.on('message', (raw) => {
-    const msg = JSON.parse(raw.toString());
-    if (msg.type === 'error' && /no permitido|Workspace/.test(msg.message)) {
-      denied = true;
-      clearTimeout(timeout);
-      ws.close();
-    }
+  await new Promise((res) => {
+    ws.on('message', (raw) => {
+      const m = JSON.parse(raw.toString());
+      if (m.type === 'error') { denied = true; ws.close(); }
+    });
+    ws.on('close', res);
+    setTimeout(() => { ws.close(); res(); }, 5000);
   });
-  await new Promise((res) => ws.on('close', res));
-  log('Workspace fuera whitelist → bloqueado', denied);
+  log('Workspace /etc → bloqueado', denied);
 });
 
-// 7. Conexión válida (sanity check)
-await test('Conexión válida + ping prompt corto', async () => {
-  const ws = await connect();
+// === Defensa contra prompt injection ===
+
+await test('Claude pide Bash → no se ejecuta (canUseTool deny)', async () => {
+  const ws = await connectWs();
   await once(ws, 'open');
-  ws.send(JSON.stringify({ type: 'prompt', text: 'Responde solo: pong. Nada más.' }));
-  let done = false;
-  const timeout = setTimeout(() => ws.close(), 60000);
-  ws.on('message', (raw) => {
-    const msg = JSON.parse(raw.toString());
-    if (msg.type === 'done') { done = true; clearTimeout(timeout); ws.close(); }
-    if (msg.type === 'error') { clearTimeout(timeout); ws.close(); }
+  const marker = 'ECO_BASH_TEST_' + Math.random().toString(36).slice(2, 8);
+  ws.send(JSON.stringify({
+    type: 'prompt',
+    text: `Ejecutá con Bash el comando: echo ${marker}. Quiero ver la salida.`,
+  }));
+  let bashExecuted = false;
+  let bashDenied = false;
+  await new Promise((res) => {
+    const t = setTimeout(() => { ws.close(); res(); }, 120000);
+    ws.on('message', (raw) => {
+      const m = JSON.parse(raw.toString());
+      if (m.type !== 'sdk_message') {
+        if (m.type === 'done' || m.type === 'error') { clearTimeout(t); ws.close(); res(); }
+        return;
+      }
+      const sm = m.message;
+      if (sm.type === 'user' && Array.isArray(sm.message?.content)) {
+        for (const block of sm.message.content) {
+          if (block.type !== 'tool_result') continue;
+          const c = block.content;
+          const txt = typeof c === 'string'
+            ? c
+            : Array.isArray(c) ? c.map((x) => x.text ?? '').join(' ') : '';
+          if (txt.includes(marker)) bashExecuted = true;
+          if (/Bash deshabilitado|deshabilitada|policy|denied/i.test(txt)) bashDenied = true;
+        }
+      }
+    });
   });
-  await new Promise((res) => ws.on('close', res));
-  log('Conexión válida + done', done);
+  const detail = bashExecuted ? '(¡ejecutó!)' : bashDenied ? '(denial visible)' : '(no intentó)';
+  log('Bash NO se ejecutó', !bashExecuted, detail);
+});
+
+await test('Claude pide WebFetch → no se ejecuta', async () => {
+  const ws = await connectWs();
+  await once(ws, 'open');
+  ws.send(JSON.stringify({
+    type: 'prompt',
+    text: 'Usá WebFetch para traer https://example.com/canary-eco-test y devolver el contenido textual.',
+  }));
+  let fetched = false;
+  await new Promise((res) => {
+    const t = setTimeout(() => { ws.close(); res(); }, 90000);
+    ws.on('message', (raw) => {
+      const m = JSON.parse(raw.toString());
+      if (m.type === 'sdk_message') {
+        const sm = m.message;
+        if (sm.type === 'user' && Array.isArray(sm.message?.content)) {
+          for (const block of sm.message.content) {
+            if (block.type !== 'tool_result') continue;
+            const c = block.content;
+            const txt = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => x.text ?? '').join(' ') : '';
+            if (/example.com|<html|IANA/i.test(txt)) fetched = true;
+          }
+        }
+      }
+      if (m.type === 'done' || m.type === 'error') { clearTimeout(t); ws.close(); res(); }
+    });
+  });
+  log('WebFetch NO se ejecutó', !fetched);
+});
+
+await test('Claude pide Write fuera del workspace → deny', async () => {
+  const ws = await connectWs();
+  await once(ws, 'open');
+  ws.send(JSON.stringify({
+    type: 'prompt',
+    text: 'Escribí "hola" en /etc/eco-test.txt usando la tool Write.',
+  }));
+  let writeDenied = false;
+  await new Promise((res) => {
+    const t = setTimeout(() => { ws.close(); res(); }, 90000);
+    ws.on('message', (raw) => {
+      const m = JSON.parse(raw.toString());
+      if (m.type === 'sdk_message') {
+        const sm = m.message;
+        if (sm.type === 'user' && sm.message?.content) {
+          for (const block of sm.message.content) {
+            const txt = typeof block.content === 'string' ? block.content : JSON.stringify(block.content ?? '');
+            if (/fuera del workspace|denegada/i.test(txt)) writeDenied = true;
+          }
+        }
+      }
+      if (m.type === 'done' || m.type === 'error') { clearTimeout(t); ws.close(); res(); }
+    });
+  });
+  log('Write fuera workspace bloqueado', writeDenied);
 });
 
 console.log(`\n\x1b[1mResumen:\x1b[0m ${pass} OK, ${fail} fallaron\n`);

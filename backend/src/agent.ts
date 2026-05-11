@@ -5,7 +5,7 @@ import {
   type Query,
   type SDKMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { config, defaultWorkspace, isAllowedWorkspace } from './config.js';
+import { config, defaultWorkspace, isAllowedWorkspace, isInsideWorkspace } from './config.js';
 
 export type AgentRunOptions = {
   prompt: string;
@@ -14,44 +14,82 @@ export type AgentRunOptions = {
   resumeSessionId?: string;
 };
 
-const DANGEROUS_BASH_PATTERNS: RegExp[] = [
-  /\brm\s+-rf?\b[^|;]*\s\//,
-  /\bsudo\b/,
-  /\bchmod\s+-R\s+777\b/,
-  /(?:curl|wget)\s+[^|;]*\|\s*(?:sh|bash|zsh|fish)\b/,
-  /\bnc\b[^|;]*\s-e\b/,
-  /\bdd\b[^|;]*\sof=\/dev\//,
-  />\s*\/dev\/(?:sd[a-z]|nvme|disk)/,
-  /\bmkfs\b/,
-  /:\(\)\s*\{\s*:\|:&\s*\};/,
-  /\beval\s+.*\$\(/,
+const SAFE_ENV_KEYS = [
+  'PATH', 'HOME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE',
+  'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'PWD', 'TERM',
 ];
 
-const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite']);
-
-const canUseTool: CanUseTool = async (toolName, input) => {
-  if (READ_ONLY_TOOLS.has(toolName)) {
-    return { behavior: 'allow', updatedInput: input };
+function buildSafeEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of SAFE_ENV_KEYS) {
+    const v = process.env[key];
+    if (v) env[key] = v;
   }
+  if (config.anthropicApiKey) env.ANTHROPIC_API_KEY = config.anthropicApiKey;
+  return env;
+}
 
-  if (toolName === 'Bash') {
-    const cmd = String((input as { command?: unknown }).command ?? '');
-    if (DANGEROUS_BASH_PATTERNS.some((re) => re.test(cmd))) {
+const SAFE_READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'TodoWrite']);
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'MultiEdit']);
+
+export const ALLOWED_TOOL_NAMES: string[] = [
+  'Read', 'Grep', 'Glob', 'LS', 'TodoWrite',
+  'Write', 'Edit', 'MultiEdit', 'NotebookEdit',
+];
+
+function makeCanUseTool(workspace: string): CanUseTool {
+  return async (toolName, input) => {
+    if (process.env.ECO_AUDIT_TOOLS) {
+      console.error(`[audit] canUseTool: ${toolName} workspace=${workspace}`);
+    }
+    if (SAFE_READ_TOOLS.has(toolName)) {
+      return { behavior: 'allow', updatedInput: input };
+    }
+
+    if (WRITE_TOOLS.has(toolName)) {
+      const filePath = (input as { file_path?: unknown }).file_path;
+      if (typeof filePath !== 'string' || !isInsideWorkspace(filePath, workspace)) {
+        return {
+          behavior: 'deny',
+          message: `Escritura denegada: ${typeof filePath === 'string' ? filePath : '(sin path)'} está fuera del workspace ${workspace}`,
+        };
+      }
+      return { behavior: 'allow', updatedInput: input };
+    }
+
+    if (toolName === 'Bash' || toolName === 'KillBash' || toolName === 'BashOutput') {
       return {
         behavior: 'deny',
-        message: `Comando Bash bloqueado por política de seguridad: ${cmd.slice(0, 120)}`,
-        interrupt: true,
+        message: 'Bash deshabilitado en este nivel de permisos. Confirmación interactiva pendiente (UI).',
+        interrupt: false,
       };
     }
-  }
 
-  return { behavior: 'allow', updatedInput: input };
-};
+    if (toolName === 'WebFetch' || toolName === 'WebSearch') {
+      return {
+        behavior: 'deny',
+        message: `${toolName} deshabilitado por política (evitar exfiltración por prompt injection).`,
+      };
+    }
+
+    if (toolName === 'Task') {
+      return {
+        behavior: 'deny',
+        message: 'Sub-agentes (Task) deshabilitados por política.',
+      };
+    }
+
+    return {
+      behavior: 'deny',
+      message: `Tool no permitida: ${toolName}`,
+    };
+  };
+}
 
 export function runAgent(opts: AgentRunOptions): Query {
   const requested = opts.workspace;
   if (requested && !isAllowedWorkspace(requested)) {
-    throw new Error(`Workspace no permitido: ${requested}`);
+    throw new Error('Workspace no permitido.');
   }
   const cwd = requested ?? defaultWorkspace();
 
@@ -61,15 +99,13 @@ export function runAgent(opts: AgentRunOptions): Query {
     pathToClaudeCodeExecutable: config.claudeCliPath,
     model: config.model,
     permissionMode: 'default',
-    canUseTool,
+    canUseTool: makeCanUseTool(cwd),
     systemPrompt: { type: 'preset', preset: 'claude_code' },
-    tools: { type: 'preset', preset: 'claude_code' },
-    settingSources: ['project', 'user', 'local'],
+    tools: ALLOWED_TOOL_NAMES,
+    disallowedTools: ['Bash', 'KillBash', 'BashOutput', 'WebFetch', 'WebSearch', 'Task'],
+    settingSources: [],
     includePartialMessages: true,
-    env: {
-      ...process.env,
-      ...(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}),
-    } as Record<string, string>,
+    env: buildSafeEnv() as Record<string, string>,
     resume: opts.resumeSessionId,
   };
 

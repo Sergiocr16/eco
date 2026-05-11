@@ -15,15 +15,32 @@ app.use(
   cors({
     origin: config.allowedOrigins,
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Eco-Client'],
     credentials: false,
     maxAge: 600,
   }),
 );
 app.use(express.json({ limit: '128kb' }));
 
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const host = req.headers.host;
+  const expectedA = `127.0.0.1:${config.port}`;
+  const expectedB = `localhost:${config.port}`;
+  if (host !== expectedA && host !== expectedB) {
+    return res.status(403).json({ error: 'Host no permitido' });
+  }
+  next();
+});
+
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.headers['x-eco-client'] !== '1') {
+    return res.status(400).json({ error: 'Header X-Eco-Client requerido' });
+  }
+  next();
 });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -38,7 +55,6 @@ app.get('/info', (_req, res) => {
   res.json({
     workspaces: config.workspaces,
     model: config.model,
-    allowedOrigins: config.allowedOrigins,
   });
 });
 
@@ -52,5 +68,6 @@ server.listen(config.port, config.host, () => {
   console.log(`   Workspaces: ${config.workspaces.join(', ')}`);
   console.log(`   Modelo:    ${config.model}`);
   console.log(`   Orígenes:  ${config.allowedOrigins.join(', ')}`);
+  console.log(`   Conexiones máx: ${config.maxOpenConnections}`);
   console.log(`   Auth:      Bearer ${authToken.slice(0, 8)}…  (archivo: ~/.eco/token)\n`);
 });

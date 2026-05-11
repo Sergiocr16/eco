@@ -5,12 +5,22 @@ import { ClientMessageSchema, type ServerMessage } from './protocol.js';
 import { config } from './config.js';
 import { extractBearer, tokensMatch } from './auth.js';
 
+const globalPromptTimestamps: number[] = [];
+
+function hostAllowed(host: string | undefined): boolean {
+  if (!host) return false;
+  return host === `127.0.0.1:${config.port}` || host === `localhost:${config.port}`;
+}
+
 export function attachWebSocket(httpServer: Server, authToken: string) {
   const wss = new WebSocketServer({
     server: httpServer,
     path: '/ws',
-    maxPayload: 1024 * 1024,
+    maxPayload: 128 * 1024,
     verifyClient: (info, callback) => {
+      if (!hostAllowed(info.req.headers.host)) {
+        return callback(false, 403, 'Host no permitido');
+      }
       const origin = info.req.headers.origin;
       if (origin && !config.allowedOrigins.includes(origin)) {
         return callback(false, 403, 'Origin no permitido');
@@ -21,19 +31,28 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       if (!tokensMatch(authToken, token)) {
         return callback(false, 401, 'No autorizado');
       }
+      if (wss.clients.size >= config.maxOpenConnections) {
+        return callback(false, 503, 'Demasiadas conexiones simultáneas');
+      }
       callback(true);
     },
   });
 
   wss.on('connection', (ws) => {
     let activeAbort: AbortController | null = null;
-    const promptTimestamps: number[] = [];
+    let activeTimeout: NodeJS.Timeout | null = null;
 
     const send = (msg: ServerMessage) => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+      if (ws.readyState !== ws.OPEN) return;
+      if (ws.bufferedAmount > config.wsBackpressureBytes) {
+        activeAbort?.abort();
+        return;
+      }
+      ws.send(JSON.stringify(msg));
     };
 
-    const error = (code: string, message: string) => send({ type: 'error', code, message });
+    const error = (code: string, message: string) =>
+      send({ type: 'error', code, message });
 
     ws.on('message', async (raw) => {
       let parsed: unknown;
@@ -59,16 +78,17 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       }
 
       const now = Date.now();
-      while (promptTimestamps.length > 0 && now - promptTimestamps[0]! > 60_000) {
-        promptTimestamps.shift();
+      while (globalPromptTimestamps.length > 0 && now - globalPromptTimestamps[0]! > 60_000) {
+        globalPromptTimestamps.shift();
       }
-      if (promptTimestamps.length >= config.maxPromptsPerMinute) {
-        return error('rate_limit', `Rate limit: ${config.maxPromptsPerMinute} prompts/min`);
+      if (globalPromptTimestamps.length >= config.maxPromptsPerMinute) {
+        return error('rate_limit', `Rate limit: ${config.maxPromptsPerMinute} prompts/min (global)`);
       }
-      promptTimestamps.push(now);
+      globalPromptTimestamps.push(now);
 
       const ac = new AbortController();
       activeAbort = ac;
+      activeTimeout = setTimeout(() => ac.abort(), config.promptTimeoutMs);
 
       try {
         const q = runAgent({
@@ -91,19 +111,32 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
         }
         send({ type: 'done' });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Error desconocido';
-        error('agent_failure', message);
+        const internalMessage = err instanceof Error ? err.message : 'desconocido';
+        const safeMessage = sanitizeError(internalMessage);
+        console.error('[agent_failure]', internalMessage);
+        error('agent_failure', safeMessage);
       } finally {
+        if (activeTimeout) clearTimeout(activeTimeout);
+        activeTimeout = null;
         activeAbort = null;
       }
     });
 
     ws.on('close', () => {
+      if (activeTimeout) clearTimeout(activeTimeout);
       activeAbort?.abort();
     });
   });
 
   return wss;
+}
+
+function sanitizeError(internal: string): string {
+  if (/workspace/i.test(internal)) return 'Workspace no permitido o inválido.';
+  if (/aborted|abort/i.test(internal)) return 'Operación interrumpida o expiró.';
+  if (/permission|denied/i.test(internal)) return 'Acción denegada por política de seguridad.';
+  if (/rate/i.test(internal)) return 'Rate limit alcanzado.';
+  return 'El agente no pudo completar la operación.';
 }
 
 function extractToken(req: IncomingMessage): string | null {

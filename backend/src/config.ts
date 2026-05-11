@@ -1,14 +1,22 @@
 import 'dotenv/config';
-import { existsSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { resolve, sep, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 
 function parseWorkspaces(): string[] {
   const raw = process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? `${homedir()}/projects/eco-test`;
   return raw
     .split(',')
-    .map((p) => resolve(p.trim()))
-    .filter(Boolean);
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const abs = resolve(p);
+      try {
+        return realpathSync(abs);
+      } catch {
+        return abs;
+      }
+    });
 }
 
 function parseAllowedOrigins(): string[] {
@@ -16,6 +24,14 @@ function parseAllowedOrigins(): string[] {
   const raw = process.env.ECO_ALLOWED_ORIGINS;
   if (!raw) return def;
   return raw.split(',').map((o) => o.trim()).filter(Boolean);
+}
+
+function safeRealpath(target: string): string | null {
+  try {
+    return realpathSync(resolve(target));
+  } catch {
+    return null;
+  }
 }
 
 export const config = {
@@ -28,14 +44,31 @@ export const config = {
   allowedOrigins: parseAllowedOrigins(),
   maxPromptsPerMinute: Number(process.env.ECO_RATE_LIMIT ?? 10),
   maxPromptBytes: Number(process.env.ECO_MAX_PROMPT_BYTES ?? 50_000),
+  maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 5),
+  promptTimeoutMs: Number(process.env.ECO_PROMPT_TIMEOUT_MS ?? 10 * 60 * 1000),
+  wsBackpressureBytes: Number(process.env.ECO_WS_BACKPRESSURE ?? 8 * 1024 * 1024),
 };
 
 export function isAllowedWorkspace(target: string | undefined): boolean {
-  if (!target) return false;
-  const resolved = resolve(target);
+  if (!target || !isAbsolute(target)) return false;
+  const real = safeRealpath(target);
+  if (!real) return false;
   return config.workspaces.some(
-    (allowed) => resolved === allowed || resolved.startsWith(allowed + sep),
+    (allowed) => real === allowed || real.startsWith(allowed + sep),
   );
+}
+
+export function isInsideWorkspace(filePath: string | undefined, workspace: string): boolean {
+  if (!filePath) return false;
+  if (!isAbsolute(filePath)) return false;
+  const realWorkspace = safeRealpath(workspace);
+  if (!realWorkspace) return false;
+  const realPath = safeRealpath(filePath);
+  if (realPath) {
+    return realPath === realWorkspace || realPath.startsWith(realWorkspace + sep);
+  }
+  const resolved = resolve(filePath);
+  return resolved === realWorkspace || resolved.startsWith(realWorkspace + sep);
 }
 
 export function defaultWorkspace(): string {
