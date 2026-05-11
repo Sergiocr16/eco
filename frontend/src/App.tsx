@@ -14,6 +14,8 @@ import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } fr
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
+import { AuthScreen } from './screens/AuthScreen';
+import { useAuth } from './hooks/useAuth';
 import { useTheme } from './design/theme';
 import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
 
@@ -23,9 +25,20 @@ const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
 export function App() {
   return (
     <ThemeProvider>
-      <Shell/>
+      <AuthGate/>
     </ThemeProvider>
   );
+}
+
+function AuthGate() {
+  const auth = useAuth();
+  if (auth.state.status === 'loading') {
+    return null; // splash en blanco mientras pinga /auth/status
+  }
+  if (auth.state.status !== 'authenticated') {
+    return <AuthScreen authState={auth.state} authActions={auth}/>;
+  }
+  return <Shell/>;
 }
 
 function Shell() {

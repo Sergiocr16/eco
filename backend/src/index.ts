@@ -11,6 +11,11 @@ import { addWorkspace, readStore as readWorkspaceStore, removeWorkspace } from '
 import { runShell, ShellRequestSchema } from './shell.js';
 import { fileDiff, DiffRequestSchema } from './file-diff.js';
 import { writeApiKey, deleteApiKey, hasApiKey, maskedApiKey, validateApiKey } from './api-key-store.js';
+import {
+  hasUser, statusInfo, registerUser, verifyPin,
+  recoverGetNewPhrase, deleteUser,
+} from './user-store.js';
+import { createSession, destroySession, getSession } from './sessions.js';
 import { z } from 'zod';
 
 const authToken = getOrCreateToken();
@@ -43,6 +48,79 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
 
+const SESSION_HEADER = 'x-eco-session';
+const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login', '/auth/recover']);
+
+const RegisterSchema = z.object({
+  username: z.string().min(1).max(80),
+  pin: z.string().regex(/^\d{4,8}$/, 'El PIN debe tener entre 4 y 8 dígitos'),
+});
+const LoginSchema = z.object({ pin: z.string().min(1).max(20) });
+const RecoverSchema = z.object({
+  recoveryPhrase: z.string().min(20).max(400),
+  newPin: z.string().regex(/^\d{4,8}$/),
+});
+
+app.get('/auth/status', (_req: Request, res: Response) => {
+  res.json(statusInfo());
+});
+
+app.post('/auth/register', async (req: Request, res: Response) => {
+  const parsed = RegisterSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0]?.message ?? 'Datos inválidos' });
+  try {
+    const result = await registerUser(parsed.data.username, parsed.data.pin);
+    const session = createSession(result.username);
+    res.json({ ok: true, username: result.username, recoveryPhrase: result.recoveryPhrase, session });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : 'Error al registrar' });
+  }
+});
+
+app.post('/auth/login', async (req: Request, res: Response) => {
+  const parsed = LoginSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'PIN requerido' });
+  if (!hasUser()) return res.status(400).json({ error: 'No hay usuario registrado' });
+  const ok = await verifyPin(parsed.data.pin);
+  if (!ok) return res.status(401).json({ error: 'PIN incorrecto' });
+  const info = statusInfo();
+  const session = createSession(info.username ?? 'user');
+  res.json({ ok: true, username: info.username, session });
+});
+
+app.post('/auth/recover', async (req: Request, res: Response) => {
+  const parsed = RecoverSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0]?.message ?? 'Datos inválidos' });
+  try {
+    const result = await recoverGetNewPhrase(parsed.data.recoveryPhrase, parsed.data.newPin);
+    const session = createSession(result.username);
+    res.json({
+      ok: true,
+      username: result.username,
+      newRecoveryPhrase: result.newRecoveryPhrase,
+      session,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : 'No se pudo recuperar' });
+  }
+});
+
+app.post('/auth/logout', (req: Request, res: Response) => {
+  const session = req.headers[SESSION_HEADER] as string | undefined;
+  destroySession(session);
+  res.json({ ok: true });
+});
+
+app.delete('/auth/user', async (req: Request, res: Response) => {
+  // Acción destructiva: requiere PIN para confirmar
+  const parsed = LoginSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'PIN requerido para borrar usuario' });
+  const ok = await verifyPin(parsed.data.pin);
+  if (!ok) return res.status(401).json({ error: 'PIN incorrecto' });
+  deleteUser();
+  res.json({ ok: true });
+});
+
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.headers['x-eco-client'] !== '1') {
     return res.status(400).json({ error: 'Header X-Eco-Client requerido' });
@@ -55,6 +133,17 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   if (!tokensMatch(authToken, token)) {
     return res.status(401).json({ error: 'No autorizado' });
   }
+  next();
+});
+
+// Session check: si hay usuario registrado, requiere session válida en TODOS los endpoints
+// excepto los de /auth/* y /health (este último ya pasó arriba).
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (AUTH_FREE_PATHS.has(req.path)) return next();
+  if (!hasUser()) return next(); // sin user registrado, no se requiere sesión todavía
+  const sessionId = req.headers[SESSION_HEADER] as string | undefined;
+  const session = getSession(sessionId);
+  if (!session) return res.status(401).json({ error: 'Sesión inválida o expirada' });
   next();
 });
 
