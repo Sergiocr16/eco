@@ -1,56 +1,158 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { GradientMesh } from './components/GradientMesh';
 import { StatusOrb } from './components/StatusOrb';
-import { MessageBubble } from './components/MessageBubble';
+import { BubbleWorkspace } from './components/BubbleWorkspace';
 import { InputBar } from './components/InputBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
+import { useBubbles } from './hooks/useBubbles';
 import { useEcoSocket } from './hooks/useEcoSocket';
-import type { EcoStatus } from './lib/types';
+import type { EcoStatus, Message, ToolCall } from './lib/types';
 
-// Backend URL: si VITE_ECO_BACKEND está seteado lo usa; sino usa rutas relativas
-// (que en dev son proxyeadas por Vite a localhost:7000, en Tauri van al backend embebido).
 const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
 const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
 
+const WAKE_NEW_BUBBLE = /(?:nueva|abr[íi]) (?:burbuja|conversaci[óo]n|chat|ventana|terminal)/i;
+
 export function App() {
-  const [workspace] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const socket = useEcoSocket({ url: BACKEND, token: TOKEN });
-  const voice = useVoice({ language: 'es-419', onCommand: handleVoiceCommand });
+  const bubbles = useBubbles('');
   const tts = useTTS();
 
+  const socket = useEcoSocket({
+    url: BACKEND,
+    token: TOKEN,
+    handlers: {
+      onSessionStarted: (bubbleId, sessionId) => {
+        bubbles.setBubbleSessionId(bubbleId, sessionId);
+      },
+      onAssistantTextDelta: (bubbleId, assistantMessageId, text) => {
+        bubbles.setBubbleMessages(bubbleId, (msgs) => {
+          const idx = msgs.findIndex((m) => m.id === assistantMessageId);
+          if (idx >= 0) {
+            return msgs.map((m, i) =>
+              i === idx ? { ...m, text: m.text + text } : m,
+            );
+          }
+          const newMsg: Message = {
+            id: assistantMessageId,
+            role: 'assistant',
+            text,
+            toolCalls: [],
+            createdAt: Date.now(),
+          };
+          return [...msgs, newMsg];
+        });
+      },
+      onToolUse: (bubbleId, assistantMessageId, toolCall) => {
+        bubbles.setBubbleMessages(bubbleId, (msgs) => {
+          const idx = msgs.findIndex((m) => m.id === assistantMessageId);
+          if (idx >= 0) {
+            return msgs.map((m, i) => i === idx ? { ...m, toolCalls: [...(m.toolCalls ?? []), toolCall] } : m);
+          }
+          const newMsg: Message = {
+            id: assistantMessageId,
+            role: 'assistant',
+            text: '',
+            toolCalls: [toolCall],
+            createdAt: Date.now(),
+          };
+          return [...msgs, newMsg];
+        });
+      },
+      onToolResult: (bubbleId, toolUseId, output, status) => {
+        bubbles.setBubbleMessages(bubbleId, (msgs) =>
+          msgs.map((m) => ({
+            ...m,
+            toolCalls: m.toolCalls?.map((t: ToolCall) =>
+              t.id === toolUseId ? { ...t, output, status } : t,
+            ),
+          })),
+        );
+      },
+      onThinkingChange: (bubbleId, thinking) => {
+        bubbles.setBubbleStatus(bubbleId, thinking ? 'thinking' : 'idle');
+      },
+      onExecutingChange: (bubbleId, executing) => {
+        bubbles.setBubbleStatus(bubbleId, executing ? 'executing' : 'idle');
+      },
+      onDone: (bubbleId) => {
+        bubbles.setBubbleStatus(bubbleId, 'idle');
+      },
+      onError: (_bubbleId, _message) => {
+        // ya manejado en error state del socket
+      },
+    },
+  });
+
+  const voice = useVoice({ language: 'es-419', onCommand: handleVoiceCommand });
+
   const listening = voice.state === 'watching' || voice.state === 'capturing';
+  const activeBubble = bubbles.activeBubble;
+
   const lastSpokenRef = useRef<string | null>(null);
 
-  const status: EcoStatus = (() => {
+  const status: EcoStatus = useMemo(() => {
     if (socket.status === 'error') return 'error';
     if (voice.state === 'capturing') return 'listening';
-    if (socket.executing) return 'executing';
-    if (socket.thinking) return 'thinking';
+    if (activeBubble?.status === 'executing') return 'executing';
+    if (activeBubble?.status === 'thinking') return 'thinking';
     if (tts.speaking) return 'speaking';
     return 'idle';
-  })();
+  }, [socket.status, voice.state, activeBubble?.status, tts.speaking]);
 
   useEffect(() => {
     if (!tts.enabled) return;
-    const last = socket.messages[socket.messages.length - 1];
+    if (!activeBubble) return;
+    if (activeBubble.status !== 'idle') return; // esperar que termine
+    const last = activeBubble.messages[activeBubble.messages.length - 1];
     if (!last || last.role !== 'assistant' || !last.text) return;
-    if (socket.thinking || socket.executing) return; // esperar a terminar
-    if (lastSpokenRef.current === last.id) return;
-    lastSpokenRef.current = last.id;
+    const key = `${activeBubble.id}:${last.id}`;
+    if (lastSpokenRef.current === key) return;
+    lastSpokenRef.current = key;
     tts.speak(last.text);
-  }, [socket.messages, socket.thinking, socket.executing, tts]);
+  }, [activeBubble, tts]);
 
   function handleVoiceCommand(text: string) {
-    socket.send(text, workspace || undefined);
+    handleSend(text);
   }
 
   function handleSend(text: string) {
-    socket.send(text, workspace || undefined);
+    if (!activeBubble) return;
+
+    // Comando especial: el user pide nueva burbuja
+    if (WAKE_NEW_BUBBLE.test(text)) {
+      const titleMatch = text.match(/(?:para|sobre|de)\s+(.{2,80}?)(?:\.|$|,|\?|!)/i);
+      const title = titleMatch?.[1]?.trim();
+      const fresh = bubbles.createBubble({ title: title || undefined, focus: true });
+      const cleaned = text.replace(WAKE_NEW_BUBBLE, '').replace(/(?:para|sobre|de)\s+.{2,80}?(?:\.|$|,|\?|!)/i, '').trim();
+      if (cleaned.length > 2) {
+        appendAndSend(fresh.id, cleaned);
+      }
+      return;
+    }
+
+    appendAndSend(activeBubble.id, text);
+  }
+
+  function appendAndSend(bubbleId: string, text: string) {
+    const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
+    if (!bubble) return;
+    bubbles.appendMessage(bubbleId, {
+      id: `u_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      role: 'user',
+      text,
+      createdAt: Date.now(),
+    });
+    socket.send({
+      bubbleId,
+      text,
+      workspace: bubble.workspace || undefined,
+      resumeSessionId: bubble.sessionId,
+    });
   }
 
   function handleMicToggle() {
@@ -62,53 +164,45 @@ export function App() {
     <div className="relative h-screen w-screen overflow-hidden bg-[var(--color-eco-bg-deep)]">
       <GradientMesh />
 
-      {/* Brand + connection state */}
+      {/* Brand + connection */}
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-        className="absolute top-6 left-7 z-30 select-none flex items-baseline gap-3"
+        className="absolute top-5 left-7 z-30 select-none flex items-baseline gap-3"
       >
-        <span
-          className="text-display text-[15px] text-eco-text/80"
-          style={{ letterSpacing: '-0.02em' }}
-        >
+        <span className="text-display text-[15px] text-eco-text/80" style={{ letterSpacing: '-0.02em' }}>
           Eco
         </span>
-        <span className="text-[10px] text-eco-text-faint font-mono tracking-wider uppercase">
-          v0.1
-        </span>
+        <span className="text-[10px] text-eco-text-faint font-mono tracking-wider uppercase">v0.1</span>
         <ConnectionPill status={socket.status} />
       </motion.div>
 
       {socket.error && (
-        <div className="absolute top-6 right-7 z-30 glass px-3 py-2 rounded-xl text-[12px] text-eco-text-muted max-w-sm">
+        <div className="absolute top-5 right-7 z-30 glass px-3 py-2 rounded-xl text-[12px] text-eco-text-muted max-w-sm">
           {socket.error}
         </div>
       )}
 
-      {/* Hero: orb + status */}
-      <div className="relative z-10 flex flex-col items-center pt-[10vh] pb-[3vh]">
-        <StatusOrb status={status} />
+      <div className="absolute top-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+        <StatusOrbCompact status={status} />
       </div>
 
-      {/* Conversation panel */}
-      <div className="relative z-10 mx-auto max-w-3xl px-6 pb-[110px]" style={{ height: 'calc(100vh - 38vh)' }}>
-        <div className="h-full overflow-y-auto invisible-scroll">
-          <div className="flex flex-col gap-5 pb-6">
-            {socket.messages.length === 0 ? (
-              <EmptyState />
-            ) : (
-              socket.messages.map((m, i) => (
-                <MessageBubble key={m.id} message={m} index={i} />
-              ))
-            )}
-          </div>
-        </div>
+      {/* Workspace: burbujas en stage manager */}
+      <div className="absolute inset-0 top-[80px] bottom-[100px]">
+        <BubbleWorkspace
+          bubbles={bubbles.bubbles}
+          activeBubble={activeBubble}
+          onFocus={bubbles.focusBubble}
+          onClose={bubbles.removeBubble}
+          onTogglePin={bubbles.togglePin}
+          onRename={bubbles.renameBubble}
+          onCreate={() => bubbles.createBubble({ focus: true })}
+        />
       </div>
 
       <InputBar
-        workspace={workspace}
+        workspace={activeBubble?.workspace ?? ''}
         listening={listening}
         interimText={voice.state === 'capturing' ? voice.transcript : ''}
         voiceError={voice.error}
@@ -143,8 +237,16 @@ export function App() {
             if (previous) tts.selectVoice(previous);
           }, 4500);
         }}
-        workspaces={[workspace || '/tmp/eco-test']}
+        workspaces={[activeBubble?.workspace || '/tmp/eco-test']}
       />
+    </div>
+  );
+}
+
+function StatusOrbCompact({ status }: { status: EcoStatus }) {
+  return (
+    <div className="pointer-events-auto">
+      <StatusOrb status={status} />
     </div>
   );
 }
@@ -169,22 +271,5 @@ function ConnectionPill({ status }: { status: 'disconnected' | 'connecting' | 'c
       />
       {v.label}
     </span>
-  );
-}
-
-function EmptyState() {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 1, delay: 0.5 }}
-      className="self-center text-center pt-12"
-    >
-      <p className="text-eco-text-muted text-[14px] tracking-tight max-w-md">
-        Hola. Empezá una conversación escribiendo abajo o
-        <br />
-        activá el micrófono y decí <span className="text-eco-text">«Eco»</span> seguido de tu pedido.
-      </p>
-    </motion.div>
   );
 }

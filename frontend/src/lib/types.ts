@@ -24,3 +24,25 @@ export type Workspace = {
 };
 
 export type SocketStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export type BubbleStatus = 'idle' | 'thinking' | 'executing';
+
+export type Bubble = {
+  id: string;
+  title: string;
+  workspace: string;
+  sessionId: string | null;
+  messages: Message[];
+  status: BubbleStatus;
+  unread: number;
+  accent: string;
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type BubbleAction =
+  | { kind: 'open'; id: string; title: string; workspace?: string; focus?: boolean }
+  | { kind: 'rename'; id: string; title: string }
+  | { kind: 'close'; id: string }
+  | { kind: 'focus'; id: string };

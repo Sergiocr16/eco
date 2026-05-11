@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Message, SocketStatus, ToolCall } from '@/lib/types';
+import type { SocketStatus, ToolCall } from '@/lib/types';
 
 const RECONNECT_BACKOFF_MS = [500, 1500, 3000, 5000, 10_000];
 
@@ -58,21 +58,28 @@ type SdkResult = {
   num_turns?: number;
 };
 
+export type SocketHandlers = {
+  onSessionStarted?: (bubbleId: string, sessionId: string) => void;
+  onAssistantTextDelta?: (bubbleId: string, assistantMessageId: string, text: string) => void;
+  onToolUse?: (bubbleId: string, assistantMessageId: string, toolCall: ToolCall) => void;
+  onToolResult?: (bubbleId: string, toolUseId: string, output: string, status: ToolCall['status']) => void;
+  onDone?: (bubbleId: string) => void;
+  onError?: (bubbleId: string | null, message: string) => void;
+  onThinkingChange?: (bubbleId: string, thinking: boolean) => void;
+  onExecutingChange?: (bubbleId: string, executing: boolean) => void;
+};
+
 export type EcoSocket = {
   status: SocketStatus;
   error: string | null;
-  thinking: boolean;
-  executing: boolean;
-  messages: Message[];
-  resetConversation: () => void;
-  send: (text: string, workspace?: string) => void;
+  send: (opts: { bubbleId: string; text: string; workspace?: string; resumeSessionId?: string | null }) => void;
   interrupt: () => void;
 };
 
 type Options = {
   url: string;
   token: string;
-  initialMessages?: Message[];
+  handlers: SocketHandlers;
 };
 
 function toolResultText(content: SdkUserToolResult['message']['content'][number]['content']): string {
@@ -81,106 +88,77 @@ function toolResultText(content: SdkUserToolResult['message']['content'][number]
   return '';
 }
 
-export function useEcoSocket({ url, token, initialMessages = [] }: Options): EcoSocket {
+export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
   const [status, setStatus] = useState<SocketStatus>('disconnected');
   const [error, setError] = useState<string | null>(null);
-  const [thinking, setThinking] = useState(false);
-  const [executing, setExecuting] = useState(false);
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wantedRef = useRef(true);
-  const toolMapRef = useRef<Map<string, { messageId: string; toolCallId: string }>>(new Map());
-  const currentAssistantId = useRef<string | null>(null);
+  const handlersRef = useRef(handlers);
+  useEffect(() => { handlersRef.current = handlers; }, [handlers]);
+
+  // bubble target del prompt activo + assistant message en curso para esa bubble
+  const activeBubbleIdRef = useRef<string | null>(null);
+  const currentAssistantIdRef = useRef<string | null>(null);
+  const toolToBubble = useRef<Map<string, string>>(new Map());
 
   const handleSdkMessage = useCallback((sdk: SdkMessage) => {
+    const bubbleId = activeBubbleIdRef.current;
+    if (!bubbleId) return;
+    const H = handlersRef.current;
+
     if (sdk.type === 'system') {
-      setExecuting(false);
-      setThinking(true);
-      currentAssistantId.current = null;
+      const subtype = (sdk as SdkSystemInit).subtype;
+      if (subtype === 'init') {
+        const sessionId = (sdk as SdkSystemInit).session_id;
+        if (sessionId) H.onSessionStarted?.(bubbleId, sessionId);
+        H.onThinkingChange?.(bubbleId, true);
+        currentAssistantIdRef.current = null;
+      }
       return;
     }
 
     if (sdk.type === 'assistant') {
       const msg = (sdk as SdkAssistant).message;
-      const blocks = msg.content;
-      const textBlocks = blocks.filter((b): b is { type: 'text'; text: string } => b.type === 'text');
-      const toolUses = blocks.filter((b): b is { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> } => b.type === 'tool_use');
-      const text = textBlocks.map((b) => b.text).join('');
+      const assistantId =
+        currentAssistantIdRef.current ?? msg.id ?? `a_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      currentAssistantIdRef.current = assistantId;
 
-      setMessages((prev) => {
-        const next = [...prev];
-        const existingIdx = currentAssistantId.current
-          ? next.findIndex((m) => m.id === currentAssistantId.current)
-          : -1;
-        const assistantId = currentAssistantId.current ?? `a_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        const existing = existingIdx >= 0 ? next[existingIdx]! : null;
-
-        const merged: Message = {
-          id: assistantId,
-          role: 'assistant',
-          text: existing ? (existing.text + text) : text,
-          toolCalls: existing?.toolCalls ? [...existing.toolCalls] : [],
-          createdAt: existing?.createdAt ?? Date.now(),
-        };
-
-        for (const tu of toolUses) {
-          const tc: ToolCall = {
-            id: tu.id,
-            name: tu.name,
-            input: tu.input ?? {},
+      for (const block of msg.content) {
+        if (block.type === 'text') {
+          H.onAssistantTextDelta?.(bubbleId, assistantId, block.text);
+        } else if (block.type === 'tool_use') {
+          toolToBubble.current.set(block.id, bubbleId);
+          H.onToolUse?.(bubbleId, assistantId, {
+            id: block.id,
+            name: block.name,
+            input: block.input ?? {},
             status: 'running',
-          };
-          merged.toolCalls = [...(merged.toolCalls ?? []), tc];
-          toolMapRef.current.set(tu.id, { messageId: assistantId, toolCallId: tu.id });
+          });
+          H.onExecutingChange?.(bubbleId, true);
         }
-
-        if (existingIdx >= 0) next[existingIdx] = merged;
-        else next.push(merged);
-
-        currentAssistantId.current = assistantId;
-        return next;
-      });
-
-      if (toolUses.length > 0) setExecuting(true);
+      }
       return;
     }
 
     if (sdk.type === 'user') {
-      const userMsg = (sdk as SdkUserToolResult).message;
-      const results = userMsg.content.filter((c) => c.type === 'tool_result');
-      if (results.length === 0) return;
-
-      setMessages((prev) => {
-        const next = prev.map((m) => ({ ...m, toolCalls: m.toolCalls ? [...m.toolCalls] : undefined }));
-        for (const r of results) {
-          const ref = toolMapRef.current.get(r.tool_use_id);
-          if (!ref) continue;
-          const msgIdx = next.findIndex((m) => m.id === ref.messageId);
-          if (msgIdx < 0) continue;
-          const msg = next[msgIdx]!;
-          const tcIdx = (msg.toolCalls ?? []).findIndex((t) => t.id === r.tool_use_id);
-          if (tcIdx < 0) continue;
-          const tc = msg.toolCalls![tcIdx]!;
-          const outputText = toolResultText(r.content);
-          const denied = /deshabilitado|denegada|policy|denied|no permitido|fuera del workspace/i.test(outputText);
-          msg.toolCalls![tcIdx] = {
-            ...tc,
-            status: r.is_error ? 'error' : denied ? 'denied' : 'success',
-            output: outputText,
-          };
-        }
-        return next;
-      });
-      setExecuting(false);
+      const results = (sdk as SdkUserToolResult).message.content.filter((c) => c.type === 'tool_result');
+      for (const r of results) {
+        const targetBubble = toolToBubble.current.get(r.tool_use_id) ?? bubbleId;
+        const txt = toolResultText(r.content);
+        const denied = /deshabilitado|denegada|policy|denied|no permitido|fuera del workspace/i.test(txt);
+        const status: ToolCall['status'] = r.is_error ? 'error' : denied ? 'denied' : 'success';
+        H.onToolResult?.(targetBubble, r.tool_use_id, txt, status);
+      }
+      H.onExecutingChange?.(bubbleId, false);
       return;
     }
 
     if (sdk.type === 'result') {
-      setThinking(false);
-      setExecuting(false);
+      H.onThinkingChange?.(bubbleId, false);
+      H.onExecutingChange?.(bubbleId, false);
     }
   }, []);
 
@@ -210,33 +188,42 @@ export function useEcoSocket({ url, token, initialMessages = [] }: Options): Eco
         const msg = JSON.parse(ev.data) as ServerMsg;
         if (msg.type === 'sdk_message') handleSdkMessage(msg.message);
         else if (msg.type === 'session_started') {
-          // metadata, ya manejado en system init
+          // already handled in system init
         } else if (msg.type === 'done') {
-          setThinking(false);
-          setExecuting(false);
-          currentAssistantId.current = null;
+          const bubbleId = activeBubbleIdRef.current;
+          if (bubbleId) {
+            handlersRef.current.onThinkingChange?.(bubbleId, false);
+            handlersRef.current.onExecutingChange?.(bubbleId, false);
+            handlersRef.current.onDone?.(bubbleId);
+          }
+          currentAssistantIdRef.current = null;
+          activeBubbleIdRef.current = null;
         } else if (msg.type === 'error') {
           setError(msg.message);
-          setThinking(false);
-          setExecuting(false);
+          const bubbleId = activeBubbleIdRef.current;
+          if (bubbleId) {
+            handlersRef.current.onThinkingChange?.(bubbleId, false);
+            handlersRef.current.onExecutingChange?.(bubbleId, false);
+          }
+          handlersRef.current.onError?.(bubbleId, msg.message);
+          activeBubbleIdRef.current = null;
         }
       } catch (e) {
         console.warn('WS parse error', e);
       }
     };
 
-    ws.onerror = () => {
-      setStatus('error');
-    };
+    ws.onerror = () => setStatus('error');
 
     ws.onclose = () => {
       wsRef.current = null;
-      setThinking(false);
-      setExecuting(false);
-      if (!wantedRef.current) {
-        setStatus('disconnected');
-        return;
+      const bubbleId = activeBubbleIdRef.current;
+      if (bubbleId) {
+        handlersRef.current.onThinkingChange?.(bubbleId, false);
+        handlersRef.current.onExecutingChange?.(bubbleId, false);
       }
+      activeBubbleIdRef.current = null;
+      if (!wantedRef.current) { setStatus('disconnected'); return; }
       const attempt = Math.min(reconnectAttempt.current, RECONNECT_BACKOFF_MS.length - 1);
       const delay = RECONNECT_BACKOFF_MS[attempt]!;
       reconnectAttempt.current += 1;
@@ -255,43 +242,27 @@ export function useEcoSocket({ url, token, initialMessages = [] }: Options): Eco
     };
   }, [connect]);
 
-  const send = useCallback((text: string, workspace?: string) => {
+  const send = useCallback((opts: { bubbleId: string; text: string; workspace?: string; resumeSessionId?: string | null }) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      setError('No conectado al backend');
+      handlersRef.current.onError?.(opts.bubbleId, 'No conectado al backend');
       return;
     }
-    const userMsg: Message = {
-      id: `u_${Date.now()}`,
-      role: 'user',
-      text,
-      createdAt: Date.now(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setThinking(true);
+    activeBubbleIdRef.current = opts.bubbleId;
+    currentAssistantIdRef.current = null;
+    handlersRef.current.onThinkingChange?.(opts.bubbleId, true);
     setError(null);
-    currentAssistantId.current = null;
-    ws.send(JSON.stringify({ type: 'prompt', text, ...(workspace ? { workspace } : {}) }));
+    ws.send(JSON.stringify({
+      type: 'prompt',
+      text: opts.text,
+      ...(opts.workspace ? { workspace: opts.workspace } : {}),
+      ...(opts.resumeSessionId ? { resumeSessionId: opts.resumeSessionId } : {}),
+    }));
   }, []);
 
   const interrupt = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: 'interrupt' }));
   }, []);
 
-  const resetConversation = useCallback(() => {
-    setMessages([]);
-    currentAssistantId.current = null;
-    toolMapRef.current.clear();
-  }, []);
-
-  return {
-    status,
-    error,
-    thinking,
-    executing,
-    messages,
-    send,
-    interrupt,
-    resetConversation,
-  };
+  return { status, error, send, interrupt };
 }
