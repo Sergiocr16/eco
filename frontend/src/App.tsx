@@ -143,7 +143,6 @@ function Shell() {
       case 'create_bubble': {
         const fresh = bubbles.createBubble({ title: action.title, focus: true });
         handleOpenAgent(fresh.id);
-        if (action.followUp) sendTo(fresh.id, action.followUp);
         return;
       }
       case 'rename_active': {

@@ -5,7 +5,7 @@ export type MetaAction =
   | { kind: 'goto_settings' }
   | { kind: 'goto_files' }
   | { kind: 'goto_history' }
-  | { kind: 'create_bubble'; title?: string; followUp?: string }
+  | { kind: 'create_bubble'; title?: string }
   | { kind: 'rename_active'; title: string }
   | { kind: 'close_active' }
   | { kind: 'focus_bubble'; bubbleId: string }
@@ -32,82 +32,180 @@ export function stripWakePrefix(text: string): { isMeta: boolean; rest: string }
   return { isMeta: true, rest: text.slice(m[0].length).trim() };
 }
 
-const RX = {
-  help:        /^(ayuda|help|qu[eé] pod[ée]s hacer|qu[eé] comandos|comandos?)\b/i,
-  status:      /^(estado|status|qu[eé] hay (?:activo|pasando)|resumen|dame (?:un|el) (?:estado|resumen)|c[oó]mo (?:va|vamos|est[áa]n)|qu[eé] est[áa] (?:activo|pasando))/i,
-  goto_dashboard: /^(volv[eé]r?|regres[aá]r?|ir|sal[ií]r?|salir)\s+(?:al?|a la|a|del)?\s*(?:inicio|dashboard|principal|home|men[uú]|tablero)\b|^(?:inicio|dashboard|principal|home)\b/i,
-  goto_settings:  /(?:abr[íi]r?|ir a|mostr[áa]r?|llev[áa]r?(?:me)?|configurar?)\s+(?:los?|las?)?\s*(?:ajustes|configuraci[oó]n|settings|preferencias)\b|^(?:ajustes|configuraci[oó]n|settings)\b/i,
-  goto_files:     /(?:abr[íi]r?|ir a|mostr[áa]r?|llev[áa]r?(?:me)?)\s+(?:los?|las?)?\s*(?:archivos?|files?|carpetas?)\b|^(?:archivos|files|carpetas)\b/i,
-  goto_history:   /(?:abr[íi]r?|ir a|mostr[áa]r?(?:me)?)\s+(?:el|la)?\s*(?:historial|history)\b|^historial\b/i,
-  next_bubble:    /^(siguiente|pr[oó]xim[ao]|despu[eé]s|avanz[áa]r?)(?:\s+(?:burbuja|conversaci[oó]n|chat))?\b/i,
-  prev_bubble:    /^(anterior|previ[ao]|antes|atr[áa]s|regres[aá]r? una)(?:\s+(?:burbuja|conversaci[oó]n|chat))?\b/i,
-  close_active:   /^(cerr[áa]r?|elimin[áa]r?|borr[áa]r?|saca|destru[íi]r?|matar?)\s+(?:esta|la|el)?\s*(?:burbuja|conversaci[oó]n|chat|agente)?\b/i,
-  pause_active:   /^(pausa[r]?|paus[áa]|deten[eé]r?|frena[r]?|alto|stop)\s*(?:esta|la|el)?\s*(?:burbuja|conversaci[oó]n|chat|agente)?\b/i,
-  resume_active:  /^(reanud[áa]r?|continu[áa]r?|sigue|sig[áa]|despausa[r]?|reanudar)/i,
-  voice_on:       /^(habl[áa]|prend[ée] (?:la )?voz|activ[áa] (?:la )?voz|deci|leeme)/i,
-  voice_off:      /^(silencio|c[áa]llate|callate|apag[áa] (?:la )?voz|deja de hablar|no hables|mute)/i,
-  theme_dark:     /^(modo )?(?:oscuro|dark|noche)\b/i,
-  theme_light:    /^(modo )?(?:claro|light|d[íi]a|brillante)\b/i,
-  theme_system:   /^(modo )?(?:sistema|system|autom[áa]tico)\b/i,
-  rename_active:  /^(?:renombr[áa]r?|renombr[ar]|cambi[áa]r? el? nombre|llam[áa]r?(?:la)?|ponel[ea]?\s+(?:de )?nombre|p[oó]nel[ea]?)\s+(?:esta|la|el)?\s*(?:burbuja|conversaci[oó]n|chat)?\s*(?:a|como|por)?\s*["']?(.{2,80}?)["']?\s*$/i,
-  create_with:    /^(?:abr[íi]r?|cre[áa]r?|nuev[ao]|inici[áa]r?|empez[áa]r?)\s+(?:una?\s+)?(?:nueva\s+)?(?:burbuja|conversaci[oó]n|chat|agente|ventana|terminal)\s*(?:nueva)?\s*(?:para|sobre|de|con|llamada?)?\s*["']?(.{2,80}?)["']?\s*$/i,
-  create_bare:    /^(?:abr[íi]r?|cre[áa]r?|nuev[ao]|inici[áa]r?)\s+(?:una?\s+)?(?:nueva\s+)?(?:burbuja|conversaci[oó]n|chat|agente|ventana|terminal)/i,
-  goto_bubble:    /^(?:and[áa]r?|v[áa]r?|ir|llev[áa]r?(?:me)?|mostr[áa]r?(?:me)?|abr[íi]r?|cambi[áa]r? a)\s+(?:a la?|al?|hacia|hasta)?\s*(?:burbuja|conversaci[oó]n|chat|agente)?\s*(?:de|sobre|llamada?|llamado)?\s*["']?(.{2,80}?)["']?\s*$/i,
+// Tokens que decoran pero no aportan información: "una", "burbuja", "conversación", etc.
+// Se filtran para que «abrir burbuja Aditum» = «abrir Aditum».
+const FILLERS = new Set([
+  'una', 'un', 'la', 'el', 'los', 'las',
+  'burbuja', 'burbujas', 'conversacion', 'conversaciones',
+  'chat', 'chats', 'agente', 'agentes', 'ventana', 'ventanas',
+  'terminal', 'terminales',
+  'a', 'al', 'a la', 'de', 'sobre', 'para', 'con', 'llamada', 'llamado',
+  'nueva', 'nuevo',
+]);
+
+// Alias → comando canónico
+const ALIASES: Record<string, string> = {
+  // Navegación
+  'dashboard': 'dashboard', 'inicio': 'dashboard', 'home': 'dashboard',
+  'principal': 'dashboard', 'tablero': 'dashboard', 'menu': 'dashboard',
+  'volver': 'dashboard', 'volve': 'dashboard', 'regresa': 'dashboard',
+  'regresar': 'dashboard', 'salir': 'dashboard',
+
+  'ajustes': 'settings', 'configuracion': 'settings', 'config': 'settings',
+  'settings': 'settings', 'preferencias': 'settings',
+
+  'archivos': 'files', 'files': 'files', 'carpetas': 'files',
+
+  'historial': 'history', 'history': 'history',
+
+  // Burbujas
+  'abrir': 'create', 'abre': 'create', 'crear': 'create', 'crea': 'create',
+  'nueva': 'create', 'nuevo': 'create', 'iniciar': 'create', 'empezar': 'create',
+  'create': 'create',
+
+  'renombrar': 'rename', 'renombra': 'rename', 'rename': 'rename',
+  'rebautizar': 'rename', 'rebautiza': 'rename',
+
+  'cerrar': 'close', 'cierra': 'close', 'borrar': 'close', 'borra': 'close',
+  'eliminar': 'close', 'elimina': 'close', 'close': 'close', 'sacar': 'close',
+  'destruir': 'close',
+
+  'ir': 'goto', 've': 'goto', 'anda': 'goto', 'andate': 'goto',
+  'cambiar': 'goto', 'cambia': 'goto', 'focus': 'goto', 'enfocar': 'goto',
+  'enfoca': 'goto', 'mostrar': 'goto', 'mostrame': 'goto', 'muestrame': 'goto',
+  'llevame': 'goto', 'llevar': 'goto',
+
+  'siguiente': 'next', 'next': 'next', 'proxima': 'next', 'proximo': 'next',
+  'despues': 'next', 'avanzar': 'next', 'avanza': 'next',
+
+  'anterior': 'prev', 'prev': 'prev', 'previa': 'prev', 'previo': 'prev',
+  'antes': 'prev', 'atras': 'prev',
+
+  // Estado
+  'estado': 'status', 'status': 'status', 'resumen': 'status',
+  'lista': 'status', 'listar': 'status', 'listame': 'status',
+
+  'pausar': 'pause', 'pausa': 'pause', 'pause': 'pause', 'detener': 'pause',
+  'detene': 'pause', 'parar': 'pause', 'para': 'pause', 'frenar': 'pause',
+  'stop': 'pause',
+
+  'continuar': 'resume', 'continua': 'resume', 'reanudar': 'resume',
+  'reanuda': 'resume', 'resume': 'resume', 'sigue': 'resume',
+
+  // Voz
+  'silencio': 'mute', 'mute': 'mute', 'callate': 'mute',
+  'apaga': 'mute', 'apagar': 'mute',
+
+  'hablar': 'unmute', 'habla': 'unmute', 'unmute': 'unmute',
+  'leeme': 'unmute', 'prende': 'unmute', 'prender': 'unmute',
+
+  // Tema
+  'claro': 'theme_light', 'light': 'theme_light', 'dia': 'theme_light',
+  'oscuro': 'theme_dark', 'dark': 'theme_dark', 'noche': 'theme_dark',
+  'sistema': 'theme_system', 'system': 'theme_system', 'automatico': 'theme_system',
+
+  // Ayuda
+  'ayuda': 'help', 'help': 'help', 'comandos': 'help',
 };
+
+function normalize(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // remove accents
+    .replace(/[¿?¡!.,;:]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function stripQuotes(s: string): string {
+  return s.replace(/^["'`]+|["'`]+$/g, '').trim();
+}
+
+function dropFillers(tokens: string[]): string[] {
+  return tokens.filter((t) => !FILLERS.has(t));
+}
 
 export function parseMetaCommand(rest: string, bubbles: Bubble[], activeBubbleId: string | null): MetaAction {
   const text = rest.trim();
   if (!text) return { kind: 'unknown' };
 
-  if (RX.help.test(text)) return { kind: 'help' };
-  if (RX.status.test(text)) return { kind: 'show_status' };
-  if (RX.goto_dashboard.test(text)) return { kind: 'goto_dashboard' };
-  if (RX.goto_settings.test(text)) return { kind: 'goto_settings' };
-  if (RX.goto_files.test(text)) return { kind: 'goto_files' };
-  if (RX.goto_history.test(text)) return { kind: 'goto_history' };
-  if (RX.next_bubble.test(text)) return { kind: 'next_bubble' };
-  if (RX.prev_bubble.test(text)) return { kind: 'prev_bubble' };
-  if (RX.close_active.test(text)) return { kind: 'close_active' };
-  if (RX.pause_active.test(text)) return { kind: 'pause_active' };
-  if (RX.resume_active.test(text)) return { kind: 'resume_active' };
-  if (RX.voice_off.test(text)) return { kind: 'toggle_voice', on: false };
-  if (RX.voice_on.test(text)) return { kind: 'toggle_voice', on: true };
-  if (RX.theme_dark.test(text)) return { kind: 'set_theme', mode: 'dark' };
-  if (RX.theme_light.test(text)) return { kind: 'set_theme', mode: 'light' };
-  if (RX.theme_system.test(text)) return { kind: 'set_theme', mode: 'system' };
+  // Tomamos la primera palabra como keyword
+  const norm = normalize(text);
+  const tokens = norm.split(' ');
+  const firstToken = tokens[0] ?? '';
+  const commandKey = ALIASES[firstToken];
 
-  const rename = RX.rename_active.exec(text);
-  if (rename && rename[1]) return { kind: 'rename_active', title: rename[1].trim() };
+  if (!commandKey) return { kind: 'unknown' };
 
-  const create = RX.create_with.exec(text);
-  if (create && create[1]) {
-    const title = create[1].trim();
-    return { kind: 'create_bubble', title };
+  // Argumento = resto del texto, con fillers removidos
+  const restTokens = tokens.slice(1);
+  const argRaw = stripQuotes(restTokens.join(' '));
+  const argClean = dropFillers(restTokens).join(' ').trim();
+  // Conservamos el texto original con casing/acentos para el título (más bonito)
+  const titleFromOriginal = preserveCasing(rest, argRaw);
+
+  switch (commandKey) {
+    case 'dashboard': return { kind: 'goto_dashboard' };
+    case 'settings':  return { kind: 'goto_settings' };
+    case 'files':     return { kind: 'goto_files' };
+    case 'history':   return { kind: 'goto_history' };
+    case 'create':    return { kind: 'create_bubble', title: titleFromOriginal || undefined };
+    case 'rename': {
+      if (!titleFromOriginal) return { kind: 'unknown' };
+      return { kind: 'rename_active', title: titleFromOriginal };
+    }
+    case 'close':     return { kind: 'close_active' };
+    case 'goto': {
+      if (!argClean) return { kind: 'unknown' };
+      const target = findBubbleByQuery(argClean, bubbles, activeBubbleId);
+      if (target) return { kind: 'focus_bubble', bubbleId: target.id };
+      return { kind: 'unknown' };
+    }
+    case 'next':         return { kind: 'next_bubble' };
+    case 'prev':         return { kind: 'prev_bubble' };
+    case 'status':       return { kind: 'show_status' };
+    case 'pause':        return { kind: 'pause_active' };
+    case 'resume':       return { kind: 'resume_active' };
+    case 'mute':         return { kind: 'toggle_voice', on: false };
+    case 'unmute':       return { kind: 'toggle_voice', on: true };
+    case 'theme_light':  return { kind: 'set_theme', mode: 'light' };
+    case 'theme_dark':   return { kind: 'set_theme', mode: 'dark' };
+    case 'theme_system': return { kind: 'set_theme', mode: 'system' };
+    case 'help':         return { kind: 'help' };
+    default:             return { kind: 'unknown' };
   }
-  if (RX.create_bare.test(text)) return { kind: 'create_bubble' };
+}
 
-  const goto = RX.goto_bubble.exec(text);
-  if (goto && goto[1]) {
-    const q = goto[1].trim().toLowerCase();
-    const target = findBubbleByQuery(q, bubbles, activeBubbleId);
-    if (target) return { kind: 'focus_bubble', bubbleId: target.id };
-  }
+// Conserva el casing del texto original al extraer el argumento.
+// Si el user escribió "Eco abrir Aditum", queremos "Aditum" no "aditum".
+function preserveCasing(originalText: string, normalizedArg: string): string {
+  if (!normalizedArg) return '';
+  // Tomamos el sufijo del original después del primer token (la keyword)
+  const trimmed = originalText.trim();
+  const firstSpace = trimmed.indexOf(' ');
+  if (firstSpace === -1) return '';
+  let argFromOriginal = trimmed.slice(firstSpace + 1).trim();
+  argFromOriginal = stripQuotes(argFromOriginal);
 
-  return { kind: 'unknown' };
+  // Quitamos fillers manteniendo orden/casing del original
+  const words = argFromOriginal.split(/\s+/);
+  const filtered = words.filter((w) => !FILLERS.has(normalize(w)));
+  return filtered.join(' ').trim();
 }
 
 function findBubbleByQuery(q: string, bubbles: Bubble[], activeBubbleId: string | null): Bubble | null {
   if (!q) return null;
+  const qn = normalize(q);
   let best: { score: number; bubble: Bubble } | null = null;
   for (const b of bubbles) {
     if (b.id === activeBubbleId) continue;
-    const title = b.title.toLowerCase();
+    const title = normalize(b.title);
     let score = 0;
-    if (title === q) score = 100;
-    else if (title.startsWith(q)) score = 70;
-    else if (title.includes(q)) score = 40;
+    if (title === qn) score = 100;
+    else if (title.startsWith(qn)) score = 70;
+    else if (title.includes(qn)) score = 40;
     else {
-      const words = q.split(/\s+/).filter(Boolean);
+      const words = qn.split(' ').filter(Boolean);
       const matches = words.filter((w) => title.includes(w)).length;
       score = words.length ? Math.round((matches / words.length) * 30) : 0;
     }
@@ -116,10 +214,9 @@ function findBubbleByQuery(q: string, bubbles: Bubble[], activeBubbleId: string 
   return best && best.score >= 30 ? best.bubble : null;
 }
 
-// Feedback humano para mostrar al user qué se ejecutó
 export function describeAction(action: MetaAction, bubbles: Bubble[]): MetaActionFeedback {
   switch (action.kind) {
-    case 'goto_dashboard': return { title: 'Volviendo al inicio' };
+    case 'goto_dashboard': return { title: 'Dashboard' };
     case 'goto_settings':  return { title: 'Ajustes' };
     case 'goto_files':     return { title: 'Archivos' };
     case 'goto_history':   return { title: 'Historial' };
@@ -130,28 +227,29 @@ export function describeAction(action: MetaAction, bubbles: Bubble[]): MetaActio
       const b = bubbles.find((x) => x.id === action.bubbleId);
       return { title: 'Yendo a', detail: b?.title ?? '' };
     }
-    case 'next_bubble':    return { title: 'Siguiente burbuja' };
-    case 'prev_bubble':    return { title: 'Burbuja anterior' };
-    case 'show_status':    return { title: 'Estado de Eco' };
+    case 'next_bubble':    return { title: 'Siguiente' };
+    case 'prev_bubble':    return { title: 'Anterior' };
+    case 'show_status':    return { title: 'Estado' };
     case 'pause_active':   return { title: 'Pausada' };
     case 'resume_active':  return { title: 'Reanudada' };
-    case 'toggle_voice':   return { title: action.on ? 'Voz activada' : 'Silencio' };
+    case 'toggle_voice':   return { title: action.on ? 'Voz prendida' : 'Silencio' };
     case 'set_theme':      return { title: `Tema ${action.mode}` };
-    case 'help':           return { title: 'Ayuda', detail: 'Comandos disponibles' };
-    case 'unknown':        return { title: 'No entendí', detail: 'Probá «Eco ayuda»' };
+    case 'help':           return { title: 'Comandos disponibles' };
+    case 'unknown':        return { title: 'No entendí', detail: 'Decí «Eco ayuda»' };
   }
 }
 
-// Listado para el panel de ayuda
 export const COMMAND_HELP: Array<{ example: string; desc: string }> = [
-  { example: 'Eco abrí una burbuja para Aditum', desc: 'Crea una nueva conversación con título' },
-  { example: 'Eco renombrá esta a Refactor pagos', desc: 'Cambia el título de la activa' },
-  { example: 'Eco cerrá esta', desc: 'Cierra la burbuja activa' },
-  { example: 'Eco andá a la de auth', desc: 'Va a la burbuja con ese nombre (fuzzy)' },
-  { example: 'Eco siguiente / Eco anterior', desc: 'Navega entre burbujas' },
-  { example: 'Eco mostrame las burbujas', desc: 'Vuelve al dashboard' },
-  { example: 'Eco estado', desc: 'Resumen de todas las burbujas activas' },
-  { example: 'Eco silencio / Eco hablá', desc: 'Apaga o prende la voz' },
-  { example: 'Eco modo claro / oscuro', desc: 'Cambia el tema' },
-  { example: 'Eco ajustes / archivos / historial', desc: 'Navega a esas secciones' },
+  { example: 'Eco abrir <nombre>', desc: 'Crea una nueva burbuja con ese nombre' },
+  { example: 'Eco renombrar <nombre>', desc: 'Cambia el título de la burbuja activa' },
+  { example: 'Eco cerrar', desc: 'Cierra la burbuja activa' },
+  { example: 'Eco ir <nombre>', desc: 'Va a la burbuja con ese nombre (fuzzy)' },
+  { example: 'Eco siguiente · Eco anterior', desc: 'Navega entre burbujas' },
+  { example: 'Eco dashboard · inicio', desc: 'Vuelve al dashboard' },
+  { example: 'Eco ajustes · archivos · historial', desc: 'Navega a esas secciones' },
+  { example: 'Eco estado', desc: 'Lista todas las burbujas con su actividad' },
+  { example: 'Eco pausar · continuar', desc: 'Pausa o reanuda la burbuja activa' },
+  { example: 'Eco silencio · hablar', desc: 'Apaga o prende la voz' },
+  { example: 'Eco claro · oscuro · sistema', desc: 'Cambia el tema' },
+  { example: 'Eco ayuda', desc: 'Muestra este panel' },
 ];
