@@ -36,11 +36,13 @@
   --color-mesh-3: oklch(0.6 0.16 80);
   --color-mesh-4: oklch(0.48 0.18 320);
 
-  /* Bubbles */
-  --color-bubble-user: rgb(255 220 170 / 0.08);
-  --color-bubble-user-border: rgb(255 200 130 / 0.18);
-  --color-bubble-assistant: rgb(180 200 255 / 0.05);
-  --color-bubble-assistant-border: rgb(180 200 255 / 0.14);
+  /* Bubbles — densidad real para legibilidad sin perder el material glass */
+  --color-bubble-user-from: rgb(255 220 170 / 0.28);
+  --color-bubble-user-to: rgb(220 180 110 / 0.18);
+  --color-bubble-user-border: rgb(255 210 150 / 0.4);
+  --color-bubble-assistant-from: rgb(200 215 255 / 0.22);
+  --color-bubble-assistant-to: rgb(160 180 230 / 0.14);
+  --color-bubble-assistant-border: rgb(200 215 255 / 0.32);
 
   /* Radii */
   --radius-card: 1.25rem;
@@ -139,23 +141,35 @@
 
   /* Bubbles */
   .bubble-user {
-    background: var(--color-bubble-user);
-    backdrop-filter: blur(32px) saturate(170%);
-    -webkit-backdrop-filter: blur(32px) saturate(170%);
+    background:
+      linear-gradient(135deg, var(--color-bubble-user-from), var(--color-bubble-user-to)),
+      rgb(20 12 4 / 0.55);
+    backdrop-filter: blur(36px) saturate(190%);
+    -webkit-backdrop-filter: blur(36px) saturate(190%);
     box-shadow:
       inset 0 0 0 1px var(--color-bubble-user-border),
-      inset 0 1px 0 rgb(255 220 180 / 0.22),
-      0 8px 32px -10px rgb(0 0 0 / 0.4);
+      inset 0 1px 0 rgb(255 230 200 / 0.4),
+      0 8px 32px -10px rgb(0 0 0 / 0.5);
   }
 
   .bubble-assistant {
-    background: var(--color-bubble-assistant);
-    backdrop-filter: blur(32px) saturate(170%);
-    -webkit-backdrop-filter: blur(32px) saturate(170%);
+    background:
+      linear-gradient(135deg, var(--color-bubble-assistant-from), var(--color-bubble-assistant-to)),
+      rgb(10 12 22 / 0.55);
+    backdrop-filter: blur(36px) saturate(190%);
+    -webkit-backdrop-filter: blur(36px) saturate(190%);
     box-shadow:
       inset 0 0 0 1px var(--color-bubble-assistant-border),
-      inset 0 1px 0 rgb(200 220 255 / 0.18),
-      0 8px 32px -10px rgb(0 0 0 / 0.4);
+      inset 0 1px 0 rgb(220 230 255 / 0.32),
+      0 8px 32px -10px rgb(0 0 0 / 0.5);
+  }
+
+  /* Cuerpo de texto en bubbles: peso 450 + sombrita de profundidad para legibilidad sobre cualquier mesh */
+  .bubble-text {
+    color: oklch(0.99 0.005 270);
+    font-weight: 450;
+    font-feature-settings: 'kern', 'liga', 'ss01';
+    text-shadow: 0 1px 0 rgb(0 0 0 / 0.25);
   }
 
   /* Status glow — applied as outer shadow on orb */

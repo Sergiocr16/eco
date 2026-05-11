@@ -24,14 +24,8 @@ export function MessageBubble({ message, index }: { message: Message; index: num
           )}
         >
           <p
-            className={cn(
-              "text-[14.5px] leading-relaxed",
-              "text-eco-text tracking-[-0.005em]",
-            )}
-            style={{
-              fontFamily: 'var(--font-text)',
-              fontWeight: 400,
-            }}
+            className="bubble-text text-[14.5px] leading-relaxed tracking-[-0.005em]"
+            style={{ fontFamily: 'var(--font-text)' }}
           >
             {message.text}
           </p>

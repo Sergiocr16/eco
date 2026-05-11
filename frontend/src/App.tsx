@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { GradientMesh } from './components/GradientMesh';
 import { StatusOrb } from './components/StatusOrb';
 import { MessageBubble } from './components/MessageBubble';
 import { InputBar } from './components/InputBar';
+import { useVoice } from './hooks/useVoice';
+import { useTTS } from './hooks/useTTS';
 import type { EcoStatus, Message } from './lib/types';
 
 const DUMMY_MESSAGES: Message[] = [
@@ -46,8 +48,35 @@ const DUMMY_MESSAGES: Message[] = [
 export function App() {
   const [status, setStatus] = useState<EcoStatus>('idle');
   const [messages, setMessages] = useState<Message[]>(DUMMY_MESSAGES);
-  const [listening, setListening] = useState(false);
   const [workspace] = useState('/Users/sergio/projects/aditum-jh');
+
+  const voice = useVoice({
+    language: 'es-419',
+    onCommand: handleVoiceCommand,
+  });
+  const tts = useTTS();
+
+  const listening = voice.state === 'watching' || voice.state === 'capturing';
+  const lastSpokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (voice.state === 'capturing') setStatus('listening');
+    else if (tts.speaking) setStatus('speaking');
+    else if (voice.state === 'watching' && (status === 'listening' || status === 'speaking')) setStatus('idle');
+  }, [voice.state, tts.speaking, status]);
+
+  useEffect(() => {
+    if (!tts.enabled) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant' || !last.text) return;
+    if (lastSpokenRef.current === last.id) return;
+    lastSpokenRef.current = last.id;
+    tts.speak(last.text);
+  }, [messages, tts]);
+
+  function handleVoiceCommand(text: string) {
+    handleSend(text);
+  }
 
   function handleSend(text: string) {
     const msg: Message = {
@@ -62,9 +91,8 @@ export function App() {
   }
 
   function handleMicToggle() {
-    const next = !listening;
-    setListening(next);
-    setStatus(next ? 'listening' : 'idle');
+    if (voice.state === 'off' || voice.state === 'unsupported') voice.start();
+    else voice.stop();
   }
 
   return (
@@ -110,6 +138,13 @@ export function App() {
       <InputBar
         workspace={workspace}
         listening={listening}
+        interimText={voice.state === 'capturing' ? voice.transcript : ''}
+        voiceError={voice.error}
+        voiceUnsupported={voice.state === 'unsupported'}
+        ttsEnabled={tts.enabled}
+        ttsSupported={tts.isSupported}
+        ttsSpeaking={tts.speaking}
+        onTtsToggle={() => tts.setEnabled(!tts.enabled)}
         onSend={handleSend}
         onMicToggle={handleMicToggle}
         onWorkspaceClick={() => {}}

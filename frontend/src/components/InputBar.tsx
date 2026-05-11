@@ -1,18 +1,39 @@
 import { useState, type FormEvent } from 'react';
 import { motion } from 'motion/react';
-import { Mic, FolderOpen, ArrowUp } from 'lucide-react';
+import { Mic, FolderOpen, ArrowUp, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 type Props = {
   workspace: string;
   listening: boolean;
+  interimText?: string;
+  voiceError?: string | null;
+  voiceUnsupported?: boolean;
+  ttsEnabled?: boolean;
+  ttsSupported?: boolean;
+  ttsSpeaking?: boolean;
+  onTtsToggle?: () => void;
   onSend: (text: string) => void;
   onMicToggle: () => void;
   onWorkspaceClick: () => void;
 };
 
-export function InputBar({ workspace, listening, onSend, onMicToggle, onWorkspaceClick }: Props) {
+export function InputBar({
+  workspace,
+  listening,
+  interimText = '',
+  voiceError,
+  voiceUnsupported,
+  ttsEnabled = false,
+  ttsSupported = true,
+  ttsSpeaking = false,
+  onTtsToggle,
+  onSend,
+  onMicToggle,
+  onWorkspaceClick,
+}: Props) {
   const [text, setText] = useState('');
+  const displayValue = interimText || text;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -23,6 +44,14 @@ export function InputBar({ workspace, listening, onSend, onMicToggle, onWorkspac
   }
 
   const workspaceLabel = workspace.split('/').filter(Boolean).slice(-2).join('/');
+
+  const placeholder = voiceUnsupported
+    ? 'Tu navegador no soporta voz · escribí acá'
+    : voiceError
+      ? voiceError
+      : listening
+        ? 'Escuchando · decí «Eco» seguido del comando…'
+        : 'Escribí o decí «Eco»…';
 
   return (
     <div className="absolute bottom-0 inset-x-0 z-20 px-6 pb-5 pt-2">
@@ -36,13 +65,42 @@ export function InputBar({ workspace, listening, onSend, onMicToggle, onWorkspac
         <MicButton listening={listening} onClick={onMicToggle} />
 
         <input
-          value={text}
+          value={displayValue}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Escribí o decí «Eco»…"
+          placeholder={placeholder}
+          readOnly={!!interimText}
           className="flex-1 bg-transparent outline-none text-[14.5px] text-eco-text placeholder:text-eco-text-faint tracking-tight"
           style={{ fontFamily: 'var(--font-text)' }}
           autoFocus
         />
+
+        {ttsSupported && (
+          <button
+            type="button"
+            onClick={onTtsToggle}
+            title={ttsEnabled ? 'Voz activada · Eco te habla' : 'Voz desactivada'}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full transition-all",
+              ttsEnabled
+                ? "bg-[var(--color-eco-accent)]/20 hover:bg-[var(--color-eco-accent)]/30"
+                : "bg-white/[0.04] hover:bg-white/[0.08]",
+            )}
+            aria-label={ttsEnabled ? 'Desactivar voz' : 'Activar voz'}
+          >
+            {ttsEnabled ? (
+              <Volume2
+                size={13}
+                strokeWidth={1.6}
+                className={cn(
+                  "text-[var(--color-eco-accent)]",
+                  ttsSpeaking && "animate-pulse",
+                )}
+              />
+            ) : (
+              <VolumeX size={13} strokeWidth={1.6} className="text-eco-text-faint" />
+            )}
+          </button>
+        )}
 
         <button
           type="button"
