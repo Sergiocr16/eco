@@ -5,6 +5,7 @@ build/
 .env
 .env.local
 .DS_Store
+*.tsbuildinfo
 
 # Python
 __pycache__/
@@ -17,12 +18,11 @@ venv/
 .idea/
 *.swp
 
-# Eco specific
+# Eco specific — binarios y modelos que se bajan al setup
 data/eco.db
 data/*.db
 listener/models/
+listener/.venv/
 backend/piper/piper/
 backend/piper/voices/*.onnx
 backend/piper/*.tar.gz
-listener/.venv/
-listener/models/

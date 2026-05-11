@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTokens } from '@/design/theme';
 import {
-  Glass, IconBtn, StatusDot, Pill, Kbd, AgentGlyph, SectionLabel,
+  Glass, IconBtn, StatusDot, Pill, Kbd, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import {
   IconWave, IconMic, IconSend, IconPlus, IconGrid, IconGraph, IconExt,
@@ -261,7 +261,7 @@ function AgentBubble({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-        <AgentGlyph size={38} state={state}/>
+        <AgentGlyph size={38} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           {renaming ? (
             <input
@@ -635,8 +635,9 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
               <circle cx={n.x} cy={n.y} r={n.size} fill={t.bg1}
                 stroke={isHover ? t.accent : t.glassBorder} strokeWidth="1"/>
               <text x={n.x} y={n.y + 1} textAnchor="middle" dominantBaseline="middle"
-                fill={t.text0} fontFamily={t.fontSans} fontSize="13" fontWeight="500">
-                {n.title.charAt(0).toUpperCase()}
+                fill={n.accent} fontFamily={t.fontSans} fontSize="13" fontWeight="600"
+                style={{ textTransform: 'uppercase' }}>
+                {bubbleLetter(n.title)}
               </text>
               <circle cx={n.x + n.size * 0.72} cy={n.y - n.size * 0.72} r="4" fill={sColor}
                 style={{ filter: isActive ? `drop-shadow(0 0 4px ${sColor})` : 'none' }}/>

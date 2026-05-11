@@ -3,8 +3,9 @@ import { apiFetch } from '@/lib/api';
 import { useTokens } from '@/design/theme';
 import { DiffViewer } from '@/components/DiffViewer';
 import {
-  Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel,
+  Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
+import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic,
@@ -15,6 +16,7 @@ import {
 import type { Bubble, Message, ToolCall } from '@/lib/types';
 import { stateColor, STATE_LABELS, type AgentState } from '@/design/tokens';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
+import { stripWakePrefix } from '@/lib/meta-commands';
 
 function copyTranscriptToClipboard(bubble: Bubble) {
   const lines: string[] = [`# ${bubble.title}`, ''];
@@ -162,7 +164,7 @@ export function AgentDetail({
         padding: '14px 24px', borderBottom: `1px solid ${t.glassBorder}`,
       }}>
         <IconBtn icon={IconArrowL} size={32} onClick={onBack}/>
-        <AgentGlyph size={40} state={state}/>
+        <AgentGlyph size={40} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {renaming ? (
@@ -322,7 +324,13 @@ function ChatPanel({
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const suggestions = useQuickSuggestions();
-  const displayValue = voiceInterim || draft;
+
+  // Si el interim empieza con "Eco", no se mezcla con el draft del chat:
+  // el comando va al sistema, no a la conversación.
+  const interimParsed = stripWakePrefix(voiceInterim);
+  const interimForChat = interimParsed.isMeta ? '' : voiceInterim;
+  const displayValue = interimForChat || draft;
+  const commandInProgress = interimParsed.isMeta ? interimParsed.rest : '';
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -351,11 +359,27 @@ function ChatPanel({
       </div>
 
       <div style={{ padding: '12px 24px 18px', borderTop: `1px solid ${t.glassBorder}` }}>
+        {commandInProgress !== '' && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 12px', marginBottom: 6, borderRadius: 999,
+            background: `color-mix(in oklch, ${t.accent} 10%, transparent)`,
+            border: `1px solid color-mix(in oklch, ${t.accent} 25%, transparent)`,
+            fontSize: 12, color: t.accent,
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%', background: t.accent,
+              animation: 'eco-shimmer 1s ease-in-out infinite',
+            }}/>
+            <span style={{ fontFamily: t.fontMono, fontWeight: 500 }}>Eco</span>
+            <span style={{ color: t.text1 }}>· {commandInProgress || 'escuchando comando…'}</span>
+          </div>
+        )}
         <Glass radius={16} style={{ padding: 6, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
           <textarea
             value={displayValue}
             onChange={(e) => setDraft(e.target.value)}
-            readOnly={!!voiceInterim}
+            readOnly={!!interimForChat}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
             }}
@@ -427,7 +451,17 @@ function ChatBubble({ msg, agent, index }: { msg: Message; agent: string; index:
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: t.accentOn, fontWeight: 500, fontSize: 13, flexShrink: 0,
         }}>Tú</div>
-      ) : <AgentGlyph size={32} state="done"/>}
+      ) : (
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%',
+          background: t.bg3,
+          border: `0.5px solid ${t.glassBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <EcoMark size={20}/>
+        </div>
+      )}
       <div style={{ flex: 1, paddingTop: 6, minWidth: 0 }}>
         <div style={{
           fontFamily: t.fontSans, fontSize: 11.5, color: t.text2, marginBottom: 4,
@@ -508,7 +542,15 @@ function ThinkingBubble({ label }: { label: string }) {
   const t = useTokens();
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-      <AgentGlyph size={32} state="thinking"/>
+      <div style={{
+        width: 32, height: 32, borderRadius: '50%',
+        background: t.accentFaint,
+        border: `0.5px solid color-mix(in oklch, ${t.accent} 30%, transparent)`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <EcoMark size={20}/>
+      </div>
       <div style={{ paddingTop: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
         {[0, 1, 2].map((i) => (
           <span key={i} style={{
@@ -530,7 +572,7 @@ function EmptyChat({ title }: { title: string }) {
       flex: 1, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32,
     }}>
-      <AgentGlyph size={64} state="done"/>
+      <EcoMark size={64}/>
       <div style={{ textAlign: 'center', maxWidth: 360 }}>
         <h3 style={{ margin: 0, fontSize: 16, color: t.text0, fontWeight: 600, letterSpacing: -0.2 }}>
           Inicia conversación con {title}

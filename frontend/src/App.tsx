@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider, useTokens } from './design/theme';
-import { MacWindow } from './components/MacWindow';
 import { AppSidebar, type Screen } from './components/AppSidebar';
 import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
@@ -310,23 +309,19 @@ function Shell() {
     <>
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,
-        background: t.desktopBg,
+        background: t.windowBg,
       }}/>
       <div style={{
         position: 'fixed', inset: 0, zIndex: 1,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
+        display: 'flex',
       }}>
-        <div style={{ width: '100%', height: '100%', maxWidth: 1480, maxHeight: 940 }}>
-          <MacWindow title={titleFor(screen, detailBubble?.title)}>
-            <div style={{ display: 'flex', height: '100%' }}>
-              <AppSidebar
-                screen={screen === 'detail' ? 'dashboard' : screen}
-                onScreenChange={handleScreenChange}
-                agentCount={activeCount}
-              />
-              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                <ScreenError error={socket.error}/>
+        <AppSidebar
+          screen={screen === 'detail' ? 'dashboard' : screen}
+          onScreenChange={handleScreenChange}
+          agentCount={activeCount}
+        />
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
+          <ScreenError error={socket.error}/>
                 {screen === 'detail' && detailBubble ? (
                   <AgentDetail
                     bubble={detailBubble}
@@ -368,9 +363,6 @@ function Shell() {
                     availableWorkspaces={workspacesHook.list.workspaces}
                   />
                 )}
-              </div>
-            </div>
-          </MacWindow>
         </div>
       </div>
 
@@ -384,14 +376,6 @@ function Shell() {
       />
     </>
   );
-}
-
-function titleFor(screen: Screen, detailTitle?: string): string {
-  if (screen === 'detail' && detailTitle) return `Eco — ${detailTitle}`;
-  if (screen === 'files') return 'Eco — Archivos';
-  if (screen === 'history') return 'Eco — Historial';
-  if (screen === 'settings') return 'Eco — Ajustes';
-  return 'Eco — Centro de control';
 }
 
 function ScreenError({ error }: { error: string | null }) {

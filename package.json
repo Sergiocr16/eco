@@ -11,7 +11,12 @@
     "dev:backend": "npm --workspace backend run dev",
     "dev:frontend": "npm --workspace frontend run dev",
     "dev": "npm-run-all --parallel dev:backend dev:frontend",
-    "listener": "cd listener && python3 main.py"
+    "typecheck": "npm-run-all --parallel typecheck:*",
+    "typecheck:backend": "npm --workspace backend run typecheck",
+    "typecheck:frontend": "npm --workspace frontend run typecheck",
+    "test:security": "npm --workspace backend run test:security",
+    "listener": "cd listener && .venv/bin/python main.py",
+    "listener:setup": "cd listener && ./setup.sh"
   },
   "devDependencies": {
     "npm-run-all": "^4.1.5"

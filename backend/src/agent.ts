@@ -7,6 +7,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { config, defaultWorkspace, isAllowedWorkspace, isInsideWorkspace } from './config.js';
 import { buildEcoMcpServer, ECO_MCP_TOOL_NAMES, type ClientAction } from './agent-tools.js';
+import { buildSafeEnv } from './security.js';
 
 export type AgentRunOptions = {
   prompt: string;
@@ -17,21 +18,6 @@ export type AgentRunOptions = {
 };
 
 export type { ClientAction };
-
-const SAFE_ENV_KEYS = [
-  'PATH', 'HOME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE',
-  'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'PWD', 'TERM',
-];
-
-function buildSafeEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const key of SAFE_ENV_KEYS) {
-    const v = process.env[key];
-    if (v) env[key] = v;
-  }
-  if (config.anthropicApiKey) env.ANTHROPIC_API_KEY = config.anthropicApiKey;
-  return env;
-}
 
 const SAFE_READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'TodoWrite']);
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'MultiEdit']);
@@ -140,7 +126,7 @@ export function runAgent(opts: AgentRunOptions): Query {
     disallowedTools: ['Bash', 'KillBash', 'BashOutput', 'WebFetch', 'WebSearch', 'Task'],
     settingSources: config.skillSources,
     includePartialMessages: true,
-    env: buildSafeEnv() as Record<string, string>,
+    env: buildSafeEnv(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}) as Record<string, string>,
     resume: opts.resumeSessionId,
   };
 

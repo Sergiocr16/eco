@@ -206,25 +206,31 @@ type AgentGlyphProps = {
   type?: AgentType;
   size?: number;
   state?: AgentState;
+  /** Override del glyph. Si se pasa, ignora el type. Ej: primera letra del título. */
+  letter?: string;
+  accent?: string;
 };
 
-export function AgentGlyph({ type = 'general', size = 36, state = 'running' }: AgentGlyphProps) {
+export function AgentGlyph({ type = 'general', size = 36, state = 'running', letter, accent }: AgentGlyphProps) {
   const t = useTokens();
   const meta = AGENT_TYPES[type] ?? AGENT_TYPES.general;
   const sColor = stateColor(state, t);
+  const display = (letter ?? meta.glyph).slice(0, 2);
   return (
     <div style={{
       width: size, height: size, position: 'relative',
       borderRadius: '50%',
-      background: t.bg3,
-      border: `0.5px solid ${t.glassBorder}`,
+      background: accent ? `color-mix(in oklch, ${accent} 18%, ${t.bg3})` : t.bg3,
+      border: `0.5px solid ${accent ? `color-mix(in oklch, ${accent} 40%, transparent)` : t.glassBorder}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       flexShrink: 0,
     }}>
       <span style={{
-        fontFamily: t.fontSans, fontSize: size * 0.40, fontWeight: 500,
-        color: t.text1, letterSpacing: -0.3,
-      }}>{meta.glyph}</span>
+        fontFamily: t.fontSans, fontSize: size * (display.length === 1 ? 0.44 : 0.36),
+        fontWeight: 600,
+        color: accent ?? t.text1, letterSpacing: -0.3,
+        textTransform: 'uppercase',
+      }}>{display}</span>
       {(state === 'running' || state === 'thinking') && (
         <span style={{
           position: 'absolute', bottom: -1, right: -1,
@@ -235,6 +241,14 @@ export function AgentGlyph({ type = 'general', size = 36, state = 'running' }: A
       )}
     </div>
   );
+}
+
+export function bubbleLetter(title: string): string {
+  if (!title) return '·';
+  // Si tiene varias palabras, tomar iniciales (max 2)
+  const words = title.trim().split(/\s+/);
+  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase();
+  return title.trim()[0]!.toUpperCase();
 }
 
 type SectionLabelProps = {

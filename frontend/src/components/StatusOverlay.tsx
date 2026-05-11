@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useTokens } from '@/design/theme';
-import { Glass, Pill, StatusDot, AgentGlyph } from '@/design/primitives';
+import { Glass, Pill, StatusDot, AgentGlyph, bubbleLetter } from '@/design/primitives';
 import { IconX, IconClock, IconCommand } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
 import { stateColor, STATE_LABELS, type AgentState } from '@/design/tokens';
@@ -129,7 +129,7 @@ function StatusRow({ bubble, onSelect }: { bubble: Bubble; onSelect: () => void 
         background: t.bg2, border: `1px solid ${t.glassBorder}`,
         cursor: 'pointer', textAlign: 'left',
       }}>
-      <AgentGlyph size={32} state={state}/>
+      <AgentGlyph size={32} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: 13, fontWeight: 500, color: t.text0, letterSpacing: -0.1,
