@@ -121,14 +121,21 @@ function Shell() {
 
   function handleIncomingVoiceText(text: string) {
     const { isMeta, rest } = stripWakePrefix(text);
-    if (isMeta) {
-      const action = parseMetaCommand(rest, bubbles.bubbles, detailBubbleId || bubbles.activeBubbleId);
-      flash(action);
-      handleMetaAction(action);
+    const inBubble = screen === 'detail' && !!detailBubbleId;
+
+    // Caso 1: dentro de una burbuja, sin prefijo Eco → input a la conversación
+    if (inBubble && !isMeta) {
+      sendTo(detailBubbleId!, text);
       return;
     }
-    const target = detailBubbleId || bubbles.activeBubbleId;
-    if (target) sendTo(target, text);
+
+    // Caso 2: dentro de una burbuja con prefijo Eco → comando meta
+    // Caso 3: fuera de burbuja (dashboard/files/settings/history) → TODO es comando meta,
+    //         con o sin prefijo. Lo que digas se interpreta como navegación.
+    const command = isMeta ? rest : text;
+    const action = parseMetaCommand(command, bubbles.bubbles, detailBubbleId || bubbles.activeBubbleId);
+    flash(action);
+    handleMetaAction(action);
   }
 
   function handleMetaAction(action: MetaAction): void {
@@ -299,10 +306,15 @@ function Shell() {
   }
 
   function handleCreateAgent(title?: string) {
-    // Crear sin workspace por default. Pedir al usuario que elija.
-    const fresh = bubbles.createBubble({ title, workspace: '', focus: true });
+    const defaultWs = (typeof window !== 'undefined' && window.localStorage?.getItem('eco.workspace.default')) || '';
+    const fresh = bubbles.createBubble({
+      title,
+      workspace: defaultWs || '',
+      focus: true,
+    });
     handleOpenAgent(fresh.id);
-    setWsPickerForBubble(fresh.id);
+    // Si no hay default seteado, abrir picker para elegir
+    if (!defaultWs) setWsPickerForBubble(fresh.id);
   }
 
   const activeCount = bubbles.bubbles.filter((b) =>

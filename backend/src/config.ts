@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { resolve, sep, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { readStore as readWorkspaceStore } from './workspaces-store.js';
+import { readApiKey } from './api-key-store.js';
 
 function parseEnvWorkspaces(): string[] {
   const raw = process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? `${homedir()}/projects/eco-test`;
@@ -53,7 +54,11 @@ export const config = {
   host: process.env.ECO_HOST ?? '127.0.0.1',
   claudeCliPath: process.env.CLAUDE_CLI_PATH ?? `${homedir()}/.local/bin/claude`,
   model: process.env.ECO_MODEL ?? 'claude-sonnet-4-5-20250929',
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY?.trim(),
+  get anthropicApiKey(): string | undefined {
+    const env = process.env.ANTHROPIC_API_KEY?.trim();
+    if (env) return env;
+    return readApiKey() ?? undefined;
+  },
   allowedOrigins: parseAllowedOrigins(),
   maxPromptsPerMinute: Number(process.env.ECO_RATE_LIMIT ?? 10),
   maxPromptBytes: Number(process.env.ECO_MAX_PROMPT_BYTES ?? 50_000),

@@ -10,6 +10,7 @@ import { listSkills } from './skills.js';
 import { addWorkspace, readStore as readWorkspaceStore, removeWorkspace } from './workspaces-store.js';
 import { runShell, ShellRequestSchema } from './shell.js';
 import { fileDiff, DiffRequestSchema } from './file-diff.js';
+import { writeApiKey, deleteApiKey, hasApiKey, maskedApiKey, validateApiKey } from './api-key-store.js';
 import { z } from 'zod';
 
 const authToken = getOrCreateToken();
@@ -101,6 +102,35 @@ app.delete('/workspaces', (req: Request, res: Response) => {
   if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
   removeWorkspace(parsed.data.path);
   res.json({ ok: true, workspaces: config.workspaces });
+});
+
+const ApiKeyRequestSchema = z.object({
+  key: z.string().min(8).max(400),
+  validate: z.boolean().optional(),
+});
+
+app.get('/config/api-key', (_req: Request, res: Response) => {
+  res.json({ hasKey: hasApiKey(), masked: maskedApiKey() });
+});
+
+app.post('/config/api-key', async (req: Request, res: Response) => {
+  const parsed = ApiKeyRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  try {
+    if (parsed.data.validate !== false) {
+      const result = await validateApiKey(parsed.data.key);
+      if (!result.ok) return res.status(400).json({ error: result.error ?? 'Key inválida' });
+    }
+    writeApiKey(parsed.data.key);
+    res.json({ ok: true, masked: maskedApiKey() });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : 'Error guardando key' });
+  }
+});
+
+app.delete('/config/api-key', (_req: Request, res: Response) => {
+  deleteApiKey();
+  res.json({ ok: true });
 });
 
 const VoiceTranscribedSchema = z.object({

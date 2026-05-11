@@ -13,6 +13,8 @@ import { EcoMark } from '@/design/EcoMark';
 import { useTTS, type UnifiedVoice } from '@/hooks/useTTS';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
+import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
+import { useApiKey } from '@/hooks/useApiKey';
 
 type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appearance' | 'about';
 
@@ -107,11 +109,30 @@ function Row({ icon: Icon, title, desc, control, danger }: {
 }
 
 function SectionGeneral() {
+  const t = useTokens();
+  const def = useDefaultWorkspace();
+  const ws = useWorkspaces();
   return (
     <div style={{ maxWidth: 720 }}>
       <Header title="General" sub="Comportamiento global de Eco."/>
       <GeneralToggleRow icon={IconBolt} title="Escuchar al abrir Eco" storageKey="eco.voice.autostart" defaultOn/>
       <GeneralToggleRow icon={IconLayers} title="Mantener Eco en la barra de menú" storageKey="eco.menubar" defaultOn/>
+      <Row
+        icon={IconFolder}
+        title="Carpeta por defecto"
+        desc="Se asigna automáticamente al crear una burbuja. Vacío = pedir cada vez."
+        control={
+          <select
+            value={def.value}
+            onChange={(e) => def.set(e.target.value)}
+            style={{ ...fieldStyle(t), width: 220 }}
+          >
+            <option value="">Preguntar cada vez</option>
+            {ws.list.workspaces.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        }/>
       <Row icon={IconCommand} title="Atajo global" desc="Pulsá esta combinación para invocar Eco."
         control={<KbdRow keys={['⌥', '⇧', 'E']}/>}/>
       <Row icon={IconGlobe} title="Idioma de Eco"
@@ -217,6 +238,7 @@ function SectionClaude() {
   return (
     <div style={{ maxWidth: 720 }}>
       <Header title="Claude & API" sub="Configura tu acceso a los modelos de Anthropic."/>
+      <ApiKeyEditor/>
       <Row icon={IconCpu} title="Modelo por defecto" desc="Usado al crear nuevos agentes."
         control={
           <Select defaultValue="sonnet" width={220} options={[
@@ -229,6 +251,105 @@ function SectionClaude() {
         control={<Input defaultValue="~/.local/bin/claude" width={240} mono/>}/>
       <Row icon={IconBolt} title="Streaming de respuestas" desc="Mostrar texto en tiempo real."
         control={<ToggleControlled defaultOn/>}/>
+    </div>
+  );
+}
+
+function ApiKeyEditor() {
+  const t = useTokens();
+  const apiKey = useApiKey();
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleSave() {
+    const v = draft.trim();
+    if (!v) return;
+    setBusy(true);
+    setError(null);
+    setSuccess(false);
+    const r = await apiKey.save(v);
+    setBusy(false);
+    if (r.ok) {
+      setDraft('');
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 2500);
+    } else {
+      setError(r.error);
+    }
+  }
+
+  async function handleDelete() {
+    setBusy(true);
+    await apiKey.remove();
+    setBusy(false);
+  }
+
+  return (
+    <div style={{
+      padding: '14px 0', borderBottom: `1px solid ${t.glassBorder}`,
+      display: 'flex', flexDirection: 'column', gap: 10,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 9,
+          background: t.bg3, color: t.accent,
+          border: `1px solid ${t.glassBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <IconKey size={15}/>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13.5, color: t.text0, fontWeight: 500 }}>
+            API Key de Anthropic
+          </div>
+          <div style={{ fontSize: 12, color: t.text2, marginTop: 3, lineHeight: 1.5 }}>
+            Se guarda en <code style={{ fontFamily: t.fontMono }}>~/.eco/api-key</code> con permisos 600.
+            En sesiones con PIN, se cifra con la clave derivada (próximamente).
+          </div>
+        </div>
+        {apiKey.hasKey && (
+          <span style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px', borderRadius: 999,
+            background: `color-mix(in oklch, ${t.ok} 14%, transparent)`,
+            color: t.ok, fontSize: 11, fontWeight: 500,
+            border: `1px solid color-mix(in oklch, ${t.ok} 30%, transparent)`,
+          }}>
+            <IconCheck size={11}/> Guardada · {apiKey.masked}
+          </span>
+        )}
+      </div>
+
+      <Glass radius={12} style={{ padding: 8, display: 'flex', gap: 8 }}>
+        <input
+          type="password"
+          value={draft}
+          onChange={(e) => { setDraft(e.target.value); setError(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+          placeholder="sk-ant-api03-..."
+          style={{
+            flex: 1, background: 'transparent', border: 0, outline: 'none',
+            fontFamily: t.fontMono, fontSize: 12.5, color: t.text0, padding: '6px 10px',
+          }}
+        />
+        <Btn kind="primary" size="sm" onClick={handleSave} disabled={busy || !draft.trim()} icon={IconCheck}>
+          {busy ? 'Validando…' : apiKey.hasKey ? 'Reemplazar' : 'Guardar'}
+        </Btn>
+        {apiKey.hasKey && (
+          <Btn kind="danger" size="sm" onClick={handleDelete} disabled={busy} icon={IconTrash}>Quitar</Btn>
+        )}
+      </Glass>
+
+      {error && (
+        <div style={{ fontSize: 11.5, color: t.err, paddingLeft: 4 }}>{error}</div>
+      )}
+      {success && (
+        <div style={{ fontSize: 11.5, color: t.ok, paddingLeft: 4 }}>
+          API key guardada y validada contra Anthropic.
+        </div>
+      )}
     </div>
   );
 }
