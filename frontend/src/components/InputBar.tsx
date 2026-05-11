@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { Mic, FolderOpen, ArrowUp, Volume2, VolumeX, Settings } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { SkillAutocomplete } from './SkillAutocomplete';
+import type { SkillInfo } from '@/hooks/useSkills';
 
 type Props = {
   workspace: string;
@@ -12,6 +14,7 @@ type Props = {
   ttsEnabled?: boolean;
   ttsSupported?: boolean;
   ttsSpeaking?: boolean;
+  skills?: SkillInfo[];
   onTtsToggle?: () => void;
   onSettingsClick?: () => void;
   onSend: (text: string) => void;
@@ -28,6 +31,7 @@ export function InputBar({
   ttsEnabled = false,
   ttsSupported = true,
   ttsSpeaking = false,
+  skills = [],
   onTtsToggle,
   onSettingsClick,
   onSend,
@@ -35,7 +39,35 @@ export function InputBar({
   onWorkspaceClick,
 }: Props) {
   const [text, setText] = useState('');
+  const [skillMenuOpen, setSkillMenuOpen] = useState(false);
   const displayValue = interimText || text;
+
+  // Detect slash autocomplete: '/something' al inicio o después de un espacio
+  const slashMatch = interimText ? null : /(?:^|\s)\/(\w*)$/.exec(text);
+  const slashQuery = slashMatch?.[1] ?? '';
+  const showAutocomplete = skillMenuOpen && !!slashMatch;
+
+  useEffect(() => {
+    setSkillMenuOpen(!!slashMatch);
+  }, [slashMatch]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && skillMenuOpen) {
+        setSkillMenuOpen(false);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [skillMenuOpen]);
+
+  function selectSkill(skill: SkillInfo) {
+    setText((t) => t.replace(/(?:^|\s)\/\w*$/, (match) => {
+      const prefix = match.startsWith(' ') ? ' ' : '';
+      return `${prefix}/${skill.name} `;
+    }));
+    setSkillMenuOpen(false);
+  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -57,6 +89,13 @@ export function InputBar({
 
   return (
     <div className="absolute bottom-0 inset-x-0 z-20 px-6 pb-5 pt-2">
+      <div className="relative">
+      <SkillAutocomplete
+        skills={skills}
+        query={slashQuery}
+        onSelect={selectSkill}
+        open={showAutocomplete}
+      />
       <motion.form
         onSubmit={handleSubmit}
         initial={{ y: 20, opacity: 0 }}
@@ -129,6 +168,7 @@ export function InputBar({
 
         <SendButton hasText={text.trim().length > 0} />
       </motion.form>
+      </div>
     </div>
   );
 }

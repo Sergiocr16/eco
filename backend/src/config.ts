@@ -34,6 +34,15 @@ function safeRealpath(target: string): string | null {
   }
 }
 
+function parseSkillSources(): Array<'user' | 'project' | 'local'> {
+  const raw = process.env.ECO_SKILL_SOURCES ?? 'user,project';
+  const allowed = new Set(['user', 'project', 'local']);
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is 'user' | 'project' | 'local' => allowed.has(s));
+}
+
 export const config = {
   workspaces: parseWorkspaces(),
   port: Number(process.env.ECO_PORT ?? 7000),
@@ -47,6 +56,7 @@ export const config = {
   maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 12),
   promptTimeoutMs: Number(process.env.ECO_PROMPT_TIMEOUT_MS ?? 10 * 60 * 1000),
   wsBackpressureBytes: Number(process.env.ECO_WS_BACKPRESSURE ?? 8 * 1024 * 1024),
+  skillSources: parseSkillSources(),
 };
 
 export function isAllowedWorkspace(target: string | undefined): boolean {

@@ -9,6 +9,7 @@ import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
 import { useEcoSocket } from './hooks/useEcoSocket';
+import { useSkills } from './hooks/useSkills';
 import type { EcoStatus, Message, ToolCall } from './lib/types';
 
 const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
@@ -19,6 +20,7 @@ export function App() {
 
   const bubbles = useBubbles('');
   const tts = useTTS();
+  const skillsHook = useSkills(bubbles.activeBubble?.workspace);
 
   const socket = useEcoSocket({
     url: BACKEND,
@@ -204,6 +206,7 @@ export function App() {
         ttsEnabled={tts.enabled}
         ttsSupported={tts.isSupported}
         ttsSpeaking={tts.speaking}
+        skills={skillsHook.skills}
         onTtsToggle={() => tts.setEnabled(!tts.enabled)}
         onSettingsClick={() => setSettingsOpen(true)}
         onSend={handleSend}

@@ -135,7 +135,7 @@ export function runAgent(opts: AgentRunOptions): Query {
     },
     tools: ALLOWED_TOOL_NAMES,
     disallowedTools: ['Bash', 'KillBash', 'BashOutput', 'WebFetch', 'WebSearch', 'Task'],
-    settingSources: [],
+    settingSources: config.skillSources,
     includePartialMessages: true,
     env: buildSafeEnv() as Record<string, string>,
     resume: opts.resumeSessionId,

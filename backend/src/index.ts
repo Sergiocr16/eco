@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { attachWebSocket } from './ws-server.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
+import { listSkills } from './skills.js';
 
 const authToken = getOrCreateToken();
 
@@ -66,6 +67,11 @@ app.get('/info', (_req, res) => {
 app.get('/tts/voices', (_req, res) => {
   if (!isPiperAvailable()) return res.status(503).json({ error: 'Piper no instalado' });
   res.json({ voices: listVoices() });
+});
+
+app.get('/skills', (req: Request, res: Response) => {
+  const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : undefined;
+  res.json({ skills: listSkills(workspace), sources: config.skillSources });
 });
 
 const ttsConcurrency = { active: 0, max: 2 };
