@@ -4,6 +4,7 @@ import { GradientMesh } from './components/GradientMesh';
 import { StatusOrb } from './components/StatusOrb';
 import { MessageBubble } from './components/MessageBubble';
 import { InputBar } from './components/InputBar';
+import { SettingsPanel } from './components/SettingsPanel';
 import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useEcoSocket } from './hooks/useEcoSocket';
@@ -16,6 +17,7 @@ const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
 
 export function App() {
   const [workspace] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const socket = useEcoSocket({ url: BACKEND, token: TOKEN });
   const voice = useVoice({ language: 'es-419', onCommand: handleVoiceCommand });
@@ -114,6 +116,18 @@ export function App() {
         ttsEnabled={tts.enabled}
         ttsSupported={tts.isSupported}
         ttsSpeaking={tts.speaking}
+        onTtsToggle={() => tts.setEnabled(!tts.enabled)}
+        onSettingsClick={() => setSettingsOpen(true)}
+        onSend={handleSend}
+        onMicToggle={handleMicToggle}
+        onWorkspaceClick={() => setSettingsOpen(true)}
+      />
+
+      <SettingsPanel
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        ttsEnabled={tts.enabled}
+        ttsSpeaking={tts.speaking}
         ttsVoices={tts.voices}
         ttsSelectedVoiceURI={tts.selectedVoiceURI}
         onTtsToggle={() => tts.setEnabled(!tts.enabled)}
@@ -129,9 +143,7 @@ export function App() {
             if (previous) tts.selectVoice(previous);
           }, 4500);
         }}
-        onSend={handleSend}
-        onMicToggle={handleMicToggle}
-        onWorkspaceClick={() => {}}
+        workspaces={[workspace || '/tmp/eco-test']}
       />
     </div>
   );

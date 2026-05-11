@@ -1,10 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { motion } from 'motion/react';
-import { Mic, FolderOpen, ArrowUp, Volume2, VolumeX } from 'lucide-react';
+import { Mic, FolderOpen, ArrowUp, Volume2, VolumeX, Settings } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { VoiceMenu } from './VoiceMenu';
-
-import type { UnifiedVoice } from '@/hooks/useTTS';
 
 type Props = {
   workspace: string;
@@ -15,11 +12,8 @@ type Props = {
   ttsEnabled?: boolean;
   ttsSupported?: boolean;
   ttsSpeaking?: boolean;
-  ttsVoices?: UnifiedVoice[];
-  ttsSelectedVoiceURI?: string | null;
   onTtsToggle?: () => void;
-  onTtsVoiceChange?: (id: string) => void;
-  onTtsTestVoice?: (id: string) => void;
+  onSettingsClick?: () => void;
   onSend: (text: string) => void;
   onMicToggle: () => void;
   onWorkspaceClick: () => void;
@@ -34,11 +28,8 @@ export function InputBar({
   ttsEnabled = false,
   ttsSupported = true,
   ttsSpeaking = false,
-  ttsVoices = [],
-  ttsSelectedVoiceURI = null,
   onTtsToggle,
-  onTtsVoiceChange,
-  onTtsTestVoice,
+  onSettingsClick,
   onSend,
   onMicToggle,
   onWorkspaceClick,
@@ -86,44 +77,31 @@ export function InputBar({
         />
 
         {ttsSupported && (
-          <div className={cn(
-            "flex items-center rounded-full transition-all pl-1",
-            ttsEnabled
-              ? "bg-[var(--color-eco-accent)]/15"
-              : "bg-white/[0.04]",
-          )}>
-            <button
-              type="button"
-              onClick={onTtsToggle}
-              title={ttsEnabled ? 'Voz activada' : 'Voz desactivada'}
-              className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                ttsEnabled ? "hover:bg-[var(--color-eco-accent)]/20" : "hover:bg-white/[0.05]",
-              )}
-              aria-label={ttsEnabled ? 'Desactivar voz' : 'Activar voz'}
-            >
-              {ttsEnabled ? (
-                <Volume2
-                  size={13}
-                  strokeWidth={1.6}
-                  className={cn(
-                    "text-[var(--color-eco-accent)]",
-                    ttsSpeaking && "animate-pulse",
-                  )}
-                />
-              ) : (
-                <VolumeX size={13} strokeWidth={1.6} className="text-eco-text-faint" />
-              )}
-            </button>
-            {ttsEnabled && onTtsVoiceChange && onTtsTestVoice && (
-              <VoiceMenu
-                voices={ttsVoices}
-                selectedURI={ttsSelectedVoiceURI}
-                onSelect={onTtsVoiceChange}
-                onTestVoice={onTtsTestVoice}
-              />
+          <button
+            type="button"
+            onClick={onTtsToggle}
+            title={ttsEnabled ? 'Voz activada · Eco te habla' : 'Voz desactivada'}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full transition-all",
+              ttsEnabled
+                ? "bg-[var(--color-eco-accent)]/20 hover:bg-[var(--color-eco-accent)]/30"
+                : "bg-white/[0.04] hover:bg-white/[0.08]",
             )}
-          </div>
+            aria-label={ttsEnabled ? 'Desactivar voz' : 'Activar voz'}
+          >
+            {ttsEnabled ? (
+              <Volume2
+                size={13}
+                strokeWidth={1.6}
+                className={cn(
+                  "text-[var(--color-eco-accent)]",
+                  ttsSpeaking && "animate-pulse",
+                )}
+              />
+            ) : (
+              <VolumeX size={13} strokeWidth={1.6} className="text-eco-text-faint" />
+            )}
+          </button>
         )}
 
         <button
@@ -136,6 +114,18 @@ export function InputBar({
             {workspaceLabel || 'workspace'}
           </span>
         </button>
+
+        {onSettingsClick && (
+          <button
+            type="button"
+            onClick={onSettingsClick}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
+            aria-label="Ajustes"
+            title="Ajustes"
+          >
+            <Settings size={13} strokeWidth={1.6} className="text-eco-text-faint" />
+          </button>
+        )}
 
         <SendButton hasText={text.trim().length > 0} />
       </motion.form>

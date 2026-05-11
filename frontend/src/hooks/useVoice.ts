@@ -69,7 +69,7 @@ export type VoiceHookResult = {
 };
 
 const WAKE_WORD_VARIANTS = /\b(?:eco+|ech+o+|h[eé]ctor|ekko)\b/i;
-const SILENCE_BEFORE_COMMIT_MS = 1400;
+const SILENCE_BEFORE_COMMIT_MS = 1500;
 
 type Options = {
   language?: string;
@@ -84,7 +84,7 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const wantedRef = useRef(false);
   const stateRef = useRef<VoiceState>('off');
-  const captureRef = useRef<string>('');
+  const isCapturingRef = useRef(false);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onCommandRef = useRef(onCommand);
   useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
@@ -97,9 +97,7 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
   const isSupported = !!Ctor;
 
   useEffect(() => {
-    if (!isSupported) {
-      setState('unsupported');
-    }
+    if (!isSupported) setState('unsupported');
   }, [isSupported]);
 
   const setS = (s: VoiceState) => {
@@ -107,20 +105,7 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
     setState(s);
   };
 
-  const commit = useCallback(() => {
-    const text = captureRef.current.trim();
-    captureRef.current = '';
-    setTranscript('');
-    if (text) onCommandRef.current(text);
-    setS('watching');
-  }, []);
-
-  const scheduleCommit = useCallback(() => {
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    silenceTimerRef.current = setTimeout(commit, SILENCE_BEFORE_COMMIT_MS);
-  }, [commit]);
-
-  const buildRecognition = useCallback(() => {
+  const buildRecognition = useCallback((): SpeechRecognition | null => {
     if (!Ctor) return null;
     const r = new Ctor();
     r.lang = language;
@@ -128,18 +113,55 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
     r.interimResults = true;
     r.maxAlternatives = 1;
 
+    let lastCommittedText = '';
+
+    const scheduleCommit = () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        const text = lastCommittedText.trim();
+        lastCommittedText = '';
+        isCapturingRef.current = false;
+        setTranscript('');
+        setS('watching');
+        // reiniciar reconocimiento para vaciar event.results
+        try { r.stop(); } catch { /* race */ }
+        if (text) onCommandRef.current(text);
+      }, SILENCE_BEFORE_COMMIT_MS);
+    };
+
     r.onresult = (event) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i]!;
-        const text = result[0]!.transcript;
-        if (result.isFinal) {
-          processChunk(text, true);
-        } else {
-          interim += text;
-        }
+      // Reconstruimos el texto completo de la sesión actual desde event.results
+      let full = '';
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (!result) continue;
+        const alt = result[0];
+        if (!alt) continue;
+        full += alt.transcript;
       }
-      if (interim) processChunk(interim, false);
+      full = full.trim();
+      if (!full) return;
+      setError(null);
+
+      const hasWake = WAKE_WORD_VARIANTS.test(full);
+      const afterWake = full.replace(WAKE_WORD_VARIANTS, '').trim();
+
+      if (!isCapturingRef.current) {
+        if (hasWake) {
+          isCapturingRef.current = true;
+          setS('capturing');
+          lastCommittedText = afterWake;
+          setTranscript(afterWake);
+          scheduleCommit();
+        }
+        return;
+      }
+
+      // Capturando: texto = todo lo dicho menos el wake word (si aún aparece)
+      const value = hasWake ? afterWake : full;
+      lastCommittedText = value;
+      setTranscript(value);
+      scheduleCommit();
     };
 
     r.onerror = (e) => {
@@ -168,32 +190,7 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
     };
 
     return r;
-
-    function processChunk(raw: string, isFinal: boolean) {
-      const text = raw.trim();
-      if (!text) return;
-      setError(null);
-
-      if (stateRef.current === 'watching') {
-        if (WAKE_WORD_VARIANTS.test(text)) {
-          const afterWake = text.replace(WAKE_WORD_VARIANTS, '').trim();
-          captureRef.current = afterWake;
-          setTranscript(afterWake);
-          setS('capturing');
-          if (isFinal || afterWake) scheduleCommit();
-        }
-        return;
-      }
-
-      if (stateRef.current === 'capturing') {
-        captureRef.current = isFinal
-          ? (captureRef.current + ' ' + text).trim()
-          : text;
-        setTranscript(captureRef.current);
-        scheduleCommit();
-      }
-    }
-  }, [Ctor, language, scheduleCommit]);
+  }, [Ctor, language]);
 
   const start = useCallback(() => {
     if (!isSupported) return;
@@ -213,11 +210,10 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
   const stop = useCallback(() => {
     wantedRef.current = false;
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    captureRef.current = '';
+    isCapturingRef.current = false;
     setTranscript('');
-    try {
-      recognitionRef.current?.stop();
-    } catch { /* noop */ }
+    try { recognitionRef.current?.abort(); } catch { /* noop */ }
+    recognitionRef.current = null;
     setS('off');
   }, []);
 
@@ -226,6 +222,7 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
       wantedRef.current = false;
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       try { recognitionRef.current?.abort(); } catch { /* noop */ }
+      recognitionRef.current = null;
     };
   }, []);
 
