@@ -11,7 +11,10 @@ import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
-import { parseMetaCommand, stripWakePrefix } from './lib/meta-commands';
+import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
+import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
+import { StatusOverlay } from './components/StatusOverlay';
+import { useTheme } from './design/theme';
 import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
 
 const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
@@ -27,14 +30,27 @@ export function App() {
 
 function Shell() {
   const t = useTokens();
+  const { setMode } = useTheme();
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackPayload | null>(null);
+  const [overlay, setOverlay] = useState<'status' | 'help' | null>(null);
 
   const workspacesHook = useWorkspaces();
   const defaultWs = workspacesHook.list.workspaces[0] ?? '';
   const bubbles = useBubbles(defaultWs);
   const tts = useTTS();
   const lastSpokenRef = useRef<string | null>(null);
+
+  function flash(action: MetaAction) {
+    const f = describeAction(action, bubbles.bubbles);
+    setFeedback({
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: f.title,
+      detail: f.detail,
+      kind: action.kind === 'unknown' ? 'unknown' : 'ok',
+    });
+  }
 
   const socket = useEcoSocket({
     url: BACKEND,
@@ -104,40 +120,36 @@ function Shell() {
 
   function handleIncomingVoiceText(text: string) {
     const { isMeta, rest } = stripWakePrefix(text);
-    if (isMeta && rest) {
-      const action = parseMetaCommand(rest, bubbles.bubbles);
-      if (handleMetaAction(action, rest)) return;
-      // No matcheó comando meta — fallback: enviar a la burbuja activa con prefijo conservado
-      const target = detailBubbleId || bubbles.activeBubbleId;
-      if (target) sendTo(target, rest);
+    if (isMeta) {
+      const action = parseMetaCommand(rest, bubbles.bubbles, detailBubbleId || bubbles.activeBubbleId);
+      flash(action);
+      handleMetaAction(action);
       return;
     }
-    // Sin wake — entrada directa a la burbuja activa
     const target = detailBubbleId || bubbles.activeBubbleId;
     if (target) sendTo(target, text);
   }
 
-  function handleMetaAction(action: ReturnType<typeof parseMetaCommand>, originalText: string): boolean {
+  function handleMetaAction(action: MetaAction): void {
     switch (action.kind) {
       case 'goto_dashboard':
-      case 'list_bubbles':
-        setScreen('dashboard'); setDetailBubbleId(null); return true;
+        setScreen('dashboard'); setDetailBubbleId(null); return;
       case 'goto_settings':
-        setScreen('settings'); setDetailBubbleId(null); return true;
+        setScreen('settings'); setDetailBubbleId(null); return;
       case 'goto_files':
-        setScreen('files'); setDetailBubbleId(null); return true;
+        setScreen('files'); setDetailBubbleId(null); return;
       case 'goto_history':
-        setScreen('history'); setDetailBubbleId(null); return true;
+        setScreen('history'); setDetailBubbleId(null); return;
       case 'create_bubble': {
         const fresh = bubbles.createBubble({ title: action.title, focus: true });
         handleOpenAgent(fresh.id);
         if (action.followUp) sendTo(fresh.id, action.followUp);
-        return true;
+        return;
       }
       case 'rename_active': {
         const target = detailBubbleId || bubbles.activeBubbleId;
         if (target) bubbles.renameBubble(target, action.title);
-        return true;
+        return;
       }
       case 'close_active': {
         const target = detailBubbleId || bubbles.activeBubbleId;
@@ -146,18 +158,41 @@ function Shell() {
           setDetailBubbleId(null);
           setScreen('dashboard');
         }
-        return true;
+        return;
       }
       case 'focus_bubble':
         handleOpenAgent(action.bubbleId);
-        return true;
+        return;
+      case 'next_bubble':
+      case 'prev_bubble': {
+        const list = [...bubbles.bubbles].sort((a, b) => b.updatedAt - a.updatedAt);
+        if (list.length === 0) return;
+        const currentId = detailBubbleId || bubbles.activeBubbleId;
+        const idx = list.findIndex((b) => b.id === currentId);
+        const delta = action.kind === 'next_bubble' ? 1 : -1;
+        const next = list[(idx + delta + list.length) % list.length];
+        if (next) handleOpenAgent(next.id);
+        return;
+      }
+      case 'show_status':
+        setOverlay('status'); return;
+      case 'pause_active':
+      case 'resume_active': {
+        const target = detailBubbleId || bubbles.activeBubbleId;
+        if (target) {
+          bubbles.setBubbleStatus(target, action.kind === 'pause_active' ? 'paused' : 'idle');
+        }
+        return;
+      }
+      case 'toggle_voice':
+        tts.setEnabled(action.on); return;
+      case 'set_theme':
+        setMode(action.mode); return;
       case 'help':
-        // No abre ninguna burbuja, sólo registra acción para el orbe
-        console.info('Meta: help', originalText);
-        return true;
-      case 'noop':
+        setOverlay('help'); return;
+      case 'unknown':
       default:
-        return false;
+        return;
     }
   }
 
@@ -311,6 +346,15 @@ function Shell() {
           </MacWindow>
         </div>
       </div>
+
+      <CommandFeedback payload={feedback}/>
+      <StatusOverlay
+        open={overlay !== null}
+        view={overlay}
+        bubbles={bubbles.bubbles}
+        onClose={() => setOverlay(null)}
+        onSelect={(id) => { setOverlay(null); handleOpenAgent(id); }}
+      />
     </>
   );
 }
