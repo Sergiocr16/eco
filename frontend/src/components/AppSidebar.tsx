@@ -3,6 +3,7 @@ import { EcoMark } from '@/design/EcoMark';
 import {
   IconCommand, IconFolderOpen, IconHistory, IconSettings, type IconProps,
 } from '@/design/icons';
+import { useT } from '@/hooks/useI18n';
 
 export type Screen = 'dashboard' | 'files' | 'history' | 'settings' | 'detail' | 'login' | 'onboarding';
 
@@ -12,15 +13,16 @@ type Props = {
   agentCount: number;
 };
 
-const ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; label: string }[] = [
-  { id: 'dashboard', icon: IconCommand, label: 'Inicio' },
-  { id: 'files',     icon: IconFolderOpen, label: 'Archivos' },
-  { id: 'history',   icon: IconHistory, label: 'Historial' },
-  { id: 'settings',  icon: IconSettings, label: 'Ajustes' },
+const ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: string }[] = [
+  { id: 'dashboard', icon: IconCommand, labelKey: 'nav.dashboard' },
+  { id: 'files',     icon: IconFolderOpen, labelKey: 'nav.files' },
+  { id: 'history',   icon: IconHistory, labelKey: 'nav.history' },
+  { id: 'settings',  icon: IconSettings, labelKey: 'nav.settings' },
 ];
 
 export function AppSidebar({ screen, onScreenChange, agentCount }: Props) {
   const t = useTokens();
+  const tr = useT();
   return (
     <div style={{
       width: 64, flexShrink: 0,
@@ -39,7 +41,7 @@ export function AppSidebar({ screen, onScreenChange, agentCount }: Props) {
             key={it.id}
             type="button"
             onClick={() => onScreenChange(it.id)}
-            title={it.label}
+            title={tr(it.labelKey)}
             style={{
               width: 44, height: 44, borderRadius: 12, border: 0, cursor: 'pointer',
               background: active ? t.bg3 : 'transparent',
@@ -72,7 +74,7 @@ export function AppSidebar({ screen, onScreenChange, agentCount }: Props) {
 
       <button
         type="button"
-        title="Cuenta"
+        title={tr('nav.account')}
         style={{
           width: 36, height: 36, borderRadius: '50%', border: 0, cursor: 'pointer',
           background: t.bg3,

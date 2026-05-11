@@ -15,6 +15,7 @@ import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { useApiKey } from '@/hooks/useApiKey';
+import { useI18n, useT } from '@/hooks/useI18n';
 
 type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appearance' | 'about';
 
@@ -110,44 +111,51 @@ function Row({ icon: Icon, title, desc, control, danger }: {
 
 function SectionGeneral() {
   const t = useTokens();
+  const tr = useT();
   const def = useDefaultWorkspace();
   const ws = useWorkspaces();
   return (
     <div style={{ maxWidth: 720 }}>
-      <Header title="General" sub="Comportamiento global de Eco."/>
-      <GeneralToggleRow icon={IconBolt} title="Escuchar al abrir Eco" storageKey="eco.voice.autostart" defaultOn/>
-      <GeneralToggleRow icon={IconLayers} title="Mantener Eco en la barra de menú" storageKey="eco.menubar" defaultOn/>
+      <Header title={tr('settings.general.title')} sub={tr('settings.general.sub')}/>
+      <GeneralToggleRow icon={IconBolt} title={tr('settings.general.listen_on_boot')} storageKey="eco.voice.autostart" defaultOn/>
+      <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>
       <Row
         icon={IconFolder}
-        title="Carpeta por defecto"
-        desc="Se asigna automáticamente al crear una burbuja. Vacío = pedir cada vez."
+        title={tr('settings.general.default_folder')}
+        desc={tr('settings.general.default_folder_desc')}
         control={
-          <select
-            value={def.value}
-            onChange={(e) => def.set(e.target.value)}
-            style={{ ...fieldStyle(t), width: 220 }}
-          >
-            <option value="">Preguntar cada vez</option>
+          <select value={def.value} onChange={(e) => def.set(e.target.value)}
+            style={{ ...fieldStyle(t), width: 220 }}>
+            <option value="">{tr('settings.general.ask_each_time')}</option>
             {ws.list.workspaces.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
           </select>
         }/>
-      <Row icon={IconCommand} title="Atajo global" desc="Pulsá esta combinación para invocar Eco."
+      <Row icon={IconCommand} title={tr('settings.general.shortcut')} desc={tr('settings.general.shortcut_desc')}
         control={<KbdRow keys={['⌥', '⇧', 'E']}/>}/>
-      <Row icon={IconGlobe} title="Idioma de Eco"
-        control={
-          <Select defaultValue="es" width={180} options={[
-            { value: 'es', label: 'Español' },
-            { value: 'en', label: 'English' },
-            { value: 'pt', label: 'Português' },
-          ]}/>
-        }/>
+      <LanguageRow/>
 
       <div style={{ marginTop: 24 }}>
         <SuggestionsEditor/>
       </div>
     </div>
+  );
+}
+
+function LanguageRow() {
+  const t = useTokens();
+  const { lang, setLang } = useI18n();
+  const tr = useT();
+  return (
+    <Row icon={IconGlobe} title={tr('settings.general.app_language')}
+      control={
+        <select value={lang} onChange={(e) => setLang(e.target.value as 'es' | 'en')}
+          style={{ ...fieldStyle(t), width: 180 }}>
+          <option value="es">Español</option>
+          <option value="en">English</option>
+        </select>
+      }/>
   );
 }
 
