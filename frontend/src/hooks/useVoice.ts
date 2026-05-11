@@ -57,37 +57,34 @@ declare global {
   }
 }
 
-export type VoiceState = 'unsupported' | 'off' | 'watching' | 'capturing';
+export type VoiceState = 'unsupported' | 'off' | 'listening';
 
 export type VoiceHookResult = {
   state: VoiceState;
-  transcript: string;
+  interimText: string;
   isSupported: boolean;
   error: string | null;
   start: () => void;
   stop: () => void;
 };
 
-const WAKE_WORD_VARIANTS = /\b(?:eco+|ech+o+|h[eé]ctor|ekko)\b/i;
-const SILENCE_BEFORE_COMMIT_MS = 1500;
-
 type Options = {
   language?: string;
-  onCommand: (text: string) => void;
+  /** Se llama con cada frase final del reconocedor. El consumidor decide si es comando meta o input a la burbuja. */
+  onPhrase: (text: string) => void;
 };
 
-export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHookResult {
+const MIN_PHRASE_CHARS = 2;
+
+export function useVoice({ language = 'es-419', onPhrase }: Options): VoiceHookResult {
   const [state, setState] = useState<VoiceState>('off');
-  const [transcript, setTranscript] = useState('');
+  const [interimText, setInterimText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const wantedRef = useRef(false);
-  const stateRef = useRef<VoiceState>('off');
-  const isCapturingRef = useRef(false);
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onCommandRef = useRef(onCommand);
-  useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
+  const onPhraseRef = useRef(onPhrase);
+  useEffect(() => { onPhraseRef.current = onPhrase; }, [onPhrase]);
 
   const Ctor =
     typeof window !== 'undefined'
@@ -100,11 +97,6 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
     if (!isSupported) setState('unsupported');
   }, [isSupported]);
 
-  const setS = (s: VoiceState) => {
-    stateRef.current = s;
-    setState(s);
-  };
-
   const buildRecognition = useCallback((): SpeechRecognition | null => {
     if (!Ctor) return null;
     const r = new Ctor();
@@ -113,55 +105,32 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
     r.interimResults = true;
     r.maxAlternatives = 1;
 
-    let lastCommittedText = '';
-
-    const scheduleCommit = () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(() => {
-        const text = lastCommittedText.trim();
-        lastCommittedText = '';
-        isCapturingRef.current = false;
-        setTranscript('');
-        setS('watching');
-        // reiniciar reconocimiento para vaciar event.results
-        try { r.stop(); } catch { /* race */ }
-        if (text) onCommandRef.current(text);
-      }, SILENCE_BEFORE_COMMIT_MS);
-    };
-
     r.onresult = (event) => {
-      // Reconstruimos el texto completo de la sesión actual desde event.results
-      let full = '';
-      for (let i = 0; i < event.results.length; i++) {
+      let interim = '';
+      const finals: string[] = [];
+
+      // Iteramos solo desde event.resultIndex (resultados nuevos)
+      for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (!result) continue;
         const alt = result[0];
         if (!alt) continue;
-        full += alt.transcript;
-      }
-      full = full.trim();
-      if (!full) return;
-      setError(null);
-
-      const hasWake = WAKE_WORD_VARIANTS.test(full);
-      const afterWake = full.replace(WAKE_WORD_VARIANTS, '').trim();
-
-      if (!isCapturingRef.current) {
-        if (hasWake) {
-          isCapturingRef.current = true;
-          setS('capturing');
-          lastCommittedText = afterWake;
-          setTranscript(afterWake);
-          scheduleCommit();
+        if (result.isFinal) {
+          const t = alt.transcript.trim();
+          if (t.length >= MIN_PHRASE_CHARS) finals.push(t);
+        } else {
+          interim += alt.transcript;
         }
-        return;
       }
 
-      // Capturando: texto = todo lo dicho menos el wake word (si aún aparece)
-      const value = hasWake ? afterWake : full;
-      lastCommittedText = value;
-      setTranscript(value);
-      scheduleCommit();
+      setError(null);
+      setInterimText(interim.trim());
+
+      for (const phrase of finals) {
+        try { onPhraseRef.current(phrase); } catch (e) { console.error('onPhrase error', e); }
+      }
+
+      if (finals.length > 0) setInterimText('');
     };
 
     r.onerror = (e) => {
@@ -169,13 +138,13 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         setError('Permiso de micrófono denegado');
         wantedRef.current = false;
-        setS('off');
+        setState('off');
         return;
       }
       if (e.error === 'audio-capture') {
         setError('No se encontró micrófono');
         wantedRef.current = false;
-        setS('off');
+        setState('off');
         return;
       }
       setError(e.error || 'Error de reconocimiento');
@@ -183,9 +152,9 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
 
     r.onend = () => {
       if (wantedRef.current) {
-        try { r.start(); } catch { /* race con onstart */ }
+        try { r.start(); } catch { /* race */ }
       } else {
-        setS('off');
+        setState('off');
       }
     };
 
@@ -201,30 +170,25 @@ export function useVoice({ language = 'es-419', onCommand }: Options): VoiceHook
     }
     try {
       recognitionRef.current?.start();
-      setS('watching');
-    } catch {
-      // already started — ignore
-    }
+      setState('listening');
+    } catch { /* already started */ }
   }, [buildRecognition, isSupported]);
 
   const stop = useCallback(() => {
     wantedRef.current = false;
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    isCapturingRef.current = false;
-    setTranscript('');
+    setInterimText('');
     try { recognitionRef.current?.abort(); } catch { /* noop */ }
     recognitionRef.current = null;
-    setS('off');
+    setState('off');
   }, []);
 
   useEffect(() => {
     return () => {
       wantedRef.current = false;
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       try { recognitionRef.current?.abort(); } catch { /* noop */ }
       recognitionRef.current = null;
     };
   }, []);
 
-  return { state, transcript, isSupported, error, start, stop };
+  return { state, interimText, isSupported, error, start, stop };
 }

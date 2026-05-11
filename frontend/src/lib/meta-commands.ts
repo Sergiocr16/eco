@@ -50,7 +50,8 @@ const ALIASES: Record<string, string> = {
   'dashboard': 'dashboard', 'inicio': 'dashboard', 'home': 'dashboard',
   'principal': 'dashboard', 'tablero': 'dashboard', 'menu': 'dashboard',
   'volver': 'dashboard', 'volve': 'dashboard', 'regresa': 'dashboard',
-  'regresar': 'dashboard', 'salir': 'dashboard',
+  'regresar': 'dashboard', 'salir': 'dashboard', 'atras': 'dashboard',
+  'back': 'dashboard',
 
   'ajustes': 'settings', 'configuracion': 'settings', 'config': 'settings',
   'settings': 'settings', 'preferencias': 'settings',
@@ -80,7 +81,7 @@ const ALIASES: Record<string, string> = {
   'despues': 'next', 'avanzar': 'next', 'avanza': 'next',
 
   'anterior': 'prev', 'prev': 'prev', 'previa': 'prev', 'previo': 'prev',
-  'antes': 'prev', 'atras': 'prev',
+  'antes': 'prev',
 
   // Estado
   'estado': 'status', 'status': 'status', 'resumen': 'status',

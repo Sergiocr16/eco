@@ -199,8 +199,21 @@ function Shell() {
 
   const voice = useVoice({
     language: 'es-419',
-    onCommand: (text: string) => handleIncomingVoiceText(`eco ${text}`),
+    onPhrase: (text: string) => handleIncomingVoiceText(text),
   });
+
+  // Modo siempre escuchando: arranca automático si el user ya dio permiso
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (voice.state !== 'off') return;
+    if (!voice.isSupported) return;
+    const prefersAutoListen = window.localStorage?.getItem('eco.voice.autostart') !== '0';
+    if (!prefersAutoListen) return;
+    autoStartedRef.current = true;
+    // start() solicitará permiso; si el user lo deniega, queda en 'off'
+    voice.start();
+  }, [voice]);
 
   function sendTo(bubbleId: string, text: string) {
     const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
@@ -237,11 +250,11 @@ function Shell() {
   // Voice state derivado para el orbe
   const focusBubble = detailBubble ?? bubbles.activeBubble;
   const voiceStateForOrb: VoiceState = (() => {
-    if (voice.state === 'capturing') return 'listening';
+    if (voice.state === 'listening' && voice.interimText) return 'listening';
     if (focusBubble?.status === 'executing') return 'executing';
     if (focusBubble?.status === 'thinking') return 'thinking';
     if (tts.speaking) return 'speaking';
-    if (voice.state === 'watching') return 'listening';
+    if (voice.state === 'listening') return 'listening';
     return 'idle';
   })();
 
@@ -328,8 +341,8 @@ function Shell() {
                     bubbles={bubbles.bubbles}
                     activeBubbleId={bubbles.activeBubbleId}
                     voiceState={voiceStateForOrb}
-                    listening={voice.state === 'watching' || voice.state === 'capturing'}
-                    interimText={voice.state === 'capturing' ? voice.transcript : ''}
+                    listening={voice.state === 'listening'}
+                    interimText={voice.interimText}
                     voiceError={voice.error}
                     onSend={handleDashboardSend}
                     onMicToggle={handleMicToggle}
