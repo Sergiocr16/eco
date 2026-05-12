@@ -1582,12 +1582,18 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           animate={{ r: [28, 44, 28], opacity: [0.3, 0, 0.3] }}
           transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity, delay: 1.2 }}
         />
-        <motion.text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle"
-          fill={t.text0} fontFamily={t.fontSans} fontSize="15" fontWeight="500"
-          letterSpacing="-0.3"
+        {/* Wordmark "eco" dentro del hub — replica /assets/eco-wordmark.svg.
+            SF Pro Display, weight 300, tracking sutil. Más limpio que el arco
+            para el centro del modelo de Bohr. */}
+        <motion.text
+          x={cx} y={cy + 1}
+          textAnchor="middle" dominantBaseline="middle"
+          fill={t.text0}
+          fontFamily='-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif'
+          fontSize="24" fontWeight="300" letterSpacing="0.6"
           animate={{ opacity: [0.85, 1, 0.85] }}
           transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
-          Eco
+          eco
         </motion.text>
 
         {/* Líneas tenues del núcleo Eco a cada electrón — "enlaces" químicos.
@@ -1613,19 +1619,51 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           const y1 = cy + uy * (ECO_R + gap);
           const x2 = n.x - ux * (n.size + gap);
           const y2 = n.y - uy * (n.size + gap);
+          // Distancia → duración del pulso (más lejos, un poco más lento).
+          const pulseDur = Math.max(0.9, Math.min(2.2, dist / 240));
           return (
-            <line key={'bond-' + n.id}
-              x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke={stroke}
-              strokeOpacity={opacity}
-              strokeWidth={isActive ? 1.4 : 1}
-              strokeDasharray={isActive ? '4 6' : '0'}
-              strokeLinecap="round"
-              style={isActive ? {
-                animation: 'eco-flow 1.1s linear infinite',
-                filter: `drop-shadow(0 0 4px ${sColor})`,
-              } : undefined}
-            />
+            <g key={'bond-' + n.id}>
+              <line
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={stroke}
+                strokeOpacity={opacity}
+                strokeWidth={isActive ? 1.4 : 1}
+                strokeDasharray={isActive ? '4 6' : '0'}
+                strokeLinecap="round"
+                style={isActive ? {
+                  animation: 'eco-flow 1.1s linear infinite',
+                  filter: `drop-shadow(0 0 4px ${sColor})`,
+                } : undefined}
+              />
+              {/* Pulso verde viajando de Eco al nodo. Solo cuando el agente
+                  está activo. Es un círculo pequeño con animateMotion que
+                  recorre la línea + un pulse de opacidad / radio. */}
+              {isActive && (
+                <circle r={3} fill={t.ok}
+                  style={{ filter: `drop-shadow(0 0 6px ${t.ok})` }}>
+                  <animateMotion
+                    path={`M${x1},${y1} L${x2},${y2}`}
+                    dur={`${pulseDur}s`}
+                    repeatCount="indefinite"
+                    rotate="0"
+                  />
+                  <animate
+                    attributeName="opacity"
+                    values="0;1;1;0"
+                    keyTimes="0;0.1;0.85;1"
+                    dur={`${pulseDur}s`}
+                    repeatCount="indefinite"
+                  />
+                  <animate
+                    attributeName="r"
+                    values="1.6;3.2;3.2;1.6"
+                    keyTimes="0;0.15;0.85;1"
+                    dur={`${pulseDur}s`}
+                    repeatCount="indefinite"
+                  />
+                </circle>
+              )}
+            </g>
           );
         })}
 

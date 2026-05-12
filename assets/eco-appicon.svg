@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Eco app icon">
+  <title>Eco app icon</title>
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="25%" r="80%">
+      <stop offset="0%" stop-color="#1a1d28"></stop>
+      <stop offset="100%" stop-color="#06070b"></stop>
+    </radialGradient>
+    <linearGradient id="markGrad" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="oklch(82% 0.14 170)"></stop>
+      <stop offset="100%" stop-color="oklch(68% 0.13 158)"></stop>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="229" ry="229" fill="url(#bg)"></rect>
+  <g transform="translate(192 192) scale(11.42857)">
+    <path d="M 8.95 39 A 22 22 0 1 1 17 47.05" fill="none" stroke="url(#markGrad)" stroke-width="5" stroke-linecap="round"></path>
+    <circle cx="15.5" cy="40.5" r="3.6" fill="url(#markGrad)"></circle>
+  </g>
+</svg>

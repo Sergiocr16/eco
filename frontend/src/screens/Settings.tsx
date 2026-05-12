@@ -2104,7 +2104,7 @@ function CreditsBody() {
               padding: '3px 9px', borderRadius: 999,
               background: t.bg2, border: `1px solid ${t.glassBorder}`,
               fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
-            }}>San José, Costa Rica</span>
+            }}>Florida, USA</span>
           </div>
         </div>
       </div>

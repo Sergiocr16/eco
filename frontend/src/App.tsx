@@ -567,6 +567,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         bubbles={bubbles.bubbles}
         activeBubbleId={detailBubbleId ?? bubbles.activeBubbleId}
         onOpenAgent={handleOpenAgent}
+        onGoHome={handleBackFromDetail}
+        atHome={screen === 'dashboard'}
       />
       {showOnboarding && (
         <OnboardingWizard
@@ -601,16 +603,23 @@ function useDockPref(): boolean {
 
 // Dock flotante en bottom-center, controlado por la pref `eco.dock.enabled`.
 function FloatingBubbleDock({
-  bubbles, activeBubbleId, onOpenAgent,
+  bubbles, activeBubbleId, onOpenAgent, onGoHome, atHome,
 }: {
   bubbles: ReturnType<typeof useBubbles>['bubbles'];
   activeBubbleId: string | null;
   onOpenAgent: (id: string) => void;
+  onGoHome: () => void;
+  atHome: boolean;
 }) {
   const enabled = useDockPref();
   if (!enabled) return null;
   return (
-    <BubbleDock bubbles={bubbles} activeBubbleId={activeBubbleId} onOpenAgent={onOpenAgent}/>
+    <BubbleDock
+      bubbles={bubbles} activeBubbleId={activeBubbleId}
+      onOpenAgent={onOpenAgent}
+      onGoHome={onGoHome}
+      atHome={atHome}
+    />
   );
 }
 

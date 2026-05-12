@@ -1,5 +1,5 @@
 import { useTokens } from '@/design/theme';
-import { EcoMark } from '@/design/EcoMark';
+import { EcoMarkStacked } from '@/design/EcoMark';
 import {
   IconCommand, IconFolderOpen, IconHistory, IconSettings, IconGlobe, type IconProps,
 } from '@/design/icons';
@@ -40,8 +40,8 @@ export function AppSidebar({
       background: 'transparent',
       overflow: 'visible',
     }}>
-      <div style={{ marginBottom: 10 }}>
-        <EcoMark size={32}/>
+      <div style={{ marginBottom: 10, color: 'currentColor' }}>
+        <EcoMarkStacked size={32}/>
       </div>
       {ITEMS.map((it) => {
         const active = screen === it.id || (it.id === 'dashboard' && screen === 'detail');

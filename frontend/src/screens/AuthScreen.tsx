@@ -4,7 +4,7 @@ import { Btn, Glass } from '@/design/primitives';
 import {
   IconUser, IconShield, IconKey, IconCheck, IconArrowL,
 } from '@/design/icons';
-import { EcoMark } from '@/design/EcoMark';
+import { EcoMarkHorizontal } from '@/design/EcoMark';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { useT } from '@/hooks/useI18n';
@@ -39,18 +39,12 @@ export function AuthScreen({ authState, authActions }: Props) {
       {/* Orbes animados de fondo */}
       <DriftingOrbs/>
 
+
       <div style={{
         position: 'relative', zIndex: 2,
         width: 'min(380px, calc(100vw - 48px))',
         padding: '24px 4px',
       }}>
-        {/* Logo grande centrado */}
-        <div style={{
-          display: 'flex', justifyContent: 'center', marginBottom: 26,
-        }}>
-          <EcoMark size={64}/>
-        </div>
-
         <div style={{ position: 'relative' }}>
           {recoveryToShow ? (
             <ShowRecoveryView
@@ -82,13 +76,25 @@ export function AuthScreen({ authState, authActions }: Props) {
         </div>
       </div>
 
-      {/* Footer */}
+      {/* Logo centrado abajo */}
       <div style={{
         position: 'absolute', bottom: 18, left: 0, right: 0,
-        textAlign: 'center', zIndex: 2,
-        color: t.text3, fontSize: 11, fontFamily: t.fontMono,
+        zIndex: 2,
+        display: 'flex', justifyContent: 'center',
+        color: t.text0,
+        pointerEvents: 'none',
       }}>
-        {tr('auth.local_tagline')}
+        <EcoMarkHorizontal size={42}/>
+      </div>
+
+      {/* Version abajo a la derecha */}
+      <div style={{
+        position: 'absolute', bottom: 14, right: 18,
+        zIndex: 2,
+        color: t.text3, fontSize: 10.5, fontFamily: t.fontMono,
+        pointerEvents: 'none',
+      }}>
+        v0.1.0
       </div>
     </div>
   );
@@ -240,15 +246,15 @@ function LoginView({
     <>
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 30,
       }}>
         <div style={{
-          width: 64, height: 64, borderRadius: '50%',
+          width: 72, height: 72, borderRadius: '50%',
           background: photo ? t.bg2 : t.accentFaint,
           color: t.accent,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 26, fontWeight: 600, fontFamily: t.fontSans,
-          marginBottom: 12,
+          fontSize: 28, fontWeight: 600, fontFamily: t.fontSans,
+          marginBottom: 26,
           border: `2px solid ${t.accent}`,
           overflow: 'hidden',
           boxShadow: `0 6px 24px color-mix(in oklch, ${t.accent} 18%, transparent)`,
@@ -260,7 +266,7 @@ function LoginView({
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
           {tr('auth.greeting', { name: username })}
         </h1>
-        <p style={{ margin: '4px 0 0', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
+        <p style={{ margin: '6px 0 0', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
           {tr('auth.login.sub')}
         </p>
       </div>
@@ -271,7 +277,6 @@ function LoginView({
         length={8}
         autoFocus
         onEnter={submit}
-        label={tr('auth.field.pin_simple')}
       />
 
       {error && <FormError>{error}</FormError>}
@@ -567,36 +572,31 @@ function PinSegmented({
         borderRadius: 14,
         background: t.bg2,
         border: `1px solid ${focused ? t.accent : t.glassBorder}`,
-        transition: 'border-color 140ms, box-shadow 140ms',
-        boxShadow: focused ? `0 0 0 4px color-mix(in oklch, ${t.accent} 12%, transparent)` : 'none',
+        transition: 'border-color 140ms',
         overflow: 'hidden',
       }}>
-        {/* Display de progreso — dots accent renderizados como divs, uno por dígito tipeado. */}
+        {/* Display de progreso — dots accent renderizados como divs, uno por
+            dígito tipeado. Sin cursor pulsante ni halo de focus, solo dots. */}
         <div style={{
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           gap: 10,
           pointerEvents: 'none',
         }}>
-          {value.length === 0 && !focused && (
-            <span style={{ color: t.text3, fontSize: 13, fontFamily: t.fontSans }}>
+          {value.length === 0 && (
+            <span style={{
+              color: t.text3, fontSize: 13, fontFamily: t.fontSans,
+              fontWeight: 400, letterSpacing: 0.2,
+            }}>
               {tr('auth.field.pin_simple')}
             </span>
           )}
           {Array.from({ length: value.length }, (_, i) => (
             <span key={i} style={{
-              width: 12, height: 12, borderRadius: '50%',
+              width: 11, height: 11, borderRadius: '50%',
               background: t.accent,
-              boxShadow: `0 1px 4px color-mix(in oklch, ${t.accent} 50%, transparent)`,
             }}/>
           ))}
-          {focused && value.length < length && (
-            <span style={{
-              width: 2, height: 22, background: t.accent,
-              animation: 'eco-pulse 1.1s ease-in-out infinite',
-              borderRadius: 1,
-            }}/>
-          )}
         </div>
         <input
           type="password"

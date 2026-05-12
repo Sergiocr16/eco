@@ -617,30 +617,34 @@ const ACCENT_LUMINOSITY: Record<EffectiveThemeMode, number> = {
 
 // Metadata para mostrar al usuario en el picker de Apariencia.
 export type ThemeKind = 'dark' | 'light';
+// Set curado de temas — quitamos los demasiado similares entre sí (slate≈tokyo,
+// catppuccin-latte≈light, lavender≈baby-pink, pink≈synthwave). Cada uno tiene
+// personalidad distintiva.
 export const THEME_VARIANTS: { id: EffectiveThemeMode; name: string; kind: ThemeKind; preview: string }[] = [
+  // Esenciales
   { id: 'dark',            name: 'Oscuro',          kind: 'dark',  preview: '#0a0a0c' },
   { id: 'light',           name: 'Claro',           kind: 'light', preview: '#fbfbfd' },
   { id: 'amoled',          name: 'AMOLED',          kind: 'dark',  preview: '#000000' },
+  // Clásicos editor
   { id: 'nord',            name: 'Nord',            kind: 'dark',  preview: '#2e3440' },
   { id: 'tokyo',           name: 'Tokyo Night',     kind: 'dark',  preview: '#1a1b26' },
   { id: 'gruvbox',         name: 'Gruvbox',         kind: 'dark',  preview: '#282828' },
+  { id: 'dracula',         name: 'Dracula',         kind: 'dark',  preview: '#282a36' },
+  { id: 'monokai',         name: 'Monokai',         kind: 'dark',  preview: '#272822' },
+  // Cálidos / vintage
   { id: 'solarized-dark',  name: 'Solarized Dark',  kind: 'dark',  preview: '#002b36' },
   { id: 'solarized-light', name: 'Solarized Light', kind: 'light', preview: '#fdf6e3' },
   { id: 'sepia',           name: 'Sepia',           kind: 'light', preview: '#f6f0e1' },
-  { id: 'slate',           name: 'Slate',           kind: 'dark',  preview: '#0f172a' },
-  { id: 'dracula',          name: 'Dracula',          kind: 'dark',  preview: '#282a36' },
-  { id: 'rose-pine',        name: 'Rosé Pine',        kind: 'dark',  preview: '#191724' },
-  { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', kind: 'dark',  preview: '#1e1e2e' },
-  { id: 'catppuccin-latte', name: 'Catppuccin Latte', kind: 'light', preview: '#eff1f5' },
-  { id: 'pink',             name: 'Pink',             kind: 'dark',  preview: '#2a1226' },
-  { id: 'cyberpunk',        name: 'Cyberpunk',        kind: 'dark',  preview: '#0d0221' },
-  { id: 'synthwave',        name: 'Synthwave',        kind: 'dark',  preview: '#241734' },
-  { id: 'forest',           name: 'Forest',           kind: 'dark',  preview: '#1a2421' },
-  { id: 'ocean',            name: 'Ocean',            kind: 'dark',  preview: '#0a1a2e' },
-  { id: 'coffee',           name: 'Coffee',           kind: 'dark',  preview: '#2a1e15' },
-  { id: 'lavender',         name: 'Lavender',         kind: 'light', preview: '#f4f0fa' },
-  { id: 'monokai',          name: 'Monokai',          kind: 'dark',  preview: '#272822' },
-  { id: 'baby-pink',        name: 'Baby Pink',        kind: 'light', preview: '#fce4ec' },
+  { id: 'coffee',           name: 'Coffee',          kind: 'dark',  preview: '#2a1e15' },
+  // Naturaleza / atmosféricos
+  { id: 'forest',           name: 'Forest',          kind: 'dark',  preview: '#1a2421' },
+  { id: 'ocean',            name: 'Ocean',           kind: 'dark',  preview: '#0a1a2e' },
+  // Boutique / con personalidad
+  { id: 'rose-pine',        name: 'Rosé Pine',       kind: 'dark',  preview: '#191724' },
+  { id: 'catppuccin-mocha', name: 'Catppuccin Mocha',kind: 'dark',  preview: '#1e1e2e' },
+  { id: 'synthwave',        name: 'Synthwave',       kind: 'dark',  preview: '#241734' },
+  { id: 'cyberpunk',        name: 'Cyberpunk',       kind: 'dark',  preview: '#0d0221' },
+  { id: 'baby-pink',        name: 'Baby Pink',       kind: 'light', preview: '#fce4ec' },
 ];
 
 export function isLightTheme(mode: EffectiveThemeMode): boolean {
@@ -648,8 +652,6 @@ export function isLightTheme(mode: EffectiveThemeMode): boolean {
     mode === 'light' ||
     mode === 'solarized-light' ||
     mode === 'sepia' ||
-    mode === 'catppuccin-latte' ||
-    mode === 'lavender' ||
     mode === 'baby-pink'
   );
 }
@@ -710,34 +712,22 @@ export type VoiceState = 'idle' | 'listening' | 'thinking' | 'executing' | 'spea
 
 // 24 acentos ordenados por hue (rueda de color completa).
 // Marcamos «Mint (Eco)» (165) como el accent oficial del producto.
+// Lista curada de acentos — 14 colores bien distintivos, distribuidos por el
+// círculo cromático con saltos mínimos de ~20° para que ninguno se confunda
+// con el vecino. Foco en colores vibrantes y "cool".
 export const ACCENT_HUES = [
-  { hue: 165, name: 'Mint (Eco)' },
-  // Rojos / cálidos
-  { hue: 5,   name: 'Rojo' },
-  { hue: 15,  name: 'Coral' },
-  { hue: 25,  name: 'Salmón' },
-  { hue: 40,  name: 'Naranja' },
-  { hue: 55,  name: 'Mandarina' },
-  { hue: 75,  name: 'Ámbar' },
-  { hue: 90,  name: 'Amarillo' },
-  // Verdes
-  { hue: 105, name: 'Lima' },
+  { hue: 165, name: 'Mint (Eco)' },   // el oficial
+  { hue: 10,  name: 'Rojo cereza' },
+  { hue: 30,  name: 'Coral' },
+  { hue: 55,  name: 'Naranja' },
+  { hue: 85,  name: 'Dorado' },
   { hue: 125, name: 'Verde lima' },
-  { hue: 145, name: 'Verde' },
-  { hue: 155, name: 'Verde menta' },
-  { hue: 180, name: 'Esmeralda' },
-  // Cianes / azules
-  { hue: 195, name: 'Turquesa' },
+  { hue: 150, name: 'Verde' },
+  { hue: 185, name: 'Turquesa' },
   { hue: 210, name: 'Cielo' },
-  { hue: 220, name: 'Cian' },
-  { hue: 235, name: 'Azur' },
-  { hue: 240, name: 'Azul' },
-  // Violetas / rosas
-  { hue: 260, name: 'Índigo' },
+  { hue: 245, name: 'Azul' },
   { hue: 275, name: 'Lavanda' },
-  { hue: 285, name: 'Violeta' },
-  { hue: 300, name: 'Púrpura' },
-  { hue: 320, name: 'Magenta' },
-  { hue: 340, name: 'Fucsia' },
+  { hue: 295, name: 'Violeta' },
+  { hue: 325, name: 'Magenta' },
   { hue: 350, name: 'Rosa' },
 ];

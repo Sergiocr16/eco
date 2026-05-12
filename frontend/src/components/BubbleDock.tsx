@@ -4,18 +4,23 @@ import { useTokens } from '@/design/theme';
 import { stateColor, type AgentState } from '@/design/tokens';
 import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
+import { IconCommand } from '@/design/icons';
 
 type Props = {
   bubbles: Bubble[];
   activeBubbleId: string | null;
   onOpenAgent: (id: string) => void;
+  onGoHome?: () => void;
+  atHome?: boolean;
 };
 
 // Dock estilo macOS — flotante en bottom-center, horizontal, con blur y
 // magnificación que crece hacia arriba (sin empujar vecinos).
-export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
+export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atHome }: Props) {
   const t = useTokens();
-  if (bubbles.length === 0) return null;
+  // Mostramos el dock si hay agentes O si hay home button (para navegar
+  // siempre desde cualquier vista).
+  if (bubbles.length === 0 && !onGoHome) return null;
 
   const ordered = [...bubbles].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -66,6 +71,18 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
         // Max width — si hay muchas burbujas, scroll horizontal interno.
         maxWidth: 'calc(100vw - 96px)',
       }}>
+        {onGoHome && (
+          <>
+            <HomeDockIcon active={!!atHome} onClick={onGoHome}/>
+            {bubbles.length > 0 && (
+              <span style={{
+                width: 1, height: 44, alignSelf: 'center',
+                background: t.glassBorder,
+                margin: '0 6px',
+              }}/>
+            )}
+          </>
+        )}
         <AnimatePresence initial={false}>
           {ordered.map((b, i) => (
             <DockIcon
@@ -82,7 +99,81 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
   );
 }
 
-const SIZE = 40;
+const SIZE = 40;        // Icono cuadrado
+const SLOT_WIDTH = 60;  // Ancho del slot (icono + padding para que el label
+                        // de hasta 8 chars quepa sin empujar a los vecinos).
+
+function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const t = useTokens();
+  const [hover, setHover] = useState(false);
+  // Slot un poco más angosto que los de las burbujas (no necesita 60px de label).
+  // Mantiene el alto del slot igual que los demás (button + label combined ≈ 54px)
+  // y centra el botón verticalmente en ese espacio.
+  const HOME_SLOT = 48;
+  const SLOT_HEIGHT = SIZE + 17; // 40 + (3 margin + ~14 label) ≈ alto del slot de burbujas
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: HOME_SLOT, height: SLOT_HEIGHT,
+        position: 'relative',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+      <motion.button
+        type="button"
+        onClick={onClick}
+        title="Ir al inicio"
+        whileHover={{ scale: 1.35, y: -6 }}
+        whileTap={{ scale: 0.92 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+        style={{
+          width: SIZE, height: SIZE,
+          padding: 0, border: 0, cursor: 'pointer',
+          borderRadius: 11,
+          background: active ? t.bg3 : (hover ? t.bg2 : 'rgba(255,255,255,0.04)'),
+          color: active ? t.accent : t.text2,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          position: 'relative',
+          transformOrigin: 'bottom center',
+          transition: 'background 140ms',
+          boxShadow: active
+            ? `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px ${t.accent}33`
+            : 'inset 0 1px 0 rgba(255,255,255,0.05)',
+        }}>
+        {/* Icono ⌘ command — minimalista y reconocible para "ir al inicio".
+            Hereda color del botón (accent cuando activo, text2 cuando no). */}
+        <IconCommand size={24} strokeWidth={1.6}/>
+      </motion.button>
+      {active && (
+        <span style={{
+          position: 'absolute', bottom: -6, left: '50%',
+          transform: 'translateX(-50%)',
+          width: 4, height: 4, borderRadius: '50%',
+          background: t.accent,
+          boxShadow: `0 0 4px ${t.accent}`,
+          pointerEvents: 'none',
+        }}/>
+      )}
+    </div>
+  );
+}
+
+// Primera palabra del título, cortada a 8 chars. Solo separa por
+// espacios — "fix-bug-login" se muestra como "fix-bug-" (los primeros 8
+// chars de la primera "palabra"), no como "fix". Eso preserva contexto
+// útil para títulos tipo TAR-660, jh-prod, eco-test, etc.
+function firstWord(title: string | undefined): string {
+  if (!title) return 'sin nombre';
+  const trimmed = title.trim();
+  if (!trimmed) return 'sin nombre';
+  // Cortamos solo en el primer espacio — guiones/underscores forman parte
+  // del nombre.
+  const m = trimmed.match(/^\S+/);
+  const word = m ? m[0] : trimmed;
+  return word.slice(0, 8);
+}
 
 function DockIcon({
   bubble, index, active, onClick,
@@ -107,8 +198,10 @@ function DockIcon({
       onMouseEnter={() => { setHover(true); setTimeout(() => setShowTip(true), 220); }}
       onMouseLeave={() => { setHover(false); setShowTip(false); }}
       style={{
-        // Reservamos espacio fijo — el zoom transforma sin empujar vecinos.
-        width: SIZE, minHeight: SIZE,
+        // Slot más ancho que el icono para que el label debajo (hasta 8 chars)
+        // quepa sin empujar/solapar los vecinos. El zoom del icono al hover
+        // transforma sin afectar el layout.
+        width: SLOT_WIDTH, minHeight: SIZE,
         position: 'relative',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'flex-end',
@@ -158,7 +251,22 @@ function DockIcon({
         )}
       </motion.button>
 
-      {/* Dot indicador "abierta" abajo del ícono — convención macOS. */}
+      {/* Label corto debajo del ícono — primera palabra (hasta 8 chars).
+          Usa todo el ancho del slot para que se vea bien. */}
+      <div style={{
+        marginTop: 3,
+        width: SLOT_WIDTH,
+        textAlign: 'center',
+        fontFamily: t.fontSans, fontSize: 9.5, fontWeight: 600,
+        color: active ? t.accent : t.text3,
+        letterSpacing: 0.1,
+        lineHeight: 1.1,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        userSelect: 'none',
+      }}>{firstWord(bubble.title)}</div>
+
+      {/* Dot indicador "abierta" debajo del label — convención macOS. */}
       {active && (
         <span style={{
           position: 'absolute', bottom: -6, left: '50%',

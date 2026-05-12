@@ -896,7 +896,7 @@ const DICT = {
     es: 'Claude Code SDK · Anthropic · Electron · Vite · React · xterm.js · node-pty · openWakeWord · faster-whisper · Piper TTS · Obsidian Local REST API. Gracias a los autores y mantenedores de cada uno de estos proyectos.',
     en: 'Claude Code SDK · Anthropic · Electron · Vite · React · xterm.js · node-pty · openWakeWord · faster-whisper · Piper TTS · Obsidian Local REST API. Thanks to the authors and maintainers of each one of these projects.',
   },
-  'settings.about.credits.made_with': { es: 'Hecho con cuidado en Costa Rica', en: 'Crafted with care in Costa Rica' },
+  'settings.about.credits.made_with': { es: 'Hecho con cuidado en Florida, USA', en: 'Crafted with care in Florida, USA' },
 
   // Centro de soporte — UI
   'settings.about.search.placeholder': { es: 'Buscar en el centro de soporte…', en: 'Search the support center…' },
