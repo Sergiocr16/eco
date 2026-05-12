@@ -15,9 +15,12 @@ Configurable via env vars:
   ECO_TOKEN_FILE     — ruta al archivo del token (default ~/.eco/token)
   ECO_WAKE_MODEL     — nombre del wake word model (default hey_jarvis_v0.1)
   ECO_WAKE_THRESHOLD — score mínimo 0..1 para disparar (default 0.5)
-  ECO_WHISPER_MODEL  — tamaño del modelo whisper (tiny|base|small|medium, default base)
+  ECO_WHISPER_MODEL  — tamaño del modelo whisper (tiny|base|small|medium|large-v3, default medium)
   ECO_LANG           — idioma de transcripción (default es)
   ECO_MIC_DEVICE     — nombre/índice del mic (default: sistema)
+  ECO_INITIAL_PROMPT — texto que sesga al transcriptor al vocabulario del producto.
+                       Whisper usa este contexto para preferir palabras del dominio
+                       (ej. "Eco", "burbuja", "workspace") sobre homófonos.
 """
 
 from __future__ import annotations
@@ -62,9 +65,22 @@ DEFAULT_BACKEND = os.environ.get("ECO_BACKEND", "http://127.0.0.1:7000")
 DEFAULT_TOKEN_FILE = os.environ.get("ECO_TOKEN_FILE", str(Path.home() / ".eco" / "token"))
 DEFAULT_WAKE_MODEL = os.environ.get("ECO_WAKE_MODEL", "hey_jarvis_v0.1")
 DEFAULT_WAKE_THRESHOLD = float(os.environ.get("ECO_WAKE_THRESHOLD", "0.5"))
-DEFAULT_WHISPER_SIZE = os.environ.get("ECO_WHISPER_MODEL", "base")
+DEFAULT_WHISPER_SIZE = os.environ.get("ECO_WHISPER_MODEL", "medium")
 DEFAULT_LANG = os.environ.get("ECO_LANG", "es")
 DEFAULT_MIC = os.environ.get("ECO_MIC_DEVICE")
+
+# Sesgo léxico para mejorar transcripción del vocabulario del producto.
+# Whisper usa este texto como contexto previo y se inclina a transcribir
+# estas palabras correctamente (en lugar de homófonos).
+DEFAULT_INITIAL_PROMPT = os.environ.get(
+    "ECO_INITIAL_PROMPT",
+    (
+        "Eco, Hey Eco, dashboard, ajustes, burbuja, conversación, terminal, "
+        "archivos, plan, scroll, abrir, cerrar, renombrar, anterior, siguiente, "
+        "workspace, refactor, commit, branch, deploy, Aditum, AngularJS, "
+        "Spring Boot, JHipster, MySQL, Liquibase, JWT, controlador, repositorio."
+    ),
+)
 
 log = logging.getLogger("eco-listener")
 
@@ -289,9 +305,12 @@ def run(args: argparse.Namespace) -> int:
                 segments, info = whisper.transcribe(
                     audio_f32,
                     language=args.lang,
-                    beam_size=1,
+                    beam_size=5,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=400),
+                    initial_prompt=args.initial_prompt or None,
+                    temperature=0.0,
+                    condition_on_previous_text=False,
                 )
                 text = " ".join(s.text.strip() for s in segments).strip()
                 if text:
@@ -315,9 +334,12 @@ def main() -> int:
     p.add_argument("--wake-model", default=DEFAULT_WAKE_MODEL)
     p.add_argument("--wake-threshold", type=float, default=DEFAULT_WAKE_THRESHOLD)
     p.add_argument("--whisper-model", default=DEFAULT_WHISPER_SIZE,
-                   help="tiny | base | small | medium (más grande = mejor calidad pero más lento)")
+                   help="tiny | base | small | medium | large-v3 (más grande = mejor calidad pero más lento)")
     p.add_argument("--lang", default=DEFAULT_LANG)
     p.add_argument("--mic", default=DEFAULT_MIC)
+    p.add_argument("--initial-prompt", default=DEFAULT_INITIAL_PROMPT,
+                   help="Texto de contexto que sesga al transcriptor hacia el vocabulario del producto. "
+                        "Pasar cadena vacía para deshabilitar.")
     p.add_argument("--verbose", "-v", action="store_true")
     args = p.parse_args()
     return run(args)

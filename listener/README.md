@@ -33,7 +33,7 @@ cd listener
 
 Instala:
 - `openwakeword` con sus modelos (~10 MB de ONNX)
-- `faster-whisper` (modelo se baja al primer uso, ~150 MB para `base`)
+- `faster-whisper` (modelo se baja al primer uso, ~1.5 GB para `medium`, ~150 MB para `base`)
 - `sounddevice` para acceso al mic
 - Dependencias menores (numpy, scipy, etc.)
 
@@ -52,22 +52,36 @@ Configurable via env vars o flags:
 | `ECO_TOKEN_FILE` | `~/.eco/token` | Archivo con el Bearer token |
 | `ECO_WAKE_MODEL` | `hey_jarvis_v0.1` | Modelo de wake word |
 | `ECO_WAKE_THRESHOLD` | `0.5` | Score mínimo (0–1) |
-| `ECO_WHISPER_MODEL` | `base` | `tiny`, `base`, `small`, `medium` |
+| `ECO_WHISPER_MODEL` | `medium` | `tiny`, `base`, `small`, `medium`, `large-v3` |
 | `ECO_LANG` | `es` | Idioma de transcripción |
 | `ECO_MIC_DEVICE` | (sistema) | Índice o nombre del mic |
+| `ECO_INITIAL_PROMPT` | (vocabulario Eco) | Texto que sesga la transcripción al dominio del producto |
 
 ```bash
-# Verbose + modelo más grande para mejor calidad
+# Verbose + modelo más liviano si el hardware está limitado
 ECO_WHISPER_MODEL=small python main.py -v
+
+# Deshabilitar el sesgo léxico (modo neutro)
+ECO_INITIAL_PROMPT='' python main.py
 ```
+
+**Sobre `initial_prompt`:** Whisper interpreta este texto como contexto previo
+y se inclina a transcribir esas palabras correctamente en lugar de homófonos.
+Por defecto incluye vocabulario de Eco (`burbuja`, `workspace`, `dashboard`,
+`refactor`, `commit`) y del proyecto Aditum. Si la transcripción confunde
+términos técnicos por palabras del idioma común, agregalos a esa lista.
 
 ## Performance esperado
 
-| Plataforma | Wake detection | Transcripción (3s audio · base) |
-|---|---|---|
-| Mac M1/M2/M3 | <50ms | ~0.4s |
-| Mac Intel | ~80ms | ~1s |
-| Raspberry Pi 5 | ~120ms | ~3-4s |
+| Plataforma | Wake detection | Transcripción 3s · `base` | Transcripción 3s · `medium` |
+|---|---|---|---|
+| Mac M1/M2/M3 | <50ms | ~0.4s | ~1.2s |
+| Mac Intel | ~80ms | ~1s | ~3s |
+| Raspberry Pi 5 | ~120ms | ~3-4s | ~10s (no recomendado) |
+
+El default `medium` da +30–40% de precisión sobre `base` a cambio de 2-3×
+latencia. En una Mac moderna sigue siendo casi imperceptible.
+Si la latencia molesta, bajá a `small`.
 
 ## Custom wake word "Eco"
 
