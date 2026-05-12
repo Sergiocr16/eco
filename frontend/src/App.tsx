@@ -447,6 +447,12 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // cuando corremos como app empaquetada (titleBarStyle: hiddenInset).
   const topInset = getTopInset();
 
+  // Inset inferior cuando el dock está activo y hay agentes — reserva ~76px
+  // (alto del dock + margen) para que el contenido no quede tapado.
+  const dockEnabled = useDockPref();
+  const dockVisible = dockEnabled && bubbles.bubbles.length > 0;
+  const bottomInset = dockVisible ? 76 : 0;
+
   return (
     <>
       <div style={{
@@ -470,9 +476,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           lights de mac y el frame del sistema viven en el área superior libre. */}
       <div style={{
         position: 'fixed',
-        top: topInset, left: 0, right: 0, bottom: 0,
+        top: topInset, left: 0, right: 0, bottom: bottomInset,
         zIndex: 1,
         display: 'flex',
+        transition: 'bottom 200ms ease',
       }}>
         <AppSidebar
           screen={screen === 'detail' ? 'dashboard' : screen}
@@ -563,16 +570,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   );
 }
 
-// Dock flotante en bottom-center, controlado por la pref `eco.dock.enabled`.
-// Lo mantenemos como wrapper aparte para que escuche cambios del toggle desde
-// Ajustes sin obligar al App a re-renderizar todo.
-function FloatingBubbleDock({
-  bubbles, activeBubbleId, onOpenAgent,
-}: {
-  bubbles: ReturnType<typeof useBubbles>['bubbles'];
-  activeBubbleId: string | null;
-  onOpenAgent: (id: string) => void;
-}) {
+// Pref del dock — escuchamos cambios del toggle de Ajustes vía custom event
+// y storage event (cross-tab). Compartido entre App.tsx (para el inset) y
+// FloatingBubbleDock (para renderizar o no).
+function useDockPref(): boolean {
   const [enabled, setEnabled] = useState<boolean>(() => {
     try { return window.localStorage.getItem('eco.dock.enabled') !== '0'; } catch { return true; }
   });
@@ -587,6 +588,18 @@ function FloatingBubbleDock({
       window.removeEventListener('eco:dock-pref-change', sync);
     };
   }, []);
+  return enabled;
+}
+
+// Dock flotante en bottom-center, controlado por la pref `eco.dock.enabled`.
+function FloatingBubbleDock({
+  bubbles, activeBubbleId, onOpenAgent,
+}: {
+  bubbles: ReturnType<typeof useBubbles>['bubbles'];
+  activeBubbleId: string | null;
+  onOpenAgent: (id: string) => void;
+}) {
+  const enabled = useDockPref();
   if (!enabled) return null;
   return (
     <BubbleDock bubbles={bubbles} activeBubbleId={activeBubbleId} onOpenAgent={onOpenAgent}/>

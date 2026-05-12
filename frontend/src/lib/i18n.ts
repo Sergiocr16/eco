@@ -149,6 +149,7 @@ const DICT = {
     en: 'Listening · say "Eco" followed by the command…',
   },
   'dash.bubble.agent': { es: 'Agente', en: 'Agent' },
+  'dash.bubble.new': { es: 'Nuevo agente', en: 'New agent' },
   'dash.bubble.no_msg': { es: 'Sin mensajes aún', en: 'No messages yet' },
   'dash.bubble.name_label': { es: 'Nombre del agente', en: 'Agent name' },
   'dash.bubble.name_placeholder': {

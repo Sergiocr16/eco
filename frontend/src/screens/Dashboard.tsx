@@ -12,7 +12,8 @@ import {
 import type { Bubble, VoiceState } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
-import { on as ecoOn } from '@/lib/eco-bus';
+import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
+import { useProfile } from '@/hooks/useProfile';
 
 type Props = {
   bubbles: Bubble[];
@@ -36,8 +37,25 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, availableWorkspaces, interimText, voiceError, wakeActive } = props;
-  const [view, setView] = useState<'grid' | 'graph' | 'kanban'>('grid');
+  const { bubbles, activeBubbleId, voiceState, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, availableWorkspaces, wakeActive } = props;
+  const { username } = useProfile();
+  // onSend / interimText / voiceError siguen llegando por contrato pero ya
+  // no se usan en el Dashboard tras remover la CommandBar — el input vive
+  // dentro de cada conversación.
+  // Vista del Dashboard persistida en localStorage — al volver al dashboard
+  // se mantiene la última vista elegida (grid / kanban / graph).
+  type DashView = 'grid' | 'graph' | 'kanban';
+  const [view, setViewState] = useState<DashView>(() => {
+    try {
+      const saved = window.localStorage.getItem('eco.dashboard.view');
+      if (saved === 'grid' || saved === 'graph' || saved === 'kanban') return saved;
+    } catch { /* noop */ }
+    return 'grid';
+  });
+  const setView = (v: DashView) => {
+    setViewState(v);
+    try { window.localStorage.setItem('eco.dashboard.view', v); } catch { /* noop */ }
+  };
 
   const active = bubbles.filter((b) => ['running', 'thinking', 'executing', 'waiting'].includes(b.status as string));
   const running = active.filter((b) => b.status === 'running' || b.status === 'thinking' || b.status === 'executing');
@@ -81,7 +99,7 @@ export function Dashboard(props: Props) {
             <div style={{
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
               color: t.accent, letterSpacing: 1.5, textTransform: 'uppercase',
-            }}>{greetingFor(new Date(), tr)}</div>
+            }}>{greetingFor(new Date(), tr)}{username ? `, ${username}` : ''}</div>
             <h1 style={{
               margin: '6px 0 14px', fontFamily: t.fontSans, fontSize: 30,
               fontWeight: 600, color: t.text0, letterSpacing: -0.8,
@@ -112,10 +130,30 @@ export function Dashboard(props: Props) {
         </motion.div>
 
         <SectionLabel count={bubbles.length} action={
-          <div style={{ display: 'flex', gap: 4 }}>
-            <IconBtn icon={IconGrid} size={28} active={view === 'grid'} onClick={() => setView('grid')}/>
-            <IconBtn icon={IconColumns} size={28} active={view === 'kanban'} onClick={() => setView('kanban')}/>
-            <IconBtn icon={IconGraph} size={28} active={view === 'graph'} onClick={() => setView('graph')}/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <IconBtn icon={IconGrid} size={28} active={view === 'grid'} onClick={() => setView('grid')}/>
+              <IconBtn icon={IconColumns} size={28} active={view === 'kanban'} onClick={() => setView('kanban')}/>
+              <IconBtn icon={IconGraph} size={28} active={view === 'graph'} onClick={() => setView('graph')}/>
+            </div>
+            {/* Botón "Nuevo agente" disponible en TODAS las vistas. En grid
+                también está la card grande, pero acá queda accesible para
+                kanban y graph donde no hay esa card. */}
+            <button
+              type="button"
+              onClick={() => onCreateAgent()}
+              title={tr('dash.bubble.new')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 8, border: 0,
+                background: t.accent, color: t.accentOn,
+                fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
+                cursor: 'pointer',
+                boxShadow: `0 0 12px ${t.accentGlow}`,
+              }}>
+              <IconPlus size={13} strokeWidth={2.5}/>
+              {tr('dash.bubble.new')}
+            </button>
           </div>
         }>{tr('dash.section.agents')}</SectionLabel>
 
@@ -171,13 +209,9 @@ export function Dashboard(props: Props) {
         )}
       </div>
 
-      <CommandBar
-        voiceState={voiceState}
-        onVoiceToggle={onMicToggle}
-        onSubmit={onSend}
-        interimText={interimText}
-        voiceError={voiceError}
-      />
+      {/* CommandBar global removida del Dashboard — el input/mic vive ahora
+          dentro de cada conversación (AgentDetail). Para crear un agente
+          nuevo, usar el botón "+" del grid o el comando de voz «Eco crea ...». */}
     </div>
   );
 }
@@ -792,6 +826,159 @@ function KanbanView({
   );
 }
 
+// Paths SVG (24x24 viewBox) de los íconos que mostramos en cada satélite.
+// Inline acá para no importar componentes que envuelven con <svg> propio.
+const SAT_ICONS = {
+  chat: <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>,
+  pty: <path d="M4 17l5-5-5-5M12 19h8"/>,
+  server: (
+    <>
+      <rect x="2" y="3" width="20" height="18" rx="2"/>
+      <path d="M8 21V11M16 21V11M2 11h20"/>
+    </>
+  ),
+  browser: (
+    <>
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M2 12h20M12 2a15 15 0 010 20 15 15 0 010-20z"/>
+    </>
+  ),
+} as const;
+
+// Mapeo de cada satélite a la tab que se abre en AgentDetail.
+type SatKey = 'chat' | 'pty' | 'server' | 'browser';
+const SAT_TO_TAB: Record<SatKey, 'chat' | 'terminal' | 'server' | 'browser'> = {
+  chat: 'chat',
+  pty: 'terminal',
+  server: 'server',
+  browser: 'browser',
+};
+
+// Satélites alrededor de un electrón — íconos de cada subsistema (chat,
+// terminal, server, browser). Solo se muestran los que están activos.
+// Layout: orbitando suave. Centrados en (0,0) — el wrapper exterior ya
+// posiciona el grupo en el centro del nodo.
+function SatellitesLocal({
+  n, t, onItemClick,
+}: {
+  n: {
+    id: string; size: number;
+    hasChat: boolean; hasPty: boolean; hasServer: boolean; hasBrowser: boolean;
+  };
+  t: ReturnType<typeof useTokens>;
+  onItemClick?: (subsystem: SatKey) => void;
+}) {
+  const [hoverKey, setHoverKey] = useState<SatKey | null>(null);
+  const items: { key: SatKey; on: boolean; color: string; label: string; icon: JSX.Element }[] = [
+    { key: 'chat',    on: n.hasChat,    color: t.text2,  label: 'Conversación', icon: SAT_ICONS.chat },
+    { key: 'pty',     on: n.hasPty,     color: t.warn,   label: 'Terminal',     icon: SAT_ICONS.pty },
+    { key: 'server',  on: n.hasServer,  color: t.busy,   label: 'Server',       icon: SAT_ICONS.server },
+    { key: 'browser', on: n.hasBrowser, color: t.accent, label: 'Navegador',    icon: SAT_ICONS.browser },
+  ];
+  const visible = items.filter((it) => it.on);
+  if (visible.length === 0) return null;
+
+  const r = n.size + 26; // distancia satélite ↔ borde del electrón
+  const phase = Array.from(n.id).reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+  // Tamaño del chip y del ícono.
+  const chipR = 9;
+  const iconSize = 12;
+
+  return (
+    <motion.g
+      animate={{ rotate: [phase, phase + 360] }}
+      transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}>
+      {visible.map((it, idx) => {
+        const θ = ((idx / visible.length) * 2 * Math.PI) - Math.PI / 2;
+        const sx = Math.cos(θ) * r;
+        const sy = Math.sin(θ) * r;
+        const lx = Math.cos(θ) * (n.size + 1);
+        const ly = Math.sin(θ) * (n.size + 1);
+        const isHovered = hoverKey === it.key;
+        const effChipR = isHovered ? chipR + 2 : chipR;
+        return (
+          <g key={it.key}
+            style={{ cursor: onItemClick ? 'pointer' : undefined }}
+            onMouseEnter={() => setHoverKey(it.key)}
+            onMouseLeave={() => setHoverKey((k) => (k === it.key ? null : k))}
+            onClick={(e) => {
+              if (!onItemClick) return;
+              e.stopPropagation();
+              onItemClick(it.key);
+            }}>
+            <line
+              x1={lx} y1={ly} x2={sx} y2={sy}
+              stroke={it.color} strokeOpacity={isHovered ? 0.9 : 0.5} strokeWidth={isHovered ? 1.5 : 1}
+              pointerEvents="none"
+            />
+            {/* Hit area invisible más grande para que sea fácil hover/click */}
+            <circle cx={sx} cy={sy} r={chipR + 6} fill="transparent"/>
+            {/* Halo cuando hovereado */}
+            {isHovered && (
+              <circle cx={sx} cy={sy} r={chipR + 4}
+                fill="none" stroke={it.color} strokeWidth={1.5}
+                style={{ filter: `drop-shadow(0 0 6px ${it.color})` }}
+                pointerEvents="none"/>
+            )}
+            {/* Chip de fondo */}
+            <circle cx={sx} cy={sy} r={effChipR}
+              fill={it.color}
+              style={{
+                filter: `drop-shadow(0 0 ${isHovered ? 8 : 5}px ${it.color})`,
+                transition: 'r 140ms',
+              }}
+              pointerEvents="none">
+              <title>{`Abrir ${it.label}`}</title>
+            </circle>
+            {/* Ícono encima */}
+            <svg
+              x={sx - iconSize / 2}
+              y={sy - iconSize / 2}
+              width={iconSize}
+              height={iconSize}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={t.accentOn}
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              pointerEvents="none">
+              {it.icon}
+            </svg>
+            {/* Label flotante cuando hovereado — pill arriba del satélite */}
+            {isHovered && (
+              <g pointerEvents="none">
+                <rect
+                  x={sx - it.label.length * 3.4 - 6}
+                  y={sy - chipR - 22}
+                  width={it.label.length * 6.8 + 12}
+                  height={16}
+                  rx={4}
+                  fill={t.bg1}
+                  stroke={it.color}
+                  strokeOpacity={0.6}
+                  strokeWidth={1}
+                  style={{ filter: t.shadowLg }}
+                />
+                <text
+                  x={sx} y={sy - chipR - 11}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill={t.text0}
+                  fontFamily={t.fontSans}
+                  fontSize="10.5"
+                  fontWeight="500">
+                  {it.label}
+                </text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+    </motion.g>
+  );
+}
+
 function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) {
   const t = useTokens();
   const state = (bubble.status as AgentState) || 'idle';
@@ -861,26 +1048,79 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   const t = useTokens();
   const tr = useT();
   const [hover, setHover] = useState<string | null>(null);
-  const W = 720, H = 460;
+  // Estados live de servers por bubbleId — escuchamos el eco-bus.
+  const [serverRunning, setServerRunning] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    return ecoOn('eco:dev_status', (d) => {
+      setServerRunning((prev) => ({ ...prev, [d.bubbleId]: d.status === 'running' || d.status === 'starting' }));
+    });
+  }, []);
+
+  // Dimensiones del canvas — se miden del container real con ResizeObserver.
+  // Así el viewBox siempre coincide con los píxeles reales y el contenido
+  // no se comprime para caber en una aspect ratio fija.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [{ W, H }, setSize] = useState({ W: 920, H: 980 });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const w = Math.max(400, Math.round(rect.width));
+      const h = Math.max(400, Math.round(rect.height));
+      setSize((prev) => (prev.W === w && prev.H === h ? prev : { W: w, H: h }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const cx = W / 2, cy = H / 2;
-  const ringR = Math.min(W, H) * 0.36;
+  // TILT del plano orbital. 1 = sin tilt (círculos). <1 = elipse achatada
+  // verticalmente = vista en perspectiva 3D (sistema solar visto de costado).
+  const tilt = 0.45;
+  // Anillos orbitales: cada agente vive en SU PROPIO anillo, los más lejos
+  // son más grandes y más lentos (Kepler-like).
+  const orbitBaseR = 80;
+  const orbitSpacing = 32;
   const nodes = bubbles.map((b, i) => {
-    const angle = (i / Math.max(1, bubbles.length)) * Math.PI * 2 - Math.PI / 2;
-    const jitter = ((i * 37) % 30) - 15;
-    const r = ringR + jitter;
+    const orbitIdx = i;
+    const orbitR = orbitBaseR + orbitIdx * orbitSpacing;
+    // Período: planetas más alejados giran más lento (T ∝ R^1.5 aprox Kepler).
+    // Base 12s para el más cercano, hasta ~28s para los lejanos.
+    const period = 12 + orbitIdx * 2.5;
+    // Fase inicial — distribuye los planetas para que no arranquen alineados.
+    const phaseDeg = (i * 67) % 360;
     const state = (b.status as AgentState) || 'idle';
+    const hasChat = b.messages.length > 0;
+    const hasPty = !!b.ptyOpen;
+    const hasServer = !!serverRunning[b.id];
+    let hasBrowser = false;
+    try { hasBrowser = !!window.localStorage.getItem(`eco.browser.url.${b.id}`); } catch { /* noop */ }
     return {
       ...b, state,
-      x: cx + Math.cos(angle) * r,
-      y: cy + Math.sin(angle) * r,
+      orbitR, period, phaseDeg,
+      // Posición estática para las líneas iniciales (las línea/connection ya
+      // no aplica con órbitas — usamos un anillo en su lugar).
+      x: cx + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
+      y: cy + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
       size: 22 + (state === 'running' ? 8 : 0),
+      hasChat, hasPty, hasServer, hasBrowser,
     };
   });
 
   return (
-    <Glass radius={20} style={{ position: 'relative', height: H, padding: 0, overflow: 'hidden' }}>
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+    <Glass radius={20} style={{
+      position: 'relative',
+      // Altura: ~70% del viewport del navegador para que el modelo
+      // tenga aire pero quede dentro de pantalla. Mínimo 520px.
+      height: 'min(85vh, 1100px)', minHeight: 520,
+      padding: 0, overflow: 'hidden',
+    }}>
+      <div ref={containerRef} style={{ position: 'absolute', inset: 0 }}/>
+      <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ position: 'absolute', inset: 0 }}>
         <defs>
           <pattern id="eco-grid" width="32" height="32" patternUnits="userSpaceOnUse">
             <circle cx="16" cy="16" r="0.6" fill={t.text3} opacity="0.3"/>
@@ -899,171 +1139,170 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
         </defs>
         <rect width={W} height={H} fill="url(#eco-grid)"/>
         <motion.circle
-          cx={cx} cy={cy} r={ringR * 1.4} fill="url(#eco-glow)"
+          cx={cx} cy={cy} r={Math.min(W, H) * 0.5} fill="url(#eco-glow)"
           animate={{ scale: [1, 1.04, 1] }}
           transition={{ duration: 5, ease: 'easeInOut', repeat: Infinity }}
           style={{ transformOrigin: `${cx}px ${cy}px` }}
         />
 
-        {/* Conexiones — siempre visibles. Inactivas en gris suave, activas brillando + flow. */}
+        {/* (Anillos orbitales removidos — el sistema se ve más limpio sin
+            las elipses de fondo, dejando solo enlaces vivos núcleo→electrón.) */}
+
+        {/* Hub central — respira sutil (escala el círculo de fondo) y
+            emite 2 anillos expansivos cuando hay actividad en cualquier nodo. */}
+        <motion.g
+          style={{ transformOrigin: `${cx}px ${cy}px` }}
+          animate={{ scale: [1, 1.05, 1] }}
+          transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
+          <circle cx={cx} cy={cy} r="34" fill={t.bg1}
+            stroke={t.accent} strokeWidth="1" strokeOpacity="0.6"/>
+        </motion.g>
+        {/* Anillo expansivo 1 */}
+        <motion.circle
+          cx={cx} cy={cy} r="28" fill="none"
+          stroke={t.accent} strokeWidth="0.5"
+          animate={{ r: [28, 44, 28], opacity: [0.5, 0, 0.5] }}
+          transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity }}
+        />
+        {/* Anillo expansivo 2, desfasado */}
+        <motion.circle
+          cx={cx} cy={cy} r="28" fill="none"
+          stroke={t.accent} strokeWidth="0.5"
+          animate={{ r: [28, 44, 28], opacity: [0.3, 0, 0.3] }}
+          transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity, delay: 1.2 }}
+        />
+        <motion.text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle"
+          fill={t.text0} fontFamily={t.fontSans} fontSize="15" fontWeight="500"
+          letterSpacing="-0.3"
+          animate={{ opacity: [0.85, 1, 0.85] }}
+          transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
+          Eco
+        </motion.text>
+
+        {/* Líneas tenues del núcleo Eco a cada electrón — "enlaces" químicos.
+            Van de BORDE a BORDE (no de centro a centro) así no se incrustan
+            dentro de los círculos. */}
         {nodes.map((n) => {
           const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing';
           const sColor = stateColor(n.state, t);
           const stroke = hover === n.id ? t.accent : (isActive ? sColor : t.text2);
-          // Inactivas en 0.4 (antes 0.16) → siempre se ven sin distraer.
-          const opacity = hover === n.id ? 0.95 : (isActive ? 0.75 : 0.4);
+          const opacity = hover === n.id ? 0.85 : (isActive ? 0.6 : 0.22);
+          // Vector unitario del centro de Eco al centro del electrón.
+          const dx = n.x - cx;
+          const dy = n.y - cy;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          const ux = dx / dist;
+          const uy = dy / dist;
+          // Radio del hub Eco (debe coincidir con el <circle r="34"> del hub).
+          const ECO_R = 34;
+          // Margen extra para que la línea no toque exactamente el borde.
+          const gap = 2;
+          const x1 = cx + ux * (ECO_R + gap);
+          const y1 = cy + uy * (ECO_R + gap);
+          const x2 = n.x - ux * (n.size + gap);
+          const y2 = n.y - uy * (n.size + gap);
           return (
-            <g key={'e-' + n.id}>
-              <line
-                x1={cx} y1={cy} x2={n.x} y2={n.y}
-                stroke={stroke}
-                strokeOpacity={opacity}
-                strokeWidth={hover === n.id ? 1.6 : (isActive ? 1.6 : 1.1)}
-                strokeDasharray={isActive ? '4 6' : (hover === n.id ? '0' : '0')}
-                strokeLinecap="round"
-                style={isActive ? {
-                  animation: 'eco-flow 1.1s linear infinite',
-                  filter: `drop-shadow(0 0 6px ${sColor})`,
-                } : undefined}
-              />
-              {/* Partículas: dos puntos que viajan de Eco hacia el nodo, desfasados.
-                  Simula "Eco entregando datos a la burbuja". */}
-              {isActive && (
-                <>
-                  <motion.circle
-                    r="2.5"
-                    fill={sColor}
-                    style={{ filter: `drop-shadow(0 0 6px ${sColor})` }}
-                    initial={{ cx, cy, opacity: 0 }}
-                    animate={{
-                      cx: [cx, n.x],
-                      cy: [cy, n.y],
-                      opacity: [0, 1, 1, 0],
-                    }}
-                    transition={{
-                      duration: 1.5, repeat: Infinity, ease: 'easeIn',
-                      times: [0, 0.15, 0.85, 1],
-                    }}
-                  />
-                  <motion.circle
-                    r="1.8"
-                    fill={sColor}
-                    style={{ filter: `drop-shadow(0 0 5px ${sColor})`, opacity: 0.75 }}
-                    initial={{ cx, cy, opacity: 0 }}
-                    animate={{
-                      cx: [cx, n.x],
-                      cy: [cy, n.y],
-                      opacity: [0, 0.7, 0.7, 0],
-                    }}
-                    transition={{
-                      duration: 1.5, repeat: Infinity, ease: 'easeIn',
-                      times: [0, 0.15, 0.85, 1],
-                      delay: 0.6,
-                    }}
-                  />
-                </>
-              )}
-            </g>
+            <line key={'bond-' + n.id}
+              x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={stroke}
+              strokeOpacity={opacity}
+              strokeWidth={isActive ? 1.4 : 1}
+              strokeDasharray={isActive ? '4 6' : '0'}
+              strokeLinecap="round"
+              style={isActive ? {
+                animation: 'eco-flow 1.1s linear infinite',
+                filter: `drop-shadow(0 0 4px ${sColor})`,
+              } : undefined}
+            />
           );
         })}
 
-        {/* Hub central — pulsa cuando hay algo corriendo */}
-        <circle cx={cx} cy={cy} r="34" fill={t.bg1}
-          stroke={t.accent} strokeWidth="1" strokeOpacity="0.6"/>
-        <motion.circle
-          cx={cx} cy={cy} r="28" fill="none"
-          stroke={t.accent} strokeWidth="0.5" strokeOpacity="0.4"
-          animate={{ r: [28, 32, 28], opacity: [0.4, 0.15, 0.4] }}
-          transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity }}
-        />
-        <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle"
-          fill={t.text0} fontFamily={t.fontSans} fontSize="15" fontWeight="500"
-          letterSpacing="-0.3">Eco</text>
-
-        {/* Nodos — flotación leve + breathing del radio */}
+        {/* Electrones — fijos en sus orbitales (como modelo de Bohr). Sin
+            rotación. Wobble local muy leve para que se sientan "vivos"
+            sin moverse del orbital. */}
         {nodes.map((n, i) => {
           const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing';
           const isHover = hover === n.id;
           const sColor = stateColor(n.state, t);
-          const floatAmp = 2 + (i % 3);
-          const floatDur = 3 + (i % 4) * 0.5;
-          const phase = i * 0.13;
+          // Wobble local de 2-3 px alrededor de la posición fija — apenas
+          // perceptible, da sensación de que el electrón "vibra" en su
+          // estado cuántico sin desplazarse del orbital.
+          const wobbleAmp = isActive ? 3 : 2;
+          const wobbleDur = 3 + (i % 4) * 0.8;
+          const phase = ((i * 0.27) % 1) * wobbleDur;
+          const wx = [0, wobbleAmp, 0, -wobbleAmp, 0];
+          const wy = [0, -wobbleAmp * 0.7, 0, wobbleAmp * 0.7, 0];
+
           return (
-            <motion.g
-              key={n.id}
+            <g key={n.id}
+              transform={`translate(${n.x},${n.y})`}
               style={{ cursor: 'pointer' }}
-              animate={{ y: [0, -floatAmp, 0, floatAmp, 0] }}
-              transition={{
-                duration: floatDur, repeat: Infinity, ease: 'easeInOut', delay: phase,
-              }}
               onMouseEnter={() => setHover(n.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => onOpenAgent(n.id)}>
+              {/* Wobble cuántico — micromovimiento local */}
+              <animateTransform
+                attributeName="transform"
+                type="translate"
+                additive="sum"
+                values={wx.map((x, idx) => `${x},${wy[idx]}`).join('; ')}
+                keyTimes="0; 0.25; 0.5; 0.75; 1"
+                dur={`${wobbleDur}s`}
+                begin={`-${phase}s`}
+                repeatCount="indefinite"
+              />
+
               {isHover && (
-                <motion.circle
-                  cx={n.x} cy={n.y} r={n.size + 6} fill="none"
-                  stroke={t.accent} strokeWidth="1" strokeOpacity="0.5"
-                  initial={{ r: n.size, opacity: 0 }}
-                  animate={{ r: n.size + 6, opacity: 0.5 }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-                />
+                <circle cx={0} cy={0} r={n.size + 6} fill="none"
+                  stroke={t.accent} strokeWidth="1" strokeOpacity="0.5"/>
               )}
-              {/* Animación de actividad: triple anillo expansivo + glow del nodo */}
+              {/* Triple anillo + halo cuando activo */}
               {isActive && (
                 <>
-                  <motion.circle
-                    cx={n.x} cy={n.y} r={n.size}
+                  <motion.circle cx={0} cy={0} r={n.size}
                     fill="none" stroke={sColor} strokeWidth={1.5}
                     animate={{ r: [n.size, n.size + 16], opacity: [0.55, 0] }}
-                    transition={{ duration: 2, ease: 'easeOut', repeat: Infinity }}
-                  />
-                  <motion.circle
-                    cx={n.x} cy={n.y} r={n.size}
+                    transition={{ duration: 2, ease: 'easeOut', repeat: Infinity }}/>
+                  <motion.circle cx={0} cy={0} r={n.size}
                     fill="none" stroke={sColor} strokeWidth={1.2}
                     animate={{ r: [n.size, n.size + 16], opacity: [0.4, 0] }}
-                    transition={{ duration: 2, ease: 'easeOut', repeat: Infinity, delay: 0.66 }}
-                  />
-                  <motion.circle
-                    cx={n.x} cy={n.y} r={n.size}
-                    fill="none" stroke={sColor} strokeWidth={1}
-                    animate={{ r: [n.size, n.size + 16], opacity: [0.3, 0] }}
-                    transition={{ duration: 2, ease: 'easeOut', repeat: Infinity, delay: 1.33 }}
-                  />
-                  {/* Halo glow estático que pulsa la intensidad */}
-                  <motion.circle
-                    cx={n.x} cy={n.y} r={n.size + 4}
+                    transition={{ duration: 2, ease: 'easeOut', repeat: Infinity, delay: 0.66 }}/>
+                  <motion.circle cx={0} cy={0} r={n.size + 4}
                     fill={sColor}
                     animate={{ opacity: [0.18, 0.32, 0.18] }}
                     transition={{ duration: 1.4, ease: 'easeInOut', repeat: Infinity }}
-                    style={{ filter: `blur(8px)` }}
-                  />
+                    style={{ filter: `blur(8px)` }}/>
                 </>
               )}
-              <motion.circle
-                cx={n.x} cy={n.y}
+              {/* Cuerpo del electrón */}
+              <circle cx={0} cy={0} r={n.size}
                 fill={t.bg1}
                 stroke={isActive ? sColor : (isHover ? t.accent : t.glassBorder)}
                 strokeWidth={isActive ? 2 : (isHover ? 1.5 : 1)}
-                animate={isActive ? { r: [n.size, n.size + 2, n.size] } : { r: n.size }}
-                transition={isActive ? {
-                  duration: 1.4, repeat: Infinity, ease: 'easeInOut',
-                } : { duration: 0.3 }}
-                style={isActive ? { filter: `drop-shadow(0 0 8px ${sColor})` } : undefined}
-              />
-              <text x={n.x} y={n.y + 1} textAnchor="middle" dominantBaseline="middle"
+                style={isActive ? { filter: `drop-shadow(0 0 8px ${sColor})` } : undefined}/>
+              <text x={0} y={1} textAnchor="middle" dominantBaseline="middle"
                 fill={n.accent} fontFamily={t.fontSans} fontSize="13" fontWeight="600"
                 style={{ textTransform: 'uppercase', pointerEvents: 'none' }}>
                 {bubbleLetter(n.title)}
               </text>
-              <circle cx={n.x + n.size * 0.72} cy={n.y - n.size * 0.72} r="4" fill={sColor}
+              <circle cx={n.size * 0.72} cy={-n.size * 0.72} r="4" fill={sColor}
                 style={{ filter: isActive ? `drop-shadow(0 0 4px ${sColor})` : 'none' }}/>
-              <text x={n.x} y={n.y + n.size + 16} textAnchor="middle"
+              <text x={0} y={n.size + 16} textAnchor="middle"
                 fill={isHover ? t.text0 : t.text1}
                 fontFamily={t.fontSans} fontSize="11.5" fontWeight="500"
                 style={{ pointerEvents: 'none' }}>
                 {n.title.length > 14 ? n.title.slice(0, 14) + '…' : n.title}
               </text>
-            </motion.g>
+              {/* Satélites del electrón — al clickearlos abre el agente
+                  en la tab correspondiente (conversación, terminal, etc.). */}
+              <SatellitesLocal n={n} t={t} onItemClick={(sub) => {
+                onOpenAgent(n.id);
+                // Pequeño delay para que AgentDetail monte antes de cambiar tab.
+                window.setTimeout(() => {
+                  ecoEmit('eco:switch_tab', { tab: SAT_TO_TAB[sub] });
+                }, 60);
+              }}/>
+            </g>
           );
         })}
       </svg>
@@ -1082,6 +1321,10 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   );
 }
 
+// CommandBar — actualmente no se monta en el Dashboard (la input/mic vive
+// dentro de cada conversación). La dejamos definida por si se reusa.
+// @ts-expect-error componente preservado intencionalmente sin uso
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CommandBar({
   voiceState, onVoiceToggle, onSubmit, interimText, voiceError,
 }: {

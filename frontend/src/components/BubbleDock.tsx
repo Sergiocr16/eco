@@ -29,9 +29,23 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
       transition={{ type: 'spring', stiffness: 240, damping: 28 }}
       style={{
         position: 'fixed',
-        bottom: 14, left: '50%',
-        transform: 'translateX(-50%)',
-        // El dock pill: pequeño padding lateral, blur de cristal, border sutil.
+        // El sidebar izquierdo ocupa 64px fijos. Para centrar el dock en el
+        // ÁREA DE CONTENIDO (no en el viewport completo), arrancamos en 64px
+        // del borde izquierdo y centramos respecto al espacio restante.
+        bottom: 14,
+        left: 64,
+        right: 0,
+        // Centrado respecto al área de contenido — flexbox del contenedor
+        // posiciona el pill al centro. Pointer-events none en el contenedor
+        // para no bloquear clicks fuera del pill; auto en el pill mismo.
+        display: 'flex',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+        zIndex: 80,
+      }}>
+      <div style={{
+        // El pill real — auto pointer-events.
+        pointerEvents: 'auto',
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'flex-end',
@@ -47,23 +61,23 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
           '0 8px 32px rgba(0,0,0,0.35)',
           '0 2px 6px rgba(0,0,0,0.2)',
         ].join(', '),
-        zIndex: 80,
         // overflow visible para que la magnificación se "escape" del pill.
         overflow: 'visible',
         // Max width — si hay muchas burbujas, scroll horizontal interno.
-        maxWidth: '92vw',
+        maxWidth: 'calc(100vw - 96px)',
       }}>
-      <AnimatePresence initial={false}>
-        {ordered.map((b, i) => (
-          <DockIcon
-            key={b.id}
-            bubble={b}
-            index={i}
-            active={b.id === activeBubbleId}
-            onClick={() => onOpenAgent(b.id)}
-          />
-        ))}
-      </AnimatePresence>
+        <AnimatePresence initial={false}>
+          {ordered.map((b, i) => (
+            <DockIcon
+              key={b.id}
+              bubble={b}
+              index={i}
+              active={b.id === activeBubbleId}
+              onClick={() => onOpenAgent(b.id)}
+            />
+          ))}
+        </AnimatePresence>
+      </div>
     </motion.div>
   );
 }
