@@ -3,8 +3,10 @@ import { useTokens } from '@/design/theme';
 import { Glass, Pill, StatusDot, AgentGlyph, bubbleLetter } from '@/design/primitives';
 import { IconX, IconClock, IconCommand } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
-import { stateColor, STATE_LABELS, type AgentState } from '@/design/tokens';
+import { stateColor, type AgentState } from '@/design/tokens';
 import { COMMAND_HELP } from '@/lib/meta-commands';
+import { useT, useI18n } from '@/hooks/useI18n';
+import { translate } from '@/lib/i18n';
 
 type Props = {
   open: boolean;
@@ -16,6 +18,7 @@ type Props = {
 
 export function StatusOverlay({ open, view, bubbles, onClose, onSelect }: Props) {
   const t = useTokens();
+  const tr = useT();
 
   useEffect(() => {
     if (!open) return;
@@ -58,12 +61,17 @@ export function StatusOverlay({ open, view, bubbles, onClose, onSelect }: Props)
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: t.text0, letterSpacing: -0.2 }}>
-              {view === 'help' ? 'Comandos de Eco' : 'Estado de Eco'}
+              {view === 'help' ? tr('status.help_title') : tr('status.title')}
             </div>
             <div style={{ fontSize: 11.5, color: t.text2, marginTop: 1 }}>
               {view === 'help'
-                ? 'Decí o escribí cualquiera de estos comandos.'
-                : `${bubbles.length} burbuja${bubbles.length === 1 ? '' : 's'} · ${countActive(bubbles)} activa${countActive(bubbles) === 1 ? '' : 's'}`}
+                ? tr('status.help_hint')
+                : tr('status.summary', {
+                  total: bubbles.length,
+                  p: bubbles.length === 1 ? '' : 's',
+                  active: countActive(bubbles),
+                  ap: countActive(bubbles) === 1 ? '' : 's',
+                })}
             </div>
           </div>
           <button
@@ -92,10 +100,11 @@ function countActive(bubbles: Bubble[]): number {
 
 function StatusList({ bubbles, onSelect }: { bubbles: Bubble[]; onSelect: (id: string) => void }) {
   const t = useTokens();
+  const tr = useT();
   if (bubbles.length === 0) {
     return (
       <div style={{ padding: 24, textAlign: 'center', color: t.text2, fontSize: 13 }}>
-        Sin burbujas todavía.
+        {tr('status.empty')}
       </div>
     );
   }
@@ -114,6 +123,17 @@ function StatusList({ bubbles, onSelect }: { bubbles: Bubble[]; onSelect: (id: s
 
 function StatusRow({ bubble, onSelect }: { bubble: Bubble; onSelect: () => void }) {
   const t = useTokens();
+  const tr = useT();
+  const STATE_LABELS_I18N: Record<AgentState, string> = {
+    idle: tr('state.idle'),
+    pending: tr('state.pending'),
+    running: tr('state.running'),
+    waiting: tr('state.waiting'),
+    paused: tr('state.paused'),
+    done: tr('state.done'),
+    error: tr('state.error'),
+    thinking: tr('state.thinking'),
+  };
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
   const minutesAgo = Math.max(1, Math.round((Date.now() - bubble.updatedAt) / 60000));
@@ -138,7 +158,7 @@ function StatusRow({ bubble, onSelect }: { bubble: Bubble; onSelect: () => void 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
           <StatusDot color={sColor} pulse={state === 'running' || state === 'thinking'} size={6}/>
           <span style={{ fontSize: 11, color: sColor, fontWeight: 500 }}>
-            {STATE_LABELS[state] || 'Listo'}
+            {STATE_LABELS_I18N[state] || tr('state.idle')}
           </span>
           {wsLabel && (
             <>
@@ -154,13 +174,14 @@ function StatusRow({ bubble, onSelect }: { bubble: Bubble; onSelect: () => void 
       }}>
         <IconClock size={10}/> {tStr}
       </span>
-      <Pill color={t.text2}>{bubble.messages.length} msg</Pill>
+      <Pill color={t.text2}>{tr('status.msg_count', { n: bubble.messages.length })}</Pill>
     </button>
   );
 }
 
 function HelpList() {
   const t = useTokens();
+  const { lang } = useI18n();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {COMMAND_HELP.map((c, i) => (
@@ -171,8 +192,10 @@ function HelpList() {
           <div style={{
             fontFamily: t.fontMono, fontSize: 12.5, color: t.accent, fontWeight: 500,
             letterSpacing: -0.1,
-          }}>{c.example}</div>
-          <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>{c.desc}</div>
+          }}>{c.exampleKey ? translate(c.exampleKey, lang) : c.example}</div>
+          <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>
+            {c.descKey ? translate(c.descKey, lang) : c.desc}
+          </div>
         </div>
       ))}
     </div>

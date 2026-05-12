@@ -4,6 +4,7 @@ import { Btn, Glass } from '@/design/primitives';
 import { IconLock, IconUser, IconShield, IconKey, IconCheck, IconArrowL } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
+import { useT } from '@/hooks/useI18n';
 
 type AuthHook = ReturnType<typeof useAuth>;
 
@@ -16,6 +17,7 @@ type View = 'register' | 'login' | 'recover' | 'show_recovery';
 
 export function AuthScreen({ authState, authActions }: Props) {
   const t = useTokens();
+  const tr = useT();
   const [view, setView] = useState<View>(authState.status === 'no_user' ? 'register' : 'login');
   const [recoveryToShow, setRecoveryToShow] = useState<string | null>(null);
 
@@ -60,7 +62,7 @@ export function AuthScreen({ authState, authActions }: Props) {
           />
         ) : view === 'login' ? (
           <LoginView
-            username={authState.username ?? 'tu cuenta'}
+            username={authState.username ?? tr('auth.your_account')}
             authActions={authActions}
             onRecover={() => setView('recover')}
           />
@@ -77,7 +79,7 @@ export function AuthScreen({ authState, authActions }: Props) {
         position: 'absolute', bottom: 18, left: 0, right: 0, textAlign: 'center',
         color: t.text3, fontSize: 11, fontFamily: t.fontMono,
       }}>
-        Eco · v0.1 · todo local en tu Mac
+        {tr('auth.local_tagline')}
       </div>
     </div>
   );
@@ -92,6 +94,7 @@ function RegisterView({
   onSuccess: (recoveryPhrase: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
@@ -100,9 +103,9 @@ function RegisterView({
 
   async function submit() {
     setError(null);
-    if (!username.trim()) return setError('Poné un nombre');
-    if (!/^\d{4,8}$/.test(pin)) return setError('PIN: 4 a 8 dígitos');
-    if (pin !== pin2) return setError('Los PIN no coinciden');
+    if (!username.trim()) return setError(tr('auth.err.name_empty'));
+    if (!/^\d{4,8}$/.test(pin)) return setError(tr('auth.err.pin_format'));
+    if (pin !== pin2) return setError(tr('auth.err.pin_mismatch'));
     setBusy(true);
     const r = await authActions.register({ username: username.trim(), pin });
     setBusy(false);
@@ -113,10 +116,10 @@ function RegisterView({
   return (
     <>
       <h1 style={{ margin: 0, fontSize: 26, fontWeight: 600, color: t.text0, letterSpacing: -0.5 }}>
-        Bienvenido a Eco
+        {tr('auth.welcome.title')}
       </h1>
       <p style={{ margin: '6px 0 24px', color: t.text2, fontSize: 13 }}>
-        Creá tu cuenta local. El PIN se queda en este Mac.
+        {tr('auth.welcome.sub')}
       </p>
 
       <FieldGroup>
@@ -124,7 +127,7 @@ function RegisterView({
           icon={IconUser}
           value={username}
           onChange={setUsername}
-          placeholder="Tu nombre"
+          placeholder={tr('auth.field.username')}
           autoFocus
         />
         <FormInput
@@ -132,7 +135,7 @@ function RegisterView({
           type="password"
           value={pin}
           onChange={(v) => setPin(v.replace(/\D/g, '').slice(0, 8))}
-          placeholder="PIN (4-8 dígitos)"
+          placeholder={tr('auth.field.pin')}
           inputMode="numeric"
         />
         <FormInput
@@ -140,7 +143,7 @@ function RegisterView({
           type="password"
           value={pin2}
           onChange={(v) => setPin2(v.replace(/\D/g, '').slice(0, 8))}
-          placeholder="Repetí el PIN"
+          placeholder={tr('auth.field.pin_repeat')}
           inputMode="numeric"
           onEnter={submit}
         />
@@ -149,12 +152,12 @@ function RegisterView({
       {error && <FormError>{error}</FormError>}
 
       <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
-        {busy ? 'Creando…' : 'Crear cuenta'}
+        {busy ? tr('auth.btn.create_loading') : tr('auth.btn.create')}
       </Btn>
 
       <FooterNote>
         <IconShield size={11} style={{ marginRight: 4 }}/>
-        Vas a recibir una frase de 12 palabras para recuperar el PIN si lo olvidás.
+        {tr('auth.footer.recovery_hint')}
       </FooterNote>
     </>
   );
@@ -170,6 +173,7 @@ function LoginView({
   onRecover: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -189,10 +193,10 @@ function LoginView({
   return (
     <>
       <h1 style={{ margin: 0, fontSize: 26, fontWeight: 600, color: t.text0, letterSpacing: -0.5 }}>
-        Hola, {username}
+        {tr('auth.greeting', { name: username })}
       </h1>
       <p style={{ margin: '6px 0 24px', color: t.text2, fontSize: 13 }}>
-        Ingresá tu PIN para abrir Eco
+        {tr('auth.login.sub')}
       </p>
 
       <FieldGroup>
@@ -201,7 +205,7 @@ function LoginView({
           type="password"
           value={pin}
           onChange={(v) => setPin(v.replace(/\D/g, '').slice(0, 8))}
-          placeholder="PIN"
+          placeholder={tr('auth.field.pin_simple')}
           inputMode="numeric"
           autoFocus
           onEnter={submit}
@@ -211,7 +215,7 @@ function LoginView({
       {error && <FormError>{error}</FormError>}
 
       <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !pin} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
-        {busy ? 'Verificando…' : 'Entrar'}
+        {busy ? tr('auth.btn.enter_loading') : tr('auth.btn.enter')}
       </Btn>
 
       <button
@@ -221,7 +225,7 @@ function LoginView({
           marginTop: 14, background: 'transparent', border: 0, color: t.text2,
           fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
         }}>
-        ¿Olvidaste el PIN? Recuperar con tu frase
+        {tr('auth.forgot_pin')}
       </button>
     </>
   );
@@ -237,6 +241,7 @@ function RecoverView({
   onSuccess: (newPhrase: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [phrase, setPhrase] = useState('');
   const [newPin, setNewPin] = useState('');
   const [busy, setBusy] = useState(false);
@@ -244,8 +249,8 @@ function RecoverView({
 
   async function submit() {
     setError(null);
-    if (phrase.trim().split(/\s+/).length !== 12) return setError('La frase tiene que ser de 12 palabras');
-    if (!/^\d{4,8}$/.test(newPin)) return setError('PIN: 4 a 8 dígitos');
+    if (phrase.trim().split(/\s+/).length !== 12) return setError(tr('auth.err.phrase_length'));
+    if (!/^\d{4,8}$/.test(newPin)) return setError(tr('auth.err.pin_format'));
     setBusy(true);
     const r = await authActions.recover({ recoveryPhrase: phrase, newPin });
     setBusy(false);
@@ -264,16 +269,16 @@ function RecoverView({
           background: t.bg3, color: t.text1, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
-        title="Volver"
+        title={tr('auth.back')}
       >
         <IconArrowL size={14}/>
       </button>
 
       <h1 style={{ margin: 0, fontSize: 24, fontWeight: 600, color: t.text0, letterSpacing: -0.5 }}>
-        Recuperar acceso
+        {tr('auth.recover.title')}
       </h1>
       <p style={{ margin: '6px 0 24px', color: t.text2, fontSize: 13, lineHeight: 1.5 }}>
-        Pegá tu frase de 12 palabras y elegí un nuevo PIN. Se te dará una frase nueva.
+        {tr('auth.recover.sub')}
       </p>
 
       <FieldGroup>
@@ -281,7 +286,7 @@ function RecoverView({
           <textarea
             value={phrase}
             onChange={(e) => setPhrase(e.target.value)}
-            placeholder="palabra1 palabra2 palabra3 …"
+            placeholder={tr('auth.phrase_placeholder')}
             rows={3}
             spellCheck={false}
             style={{
@@ -297,7 +302,7 @@ function RecoverView({
           type="password"
           value={newPin}
           onChange={(v) => setNewPin(v.replace(/\D/g, '').slice(0, 8))}
-          placeholder="Nuevo PIN (4-8 dígitos)"
+          placeholder={tr('auth.field.pin_new')}
           inputMode="numeric"
           onEnter={submit}
         />
@@ -306,7 +311,7 @@ function RecoverView({
       {error && <FormError>{error}</FormError>}
 
       <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
-        {busy ? 'Validando…' : 'Recuperar'}
+        {busy ? tr('auth.btn.recover_loading') : tr('auth.btn.recover')}
       </Btn>
     </>
   );
@@ -322,6 +327,7 @@ function ShowRecoveryView({
   isReset: boolean;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [confirmed, setConfirmed] = useState(false);
   const words = phrase.split(/\s+/);
   const copyRef = useRef<HTMLButtonElement>(null);
@@ -330,7 +336,7 @@ function ShowRecoveryView({
     try { await navigator.clipboard.writeText(phrase); } catch { /* noop */ }
     if (copyRef.current) {
       const old = copyRef.current.innerText;
-      copyRef.current.innerText = '✓ Copiado';
+      copyRef.current.innerText = tr('auth.recovery.copied');
       setTimeout(() => { if (copyRef.current) copyRef.current.innerText = old; }, 1200);
     }
   }
@@ -345,12 +351,11 @@ function ShowRecoveryView({
         <IconKey size={24}/>
       </div>
       <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
-        {isReset ? 'Nueva frase de recuperación' : 'Guardá tu frase de recuperación'}
+        {isReset ? tr('auth.recovery.title.reset') : tr('auth.recovery.title.new')}
       </h1>
       <p style={{ margin: '8px 0 20px', color: t.text2, fontSize: 13, lineHeight: 1.5 }}>
-        Si olvidás el PIN, esta frase es la única forma de recuperar acceso.
-        <br/>Anotala en papel o guardala en un gestor seguro.
-        <strong style={{ color: t.warn }}> No se mostrará de nuevo.</strong>
+        {tr('auth.recovery.warning')}{' '}
+        <strong style={{ color: t.warn }}>{tr('auth.recovery.no_again')}</strong>
       </p>
 
       <Glass radius={16} style={{ padding: 16, marginBottom: 16 }}>
@@ -380,7 +385,7 @@ function ShowRecoveryView({
             background: t.bg3, color: t.text1, fontSize: 13, fontFamily: t.fontSans,
             cursor: 'pointer',
           }}>
-          Copiar al portapapeles
+          {tr('auth.recovery.copy')}
         </button>
       </div>
 
@@ -398,7 +403,7 @@ function ShowRecoveryView({
           onChange={(e) => setConfirmed(e.target.checked)}
           style={{ accentColor: t.accent }}
         />
-        Guardé la frase en un lugar seguro
+        {tr('auth.recovery.confirmed')}
       </label>
 
       <Btn
@@ -409,7 +414,7 @@ function ShowRecoveryView({
         style={{ width: '100%', justifyContent: 'center' }}
         icon={IconCheck}
       >
-        Entrar a Eco
+        {tr('auth.btn.enter_eco')}
       </Btn>
     </>
   );

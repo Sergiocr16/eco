@@ -14,14 +14,15 @@ import {
   type IconProps,
 } from '@/design/icons';
 import type { Bubble, Message, ToolCall } from '@/lib/types';
-import { stateColor, STATE_LABELS, type AgentState } from '@/design/tokens';
+import { stateColor, type AgentState } from '@/design/tokens';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { stripWakePrefix } from '@/lib/meta-commands';
+import { useT } from '@/hooks/useI18n';
 
 function copyTranscriptToClipboard(bubble: Bubble) {
   const lines: string[] = [`# ${bubble.title}`, ''];
   for (const m of bubble.messages) {
-    lines.push(`${m.role === 'user' ? 'Tú' : 'Eco'}: ${m.text}`);
+    lines.push(`${m.role === 'user' ? 'You' : 'Eco'}: ${m.text}`);
     for (const tc of m.toolCalls ?? []) {
       lines.push(`  · ${tc.name} ${typeof tc.input === 'object' ? JSON.stringify(tc.input) : ''}`);
       if (tc.output) lines.push(`    → ${tc.output.split('\n')[0]}`);
@@ -47,6 +48,7 @@ function HeaderMenu({
   onCloseBubble: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [wsOpen, setWsOpen] = useState(false);
   useEffect(() => {
     if (wsOpen) return;
@@ -66,11 +68,11 @@ function HeaderMenu({
         display: 'flex', flexDirection: 'column',
       }}>
       <button type="button" onClick={onRename} style={menuItemStyleAt(t)}>
-        <IconEdit size={12}/> Renombrar burbuja
+        <IconEdit size={12}/> {tr('detail.menu.rename')}
       </button>
       <button type="button" onClick={() => setWsOpen((v) => !v)} style={menuItemStyleAt(t)}>
         <IconFolder size={12}/>
-        <span style={{ flex: 1 }}>Cambiar workspace</span>
+        <span style={{ flex: 1 }}>{tr('detail.menu.change_workspace')}</span>
         <span style={{
           fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
           maxWidth: 100, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -84,7 +86,7 @@ function HeaderMenu({
         }}>
           {workspaces.length === 0 ? (
             <div style={{ padding: '6px 8px', fontSize: 11, color: t.text3 }}>
-              Sin workspaces. Agregalos en Ajustes.
+              {tr('detail.menu.workspace_empty_picker')}
             </div>
           ) : workspaces.map((ws) => (
             <button
@@ -101,11 +103,11 @@ function HeaderMenu({
         </div>
       )}
       <button type="button" onClick={onCopyTranscript} style={menuItemStyleAt(t)}>
-        <IconCopy size={12}/> Copiar conversación
+        <IconCopy size={12}/> {tr('detail.menu.copy_chat')}
       </button>
       <div style={{ height: 1, background: t.glassBorder, margin: '4px 8px' }}/>
       <button type="button" onClick={onCloseBubble} style={{ ...menuItemStyleAt(t), color: t.err }}>
-        <IconTrash size={12}/> Cerrar burbuja
+        <IconTrash size={12}/> {tr('detail.menu.close')}
       </button>
     </div>
   );
@@ -140,6 +142,17 @@ export function AgentDetail({
   onMicToggle, listening, voiceInterim,
 }: Props) {
   const t = useTokens();
+  const tr = useT();
+  const STATE_LABELS_I18N: Record<AgentState, string> = {
+    idle: tr('state.idle'),
+    pending: tr('state.pending'),
+    running: tr('state.running'),
+    waiting: tr('state.waiting'),
+    paused: tr('state.paused'),
+    done: tr('state.done'),
+    error: tr('state.error'),
+    thinking: tr('state.thinking'),
+  };
   const [tab, setTab] = useState<Tab>('chat');
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
@@ -188,23 +201,23 @@ export function AgentDetail({
             ) : (
               <h2
                 onDoubleClick={() => { setDraft(bubble.title); setRenaming(true); }}
-                title="Doble click para renombrar"
+                title={tr('dash.bubble.rename_tip')}
                 style={{
                   margin: 0, fontFamily: t.fontSans, fontSize: 18, fontWeight: 600,
                   color: t.text0, letterSpacing: -0.3, cursor: 'text',
                 }}>{bubble.title}</h2>
             )}
-            <Pill color={sColor}>{STATE_LABELS[state] || 'Listo'}</Pill>
+            <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-            <span style={{ fontSize: 11.5, color: t.text2 }}>Burbuja</span>
+            <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('detail.header.bubble')}</span>
             <span style={{ color: t.text3 }}>·</span>
             <span style={{ fontFamily: t.fontMono, fontSize: 11.5, color: t.text2 }}>
               {bubble.workspace || '—'}
             </span>
             <span style={{ color: t.text3 }}>·</span>
             <span style={{ fontSize: 11.5, color: t.text2 }}>
-              ID <span style={{ fontFamily: t.fontMono, color: t.text1 }}>{bubble.id.slice(0, 10)}</span>
+              {tr('detail.header.id')} <span style={{ fontFamily: t.fontMono, color: t.text1 }}>{bubble.id.slice(0, 10)}</span>
             </span>
           </div>
         </div>
@@ -215,9 +228,9 @@ export function AgentDetail({
             kind={listening ? 'primary' : 'secondary'}
             size="sm"
             onClick={onMicToggle}
-            title={listening ? 'Detener escucha' : 'Activar escucha'}
+            title={listening ? tr('detail.btn.listen_off_title') : tr('detail.btn.listen_on_title')}
           >
-            {listening ? 'Escuchando' : 'Hablar'}
+            {listening ? tr('detail.btn.listening') : tr('detail.btn.listen')}
           </Btn>
           <IconBtn icon={IconMore} size={32} onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}/>
           {menuOpen && (
@@ -238,10 +251,10 @@ export function AgentDetail({
         display: 'flex', gap: 2, padding: '0 24px',
         borderBottom: `1px solid ${t.glassBorder}`,
       }}>
-        <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')} label="Conversación" icon={IconCommand} badge={bubble.messages.length}/>
-        <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label="Terminal" icon={IconTerminal}/>
-        <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label="Archivos" icon={IconFile} badge={filesChanged.length}/>
-        <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label="Plan" icon={IconLayers}/>
+        <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')} label={tr('detail.tab.chat')} icon={IconCommand} badge={bubble.messages.length}/>
+        <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
+        <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label={tr('detail.tab.files')} icon={IconFile} badge={filesChanged.length}/>
+        <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
       </div>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -274,7 +287,7 @@ function collectFilesChanged(bubble: Bubble): FileChange[] {
       if (tc.status !== 'success') continue;
       if (tc.name === 'Write' || tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'NotebookEdit') {
         const filePath = String((tc.input as { file_path?: unknown }).file_path ?? '');
-        if (filePath) out.push({ path: filePath, change: tc.name === 'Write' ? 'creado' : 'modificado', agent: bubble.title });
+        if (filePath) out.push({ path: filePath, change: tc.name === 'Write' ? 'created' : 'modified', agent: bubble.title });
       }
     }
   }
@@ -321,6 +334,7 @@ function ChatPanel({
   voiceInterim: string;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const suggestions = useQuickSuggestions();
@@ -354,8 +368,8 @@ function ChatPanel({
         ) : bubble.messages.map((m, i) => (
           <ChatBubble key={m.id} msg={m} agent={bubble.title} index={i}/>
         ))}
-        {bubble.status === 'thinking' && <ThinkingBubble label="Pensando…"/>}
-        {bubble.status === 'executing' && <ThinkingBubble label="Ejecutando…"/>}
+        {bubble.status === 'thinking' && <ThinkingBubble label={tr('detail.chat.thinking')}/>}
+        {bubble.status === 'executing' && <ThinkingBubble label={tr('detail.chat.executing')}/>}
       </div>
 
       <div style={{ padding: '12px 24px 18px', borderTop: `1px solid ${t.glassBorder}` }}>
@@ -372,7 +386,7 @@ function ChatPanel({
               animation: 'eco-shimmer 1s ease-in-out infinite',
             }}/>
             <span style={{ fontFamily: t.fontMono, fontWeight: 500 }}>Eco</span>
-            <span style={{ color: t.text1 }}>· {commandInProgress || 'escuchando comando…'}</span>
+            <span style={{ color: t.text1 }}>· {commandInProgress || tr('detail.chat.eco_listening')}</span>
           </div>
         )}
         <Glass radius={16} style={{ padding: 6, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
@@ -385,8 +399,8 @@ function ChatPanel({
             }}
             placeholder={
               listening
-                ? `Escuchando · habla normal o decí «Eco» para comandos`
-                : `Escríbele a ${bubble.title}…`
+                ? tr('detail.chat.listening_hint')
+                : tr('detail.chat.write_to', { name: bubble.title })
             }
             rows={1}
             style={{
@@ -400,7 +414,7 @@ function ChatPanel({
             icon={listening ? IconStop : IconMic}
             size={32}
             active={listening}
-            title={listening ? 'Detener escucha' : 'Activar escucha'}
+            title={listening ? tr('detail.btn.listen_off_title') : tr('detail.btn.listen_on_title')}
             onClick={onMicToggle}
           />
           <button
@@ -440,6 +454,7 @@ function ChatPanel({
 
 function ChatBubble({ msg, agent, index }: { msg: Message; agent: string; index: number }) {
   const t = useTokens();
+  const tr = useT();
   const isUser = msg.role === 'user';
 
   return (
@@ -450,7 +465,7 @@ function ChatBubble({ msg, agent, index }: { msg: Message; agent: string; index:
           background: t.accent,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: t.accentOn, fontWeight: 500, fontSize: 13, flexShrink: 0,
-        }}>Tú</div>
+        }}>{tr('detail.chat.you')}</div>
       ) : (
         <div style={{
           width: 32, height: 32, borderRadius: '50%',
@@ -467,7 +482,7 @@ function ChatBubble({ msg, agent, index }: { msg: Message; agent: string; index:
           fontFamily: t.fontSans, fontSize: 11.5, color: t.text2, marginBottom: 4,
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span style={{ color: t.text1, fontWeight: 500 }}>{isUser ? 'Tú' : agent}</span>
+          <span style={{ color: t.text1, fontWeight: 500 }}>{isUser ? tr('detail.chat.you') : agent}</span>
         </div>
         {msg.text && (
           <div style={{
@@ -567,6 +582,7 @@ function ThinkingBubble({ label }: { label: string }) {
 
 function EmptyChat({ title }: { title: string }) {
   const t = useTokens();
+  const tr = useT();
   return (
     <div style={{
       flex: 1, display: 'flex', flexDirection: 'column',
@@ -575,10 +591,10 @@ function EmptyChat({ title }: { title: string }) {
       <EcoMark size={64}/>
       <div style={{ textAlign: 'center', maxWidth: 360 }}>
         <h3 style={{ margin: 0, fontSize: 16, color: t.text0, fontWeight: 600, letterSpacing: -0.2 }}>
-          Inicia conversación con {title}
+          {tr('detail.chat.empty_title', { name: title })}
         </h3>
         <p style={{ margin: '8px 0 0', fontSize: 13, color: t.text2, lineHeight: 1.55 }}>
-          Escribí algo abajo o decí «Eco» seguido del comando.
+          {tr('detail.chat.empty_sub')}
         </p>
       </div>
     </div>
@@ -594,9 +610,10 @@ type TermLine =
 
 function TerminalPanel({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
+  const tr = useT();
   const [lines, setLines] = useState<TermLine[]>(() => [
-    { kind: 'system', text: `eco-shell · ${bubble.workspace || '(sin workspace)'}` },
-    { kind: 'system', text: `◆ Sesión: ${bubble.title} · escribí 'help' para ayuda` },
+    { kind: 'system', text: tr('detail.term.welcome_workspace', { ws: bubble.workspace || tr('detail.term.welcome_workspace_none') }) },
+    { kind: 'system', text: tr('detail.term.welcome_session', { title: bubble.title }) },
   ]);
   const [cwd, setCwd] = useState(bubble.workspace || '');
   const [command, setCommand] = useState('');
@@ -638,14 +655,7 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
     if (trimmed === 'help') {
       pushLines([
         { kind: 'prompt', cwd: cwdLabel, command: trimmed },
-        { kind: 'stdout', text: [
-          'Comandos disponibles:',
-          '  clear, cls       — limpia la terminal',
-          '  cd <ruta>        — cambia el directorio (sin salir del workspace)',
-          '  pwd              — muestra el directorio actual',
-          '  help             — esta ayuda',
-          '  <cualquier otro> — se ejecuta en shell con timeout 30s',
-        ].join('\n') },
+        { kind: 'stdout', text: tr('detail.term.help_lines') },
       ]);
       return;
     }
@@ -663,7 +673,7 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
       if (!bubble.workspace || (newCwd !== bubble.workspace && !newCwd.startsWith(bubble.workspace + '/'))) {
         pushLines([
           { kind: 'prompt', cwd: cwdLabel, command: trimmed },
-          { kind: 'stderr', text: `cd: ${target}: fuera del workspace` },
+          { kind: 'stderr', text: tr('detail.term.cd_outside', { target }) },
         ]);
         return;
       }
@@ -689,8 +699,8 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
       if (result.stdout) pushLines([{ kind: 'stdout', text: result.stdout.replace(/\n$/, '') }]);
       if (result.stderr) pushLines([{ kind: 'stderr', text: result.stderr.replace(/\n$/, '') }]);
       const meta: string[] = [];
-      if (result.exitCode !== 0 && result.exitCode !== null) meta.push(`exit ${result.exitCode}`);
-      if (result.truncated) meta.push('output truncado');
+      if (result.exitCode !== 0 && result.exitCode !== null) meta.push(tr('detail.term.exit_code', { code: result.exitCode }));
+      if (result.truncated) meta.push(tr('detail.term.truncated'));
       meta.push(`${result.durationMs}ms`);
       pushLines([{ kind: 'meta', text: meta.join(' · ') }]);
     } catch (e) {
@@ -753,7 +763,7 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
               width: 6, height: 6, borderRadius: '50%', background: t.accent,
               animation: 'eco-shimmer 0.9s ease-in-out infinite',
             }}/>
-            ejecutando…
+            {tr('detail.term.executing')}
           </div>
         )}
       </div>
@@ -778,7 +788,7 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
           onChange={(e) => setCommand(e.target.value)}
           onKeyDown={onKey}
           disabled={busy}
-          placeholder={busy ? 'ejecutando…' : 'escribí un comando'}
+          placeholder={busy ? tr('detail.term.executing') : tr('detail.term.command_placeholder')}
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
@@ -832,6 +842,7 @@ function normalizePosixPath(p: string): string {
 
 function FilesPanel({ files, workspace }: { files: FileChange[]; workspace: string }) {
   const t = useTokens();
+  const tr = useT();
   const [diffPath, setDiffPath] = useState<string | null>(null);
   if (files.length === 0) {
     return (
@@ -839,14 +850,14 @@ function FilesPanel({ files, workspace }: { files: FileChange[]; workspace: stri
         flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 32, color: t.text2, fontSize: 13,
       }}>
-        Esta burbuja todavía no modificó archivos.
+        {tr('detail.files.empty')}
       </div>
     );
   }
   return (
     <>
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-        <SectionLabel count={files.length}>Archivos modificados</SectionLabel>
+        <SectionLabel count={files.length}>{tr('detail.files.modified')}</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {files.map((f, i) => (
             <Glass key={i} radius={12} hover style={{
@@ -863,11 +874,11 @@ function FilesPanel({ files, workspace }: { files: FileChange[]; workspace: stri
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>{f.path}</div>
                 <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Pill color={f.change === 'creado' ? t.ok : t.accent}>{f.change}</Pill>
+                  <Pill color={f.change === 'created' ? t.ok : t.accent}>{f.change === 'created' ? tr('detail.files.created') : tr('detail.files.modified_one')}</Pill>
                 </div>
               </div>
-              <Btn kind="ghost" size="sm" icon={IconDiff} onClick={() => setDiffPath(f.path)}>Diff</Btn>
-              <IconBtn icon={IconExt} size={28} title="Abrir en editor"/>
+              <Btn kind="ghost" size="sm" icon={IconDiff} onClick={() => setDiffPath(f.path)}>{tr('files.diff_btn')}</Btn>
+              <IconBtn icon={IconExt} size={28} title={tr('detail.files.open_editor')}/>
             </Glass>
           ))}
         </div>
@@ -884,6 +895,7 @@ function FilesPanel({ files, workspace }: { files: FileChange[]; workspace: stri
 
 function PlanPanel({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
+  const tr = useT();
   // Plan derivado de toolCalls: cada distinct tool = un paso
   const steps: { state: 'done' | 'running' | 'pending' | 'error'; text: string; detail?: string }[] = [];
   for (const m of bubble.messages) {
@@ -907,7 +919,7 @@ function PlanPanel({ bubble }: { bubble: Bubble }) {
         flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 32, color: t.text2, fontSize: 13,
       }}>
-        Aún no hay plan generado. Cuando el agente trabaje, los pasos aparecerán aquí.
+        {tr('detail.plan.empty')}
       </div>
     );
   }
@@ -915,10 +927,10 @@ function PlanPanel({ bubble }: { bubble: Bubble }) {
     <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
       <div style={{ marginBottom: 18 }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0, letterSpacing: -0.2 }}>
-          Plan de ejecución
+          {tr('detail.plan.title')}
         </h3>
         <p style={{ margin: '4px 0 0', fontSize: 12.5, color: t.text2 }}>
-          {steps.length} pasos · {steps.filter((s) => s.state === 'done').length} completados
+          {tr('detail.plan.summary', { n: steps.length, done: steps.filter((s) => s.state === 'done').length })}
         </p>
       </div>
       <div style={{ position: 'relative' }}>
@@ -970,6 +982,17 @@ function PlanPanel({ bubble }: { bubble: Bubble }) {
 
 function AgentSidebar({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
+  const tr = useT();
+  const STATE_LABELS_I18N: Record<AgentState, string> = {
+    idle: tr('state.idle'),
+    pending: tr('state.pending'),
+    running: tr('state.running'),
+    waiting: tr('state.waiting'),
+    paused: tr('state.paused'),
+    done: tr('state.done'),
+    error: tr('state.error'),
+    thinking: tr('state.thinking'),
+  };
   const min = Math.max(1, Math.round((Date.now() - bubble.createdAt) / 60000));
   const toolCallCount = bubble.messages.reduce((acc, m) => acc + (m.toolCalls?.length ?? 0), 0);
   return (
@@ -980,29 +1003,29 @@ function AgentSidebar({ bubble }: { bubble: Bubble }) {
       display: 'flex', flexDirection: 'column', gap: 18,
     }}>
       <div>
-        <SectionLabel>Estadísticas</SectionLabel>
+        <SectionLabel>{tr('detail.sidebar.stats')}</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <StatBox label="Tiempo activo" value={`${min}m`}/>
-          <StatBox label="Mensajes" value={String(bubble.messages.length)}/>
-          <StatBox label="Tool calls" value={String(toolCallCount)}/>
-          <StatBox label="Estado" value={STATE_LABELS[(bubble.status as AgentState) || 'idle']}/>
+          <StatBox label={tr('detail.stat.time_active')} value={`${min}m`}/>
+          <StatBox label={tr('detail.stat.messages')} value={String(bubble.messages.length)}/>
+          <StatBox label={tr('detail.stat.tool_calls')} value={String(toolCallCount)}/>
+          <StatBox label={tr('detail.stat.state')} value={STATE_LABELS_I18N[(bubble.status as AgentState) || 'idle']}/>
         </div>
       </div>
 
       <div>
-        <SectionLabel>Próxima acción</SectionLabel>
+        <SectionLabel>{tr('detail.sidebar.next')}</SectionLabel>
         <Glass radius={12} style={{ padding: 12 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
             color: t.accent, fontSize: 11, fontWeight: 500,
           }}>
-            <IconBolt size={12}/> Sugerencia
+            <IconBolt size={12}/> {tr('detail.sidebar.suggestion')}
           </div>
           <div style={{ fontSize: 12.5, color: t.text0, lineHeight: 1.5 }}>
-            {bubble.status === 'idle' ? 'Continuá la conversación o decile algo más.' :
-              bubble.status === 'thinking' ? 'Eco está procesando tu última instrucción.' :
-                bubble.status === 'executing' ? 'Esperá a que termine la ejecución.' :
-                  'Revisá los archivos modificados.'}
+            {bubble.status === 'idle' ? tr('detail.suggestion.idle') :
+              bubble.status === 'thinking' ? tr('detail.suggestion.thinking') :
+                bubble.status === 'executing' ? tr('detail.suggestion.executing') :
+                  tr('detail.suggestion.review')}
           </div>
         </Glass>
       </div>
@@ -1010,7 +1033,7 @@ function AgentSidebar({ bubble }: { bubble: Bubble }) {
       <div style={{ marginTop: 'auto' }}>
         <Glass radius={12} style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
           <IconShield size={16} strokeWidth={1.5}/>
-          <div style={{ flex: 1, fontSize: 12, color: t.text1 }}>Modo seguro activo</div>
+          <div style={{ flex: 1, fontSize: 12, color: t.text1 }}>{tr('detail.sidebar.safe_mode')}</div>
           <div style={{
             width: 28, height: 16, borderRadius: 999, background: t.accent,
             position: 'relative',

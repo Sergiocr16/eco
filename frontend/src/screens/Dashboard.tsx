@@ -9,7 +9,8 @@ import {
   IconClock, IconAlert, IconZap, IconCpu, IconFile, IconEdit, IconTrash,
 } from '@/design/icons';
 import type { Bubble, VoiceState } from '@/lib/types';
-import { stateColor, type AgentState, STATE_LABELS } from '@/design/tokens';
+import { stateColor, type AgentState } from '@/design/tokens';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   bubbles: Bubble[];
@@ -31,6 +32,7 @@ type Props = {
 
 export function Dashboard(props: Props) {
   const t = useTokens();
+  const tr = useT();
   const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, availableWorkspaces, interimText, voiceError } = props;
   const [view, setView] = useState<'grid' | 'graph'>('grid');
 
@@ -60,30 +62,33 @@ export function Dashboard(props: Props) {
             <div style={{
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
               color: t.accent, letterSpacing: 1.5, textTransform: 'uppercase',
-            }}>{greetingFor(new Date())}</div>
+            }}>{greetingFor(new Date(), tr)}</div>
             <h1 style={{
               margin: '6px 0 14px', fontFamily: t.fontSans, fontSize: 30,
               fontWeight: 600, color: t.text0, letterSpacing: -0.8,
               lineHeight: 1.15,
             }}>
-              {active.length} {active.length === 1 ? 'agente activo' : 'agentes activos'}
+              {tr(active.length === 1 ? 'dash.active_summary_one' : 'dash.active_summary_many', { n: active.length })}
               <br/>
-              en {new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 1} proyecto{(new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 1) === 1 ? '' : 's'}
+              {(() => {
+                const projects = new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 1;
+                return tr(projects === 1 ? 'dash.in_projects' : 'dash.in_projects_many', { n: projects });
+              })()}
             </h1>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {running.length > 0 && <Pill color={t.ok} icon={IconZap}>{running.length} ejecutando</Pill>}
-              {waiting.length > 0 && <Pill color={t.warn} icon={IconClock}>{waiting.length} esperando</Pill>}
-              {errors.length > 0 && <Pill color={t.err} icon={IconAlert}>{errors.length} con error</Pill>}
+              {running.length > 0 && <Pill color={t.ok} icon={IconZap}>{tr('dash.stat.running', { n: running.length })}</Pill>}
+              {waiting.length > 0 && <Pill color={t.warn} icon={IconClock}>{tr('dash.stat.waiting', { n: waiting.length })}</Pill>}
+              {errors.length > 0 && <Pill color={t.err} icon={IconAlert}>{tr('dash.stat.errors', { n: errors.length })}</Pill>}
               {running.length === 0 && waiting.length === 0 && errors.length === 0 && (
-                <Pill color={t.text2}>Todo en orden</Pill>
+                <Pill color={t.text2}>{tr('dash.stat.idle')}</Pill>
               )}
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
-            <Stat icon={IconCpu} label="Mensajes" value={String(bubbles.reduce((a, b) => a + b.messages.length, 0))}/>
-            <Stat icon={IconZap} label="Sesiones" value={String(bubbles.length)}/>
-            <Stat icon={IconFile} label="Workspaces" value={String(new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 0)}/>
+            <Stat icon={IconCpu} label={tr('dash.stat.messages')} value={String(bubbles.reduce((a, b) => a + b.messages.length, 0))}/>
+            <Stat icon={IconZap} label={tr('dash.stat.sessions')} value={String(bubbles.length)}/>
+            <Stat icon={IconFile} label={tr('dash.stat.workspaces')} value={String(new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 0)}/>
           </div>
         </div>
 
@@ -92,7 +97,7 @@ export function Dashboard(props: Props) {
             <IconBtn icon={IconGrid} size={28} active={view === 'grid'} onClick={() => setView('grid')}/>
             <IconBtn icon={IconGraph} size={28} active={view === 'graph'} onClick={() => setView('graph')}/>
           </div>
-        }>Agentes</SectionLabel>
+        }>{tr('dash.section.agents')}</SectionLabel>
 
         {view === 'grid' ? (
           <div style={{
@@ -129,12 +134,12 @@ export function Dashboard(props: Props) {
   );
 }
 
-function greetingFor(d: Date): string {
+function greetingFor(d: Date, tr: (k: string, v?: Record<string, string | number>) => string): string {
   const h = d.getHours();
-  if (h < 6) return 'Buenas noches';
-  if (h < 12) return 'Buenos días';
-  if (h < 19) return 'Buenas tardes';
-  return 'Buenas noches';
+  if (h < 6) return tr('dash.greeting.evening');
+  if (h < 12) return tr('dash.greeting.morning');
+  if (h < 19) return tr('dash.greeting.afternoon');
+  return tr('dash.greeting.evening');
 }
 
 function Stat({ icon: Icon, label, value }: { icon: (p: { size?: number }) => JSX.Element; label: string; value: string }) {
@@ -157,12 +162,13 @@ function Stat({ icon: Icon, label, value }: { icon: (p: { size?: number }) => JS
 
 function VoiceOrb({ state, onClick }: { state: VoiceState; onClick: () => void }) {
   const t = useTokens();
+  const tr = useT();
   const labels: Record<VoiceState, { label: string; sub: string }> = {
-    idle: { label: 'En espera', sub: 'Di "Hey Eco" o pulsa para hablar' },
-    listening: { label: 'Escuchando', sub: '' },
-    thinking: { label: 'Pensando', sub: '' },
-    executing: { label: 'Ejecutando', sub: '' },
-    speaking: { label: 'Hablando', sub: '' },
+    idle: { label: tr('voice.idle.label'), sub: tr('voice.idle.sub') },
+    listening: { label: tr('voice.listening.label'), sub: '' },
+    thinking: { label: tr('voice.thinking.label'), sub: '' },
+    executing: { label: tr('voice.executing.label'), sub: '' },
+    speaking: { label: tr('voice.speaking.label'), sub: '' },
   };
   const meta = labels[state] ?? labels.idle;
   const active = state !== 'idle';
@@ -219,10 +225,21 @@ function AgentBubble({
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
+  const tr = useT();
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
+  const STATE_LABELS_I18N: Record<AgentState, string> = {
+    idle: tr('state.idle'),
+    pending: tr('state.pending'),
+    running: tr('state.running'),
+    waiting: tr('state.waiting'),
+    paused: tr('state.paused'),
+    done: tr('state.done'),
+    error: tr('state.error'),
+    thinking: tr('state.thinking'),
+  };
   const lastMsg = bubble.messages[bubble.messages.length - 1];
-  const lastText = lastMsg?.text || 'Sin mensajes aún';
+  const lastText = lastMsg?.text || tr('dash.bubble.no_msg');
   const minutesAgo = Math.max(1, Math.round((Date.now() - bubble.updatedAt) / 60000));
   const tStr = minutesAgo < 60 ? `${minutesAgo}m` : `${Math.round(minutesAgo / 60)}h`;
 
@@ -285,14 +302,14 @@ function AgentBubble({
           ) : (
             <div
               onDoubleClick={(e) => startRename(e)}
-              title="Doble click para renombrar"
+              title={tr('dash.bubble.rename_tip')}
               style={{
                 fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, color: t.text0,
                 letterSpacing: -0.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{bubble.title}</div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-            <span style={{ fontSize: 11.5, color: t.text2 }}>Agente</span>
+            <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('dash.bubble.agent')}</span>
             <span style={{ color: t.text3 }}>·</span>
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tStr}</span>
           </div>
@@ -315,7 +332,7 @@ function AgentBubble({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
         <StatusDot color={sColor} pulse={state === 'running' || state === 'thinking'} size={7}/>
-        <span style={{ fontSize: 11.5, color: sColor, fontWeight: 500 }}>{STATE_LABELS[state] || 'Listo'}</span>
+        <span style={{ fontSize: 11.5, color: sColor, fontWeight: 500 }}>{STATE_LABELS_I18N[state] || tr('state.idle')}</span>
       </div>
 
       <div style={{
@@ -333,13 +350,13 @@ function AgentBubble({
         />
         <div style={{ display: 'flex', gap: 2 }}>
           {state === 'running' || state === 'thinking' ? (
-            <IconBtn icon={IconPause} size={26} title="Pausar"/>
+            <IconBtn icon={IconPause} size={26} title={tr('dash.bubble.pause')}/>
           ) : state === 'paused' ? (
-            <IconBtn icon={IconPlay} size={26} title="Reanudar"/>
+            <IconBtn icon={IconPlay} size={26} title={tr('dash.bubble.resume')}/>
           ) : state === 'error' ? (
-            <IconBtn icon={IconResume} size={26} title="Reintentar"/>
+            <IconBtn icon={IconResume} size={26} title={tr('dash.bubble.retry')}/>
           ) : null}
-          <IconBtn icon={IconExt} size={26} title="Abrir detalle"/>
+          <IconBtn icon={IconExt} size={26} title={tr('dash.bubble.open_detail')}/>
         </div>
       </div>
     </div>
@@ -348,6 +365,7 @@ function AgentBubble({
 
 function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
   const t = useTokens();
+  const tr = useT();
   const [h, setH] = useState(false);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState('');
@@ -382,12 +400,12 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
         }}>
           <IconPlus size={22}/>
         </div>
-        <div style={{ fontSize: 12.5, color: t.text2 }}>Nombre de la burbuja</div>
+        <div style={{ fontSize: 12.5, color: t.text2 }}>{tr('dash.bubble.name_label')}</div>
         <input
           ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Ej: Refactor auth, Investigar bug..."
+          placeholder={tr('dash.bubble.name_placeholder')}
           onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
             if (e.key === 'Enter') submit();
             if (e.key === 'Escape') { setDraft(''); setNaming(false); }
@@ -408,7 +426,7 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
               flex: 1, height: 32, borderRadius: 999, border: `1px solid ${t.glassBorder}`,
               background: 'transparent', color: t.text1, fontFamily: t.fontSans, fontSize: 12.5,
               cursor: 'pointer',
-            }}>Cancelar</button>
+            }}>{tr('common.cancel')}</button>
           <button
             type="button"
             onClick={submit}
@@ -416,9 +434,9 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
               flex: 1, height: 32, borderRadius: 999, border: `1px solid ${t.accent}`,
               background: t.accent, color: t.accentOn, fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
               cursor: 'pointer',
-            }}>Crear</button>
+            }}>{tr('common.create')}</button>
         </div>
-        <div style={{ fontSize: 10.5, color: t.text3 }}>↩ enter para crear · esc para cancelar</div>
+        <div style={{ fontSize: 10.5, color: t.text3 }}>{tr('dash.bubble.enter_hint')}</div>
       </div>
     );
   }
@@ -443,10 +461,8 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
       }}>
         <IconPlus size={22}/>
       </div>
-      <div style={{ fontSize: 13, fontWeight: 500 }}>Nueva burbuja</div>
-      <div style={{ fontSize: 11, color: t.text3 }}>
-        Click para nombrarla o decí <span style={{ color: t.text1 }}>"Eco, abrí una burbuja"</span>
-      </div>
+      <div style={{ fontSize: 13, fontWeight: 500 }}>{tr('dash.new_bubble')}</div>
+      <div style={{ fontSize: 11, color: t.text3 }} dangerouslySetInnerHTML={{ __html: tr('dash.new_bubble_hint') }}/>
     </div>
   );
 }
@@ -459,10 +475,11 @@ function WorkspaceChip({
   onChange: (ws: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [open, setOpen] = useState(false);
   const label = workspace
     ? workspace.split('/').filter(Boolean).slice(-2).join('/')
-    : 'sin carpeta';
+    : tr('wsp.chip.none');
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
@@ -474,7 +491,7 @@ function WorkspaceChip({
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        title={workspace || 'Asignar carpeta'}
+        title={workspace || tr('wsp.chip.assign')}
         style={{
           display: 'flex', alignItems: 'center', gap: 5,
           background: t.bg3, border: `1px solid ${t.glassBorder}`,
@@ -499,7 +516,7 @@ function WorkspaceChip({
           }}>
           {workspaces.length === 0 ? (
             <div style={{ padding: 10, fontSize: 11.5, color: t.text3 }}>
-              Sin workspaces. Agregalos en Ajustes → Carpetas.
+              {tr('wsp.chip.empty_picker')}
             </div>
           ) : workspaces.map((ws) => (
             <button
@@ -527,6 +544,7 @@ function BubbleMenu({
   onRemove: (e: React.MouseEvent) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   useEffect(() => {
     const onDocClick = () => onClose();
     document.addEventListener('click', onDocClick, { once: true });
@@ -544,10 +562,10 @@ function BubbleMenu({
       }}
     >
       <button type="button" onClick={onRename} style={menuItemStyle(t)}>
-        <IconEdit size={12}/> Renombrar
+        <IconEdit size={12}/> {tr('menu.rename')}
       </button>
       <button type="button" onClick={onRemove} style={{ ...menuItemStyle(t), color: t.err }}>
-        <IconTrash size={12}/> Cerrar burbuja
+        <IconTrash size={12}/> {tr('menu.close_bubble')}
       </button>
     </div>
   );
@@ -564,6 +582,7 @@ function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
 
 function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (id: string) => void }) {
   const t = useTokens();
+  const tr = useT();
   const [hover, setHover] = useState<string | null>(null);
   const W = 720, H = 460;
   const cx = W / 2, cy = H / 2;
@@ -659,7 +678,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           width: 4, height: 4, borderRadius: '50%', background: t.accent,
           boxShadow: `0 0 6px ${t.accent}`,
         }}/>
-        {bubbles.length} nodos conectados a Eco
+        {tr('graph.legend.nodes', { n: bubbles.length })}
       </div>
     </Glass>
   );
@@ -675,6 +694,7 @@ function CommandBar({
   voiceError?: string | null;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [value, setValue] = useState('');
   const [focused, setFocused] = useState(false);
 
@@ -689,8 +709,8 @@ function CommandBar({
   const placeholder = voiceError
     ? voiceError
     : voiceState === 'listening'
-      ? 'Escuchando · decí «Eco» seguido del comando…'
-      : 'Eco, dile al agente que…';
+      ? tr('dash.cmd_placeholder_listening')
+      : tr('dash.cmd.placeholder_active');
 
   const listenStyle: CSSProperties = voiceState === 'listening'
     ? { background: t.accent, color: t.accentOn, border: `1px solid ${t.accent}`, boxShadow: `0 0 24px ${t.accentGlow}` }
@@ -768,6 +788,7 @@ function DashboardRail({
   onOpenAgent: (id: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const recent = [...bubbles].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
   // Combinar carpetas que tienen burbujas con todas las disponibles
   const usedFolders = new Set(bubbles.map((b) => b.workspace).filter(Boolean));
@@ -785,10 +806,10 @@ function DashboardRail({
       overflow: 'auto',
     }}>
       <div>
-        <SectionLabel>Burbujas recientes</SectionLabel>
+        <SectionLabel>{tr('dash.rail.recent')}</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {recent.length === 0 ? (
-            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>Sin actividad reciente.</div>
+            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('dash.rail.no_activity')}</div>
           ) : recent.map((b) => (
             <RecentRow key={b.id} bubble={b} active={b.id === activeBubbleId} onClick={() => onFocus(b.id)}/>
           ))}
@@ -796,10 +817,10 @@ function DashboardRail({
       </div>
 
       <div>
-        <SectionLabel count={folders.length}>Carpetas activas</SectionLabel>
+        <SectionLabel count={folders.length}>{tr('dash.rail.active_folders')}</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {folders.length === 0 ? (
-            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>Sin carpetas seleccionadas.</div>
+            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('dash.rail.no_folders')}</div>
           ) : folders.map((f) => {
             const inFolder = bubbles.filter((b) => b.workspace === f);
             return (
@@ -822,12 +843,16 @@ function DashboardRail({
       <Glass radius={12} style={{ padding: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusDot color={t.ok} pulse size={7}/>
-          <span style={{ fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, color: t.text0 }}>Claude CLI</span>
-          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text2, marginLeft: 'auto' }}>local</span>
+          <span style={{ fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, color: t.text0 }}>{tr('rail.cli.label')}</span>
+          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text2, marginLeft: 'auto' }}>{tr('rail.cli.local')}</span>
         </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: t.text2, lineHeight: 1.5 }}>
-          Modelo: <span style={{ color: t.text1, fontFamily: t.fontMono }}>claude-sonnet-4-5</span>
-        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: t.text2, lineHeight: 1.5 }}
+          dangerouslySetInnerHTML={{
+            __html: tr('rail.cli.model', {
+              model: `<span style="color:${t.text1};font-family:${t.fontMono}">claude-sonnet-4-5</span>`,
+            }),
+          }}
+        />
       </Glass>
     </div>
   );
@@ -871,13 +896,14 @@ function RecentRow({ bubble, active, onClick }: { bubble: Bubble; active: boolea
 
 function FolderRow({ path, count, onClick }: { path: string; count: number; onClick: () => void }) {
   const t = useTokens();
+  const tr = useT();
   const [h, setH] = useState(false);
   const empty = count === 0;
   return (
     <div
       onClick={empty ? undefined : onClick}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      title={empty ? `${path} · sin burbujas` : `${path} · abrir burbuja más reciente`}
+      title={empty ? tr('rail.folders.tooltip_empty', { p: path }) : tr('rail.folders.tooltip_open', { p: path })}
       style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '8px 10px', borderRadius: 10,

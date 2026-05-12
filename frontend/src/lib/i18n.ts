@@ -6,6 +6,10 @@ export const DEFAULT_LANG: Lang = 'es';
 // cae al español. Variables: usar {{name}} en el template.
 const DICT = {
   // ─────────────────────────── Auth
+  'auth.your_account': { es: 'tu cuenta', en: 'your account' },
+  'auth.local_tagline': { es: 'Eco · v0.1 · todo local en tu Mac', en: 'Eco · v0.1 · all local on your Mac' },
+  'auth.back': { es: 'Volver', en: 'Back' },
+  'auth.phrase_placeholder': { es: 'palabra1 palabra2 palabra3 …', en: 'word1 word2 word3 …' },
   'auth.welcome.title': {
     es: 'Bienvenido a Eco',
     en: 'Welcome to Eco',
@@ -117,6 +121,46 @@ const DICT = {
   },
   'dash.bubble.agent': { es: 'Agente', en: 'Agent' },
   'dash.bubble.no_msg': { es: 'Sin mensajes aún', en: 'No messages yet' },
+  'dash.bubble.name_label': { es: 'Nombre de la burbuja', en: 'Bubble name' },
+  'dash.bubble.name_placeholder': {
+    es: 'Ej: Refactor auth, Investigar bug...',
+    en: 'E.g. Refactor auth, Investigate bug...',
+  },
+  'dash.bubble.enter_hint': {
+    es: '↩ enter para crear · esc para cancelar',
+    en: '↩ enter to create · esc to cancel',
+  },
+  'dash.bubble.rename_tip': {
+    es: 'Doble click para renombrar',
+    en: 'Double click to rename',
+  },
+  'dash.bubble.pause': { es: 'Pausar', en: 'Pause' },
+  'dash.bubble.resume': { es: 'Reanudar', en: 'Resume' },
+  'dash.bubble.retry': { es: 'Reintentar', en: 'Retry' },
+  'dash.bubble.open_detail': { es: 'Abrir detalle', en: 'Open detail' },
+  'dash.cmd.placeholder_active': {
+    es: 'Eco, dile al agente que…',
+    en: 'Eco, tell the agent to…',
+  },
+  'rail.folders.tooltip_empty': { es: '{{p}} · sin burbujas', en: '{{p}} · no bubbles' },
+  'rail.folders.tooltip_open': {
+    es: '{{p}} · abrir burbuja más reciente',
+    en: '{{p}} · open most recent bubble',
+  },
+  'wsp.chip.none': { es: 'sin carpeta', en: 'no folder' },
+  'wsp.chip.assign': { es: 'Asignar carpeta', en: 'Assign folder' },
+  'wsp.chip.empty_picker': {
+    es: 'Sin workspaces. Agregalos en Ajustes → Carpetas.',
+    en: 'No workspaces. Add them in Settings → Folders.',
+  },
+  'common.cancel': { es: 'Cancelar', en: 'Cancel' },
+  'common.create': { es: 'Crear', en: 'Create' },
+  'common.save': { es: 'Guardar', en: 'Save' },
+  'common.delete': { es: 'Eliminar', en: 'Delete' },
+  'common.close': { es: 'Cerrar', en: 'Close' },
+  'common.back': { es: 'Atrás', en: 'Back' },
+  'common.next': { es: 'Siguiente', en: 'Next' },
+  'common.loading': { es: 'Cargando…', en: 'Loading…' },
 
   // ─────────────────────────── Agent detail
   'detail.btn.listen': { es: 'Hablar', en: 'Speak' },
@@ -188,6 +232,45 @@ const DICT = {
     es: 'Revisá los archivos modificados.',
     en: 'Review the modified files.',
   },
+  'detail.header.bubble': { es: 'Burbuja', en: 'Bubble' },
+  'detail.header.id': { es: 'ID', en: 'ID' },
+  'detail.btn.listen_off_title': { es: 'Detener escucha', en: 'Stop listening' },
+  'detail.btn.listen_on_title': { es: 'Activar escucha', en: 'Start listening' },
+  'detail.chat.write_to': { es: 'Escríbele a {{name}}…', en: 'Write to {{name}}…' },
+  'detail.chat.listening_hint': {
+    es: 'Escuchando · hablá normal o decí "Eco" para comandos',
+    en: 'Listening · speak normally or say "Eco" for commands',
+  },
+  'detail.chat.eco_listening': { es: 'escuchando comando…', en: 'listening for command…' },
+  'detail.menu.workspace_empty_picker': {
+    es: 'Sin workspaces. Agregalos en Ajustes.',
+    en: 'No workspaces. Add them in Settings.',
+  },
+  'detail.term.welcome_workspace': {
+    es: 'eco-shell · {{ws}}',
+    en: 'eco-shell · {{ws}}',
+  },
+  'detail.term.welcome_workspace_none': {
+    es: '(sin workspace)',
+    en: '(no workspace)',
+  },
+  'detail.term.welcome_session': {
+    es: '◆ Sesión: {{title}} · escribí "help" para ayuda',
+    en: '◆ Session: {{title}} · type "help" for help',
+  },
+  'detail.term.help_lines': {
+    es: 'Comandos disponibles:\n  clear, cls       — limpia la terminal\n  cd <ruta>        — cambia el directorio (sin salir del workspace)\n  pwd              — muestra el directorio actual\n  help             — esta ayuda\n  <cualquier otro> — se ejecuta en shell con timeout 30s',
+    en: 'Available commands:\n  clear, cls       — clear the terminal\n  cd <path>        — change directory (within workspace)\n  pwd              — show current directory\n  help             — this help\n  <anything else>  — runs in shell with 30s timeout',
+  },
+  'detail.term.cd_outside': {
+    es: 'cd: {{target}}: fuera del workspace',
+    en: 'cd: {{target}}: outside workspace',
+  },
+  'detail.term.exit_code': { es: 'exit {{code}}', en: 'exit {{code}}' },
+  'detail.term.truncated': { es: 'output truncado', en: 'output truncated' },
+  'detail.files.created': { es: 'creado', en: 'created' },
+  'detail.files.modified_one': { es: 'modificado', en: 'modified' },
+  'detail.files.open_editor': { es: 'Abrir en editor', en: 'Open in editor' },
 
   // ─────────────────────────── Settings
   'settings.title': { es: 'Ajustes', en: 'Settings' },
@@ -266,7 +349,246 @@ const DICT = {
     en: 'You can change the workspace later from the bubble\'s "…" menu',
   },
 
+  // ─────────────────────────── Voice orb states
+  'voice.idle.label': { es: 'En espera', en: 'Idle' },
+  'voice.idle.sub': { es: 'Decí "Eco" o pulsá para hablar', en: 'Say "Eco" or click to talk' },
+  'voice.listening.label': { es: 'Escuchando', en: 'Listening' },
+  'voice.thinking.label': { es: 'Pensando', en: 'Thinking' },
+  'voice.executing.label': { es: 'Ejecutando', en: 'Executing' },
+  'voice.speaking.label': { es: 'Hablando', en: 'Speaking' },
+
+  // ─────────────────────────── State labels
+  'state.idle': { es: 'Inactivo', en: 'Idle' },
+  'state.pending': { es: 'Pendiente', en: 'Pending' },
+  'state.running': { es: 'Ejecutando', en: 'Running' },
+  'state.waiting': { es: 'Esperando input', en: 'Waiting for input' },
+  'state.paused': { es: 'En pausa', en: 'Paused' },
+  'state.done': { es: 'Finalizado', en: 'Done' },
+  'state.error': { es: 'Error', en: 'Error' },
+  'state.thinking': { es: 'Pensando', en: 'Thinking' },
+
+  // ─────────────────────────── Graph view
+  'graph.legend.nodes': { es: '{{n}} nodos conectados a Eco', en: '{{n}} nodes connected to Eco' },
+
+  // ─────────────────────────── Rail
+  'rail.cli.label': { es: 'Claude CLI', en: 'Claude CLI' },
+  'rail.cli.local': { es: 'local', en: 'local' },
+  'rail.cli.model': { es: 'Modelo: {{model}}', en: 'Model: {{model}}' },
+
+  // ─────────────────────────── Bubble menu
+  'menu.rename': { es: 'Renombrar', en: 'Rename' },
+  'menu.close_bubble': { es: 'Cerrar burbuja', en: 'Close bubble' },
+  'menu.pin': { es: 'Pinear', en: 'Pin' },
+  'menu.unpin': { es: 'Despinear', en: 'Unpin' },
+
+  // ─────────────────────────── Connection / errors
+  'conn.connected': { es: 'conectado', en: 'connected' },
+  'conn.connecting': { es: 'conectando…', en: 'connecting…' },
+  'conn.disconnected': { es: 'sin conexión', en: 'no connection' },
+  'conn.error': { es: 'error', en: 'error' },
+
+  // ─────────────────────────── History screen
+  'history.title': { es: 'Historial', en: 'History' },
+  'history.sub': {
+    es: 'Mensajes de todas las burbujas, ordenados por fecha.',
+    en: 'Messages from all bubbles, sorted by date.',
+  },
+  'history.empty': { es: 'Sin historial todavía.', en: 'No history yet.' },
+
+  // ─────────────────────────── File Explorer
+  'files.active_folders': { es: 'Carpetas activas', en: 'Active folders' },
+  'files.no_folders': { es: 'Sin carpetas seleccionadas.', en: 'No folders selected.' },
+  'files.no_folder_selected': { es: 'Sin carpeta seleccionada', en: 'No folder selected' },
+  'files.recent_changes': { es: 'Cambios recientes en las burbujas', en: 'Recent changes in bubbles' },
+  'files.no_changes': {
+    es: 'Aún no hay cambios registrados. Cuando los agentes escriban archivos, aparecerán aquí.',
+    en: 'No changes yet. When agents write files, they will appear here.',
+  },
+  'files.op.created': { es: 'Creado', en: 'Created' },
+  'files.op.modified': { es: 'Modificado', en: 'Modified' },
+  'files.op.pending': { es: 'Pendiente', en: 'Pending' },
+  'files.op.deleted': { es: 'Borrado', en: 'Deleted' },
+  'files.by': { es: 'por', en: 'by' },
+  'files.diff_btn': { es: 'Diff', en: 'Diff' },
+
+  // ─────────────────────────── Status overlay
+  'status.title': { es: 'Estado de Eco', en: 'Eco status' },
+  'status.help_title': { es: 'Comandos de Eco', en: 'Eco commands' },
+  'status.summary': {
+    es: '{{total}} burbuja{{p}} · {{active}} activa{{ap}}',
+    en: '{{total}} bubble{{p}} · {{active}} active',
+  },
+  'status.empty': { es: 'Sin burbujas todavía.', en: 'No bubbles yet.' },
+  'status.help_hint': {
+    es: 'Decí o escribí cualquiera de estos comandos.',
+    en: 'Say or type any of these commands.',
+  },
+  'status.msg_count': { es: '{{n}} msg', en: '{{n}} msg' },
+
+  // ─────────────────────────── DiffViewer
+  'diff.git': { es: 'diff contra HEAD', en: 'diff against HEAD' },
+  'diff.created': { es: 'archivo nuevo (no commiteado)', en: 'new file (not committed)' },
+  'diff.plain': { es: 'workspace sin git · contenido completo', en: 'workspace without git · full content' },
+  'diff.not_found': { es: 'archivo no encontrado', en: 'file not found' },
+  'diff.loading': { es: 'cargando…', en: 'loading…' },
+  'diff.no_changes': { es: 'Sin cambios.', en: 'No changes.' },
+
+  // ─────────────────────────── Skill autocomplete
+  'skill.results': { es: 'Skills · {{n}} {{w}}', en: 'Skills · {{n}} {{w}}' },
+  'skill.result_one': { es: 'resultado', en: 'result' },
+  'skill.result_many': { es: 'resultados', en: 'results' },
+  'skill.nav_hint': { es: '↑↓ navegar · ⏎ usar · esc cancelar', en: '↑↓ navigate · ⏎ use · esc cancel' },
+  'skill.label_skill': { es: 'skill', en: 'skill' },
+  'skill.label_command': { es: 'command', en: 'command' },
+  'skill.label_agent': { es: 'agent', en: 'agent' },
+  'skill.yours': { es: 'tuyo', en: 'yours' },
+
+  // ─────────────────────────── Settings — Voice
+  'settings.voice.title': { es: 'Voz', en: 'Voice' },
+  'settings.voice.sub': {
+    es: 'Controla cómo Eco te escucha y te responde.',
+    en: 'Control how Eco listens and responds.',
+  },
+  'settings.voice.wake_word': { es: 'Palabra de activación', en: 'Wake word' },
+  'settings.voice.wake_word_desc': {
+    es: 'Eco se activa cuando la escucha.',
+    en: 'Eco activates when it hears this word.',
+  },
+  'settings.voice.always_on': { es: 'Escucha siempre activa', en: 'Always listening' },
+  'settings.voice.always_on_desc': {
+    es: 'Necesario para reconocer la palabra de activación.',
+    en: 'Required to recognize the wake word.',
+  },
+  'settings.voice.lang': { es: 'Idioma de reconocimiento', en: 'Recognition language' },
+  'settings.voice.speak_replies': { es: 'Respuestas habladas', en: 'Spoken replies' },
+  'settings.voice.speak_replies_desc': {
+    es: 'Eco te lee en voz alta las respuestas de los agentes.',
+    en: 'Eco reads agent responses out loud.',
+  },
+  'settings.voice.voice_selected': { es: 'Voz seleccionada', en: 'Selected voice' },
+  'settings.voice.group_neural': { es: 'Neural local', en: 'Local neural' },
+  'settings.voice.group_system': { es: 'Sistema', en: 'System' },
+  'settings.voice.no_voices': { es: 'Sin voces en español detectadas.', en: 'No Spanish voices detected.' },
+  'settings.voice.try_voice': { es: '▸ Probar', en: '▸ Test' },
+
+  // ─────────────────────────── Settings — Claude
+  'settings.claude.title': { es: 'Claude & API', en: 'Claude & API' },
+  'settings.claude.sub': {
+    es: 'Configura tu acceso a los modelos de Anthropic.',
+    en: 'Configure your access to Anthropic models.',
+  },
+  'settings.claude.apikey.title': { es: 'API Key de Anthropic', en: 'Anthropic API Key' },
+  'settings.claude.apikey.desc': {
+    es: 'Se guarda en ~/.eco/api-key con permisos 600. En sesiones con PIN, se cifra con la clave derivada (próximamente).',
+    en: 'Stored at ~/.eco/api-key with mode 600. In PIN sessions, will be encrypted with derived key (coming soon).',
+  },
+  'settings.claude.apikey.saved': { es: 'Guardada', en: 'Saved' },
+  'settings.claude.apikey.save_btn': { es: 'Guardar', en: 'Save' },
+  'settings.claude.apikey.replace_btn': { es: 'Reemplazar', en: 'Replace' },
+  'settings.claude.apikey.validating': { es: 'Validando…', en: 'Validating…' },
+  'settings.claude.apikey.remove_btn': { es: 'Quitar', en: 'Remove' },
+  'settings.claude.apikey.success': {
+    es: 'API key guardada y validada contra Anthropic.',
+    en: 'API key saved and validated against Anthropic.',
+  },
+  'settings.claude.default_model': { es: 'Modelo por defecto', en: 'Default model' },
+  'settings.claude.default_model_desc': { es: 'Usado al crear nuevos agentes.', en: 'Used when creating new agents.' },
+  'settings.claude.cli_path': { es: 'Ruta del Claude CLI', en: 'Claude CLI path' },
+  'settings.claude.cli_path_desc': { es: 'Binario que ejecuta cada agente.', en: 'Binary that runs each agent.' },
+  'settings.claude.streaming': { es: 'Streaming de respuestas', en: 'Response streaming' },
+  'settings.claude.streaming_desc': { es: 'Mostrar texto en tiempo real.', en: 'Show text in real time.' },
+
+  // ─────────────────────────── Settings — Folders
+  'settings.folders.title': { es: 'Carpetas autorizadas', en: 'Authorized folders' },
+  'settings.folders.sub': {
+    es: 'Eco solo puede leer y escribir dentro de estas rutas. Los workspaces de .env aparecen marcados como bloqueados.',
+    en: 'Eco can only read and write within these paths. .env workspaces are marked as locked.',
+  },
+  'settings.folders.add_placeholder': { es: 'Pegá una ruta absoluta…', en: 'Paste an absolute path…' },
+  'settings.folders.add_btn': { es: 'Agregar', en: 'Add' },
+  'settings.folders.adding': { es: 'Agregando…', en: 'Adding…' },
+  'settings.folders.hint': {
+    es: 'La ruta debe ser absoluta y existir. Se bloquean rutas del sistema (/etc, /sys, /proc, etc.).',
+    en: 'Path must be absolute and exist. System paths (/etc, /sys, /proc, etc.) are blocked.',
+  },
+  'settings.folders.empty': {
+    es: 'Sin carpetas autorizadas. Agregá una arriba para empezar.',
+    en: 'No authorized folders. Add one above to start.',
+  },
+  'settings.folders.from_env': { es: 'Desde backend/.env · no editable', en: 'From backend/.env · not editable' },
+  'settings.folders.from_app': { es: 'Agregada desde la app', en: 'Added from the app' },
+
+  // ─────────────────────────── Settings — Security
+  'settings.security.title': { es: 'Seguridad', en: 'Security' },
+  'settings.security.sub': {
+    es: 'Define qué acciones requieren confirmación explícita.',
+    en: 'Define which actions require explicit confirmation.',
+  },
+  'settings.security.safe_mode': { es: 'Modo seguro global', en: 'Global safe mode' },
+  'settings.security.safe_mode_desc': {
+    es: 'Pide confirmación antes de cualquier modificación de archivos.',
+    en: 'Asks for confirmation before any file modification.',
+  },
+  'settings.security.audit_log': { es: 'Registro de auditoría', en: 'Audit log' },
+  'settings.security.audit_log_desc': {
+    es: 'Guarda log permanente de cada acción ejecutada por agentes.',
+    en: 'Permanent log of every action executed by agents.',
+  },
+  'settings.security.lock_inactivity': { es: 'Bloquear Eco tras inactividad', en: 'Lock Eco after inactivity' },
+  'settings.security.delete_all': { es: 'Borrar todos los datos locales', en: 'Delete all local data' },
+  'settings.security.delete_all_desc': {
+    es: 'Elimina cuenta, agentes, historial y caché. No reversible.',
+    en: 'Deletes account, agents, history and cache. Not reversible.',
+  },
+  'settings.security.delete_btn': { es: 'Borrar todo', en: 'Delete all' },
+  'settings.security.minutes': { es: '{{n}} minutos', en: '{{n}} minutes' },
+  'settings.security.one_hour': { es: '1 hora', en: '1 hour' },
+  'settings.security.never': { es: 'Nunca', en: 'Never' },
+
+  // ─────────────────────────── Settings — Appearance
+  'settings.appearance.title': { es: 'Apariencia', en: 'Appearance' },
+  'settings.appearance.sub': {
+    es: 'Tema visual y preferencias de interfaz.',
+    en: 'Visual theme and interface preferences.',
+  },
+  'settings.appearance.theme': { es: 'Tema', en: 'Theme' },
+  'settings.appearance.theme.dark': { es: 'Oscuro', en: 'Dark' },
+  'settings.appearance.theme.light': { es: 'Claro', en: 'Light' },
+  'settings.appearance.theme.system': { es: 'Sistema', en: 'System' },
+  'settings.appearance.accent': { es: 'Color de acento', en: 'Accent color' },
+
+  // ─────────────────────────── Settings — About
+  'settings.about.tagline': {
+    es: 'Centro de control local para agentes de IA · v0.1',
+    en: 'Local control center for AI agents · v0.1',
+  },
+
   // ─────────────────────────── Eco commands feedback
+  'cmdhelp.open.example': { es: 'Eco abrir <nombre>', en: 'Eco open <name>' },
+  'cmdhelp.open.desc': { es: 'Crea una nueva burbuja con ese nombre', en: 'Creates a new bubble with that name' },
+  'cmdhelp.rename.example': { es: 'Eco renombrar <nombre>', en: 'Eco rename <name>' },
+  'cmdhelp.rename.desc': { es: 'Cambia el título de la burbuja activa', en: 'Changes the active bubble title' },
+  'cmdhelp.close.example': { es: 'Eco cerrar', en: 'Eco close' },
+  'cmdhelp.close.desc': { es: 'Cierra la burbuja activa', en: 'Closes the active bubble' },
+  'cmdhelp.goto.example': { es: 'Eco ir <nombre>', en: 'Eco go <name>' },
+  'cmdhelp.goto.desc': { es: 'Va a la burbuja con ese nombre (fuzzy)', en: 'Goes to the bubble with that name (fuzzy)' },
+  'cmdhelp.nav.example': { es: 'Eco siguiente · Eco anterior', en: 'Eco next · Eco previous' },
+  'cmdhelp.nav.desc': { es: 'Navega entre burbujas', en: 'Navigate between bubbles' },
+  'cmdhelp.dash.example': { es: 'Eco dashboard · inicio', en: 'Eco dashboard · home' },
+  'cmdhelp.dash.desc': { es: 'Vuelve al dashboard', en: 'Back to dashboard' },
+  'cmdhelp.sections.example': { es: 'Eco ajustes · archivos · historial', en: 'Eco settings · files · history' },
+  'cmdhelp.sections.desc': { es: 'Navega a esas secciones', en: 'Navigate to those sections' },
+  'cmdhelp.status.example': { es: 'Eco estado', en: 'Eco status' },
+  'cmdhelp.status.desc': { es: 'Lista todas las burbujas con su actividad', en: 'List all bubbles with their activity' },
+  'cmdhelp.pause.example': { es: 'Eco pausar · continuar', en: 'Eco pause · continue' },
+  'cmdhelp.pause.desc': { es: 'Pausa o reanuda la burbuja activa', en: 'Pause or resume the active bubble' },
+  'cmdhelp.voice.example': { es: 'Eco silencio · hablar', en: 'Eco silence · speak' },
+  'cmdhelp.voice.desc': { es: 'Apaga o prende la voz', en: 'Turn voice off or on' },
+  'cmdhelp.theme.example': { es: 'Eco claro · oscuro · sistema', en: 'Eco light · dark · system' },
+  'cmdhelp.theme.desc': { es: 'Cambia el tema', en: 'Change theme' },
+  'cmdhelp.help.example': { es: 'Eco ayuda', en: 'Eco help' },
+  'cmdhelp.help.desc': { es: 'Muestra este panel', en: 'Shows this panel' },
+
   'cmd.unknown.title': { es: 'No entendí', en: 'I didn\'t understand' },
   'cmd.unknown.detail': { es: 'Decí "Eco ayuda"', en: 'Say "Eco help"' },
   'cmd.help.title': { es: 'Comandos disponibles', en: 'Available commands' },

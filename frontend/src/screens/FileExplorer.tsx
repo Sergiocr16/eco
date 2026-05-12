@@ -4,6 +4,7 @@ import { IconFolder, IconFolderOpen, IconDiff, IconExt, IconEdit, IconPlus, Icon
 import { Btn, IconBtn } from '@/design/primitives';
 import type { Bubble } from '@/lib/types';
 import { useMemo } from 'react';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   bubbles: Bubble[];
@@ -11,6 +12,7 @@ type Props = {
 
 export function FileExplorer({ bubbles }: Props) {
   const t = useTokens();
+  const tr = useT();
 
   const changes = useMemo(() => {
     const out: Array<{ agent: string; file: string; op: 'created' | 'modified' | 'pending' | 'deleted'; t: number }> = [];
@@ -38,10 +40,10 @@ export function FileExplorer({ bubbles }: Props) {
         borderRight: `1px solid ${t.glassBorder}`,
         overflow: 'auto',
       }}>
-        <SectionLabel>Carpetas activas</SectionLabel>
+        <SectionLabel>{tr('files.active_folders')}</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {folders.length === 0 ? (
-            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>Sin carpetas seleccionadas.</div>
+            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('files.no_folders')}</div>
           ) : folders.map((f) => {
             const bcount = bubbles.filter((b) => b.workspace === f).length;
             return (
@@ -73,13 +75,13 @@ export function FileExplorer({ bubbles }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <div style={{ color: t.accent }}><IconFolderOpen size={16}/></div>
           <span style={{ fontFamily: t.fontMono, fontSize: 13, color: t.text0 }}>
-            {folders[0] || 'Sin carpeta seleccionada'}
+            {folders[0] || tr('files.no_folder_selected')}
           </span>
         </div>
-        <SectionLabel count={changes.length}>Cambios recientes en las burbujas</SectionLabel>
+        <SectionLabel count={changes.length}>{tr('files.recent_changes')}</SectionLabel>
         {changes.length === 0 ? (
           <div style={{ fontSize: 13, color: t.text2, padding: 24, textAlign: 'center' }}>
-            Aún no hay cambios registrados. Cuando los agentes escriban archivos, aparecerán aquí.
+            {tr('files.no_changes')}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -93,12 +95,13 @@ export function FileExplorer({ bubbles }: Props) {
 
 function ChangeRow({ change }: { change: { agent: string; file: string; op: 'created' | 'modified' | 'pending' | 'deleted'; t: number } }) {
   const t = useTokens();
+  const tr = useT();
   const m = Math.max(1, Math.round((Date.now() - change.t) / 60000));
   const opMeta = {
-    created: { color: t.ok, label: 'Creado', icon: IconPlus },
-    modified: { color: t.accent, label: 'Modificado', icon: IconEdit },
-    pending: { color: t.warn, label: 'Pendiente', icon: IconClock },
-    deleted: { color: t.err, label: 'Borrado', icon: IconTrash },
+    created: { color: t.ok, label: tr('files.op.created'), icon: IconPlus },
+    modified: { color: t.accent, label: tr('files.op.modified'), icon: IconEdit },
+    pending: { color: t.warn, label: tr('files.op.pending'), icon: IconClock },
+    deleted: { color: t.err, label: tr('files.op.deleted'), icon: IconTrash },
   }[change.op];
   const Icon = opMeta.icon;
   return (
@@ -117,14 +120,14 @@ function ChangeRow({ change }: { change: { agent: string; file: string; op: 'cre
         <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 8 }}>
           <Pill color={opMeta.color}>{opMeta.label}</Pill>
           <span style={{ fontSize: 11.5, color: t.text2 }}>
-            por <span style={{ color: t.text1 }}>{change.agent}</span>
+            {tr('files.by')} <span style={{ color: t.text1 }}>{change.agent}</span>
           </span>
           <span style={{ color: t.text3 }}>·</span>
           <span style={{ fontSize: 11.5, color: t.text2 }}>{m < 60 ? `${m}m` : `${Math.round(m / 60)}h`}</span>
         </div>
       </div>
-      <Btn kind="ghost" size="sm" icon={IconDiff}>Diff</Btn>
-      <IconBtn icon={IconExt} size={28} title="Abrir en editor"/>
+      <Btn kind="ghost" size="sm" icon={IconDiff}>{tr('files.diff_btn')}</Btn>
+      <IconBtn icon={IconExt} size={28} title={tr('detail.files.open_editor')}/>
     </Glass>
   );
 }

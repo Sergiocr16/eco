@@ -17,6 +17,7 @@ import { WorkspacePicker } from './components/WorkspacePicker';
 import { AuthScreen } from './screens/AuthScreen';
 import { useAuth } from './hooks/useAuth';
 import { useTheme } from './design/theme';
+import { I18nProvider, useI18n, useT } from './hooks/useI18n';
 import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
 
 const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
@@ -25,7 +26,9 @@ const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
 export function App() {
   return (
     <ThemeProvider>
-      <AuthGate/>
+      <I18nProvider>
+        <AuthGate/>
+      </I18nProvider>
     </ThemeProvider>
   );
 }
@@ -44,6 +47,7 @@ function AuthGate() {
 function Shell() {
   const t = useTokens();
   const { setMode } = useTheme();
+  const { lang } = useI18n();
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackPayload | null>(null);
@@ -57,7 +61,7 @@ function Shell() {
   const lastSpokenRef = useRef<string | null>(null);
 
   function flash(action: MetaAction) {
-    const f = describeAction(action, bubbles.bubbles);
+    const f = describeAction(action, bubbles.bubbles, lang);
     setFeedback({
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       title: f.title,
@@ -433,6 +437,7 @@ function ScreenError({ error }: { error: string | null }) {
 
 function HistoryScreen({ bubbles, onOpen }: { bubbles: Bubble[]; onOpen: (id: string) => void }) {
   const t = useTokens();
+  const tr = useT();
   const allMsgs: Array<{ bubble: Bubble; msg: Message }> = [];
   for (const b of bubbles) {
     for (const m of b.messages) allMsgs.push({ bubble: b, msg: m });
@@ -441,13 +446,13 @@ function HistoryScreen({ bubbles, onOpen }: { bubbles: Bubble[]; onOpen: (id: st
   return (
     <div style={{ padding: '28px 32px', overflow: 'auto', height: '100%' }}>
       <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
-        Historial
+        {tr('history.title')}
       </h2>
       <p style={{ margin: '4px 0 22px', fontSize: 13, color: t.text2 }}>
-        Mensajes de todas las burbujas, ordenados por fecha.
+        {tr('history.sub')}
       </p>
       {allMsgs.length === 0 ? (
-        <div style={{ fontSize: 13, color: t.text2, padding: 24 }}>Sin historial todavía.</div>
+        <div style={{ fontSize: 13, color: t.text2, padding: 24 }}>{tr('history.empty')}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {allMsgs.slice(0, 100).map(({ bubble, msg }) => (
@@ -472,7 +477,7 @@ function HistoryScreen({ bubbles, onOpen }: { bubbles: Bubble[]; onOpen: (id: st
                 flex: 1, fontFamily: t.fontSans, fontSize: 12.5,
                 color: msg.role === 'user' ? t.text0 : t.text1,
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{msg.role === 'user' ? 'Tú: ' : '→ '}{msg.text.slice(0, 120)}</span>
+              }}>{msg.role === 'user' ? `${tr('detail.chat.you')}: ` : '→ '}{msg.text.slice(0, 120)}</span>
             </button>
           ))}
         </div>

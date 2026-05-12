@@ -3,6 +3,7 @@ import { useTokens } from '@/design/theme';
 import { Btn, Glass } from '@/design/primitives';
 import { IconFolder, IconFolderOpen, IconPlus, IconX, IconCheck } from '@/design/icons';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   open: boolean;
@@ -14,6 +15,7 @@ type Props = {
 
 export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: Props) {
   const t = useTokens();
+  const tr = useT();
   const ws = useWorkspaces();
   const [adding, setAdding] = useState(false);
   const [draftPath, setDraftPath] = useState('');
@@ -83,10 +85,10 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: t.text0, letterSpacing: -0.2 }}>
-              ¿En qué carpeta vas a trabajar?
+              {tr('wsp.title')}
             </div>
             <div style={{ fontSize: 12, color: t.text2, marginTop: 1 }}>
-              «{bubbleTitle}» — Eco solo podrá leer y escribir aquí
+              «{bubbleTitle}» — {tr('wsp.sub')}
             </div>
           </div>
           <button
@@ -103,12 +105,12 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
 
         <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
           {ws.loading ? (
-            <div style={{ fontSize: 13, color: t.text2, padding: '20px 4px' }}>Cargando…</div>
+            <div style={{ fontSize: 13, color: t.text2, padding: '20px 4px' }}>{tr('common.loading')}</div>
           ) : ws.list.workspaces.length === 0 && !adding ? (
             <div style={{
               padding: '20px 4px', fontSize: 13, color: t.text2, textAlign: 'center',
             }}>
-              No tenés workspaces autorizados todavía.
+              {tr('wsp.no_workspaces')}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
@@ -149,7 +151,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
           {adding ? (
             <Glass radius={12} style={{ padding: 10, marginTop: 8 }}>
               <div style={{ fontSize: 11.5, color: t.text2, marginBottom: 8 }}>
-                Pegá el path absoluto. No puede ser ruta del sistema (/etc, /sys, etc.).
+                {tr('wsp.add_hint')}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <input
@@ -168,7 +170,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
                   }}
                 />
                 <Btn kind="primary" size="sm" onClick={handleAdd} disabled={busy || !draftPath.trim()} icon={IconCheck}>
-                  {busy ? 'Agregando…' : 'Agregar y usar'}
+                  {busy ? tr('wsp.add_loading') : tr('wsp.add_btn')}
                 </Btn>
               </div>
               {addError && (
@@ -199,7 +201,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
                 e.currentTarget.style.color = t.text1;
               }}>
               <IconPlus size={14}/>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>Agregar otra carpeta…</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{tr('wsp.add_other')}</span>
             </button>
           )}
         </div>
@@ -209,10 +211,10 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
           padding: '12px 18px', borderTop: `1px solid ${t.glassBorder}`,
         }}>
           <Btn kind="ghost" size="sm" onClick={onSkip}>
-            Trabajar sin carpeta
+            {tr('wsp.skip')}
           </Btn>
           <span style={{ fontSize: 10.5, color: t.text3 }}>
-            Podés cambiar el workspace después desde el menú «…» de la burbuja
+            {tr('wsp.change_later')}
           </span>
         </div>
       </div>

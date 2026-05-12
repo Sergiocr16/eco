@@ -1,4 +1,5 @@
 import type { Bubble } from './types';
+import { translate, type Lang } from './i18n';
 
 export type MetaAction =
   | { kind: 'goto_dashboard' }
@@ -222,43 +223,44 @@ function findBubbleByQuery(q: string, bubbles: Bubble[], activeBubbleId: string 
   return best && best.score >= 30 ? best.bubble : null;
 }
 
-export function describeAction(action: MetaAction, bubbles: Bubble[]): MetaActionFeedback {
+export function describeAction(action: MetaAction, bubbles: Bubble[], lang: Lang = 'es'): MetaActionFeedback {
+  const tr = (k: string, v?: Record<string, string | number>) => translate(k, lang, v);
   switch (action.kind) {
-    case 'goto_dashboard': return { title: 'Dashboard' };
-    case 'goto_settings':  return { title: 'Ajustes' };
-    case 'goto_files':     return { title: 'Archivos' };
-    case 'goto_history':   return { title: 'Historial' };
-    case 'create_bubble':  return { title: 'Nueva burbuja', detail: action.title ?? 'Sin título' };
-    case 'open_or_create': return { title: 'Burbuja creada', detail: action.title };
-    case 'rename_active':  return { title: 'Renombrada', detail: action.title };
-    case 'close_active':   return { title: 'Burbuja cerrada' };
+    case 'goto_dashboard': return { title: tr('cmd.dashboard') };
+    case 'goto_settings':  return { title: tr('cmd.settings') };
+    case 'goto_files':     return { title: tr('cmd.files') };
+    case 'goto_history':   return { title: tr('cmd.history') };
+    case 'create_bubble':  return { title: tr('cmd.new_bubble'), detail: action.title ?? tr('cmd.no_title') };
+    case 'open_or_create': return { title: tr('cmd.bubble_created'), detail: action.title };
+    case 'rename_active':  return { title: tr('cmd.renamed'), detail: action.title };
+    case 'close_active':   return { title: tr('cmd.closed') };
     case 'focus_bubble': {
       const b = bubbles.find((x) => x.id === action.bubbleId);
-      return { title: 'Yendo a', detail: b?.title ?? '' };
+      return { title: tr('cmd.going_to'), detail: b?.title ?? '' };
     }
-    case 'next_bubble':    return { title: 'Siguiente' };
-    case 'prev_bubble':    return { title: 'Anterior' };
-    case 'show_status':    return { title: 'Estado' };
-    case 'pause_active':   return { title: 'Pausada' };
-    case 'resume_active':  return { title: 'Reanudada' };
-    case 'toggle_voice':   return { title: action.on ? 'Voz prendida' : 'Silencio' };
-    case 'set_theme':      return { title: `Tema ${action.mode}` };
-    case 'help':           return { title: 'Comandos disponibles' };
-    case 'unknown':        return { title: 'No entendí', detail: 'Decí «Eco ayuda»' };
+    case 'next_bubble':    return { title: tr('cmd.next') };
+    case 'prev_bubble':    return { title: tr('cmd.prev') };
+    case 'show_status':    return { title: tr('cmd.status') };
+    case 'pause_active':   return { title: tr('cmd.paused') };
+    case 'resume_active':  return { title: tr('cmd.resumed') };
+    case 'toggle_voice':   return { title: action.on ? tr('cmd.voice_on') : tr('cmd.voice_off') };
+    case 'set_theme':      return { title: tr('cmd.theme', { mode: action.mode }) };
+    case 'help':           return { title: tr('cmd.help.title') };
+    case 'unknown':        return { title: tr('cmd.unknown.title'), detail: tr('cmd.unknown.detail') };
   }
 }
 
-export const COMMAND_HELP: Array<{ example: string; desc: string }> = [
-  { example: 'Eco abrir <nombre>', desc: 'Crea una nueva burbuja con ese nombre' },
-  { example: 'Eco renombrar <nombre>', desc: 'Cambia el título de la burbuja activa' },
-  { example: 'Eco cerrar', desc: 'Cierra la burbuja activa' },
-  { example: 'Eco ir <nombre>', desc: 'Va a la burbuja con ese nombre (fuzzy)' },
-  { example: 'Eco siguiente · Eco anterior', desc: 'Navega entre burbujas' },
-  { example: 'Eco dashboard · inicio', desc: 'Vuelve al dashboard' },
-  { example: 'Eco ajustes · archivos · historial', desc: 'Navega a esas secciones' },
-  { example: 'Eco estado', desc: 'Lista todas las burbujas con su actividad' },
-  { example: 'Eco pausar · continuar', desc: 'Pausa o reanuda la burbuja activa' },
-  { example: 'Eco silencio · hablar', desc: 'Apaga o prende la voz' },
-  { example: 'Eco claro · oscuro · sistema', desc: 'Cambia el tema' },
-  { example: 'Eco ayuda', desc: 'Muestra este panel' },
+export const COMMAND_HELP: Array<{ example?: string; desc?: string; exampleKey?: string; descKey?: string }> = [
+  { exampleKey: 'cmdhelp.open.example', descKey: 'cmdhelp.open.desc' },
+  { exampleKey: 'cmdhelp.rename.example', descKey: 'cmdhelp.rename.desc' },
+  { exampleKey: 'cmdhelp.close.example', descKey: 'cmdhelp.close.desc' },
+  { exampleKey: 'cmdhelp.goto.example', descKey: 'cmdhelp.goto.desc' },
+  { exampleKey: 'cmdhelp.nav.example', descKey: 'cmdhelp.nav.desc' },
+  { exampleKey: 'cmdhelp.dash.example', descKey: 'cmdhelp.dash.desc' },
+  { exampleKey: 'cmdhelp.sections.example', descKey: 'cmdhelp.sections.desc' },
+  { exampleKey: 'cmdhelp.status.example', descKey: 'cmdhelp.status.desc' },
+  { exampleKey: 'cmdhelp.pause.example', descKey: 'cmdhelp.pause.desc' },
+  { exampleKey: 'cmdhelp.voice.example', descKey: 'cmdhelp.voice.desc' },
+  { exampleKey: 'cmdhelp.theme.example', descKey: 'cmdhelp.theme.desc' },
+  { exampleKey: 'cmdhelp.help.example', descKey: 'cmdhelp.help.desc' },
 ];

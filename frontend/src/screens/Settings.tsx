@@ -21,15 +21,16 @@ type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appear
 
 export function Settings() {
   const t = useTokens();
+  const tr = useT();
   const [sec, setSec] = useState<Section>('voice');
   const sections: { id: Section; label: string; icon: (p: IconProps) => JSX.Element }[] = [
-    { id: 'general', label: 'General', icon: IconSettings },
-    { id: 'claude', label: 'Claude & API', icon: IconKey },
-    { id: 'voice', label: 'Voz', icon: IconMic },
-    { id: 'folders', label: 'Carpetas', icon: IconFolder },
-    { id: 'security', label: 'Seguridad', icon: IconShield },
-    { id: 'appearance', label: 'Apariencia', icon: IconLayers },
-    { id: 'about', label: 'Acerca de', icon: IconInfo },
+    { id: 'general', label: tr('settings.section.general'), icon: IconSettings },
+    { id: 'claude', label: tr('settings.section.claude'), icon: IconKey },
+    { id: 'voice', label: tr('settings.section.voice'), icon: IconMic },
+    { id: 'folders', label: tr('settings.section.folders'), icon: IconFolder },
+    { id: 'security', label: tr('settings.section.security'), icon: IconShield },
+    { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
+    { id: 'about', label: tr('settings.section.about'), icon: IconInfo },
   ];
   return (
     <div style={{ display: 'flex', height: '100%' }}>
@@ -41,7 +42,7 @@ export function Settings() {
         <div style={{
           padding: '8px 12px 12px', fontSize: 15, fontWeight: 600,
           color: t.text0, letterSpacing: -0.2,
-        }}>Ajustes</div>
+        }}>{tr('settings.title')}</div>
         {sections.map((s) => (
           <button
             key={s.id} type="button"
@@ -161,6 +162,7 @@ function LanguageRow() {
 
 function SuggestionsEditor() {
   const t = useTokens();
+  const tr = useT();
   const s = useQuickSuggestions();
   const [draft, setDraft] = useState('');
 
@@ -182,12 +184,12 @@ function SuggestionsEditor() {
             style={{
               fontSize: 11, color: t.text2, background: 'transparent',
               border: 0, cursor: 'pointer', fontFamily: t.fontSans,
-            }}>Restablecer</button>
+            }}>{tr('settings.suggestions.reset')}</button>
         }>
-        Sugerencias rápidas
+        {tr('settings.suggestions.title')}
       </SectionLabel>
       <p style={{ fontSize: 12, color: t.text2, marginTop: -4, marginBottom: 12, lineHeight: 1.5 }}>
-        Aparecen debajo del input de cada conversación. Click → se copia al draft.
+        {tr('settings.suggestions.sub')}
       </p>
 
       <Glass radius={12} style={{ padding: 6, marginBottom: 12, display: 'flex', gap: 6 }}>
@@ -195,20 +197,20 @@ function SuggestionsEditor() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
-          placeholder="Agregar nueva sugerencia (ej: 'Generá tests')"
+          placeholder={tr('settings.suggestions.add_placeholder')}
           style={{
             flex: 1, background: 'transparent', border: 0, outline: 'none',
             fontFamily: t.fontSans, fontSize: 13.5, color: t.text0, padding: '8px 10px',
           }}
         />
         <Btn kind="primary" size="sm" onClick={handleAdd} disabled={!draft.trim()}>
-          Agregar
+          {tr('settings.folders.add_btn')}
         </Btn>
       </Glass>
 
       {s.suggestions.length === 0 ? (
         <div style={{ fontSize: 12.5, color: t.text2, padding: '12px 4px' }}>
-          Sin sugerencias. Agregá una arriba.
+          {tr('settings.suggestions.empty')}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -230,7 +232,7 @@ function SuggestionsEditor() {
                   background: 'transparent', color: t.text2, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
-                title="Quitar"
+                title={tr('common.delete')}
               >
                 <IconTrash size={12}/>
               </button>
@@ -243,11 +245,12 @@ function SuggestionsEditor() {
 }
 
 function SectionClaude() {
+  const tr = useT();
   return (
     <div style={{ maxWidth: 720 }}>
-      <Header title="Claude & API" sub="Configura tu acceso a los modelos de Anthropic."/>
+      <Header title={tr('settings.claude.title')} sub={tr('settings.claude.sub')}/>
       <ApiKeyEditor/>
-      <Row icon={IconCpu} title="Modelo por defecto" desc="Usado al crear nuevos agentes."
+      <Row icon={IconCpu} title={tr('settings.claude.default_model')} desc={tr('settings.claude.default_model_desc')}
         control={
           <Select defaultValue="sonnet" width={220} options={[
             { value: 'sonnet', label: 'claude-sonnet-4-5' },
@@ -255,9 +258,9 @@ function SectionClaude() {
             { value: 'haiku', label: 'claude-haiku-4-5' },
           ]}/>
         }/>
-      <Row icon={IconTerminal} title="Ruta del Claude CLI" desc="Binario que ejecuta cada agente."
+      <Row icon={IconTerminal} title={tr('settings.claude.cli_path')} desc={tr('settings.claude.cli_path_desc')}
         control={<Input defaultValue="~/.local/bin/claude" width={240} mono/>}/>
-      <Row icon={IconBolt} title="Streaming de respuestas" desc="Mostrar texto en tiempo real."
+      <Row icon={IconBolt} title={tr('settings.claude.streaming')} desc={tr('settings.claude.streaming_desc')}
         control={<ToggleControlled defaultOn/>}/>
     </div>
   );
@@ -265,6 +268,7 @@ function SectionClaude() {
 
 function ApiKeyEditor() {
   const t = useTokens();
+  const tr = useT();
   const apiKey = useApiKey();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -310,11 +314,10 @@ function ApiKeyEditor() {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13.5, color: t.text0, fontWeight: 500 }}>
-            API Key de Anthropic
+            {tr('settings.claude.apikey.title')}
           </div>
           <div style={{ fontSize: 12, color: t.text2, marginTop: 3, lineHeight: 1.5 }}>
-            Se guarda en <code style={{ fontFamily: t.fontMono }}>~/.eco/api-key</code> con permisos 600.
-            En sesiones con PIN, se cifra con la clave derivada (próximamente).
+            {tr('settings.claude.apikey.desc')}
           </div>
         </div>
         {apiKey.hasKey && (
@@ -325,7 +328,7 @@ function ApiKeyEditor() {
             color: t.ok, fontSize: 11, fontWeight: 500,
             border: `1px solid color-mix(in oklch, ${t.ok} 30%, transparent)`,
           }}>
-            <IconCheck size={11}/> Guardada · {apiKey.masked}
+            <IconCheck size={11}/> {tr('settings.claude.apikey.saved')} · {apiKey.masked}
           </span>
         )}
       </div>
@@ -343,10 +346,10 @@ function ApiKeyEditor() {
           }}
         />
         <Btn kind="primary" size="sm" onClick={handleSave} disabled={busy || !draft.trim()} icon={IconCheck}>
-          {busy ? 'Validando…' : apiKey.hasKey ? 'Reemplazar' : 'Guardar'}
+          {busy ? tr('settings.claude.apikey.validating') : apiKey.hasKey ? tr('settings.claude.apikey.replace_btn') : tr('settings.claude.apikey.save_btn')}
         </Btn>
         {apiKey.hasKey && (
-          <Btn kind="danger" size="sm" onClick={handleDelete} disabled={busy} icon={IconTrash}>Quitar</Btn>
+          <Btn kind="danger" size="sm" onClick={handleDelete} disabled={busy} icon={IconTrash}>{tr('settings.claude.apikey.remove_btn')}</Btn>
         )}
       </Glass>
 
@@ -355,7 +358,7 @@ function ApiKeyEditor() {
       )}
       {success && (
         <div style={{ fontSize: 11.5, color: t.ok, paddingLeft: 4 }}>
-          API key guardada y validada contra Anthropic.
+          {tr('settings.claude.apikey.success')}
         </div>
       )}
     </div>
@@ -364,6 +367,7 @@ function ApiKeyEditor() {
 
 function SectionVoice() {
   const t = useTokens();
+  const tr = useT();
   const tts = useTTS();
   const spanish = tts.voices.filter((v) => /^es/i.test(v.language));
   const neural = spanish.filter((v) => v.kind === 'piper');
@@ -371,27 +375,27 @@ function SectionVoice() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <Header title="Voz" sub="Controla cómo Eco te escucha y te responde."/>
+      <Header title={tr('settings.voice.title')} sub={tr('settings.voice.sub')}/>
 
-      <Row icon={IconWave} title="Palabra de activación" desc='Eco se activa cuando la escucha.'
+      <Row icon={IconWave} title={tr('settings.voice.wake_word')} desc={tr('settings.voice.wake_word_desc')}
         control={<Select defaultValue="eco" width={160} options={[
           { value: 'eco', label: '"Eco"' }, { value: 'hey', label: '"Hey Eco"' }, { value: 'oye', label: '"Oye Eco"' },
         ]}/>}/>
-      <Row icon={IconMic} title="Escucha siempre activa" desc="Necesario para reconocer la palabra de activación."
+      <Row icon={IconMic} title={tr('settings.voice.always_on')} desc={tr('settings.voice.always_on_desc')}
         control={<ToggleControlled defaultOn/>}/>
-      <Row icon={IconGlobe} title="Idioma de reconocimiento"
+      <Row icon={IconGlobe} title={tr('settings.voice.lang')}
         control={<Select defaultValue="es" width={220} options={[
           { value: 'es', label: 'Español (Latinoamérica)' }, { value: 'es-es', label: 'Español (España)' },
           { value: 'en', label: 'English' },
         ]}/>}/>
-      <Row icon={IconCommand} title="Respuestas habladas"
-        desc="Eco te lee en voz alta las respuestas de los agentes."
+      <Row icon={IconCommand} title={tr('settings.voice.speak_replies')}
+        desc={tr('settings.voice.speak_replies_desc')}
         control={<Toggle on={tts.enabled} onChange={tts.setEnabled}/>}/>
 
       <div style={{ marginTop: 24 }}>
-        <SectionLabel>Voz seleccionada</SectionLabel>
+        <SectionLabel>{tr('settings.voice.voice_selected')}</SectionLabel>
         {neural.length > 0 && (
-          <VoiceGroup label="Neural local" voices={neural} selected={tts.selectedVoiceURI}
+          <VoiceGroup label={tr('settings.voice.group_neural')} voices={neural} selected={tts.selectedVoiceURI}
             onSelect={tts.selectVoice}
             onTest={(uri) => {
               const previous = tts.selectedVoiceURI;
@@ -406,7 +410,7 @@ function SectionVoice() {
             }}/>
         )}
         {system.length > 0 && (
-          <VoiceGroup label="Sistema" voices={system.slice(0, 10)} selected={tts.selectedVoiceURI}
+          <VoiceGroup label={tr('settings.voice.group_system')} voices={system.slice(0, 10)} selected={tts.selectedVoiceURI}
             onSelect={tts.selectVoice}
             onTest={(uri) => {
               const previous = tts.selectedVoiceURI;
@@ -421,7 +425,7 @@ function SectionVoice() {
             }}/>
         )}
         {neural.length === 0 && system.length === 0 && (
-          <div style={{ fontSize: 12, color: t.text2 }}>Sin voces en español detectadas.</div>
+          <div style={{ fontSize: 12, color: t.text2 }}>{tr('settings.voice.no_voices')}</div>
         )}
       </div>
     </div>
@@ -436,6 +440,7 @@ function VoiceGroup({ label, voices, selected, onSelect, onTest }: {
   onTest: (id: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{
@@ -475,7 +480,7 @@ function VoiceGroup({ label, voices, selected, onSelect, onTest }: {
             <button type="button" onClick={(e) => { e.stopPropagation(); onTest(v.id); }} style={{
               fontFamily: t.fontMono, fontSize: 11, color: t.text2,
               background: 'transparent', border: 0, cursor: 'pointer', padding: '4px 8px',
-            }}>▸ Probar</button>
+            }}>{tr('settings.voice.try_voice')}</button>
           </button>
         ))}
       </div>
@@ -485,6 +490,7 @@ function VoiceGroup({ label, voices, selected, onSelect, onTest }: {
 
 function SectionFolders() {
   const t = useTokens();
+  const tr = useT();
   const ws = useWorkspaces();
   const [draft, setDraft] = useState('');
   const [adding, setAdding] = useState(false);
@@ -506,7 +512,7 @@ function SectionFolders() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <Header title="Carpetas autorizadas" sub="Eco solo puede leer y escribir dentro de estas rutas. Los workspaces de .env aparecen marcados como bloqueados."/>
+      <Header title={tr('settings.folders.title')} sub={tr('settings.folders.sub')}/>
 
       <Glass radius={14} style={{ padding: 12, marginBottom: 18 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -515,29 +521,29 @@ function SectionFolders() {
             value={draft}
             onChange={(e) => { setDraft(e.target.value); setAddError(null); }}
             onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
-            placeholder="/Users/sergio/projects/aditum-jh"
+            placeholder={tr('settings.folders.add_placeholder')}
             style={{
               flex: 1, background: 'transparent', border: 0, outline: 'none',
               fontFamily: t.fontMono, fontSize: 13, color: t.text0, padding: '8px 4px',
             }}
           />
           <Btn kind="primary" size="sm" icon={IconPlus} onClick={handleAdd} disabled={adding || !draft.trim()}>
-            {adding ? 'Agregando…' : 'Agregar'}
+            {adding ? tr('settings.folders.adding') : tr('settings.folders.add_btn')}
           </Btn>
         </div>
         {addError && (
           <div style={{ marginTop: 8, fontSize: 12, color: t.err }}>{addError}</div>
         )}
         <div style={{ marginTop: 8, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
-          La ruta debe ser absoluta y existir. Se bloquean rutas del sistema (<code style={{ fontFamily: t.fontMono }}>/etc</code>, <code style={{ fontFamily: t.fontMono }}>/sys</code>, <code style={{ fontFamily: t.fontMono }}>/proc</code>, etc.).
+          {tr('settings.folders.hint')}
         </div>
       </Glass>
 
       {ws.loading ? (
-        <div style={{ fontSize: 13, color: t.text2 }}>Cargando…</div>
+        <div style={{ fontSize: 13, color: t.text2 }}>{tr('common.loading')}</div>
       ) : ws.list.workspaces.length === 0 ? (
         <div style={{ fontSize: 13, color: t.text2, padding: 24, textAlign: 'center' }}>
-          Sin carpetas autorizadas. Agregá una arriba para empezar.
+          {tr('settings.folders.empty')}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -554,7 +560,7 @@ function SectionFolders() {
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                   }}>{p}</div>
                   <div style={{ marginTop: 3, fontSize: 11, color: t.text2 }}>
-                    {fromEnv ? 'Desde backend/.env · no editable' : 'Agregada desde la app'}
+                    {fromEnv ? tr('settings.folders.from_env') : tr('settings.folders.from_app')}
                   </div>
                 </div>
                 {fromEnv ? (
@@ -567,7 +573,7 @@ function SectionFolders() {
                   <button
                     type="button"
                     onClick={() => ws.remove(p)}
-                    title="Quitar"
+                    title={tr('settings.claude.apikey.remove_btn')}
                     style={{
                       width: 30, height: 30, borderRadius: 8, border: 0,
                       background: 'transparent', color: t.text2, cursor: 'pointer',
@@ -589,39 +595,43 @@ function SectionFolders() {
 }
 
 function SectionSecurity() {
+  const tr = useT();
   return (
     <div style={{ maxWidth: 720 }}>
-      <Header title="Seguridad" sub="Define qué acciones requieren confirmación explícita."/>
-      <Row icon={IconShield} title="Modo seguro global"
-        desc="Pide confirmación antes de cualquier modificación de archivos."
+      <Header title={tr('settings.security.title')} sub={tr('settings.security.sub')}/>
+      <Row icon={IconShield} title={tr('settings.security.safe_mode')}
+        desc={tr('settings.security.safe_mode_desc')}
         control={<ToggleControlled defaultOn/>}/>
-      <Row icon={IconHistory} title="Registro de auditoría"
-        desc="Guarda log permanente de cada acción ejecutada por agentes."
+      <Row icon={IconHistory} title={tr('settings.security.audit_log')}
+        desc={tr('settings.security.audit_log_desc')}
         control={<ToggleControlled defaultOn/>}/>
-      <Row icon={IconLock} title="Bloquear Eco tras inactividad"
+      <Row icon={IconLock} title={tr('settings.security.lock_inactivity')}
         control={<Select defaultValue="15" width={140} options={[
-          { value: '5', label: '5 minutos' }, { value: '15', label: '15 minutos' },
-          { value: '60', label: '1 hora' }, { value: 'never', label: 'Nunca' },
+          { value: '5', label: tr('settings.security.minutes', { n: 5 }) },
+          { value: '15', label: tr('settings.security.minutes', { n: 15 }) },
+          { value: '60', label: tr('settings.security.one_hour') },
+          { value: 'never', label: tr('settings.security.never') },
         ]}/>}/>
-      <Row icon={IconTrash} title="Borrar todos los datos locales" danger
-        desc="Elimina cuenta, agentes, historial y caché. No reversible."
-        control={<Btn kind="danger" size="sm">Borrar todo</Btn>}/>
+      <Row icon={IconTrash} title={tr('settings.security.delete_all')} danger
+        desc={tr('settings.security.delete_all_desc')}
+        control={<Btn kind="danger" size="sm">{tr('settings.security.delete_btn')}</Btn>}/>
     </div>
   );
 }
 
 function SectionAppearance() {
   const t = useTokens();
+  const tr = useT();
   const { mode, setMode, accentHue, setAccentHue } = useTheme();
   return (
     <div style={{ maxWidth: 720 }}>
-      <Header title="Apariencia" sub="Tema visual y preferencias de interfaz."/>
-      <SectionLabel>Tema</SectionLabel>
+      <Header title={tr('settings.appearance.title')} sub={tr('settings.appearance.sub')}/>
+      <SectionLabel>{tr('settings.appearance.theme')}</SectionLabel>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
         {([
-          { id: 'dark', label: 'Oscuro', preview: '#0a0a0c' },
-          { id: 'light', label: 'Claro', preview: '#f5f5f7' },
-          { id: 'system', label: 'Sistema', preview: 'linear-gradient(135deg, #0a0a0c 50%, #f5f5f7 50%)' },
+          { id: 'dark', label: tr('settings.appearance.theme.dark'), preview: '#0a0a0c' },
+          { id: 'light', label: tr('settings.appearance.theme.light'), preview: '#f5f5f7' },
+          { id: 'system', label: tr('settings.appearance.theme.system'), preview: 'linear-gradient(135deg, #0a0a0c 50%, #f5f5f7 50%)' },
         ] as const).map((m) => (
           <button key={m.id} type="button" onClick={() => setMode(m.id)} style={{
             padding: 14, border: `1px solid ${mode === m.id ? t.accentDim : t.glassBorder}`,
@@ -640,7 +650,7 @@ function SectionAppearance() {
         ))}
       </div>
 
-      <SectionLabel>Color de acento</SectionLabel>
+      <SectionLabel>{tr('settings.appearance.accent')}</SectionLabel>
       <div style={{ display: 'flex', gap: 10, marginBottom: 22 }}>
         {ACCENT_HUES.map((a) => (
           <button key={a.hue} type="button" onClick={() => setAccentHue(a.hue)} title={a.name} style={{
@@ -656,6 +666,7 @@ function SectionAppearance() {
 
 function SectionAbout() {
   const t = useTokens();
+  const tr = useT();
   return (
     <div style={{ maxWidth: 720, textAlign: 'center', padding: 40 }}>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
@@ -663,7 +674,7 @@ function SectionAbout() {
       </div>
       <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>Eco</h2>
       <p style={{ margin: '6px 0 0', fontSize: 13, color: t.text2 }}>
-        Centro de control local para agentes de IA · v0.1
+        {tr('settings.about.tagline')}
       </p>
     </div>
   );

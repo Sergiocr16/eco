@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { IconX, IconDiff, IconExt } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
+import { useT } from '@/hooks/useI18n';
 
 type DiffResult = {
   mode: 'git' | 'created' | 'plain' | 'not_found';
@@ -19,6 +20,7 @@ type Props = {
 
 export function DiffViewer({ open, path, workspace, onClose }: Props) {
   const t = useTokens();
+  const tr = useT();
   const [result, setResult] = useState<DiffResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,11 +92,11 @@ export function DiffViewer({ open, path, workspace, onClose }: Props) {
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{path}</div>
             <div style={{ fontSize: 11, color: t.text2, marginTop: 1 }}>
-              {result?.mode === 'git' ? 'diff contra HEAD' :
-                result?.mode === 'created' ? 'archivo nuevo (no commiteado)' :
-                result?.mode === 'plain' ? 'workspace sin git · contenido completo' :
-                result?.mode === 'not_found' ? 'archivo no encontrado' :
-                loading ? 'cargando…' : ''}
+              {result?.mode === 'git' ? tr('diff.git') :
+                result?.mode === 'created' ? tr('diff.created') :
+                result?.mode === 'plain' ? tr('diff.plain') :
+                result?.mode === 'not_found' ? tr('diff.not_found') :
+                loading ? tr('diff.loading') : ''}
             </div>
           </div>
           <button
@@ -114,14 +116,14 @@ export function DiffViewer({ open, path, workspace, onClose }: Props) {
           background: t.bg0,
         }}>
           {loading && (
-            <div style={{ padding: 24, fontSize: 13, color: t.text2 }}>Cargando diff…</div>
+            <div style={{ padding: 24, fontSize: 13, color: t.text2 }}>{tr('diff.loading')}</div>
           )}
           {error && (
             <div style={{ padding: 24, fontSize: 13, color: t.err }}>{error}</div>
           )}
           {result && !result.hasChanges && !error && (
             <div style={{ padding: 24, fontSize: 13, color: t.text2 }}>
-              {result.message || 'Sin cambios.'}
+              {result.message || tr('diff.no_changes')}
             </div>
           )}
           {result?.hasChanges && (
