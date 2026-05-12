@@ -7,13 +7,14 @@ import {
 import {
   IconSettings, IconKey, IconMic, IconFolder, IconShield, IconLayers,
   IconInfo, IconCheck, IconCpu, IconTerminal, IconWave, IconGlobe,
-  IconCommand, IconBolt, IconHistory, IconLock, IconTrash, IconPlus, type IconProps,
+  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
-import { useTTS, type UnifiedVoice } from '@/hooks/useTTS';
+import { useTTS } from '@/hooks/useTTS';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
+import { apiFetch } from '@/lib/api';
 import { useApiKey } from '@/hooks/useApiKey';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useI18n, useT } from '@/hooks/useI18n';
@@ -260,20 +261,216 @@ function SectionClaude() {
   return (
     <div style={{ maxWidth: 720 }}>
       <Header title={tr('settings.claude.title')} sub={tr('settings.claude.sub')}/>
+      <ClaudeAuthStatusCard/>
       <ApiKeyEditor/>
-      <Row icon={IconCpu} title={tr('settings.claude.default_model')} desc={tr('settings.claude.default_model_desc')}
-        control={
-          <Select defaultValue="sonnet" width={220} options={[
-            { value: 'sonnet', label: 'claude-sonnet-4-5' },
-            { value: 'opus', label: 'claude-opus-4-1' },
-            { value: 'haiku', label: 'claude-haiku-4-5' },
-          ]}/>
-        }/>
-      <Row icon={IconTerminal} title={tr('settings.claude.cli_path')} desc={tr('settings.claude.cli_path_desc')}
-        control={<Input defaultValue="~/.local/bin/claude" width={240} mono/>}/>
-      <Row icon={IconBolt} title={tr('settings.claude.streaming')} desc={tr('settings.claude.streaming_desc')}
-        control={<ToggleControlled defaultOn/>}/>
+      <ModelInfoRow/>
     </div>
+  );
+}
+
+function ModelInfoRow() {
+  const t = useTokens();
+  const tr = useT();
+  const [model, setModel] = useState<string>('claude-sonnet-4-5');
+  useEffect(() => {
+    let cancel = false;
+    void apiFetch('/info').then(async (r) => {
+      if (cancel || !r.ok) return;
+      const data = await r.json().catch(() => null);
+      if (data?.model) setModel(data.model);
+    });
+    return () => { cancel = true; };
+  }, []);
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 14,
+      padding: '14px 0', borderBottom: `1px solid ${t.glassBorder}`,
+    }}>
+      <div style={{
+        width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+        background: t.bg3, color: t.accent,
+        border: `1px solid ${t.glassBorder}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <IconCpu size={15}/>
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13.5, color: t.text0, fontWeight: 500, marginBottom: 3 }}>
+          {tr('settings.claude.model_info.title')}
+        </div>
+        <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>
+          {tr('settings.claude.model_info.desc')}
+        </div>
+      </div>
+      <code style={{
+        fontFamily: t.fontMono, fontSize: 11.5, color: t.text0,
+        padding: '5px 10px', borderRadius: 6,
+        background: t.bg2, border: `1px solid ${t.glassBorder}`,
+      }}>{model}</code>
+    </div>
+  );
+}
+
+type ClaudeAuthStatus = {
+  cliInstalled: boolean;
+  cliPath: string;
+  cliVersion: string | null;
+  cliLoggedIn: boolean;
+  cliLoginHint: string;
+  apiKeyConfigured: boolean;
+  apiKeyMasked: string | null;
+  effectiveMethod: 'cli' | 'apikey' | 'none';
+};
+
+function ClaudeAuthStatusCard() {
+  const t = useTokens();
+  const tr = useT();
+  const [status, setStatus] = useState<ClaudeAuthStatus | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    const fetch = () => {
+      void apiFetch('/config/claude-auth').then(async (r) => {
+        if (cancel || !r.ok) return;
+        const data = await r.json().catch(() => null);
+        if (data) setStatus(data as ClaudeAuthStatus);
+      });
+    };
+    fetch();
+    // Refrescamos cuando vuelve el foco — útil si el user corre `claude login`
+    // en una terminal aparte y vuelve a Eco.
+    const onFocus = () => fetch();
+    window.addEventListener('focus', onFocus);
+    const iv = window.setInterval(fetch, 8000);
+    return () => {
+      cancel = true;
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(iv);
+    };
+  }, []);
+
+  if (!status) return null;
+
+  const method = status.effectiveMethod;
+  const headerColor = method === 'none' ? t.warn : t.ok;
+  const headerText =
+    method === 'cli' ? tr('settings.claude.auth.using_cli')
+    : method === 'apikey' ? tr('settings.claude.auth.using_apikey')
+    : tr('settings.claude.auth.using_none');
+
+  return (
+    <Glass radius={12} style={{ padding: 14, marginBottom: 16 }}>
+      {/* Header: cuál método está activo AHORA */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+        paddingBottom: 12, borderBottom: `1px solid ${t.glassBorder}`,
+      }}>
+        <span style={{
+          width: 10, height: 10, borderRadius: '50%',
+          background: headerColor,
+          boxShadow: `0 0 8px ${headerColor}`,
+        }}/>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: t.text0 }}>
+            {headerText}
+          </div>
+          <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>
+            {tr('settings.claude.auth.priority_hint')}
+          </div>
+        </div>
+      </div>
+
+      {/* Opción A: CLI */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+          background: status.cliLoggedIn ? t.accentFaint : t.bg2,
+          color: status.cliLoggedIn ? t.accent : t.text3,
+          border: `1px solid ${status.cliLoggedIn ? t.accent : t.glassBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <IconTerminal size={15}/>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
+              {tr('settings.claude.auth.cli_title')}
+            </span>
+            {method === 'cli' && (
+              <span style={{
+                padding: '1px 7px', borderRadius: 999,
+                background: t.accentFaint, color: t.accent,
+                fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}>{tr('settings.claude.auth.active')}</span>
+            )}
+          </div>
+          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5, marginBottom: 4 }}>
+            {tr('settings.claude.auth.cli_desc')}
+          </div>
+          <div style={{ fontSize: 10.5, color: t.text3, fontFamily: t.fontMono }}>
+            {status.cliInstalled
+              ? `${tr('settings.claude.auth.cli_installed')} ${status.cliVersion ?? ''}`
+              : tr('settings.claude.auth.cli_not_installed')}
+            {' · '}
+            {status.cliLoggedIn
+              ? `${tr('settings.claude.auth.cli_loggedin')} (${status.cliLoginHint})`
+              : tr('settings.claude.auth.cli_notloggedin')}
+          </div>
+          {!status.cliLoggedIn && status.cliInstalled && (
+            <div style={{
+              marginTop: 8, padding: '6px 10px', borderRadius: 6,
+              background: t.bg2, fontSize: 11, color: t.text1,
+              fontFamily: t.fontMono,
+            }}>
+              <span style={{ color: t.text3 }}>$ </span>claude login
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Separador "o" */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        marginBottom: 14, fontSize: 10, color: t.text3,
+        textTransform: 'uppercase', fontWeight: 500, letterSpacing: 1,
+      }}>
+        <div style={{ flex: 1, height: 1, background: t.glassBorder }}/>
+        {tr('settings.claude.auth.or')}
+        <div style={{ flex: 1, height: 1, background: t.glassBorder }}/>
+      </div>
+
+      {/* Opción B: API key */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+          background: status.apiKeyConfigured ? t.accentFaint : t.bg2,
+          color: status.apiKeyConfigured ? t.accent : t.text3,
+          border: `1px solid ${status.apiKeyConfigured ? t.accent : t.glassBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <IconKey size={15}/>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
+              {tr('settings.claude.auth.apikey_title')}
+            </span>
+            {method === 'apikey' && (
+              <span style={{
+                padding: '1px 7px', borderRadius: 999,
+                background: t.accentFaint, color: t.accent,
+                fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}>{tr('settings.claude.auth.active')}</span>
+            )}
+          </div>
+          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>
+            {tr('settings.claude.auth.apikey_desc')}
+          </div>
+        </div>
+      </div>
+    </Glass>
   );
 }
 
@@ -380,124 +577,104 @@ function SectionVoice() {
   const t = useTokens();
   const tr = useT();
   const tts = useTTS();
-  const spanish = tts.voices.filter((v) => /^es/i.test(v.language));
-  const neural = spanish.filter((v) => v.kind === 'piper');
-  const system = spanish.filter((v) => v.kind === 'browser');
+
+  // Auto-seleccionar la mejor voz masculina española al cargar si no hay
+  // una elegida. Priorizamos voces Piper (locales, neurales) sobre las del
+  // sistema. Orden: claude (MX, alta calidad) > davefx (ES) > cualquier Piper es.
+  useEffect(() => {
+    if (tts.selectedVoiceURI) return;
+    if (tts.voices.length === 0) return;
+    const candidates = [
+      tts.voices.find((v) => /es_MX-claude/i.test(v.id) && v.kind === 'piper'),
+      tts.voices.find((v) => /es_ES-davefx/i.test(v.id) && v.kind === 'piper'),
+      tts.voices.find((v) => v.kind === 'piper' && /^es/i.test(v.language)),
+      tts.voices.find((v) => /^es/i.test(v.language)),
+    ];
+    const pick = candidates.find(Boolean);
+    if (pick) tts.selectVoice(pick.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tts.voices]);
+
+  const currentVoice = tts.voices.find((v) => v.id === tts.selectedVoiceURI);
+
+  function testVoice() {
+    const wasEnabled = tts.enabled;
+    if (!wasEnabled) tts.setEnabled(true);
+    setTimeout(() => tts.speak('Hola, soy Eco. Estoy listo para ayudarte.'), 30);
+    setTimeout(() => { if (!wasEnabled) tts.setEnabled(false); }, 4500);
+  }
 
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div style={{ maxWidth: 640 }}>
       <Header title={tr('settings.voice.title')} sub={tr('settings.voice.sub')}/>
 
-      <Row icon={IconWave} title={tr('settings.voice.wake_word')} desc={tr('settings.voice.wake_word_desc')}
-        control={<Select defaultValue="eco" width={160} options={[
-          { value: 'eco', label: '"Eco"' }, { value: 'hey', label: '"Hey Eco"' }, { value: 'oye', label: '"Oye Eco"' },
-        ]}/>}/>
-      <Row icon={IconMic} title={tr('settings.voice.always_on')} desc={tr('settings.voice.always_on_desc')}
-        control={<ToggleControlled defaultOn/>}/>
-      <Row icon={IconGlobe} title={tr('settings.voice.lang')}
-        control={<Select defaultValue="es" width={220} options={[
-          { value: 'es', label: 'Español (Latinoamérica)' }, { value: 'es-es', label: 'Español (España)' },
-          { value: 'en', label: 'English' },
-        ]}/>}/>
+      {/* Toggle principal: activar respuestas habladas */}
       <Row icon={IconCommand} title={tr('settings.voice.speak_replies')}
         desc={tr('settings.voice.speak_replies_desc')}
         control={<Toggle on={tts.enabled} onChange={tts.setEnabled}/>}/>
 
-      <div style={{ marginTop: 24 }}>
-        <SectionLabel>{tr('settings.voice.voice_selected')}</SectionLabel>
-        {neural.length > 0 && (
-          <VoiceGroup label={tr('settings.voice.group_neural')} voices={neural} selected={tts.selectedVoiceURI}
-            onSelect={tts.selectVoice}
-            onTest={(uri) => {
-              const previous = tts.selectedVoiceURI;
-              tts.selectVoice(uri);
-              const wasEnabled = tts.enabled;
-              if (!wasEnabled) tts.setEnabled(true);
-              setTimeout(() => tts.speak('Hola, soy Eco. Esta es mi voz.'), 50);
-              setTimeout(() => {
-                if (!wasEnabled) tts.setEnabled(false);
-                if (previous) tts.selectVoice(previous);
-              }, 4500);
-            }}/>
-        )}
-        {system.length > 0 && (
-          <VoiceGroup label={tr('settings.voice.group_system')} voices={system.slice(0, 10)} selected={tts.selectedVoiceURI}
-            onSelect={tts.selectVoice}
-            onTest={(uri) => {
-              const previous = tts.selectedVoiceURI;
-              tts.selectVoice(uri);
-              const wasEnabled = tts.enabled;
-              if (!wasEnabled) tts.setEnabled(true);
-              setTimeout(() => tts.speak('Hola, soy Eco. Esta es mi voz.'), 50);
-              setTimeout(() => {
-                if (!wasEnabled) tts.setEnabled(false);
-                if (previous) tts.selectVoice(previous);
-              }, 4500);
-            }}/>
-        )}
-        {neural.length === 0 && system.length === 0 && (
-          <div style={{ fontSize: 12, color: t.text2 }}>{tr('settings.voice.no_voices')}</div>
-        )}
-      </div>
+      {/* Voz actual (auto-elegida, masculina natural) */}
+      <Glass radius={12} style={{ padding: 14, marginTop: 14, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+            background: t.accentFaint, color: t.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IconWave size={18}/>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, color: t.text0, fontWeight: 500 }}>
+              {tr('settings.voice.voice_label')}
+            </div>
+            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>
+              {currentVoice
+                ? `${currentVoice.name} · ${currentVoice.language}${currentVoice.kind === 'piper' ? ' · neural local' : ''}`
+                : tr('settings.voice.loading')}
+            </div>
+          </div>
+          <Btn kind="secondary" size="sm" onClick={testVoice} disabled={!currentVoice}>
+            {tr('settings.voice.test_btn')}
+          </Btn>
+        </div>
+        <div style={{ marginTop: 10, padding: 8, borderRadius: 6, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
+          {tr('settings.voice.intent_hint')}
+        </div>
+      </Glass>
+
+      {/* Velocidad */}
+      <Row icon={IconBolt} title={tr('settings.voice.rate')}
+        desc={tr('settings.voice.rate_desc')}
+        control={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 200 }}>
+            <input type="range" min="0.7" max="1.5" step="0.05"
+              value={tts.rate} onChange={(e) => tts.setRate(Number(e.target.value))}
+              style={{ flex: 1, accentColor: t.accent }}
+            />
+            <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text1, width: 40, textAlign: 'right' }}>
+              {tts.rate.toFixed(2)}×
+            </code>
+          </div>
+        }/>
+
+      {/* Volumen */}
+      <Row icon={IconWave} title={tr('settings.voice.volume')}
+        desc={tr('settings.voice.volume_desc')}
+        control={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 200 }}>
+            <input type="range" min="0" max="1" step="0.05"
+              value={tts.volume} onChange={(e) => tts.setVolume(Number(e.target.value))}
+              style={{ flex: 1, accentColor: t.accent }}
+            />
+            <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text1, width: 40, textAlign: 'right' }}>
+              {Math.round(tts.volume * 100)}%
+            </code>
+          </div>
+        }/>
     </div>
   );
 }
 
-function VoiceGroup({ label, voices, selected, onSelect, onTest }: {
-  label: string;
-  voices: UnifiedVoice[];
-  selected: string | null;
-  onSelect: (id: string) => void;
-  onTest: (id: string) => void;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{
-        fontSize: 10.5, color: t.text2, fontFamily: t.fontMono,
-        textTransform: 'uppercase', letterSpacing: 0.5, padding: '6px 4px',
-      }}>{label}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {voices.map((v) => (
-          <button key={v.id} type="button" onClick={() => onSelect(v.id)} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '10px 12px', borderRadius: 10, border: 0,
-            background: v.id === selected ? t.accentFaint : 'transparent',
-            color: v.id === selected ? t.text0 : t.text1, textAlign: 'left',
-            cursor: 'pointer', transition: 'background 140ms',
-          }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: v.id === selected ? t.accent : 'transparent',
-              border: v.id === selected ? 'none' : `1px solid ${t.glassBorder}`,
-              flexShrink: 0,
-            }}/>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>
-                {v.name}
-                {v.kind === 'piper' && (
-                  <span style={{
-                    marginLeft: 8, fontSize: 9.5, color: t.accent,
-                    fontFamily: t.fontMono, letterSpacing: 0.5,
-                    textTransform: 'uppercase',
-                  }}>Neural</span>
-                )}
-              </div>
-              <div style={{ fontSize: 10.5, color: t.text3, fontFamily: t.fontMono, marginTop: 2 }}>
-                {v.language}
-              </div>
-            </div>
-            <button type="button" onClick={(e) => { e.stopPropagation(); onTest(v.id); }} style={{
-              fontFamily: t.fontMono, fontSize: 11, color: t.text2,
-              background: 'transparent', border: 0, cursor: 'pointer', padding: '4px 8px',
-            }}>{tr('settings.voice.try_voice')}</button>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function SectionFolders() {
   const t = useTokens();
@@ -507,8 +684,8 @@ function SectionFolders() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  async function handleAdd() {
-    const v = draft.trim();
+  async function handleAdd(pathOverride?: string) {
+    const v = (pathOverride ?? draft).trim();
     if (!v) return;
     setAdding(true);
     setAddError(null);
@@ -521,29 +698,70 @@ function SectionFolders() {
     }
   }
 
+  // Folder picker nativo (Electron). Si está disponible, lo usamos —
+  // si no, cae al input manual.
+  async function pickFolder() {
+    const api = (window as unknown as { electronAPI?: { pickFolder?: (opts: { title: string }) => Promise<{ canceled: boolean; path: string }> } }).electronAPI;
+    if (!api?.pickFolder) {
+      // En web puro no hay picker — enfocamos el input para que el user pegue/escriba
+      const input = document.querySelector<HTMLInputElement>('input[data-folder-input]');
+      input?.focus();
+      return;
+    }
+    try {
+      const r = await api.pickFolder({ title: 'Elegir carpeta para Eco' });
+      if (r.canceled || !r.path) return;
+      // Auto-agrega directamente — el user ya confirmó al elegir.
+      await handleAdd(r.path);
+    } catch (e) {
+      setAddError(e instanceof Error ? e.message : 'Error abriendo Finder');
+    }
+  }
+
+  const hasNativePicker = typeof window !== 'undefined' && !!window.electronAPI?.pickFolder;
+
   return (
     <div style={{ maxWidth: 720 }}>
       <Header title={tr('settings.folders.title')} sub={tr('settings.folders.sub')}/>
 
       <Glass radius={14} style={{ padding: 12, marginBottom: 18 }}>
+        {/* Botón principal: elegir con Finder. Más prominente. */}
+        {hasNativePicker && (
+          <Btn
+            kind="primary"
+            size="md"
+            icon={IconFolder}
+            onClick={() => void pickFolder()}
+            disabled={adding}
+            style={{ width: '100%', justifyContent: 'center', marginBottom: 10 }}>
+            {adding ? tr('settings.folders.adding') : tr('settings.folders.pick_native')}
+          </Btn>
+        )}
+        {/* Input manual + botón "Agregar" debajo, para casos avanzados */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <div style={{ color: t.text2 }}><IconFolder size={16}/></div>
           <input
+            data-folder-input
             value={draft}
             onChange={(e) => { setDraft(e.target.value); setAddError(null); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd(); }}
             placeholder={tr('settings.folders.add_placeholder')}
             style={{
               flex: 1, background: 'transparent', border: 0, outline: 'none',
               fontFamily: t.fontMono, fontSize: 13, color: t.text0, padding: '8px 4px',
             }}
           />
-          <Btn kind="primary" size="sm" icon={IconPlus} onClick={handleAdd} disabled={adding || !draft.trim()}>
+          <Btn kind={hasNativePicker ? 'ghost' : 'primary'} size="sm" icon={IconPlus} onClick={() => void handleAdd()} disabled={adding || !draft.trim()}>
             {adding ? tr('settings.folders.adding') : tr('settings.folders.add_btn')}
           </Btn>
         </div>
         {addError && (
-          <div style={{ marginTop: 8, fontSize: 12, color: t.err }}>{addError}</div>
+          <div style={{
+            marginTop: 8, padding: '6px 10px', borderRadius: 6,
+            background: t.bg2, fontSize: 11.5, color: t.err,
+            fontFamily: t.fontMono, lineHeight: 1.4,
+            wordBreak: 'break-word',
+          }}>{addError}</div>
         )}
         <div style={{ marginTop: 8, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
           {tr('settings.folders.hint')}
@@ -606,26 +824,96 @@ function SectionFolders() {
 }
 
 function SectionSecurity() {
+  const t = useTokens();
   const tr = useT();
+  const [lockMinutes, setLockMinutes] = useState<string>(() => {
+    try { return window.localStorage.getItem('eco.security.lockAfterMin') ?? '15'; } catch { return '15'; }
+  });
+  const [clearing, setClearing] = useState(false);
+  const [clearMsg, setClearMsg] = useState<string | null>(null);
+
+  function saveLock(v: string) {
+    setLockMinutes(v);
+    try {
+      window.localStorage.setItem('eco.security.lockAfterMin', v);
+      window.dispatchEvent(new CustomEvent('eco:security-pref-change'));
+    } catch { /* noop */ }
+  }
+
+  async function lockNow() {
+    try {
+      await apiFetch('/auth/logout', { method: 'POST' });
+      window.localStorage.removeItem('eco.session');
+      window.location.reload();
+    } catch { /* noop */ }
+  }
+
+  async function clearAllLocal() {
+    // Confirm doble — esto es destructivo.
+    const confirm1 = window.confirm(tr('settings.security.clear.confirm1'));
+    if (!confirm1) return;
+    const confirm2 = window.confirm(tr('settings.security.clear.confirm2'));
+    if (!confirm2) return;
+    setClearing(true);
+    try {
+      // Borra localStorage (excepto el token de auth para que la app siga
+      // accediendo al backend para confirmar).
+      const token = window.localStorage.getItem('eco.session');
+      window.localStorage.clear();
+      if (token) window.localStorage.setItem('eco.session', token);
+      setClearMsg(tr('settings.security.clear.done'));
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e) {
+      setClearMsg(e instanceof Error ? e.message : 'Error');
+      setClearing(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 720 }}>
       <Header title={tr('settings.security.title')} sub={tr('settings.security.sub')}/>
-      <Row icon={IconShield} title={tr('settings.security.safe_mode')}
-        desc={tr('settings.security.safe_mode_desc')}
-        control={<ToggleControlled defaultOn/>}/>
-      <Row icon={IconHistory} title={tr('settings.security.audit_log')}
-        desc={tr('settings.security.audit_log_desc')}
-        control={<ToggleControlled defaultOn/>}/>
+
+      {/* Bloqueo por inactividad — guardado en localStorage, App.tsx lee la
+          preferencia y dispara `auth.lock` cuando se cumple el tiempo. */}
       <Row icon={IconLock} title={tr('settings.security.lock_inactivity')}
-        control={<Select defaultValue="15" width={140} options={[
-          { value: '5', label: tr('settings.security.minutes', { n: 5 }) },
-          { value: '15', label: tr('settings.security.minutes', { n: 15 }) },
-          { value: '60', label: tr('settings.security.one_hour') },
-          { value: 'never', label: tr('settings.security.never') },
-        ]}/>}/>
-      <Row icon={IconTrash} title={tr('settings.security.delete_all')} danger
-        desc={tr('settings.security.delete_all_desc')}
-        control={<Btn kind="danger" size="sm">{tr('settings.security.delete_btn')}</Btn>}/>
+        desc={tr('settings.security.lock_inactivity_desc')}
+        control={
+          <select value={lockMinutes} onChange={(e) => saveLock(e.target.value)}
+            style={{ ...fieldStyle(t), width: 160 }}>
+            <option value="never">{tr('settings.security.never')}</option>
+            <option value="5">{tr('settings.security.minutes', { n: 5 })}</option>
+            <option value="15">{tr('settings.security.minutes', { n: 15 })}</option>
+            <option value="30">{tr('settings.security.minutes', { n: 30 })}</option>
+            <option value="60">{tr('settings.security.one_hour')}</option>
+          </select>
+        }/>
+
+      {/* Bloquear pantalla ahora — fuerza logout local + reload. */}
+      <Row icon={IconShield} title={tr('settings.security.lock_now')}
+        desc={tr('settings.security.lock_now_desc')}
+        control={
+          <Btn kind="secondary" size="sm" icon={IconLock} onClick={() => void lockNow()}>
+            {tr('settings.security.lock_now_btn')}
+          </Btn>
+        }/>
+
+      {/* Limpiar datos locales — borra localStorage (foto de perfil,
+          preferencias, historial de bubbles cacheado, etc.). NO toca el
+          archivo del usuario ni los worktrees. */}
+      <Row icon={IconTrash} title={tr('settings.security.clear.title')} danger
+        desc={tr('settings.security.clear.desc')}
+        control={
+          <Btn kind="danger" size="sm" disabled={clearing} onClick={() => void clearAllLocal()}>
+            {clearing ? '...' : tr('settings.security.clear.btn')}
+          </Btn>
+        }/>
+      {clearMsg && (
+        <div style={{
+          marginTop: 8, padding: '8px 12px', borderRadius: 8,
+          background: t.bg2, fontSize: 11.5, color: t.ok,
+          fontFamily: t.fontMono,
+        }}>{clearMsg}</div>
+      )}
     </div>
   );
 }
@@ -946,34 +1234,6 @@ function SectionAbout() {
 }
 
 // ──────────── helpers
-
-function Select({ defaultValue, options, width }: {
-  defaultValue: string; width?: number;
-  options: { value: string; label: string }[];
-}) {
-  const t = useTokens();
-  return (
-    <select defaultValue={defaultValue} style={{ ...fieldStyle(t), width }}>
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
-}
-
-function Input({ defaultValue, width, mono }: { defaultValue: string; width?: number; mono?: boolean }) {
-  const t = useTokens();
-  return (
-    <input defaultValue={defaultValue} style={{
-      ...fieldStyle(t), width,
-      fontFamily: mono ? t.fontMono : t.fontSans,
-      fontSize: mono ? 12 : 13.5,
-    }}/>
-  );
-}
-
-function ToggleControlled({ defaultOn = false }: { defaultOn?: boolean }) {
-  const [on, setOn] = useState(defaultOn);
-  return <Toggle on={on} onChange={setOn}/>;
-}
 
 function GeneralToggleRow({ icon, title, desc, storageKey, defaultOn, broadcastEvent }: {
   icon: (p: IconProps) => JSX.Element; title: string; desc?: string;

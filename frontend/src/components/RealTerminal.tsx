@@ -29,18 +29,24 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
+    // La terminal SIEMPRE es oscura — no la teñimos con el tema del shell
+    // porque convencionalmente las terminales son negras y un fondo claro
+    // arruina la legibilidad de los códigos ANSI de colores. Solo el cursor
+    // y la selección heredan el accent para que se sienta parte de Eco.
+    const TERMINAL_BG = '#0c0e14';        // negro sutil con micro-tinte azulado
+    const TERMINAL_FG = '#e5e7eb';        // gris claro siempre legible
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 12.5,
       lineHeight: 1.25,
       scrollback: 5000,
-      allowTransparency: true,
+      allowTransparency: false,
       theme: {
-        background: '#00000000',
-        foreground: t.text0,
+        background: TERMINAL_BG,
+        foreground: TERMINAL_FG,
         cursor: t.accent,
-        cursorAccent: t.windowBg,
+        cursorAccent: TERMINAL_BG,
         selectionBackground: `${t.accent}55`,
       },
     });
@@ -153,7 +159,10 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
         style={{
           flex: 1, minHeight: 0,
           padding: 10,
-          background: t.bg1,
+          // Mismo color que el background del Terminal — así no se ve un marco
+          // de otro color alrededor cuando hay padding o cuando el shell aún
+          // no se conectó.
+          background: '#0c0e14',
           borderRadius: 10,
           overflow: 'hidden',
         }}

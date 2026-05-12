@@ -522,65 +522,108 @@ function ChatPanel({
   );
 }
 
-function ChatBubble({ msg, agent, index }: { msg: Message; agent: string; index: number }) {
+function ChatBubble({ msg, agent }: { msg: Message; agent: string; index: number }) {
   const t = useTokens();
   const tr = useT();
   const profile = useProfile();
   const isUser = msg.role === 'user';
 
-  return (
-    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-      {isUser ? (
-        profile.photo ? (
-          <img
-            src={profile.photo}
-            alt={profile.username ?? tr('detail.chat.you')}
-            style={{
-              width: 32, height: 32, borderRadius: '50%',
-              objectFit: 'cover', flexShrink: 0,
-              border: `0.5px solid ${t.glassBorder}`,
-            }}
-          />
-        ) : (
-          <div style={{
-            width: 32, height: 32, borderRadius: '50%',
-            background: t.accent,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: t.accentOn, fontWeight: 500, fontSize: 14, flexShrink: 0,
-            letterSpacing: -0.3,
-          }}>{profile.username ? profile.initial : tr('detail.chat.you')}</div>
-        )
-      ) : (
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%',
-          background: t.bg3,
+  const avatar = isUser ? (
+    profile.photo ? (
+      <img
+        src={profile.photo}
+        alt={profile.username ?? tr('detail.chat.you')}
+        style={{
+          width: 28, height: 28, borderRadius: '50%',
+          objectFit: 'cover', flexShrink: 0,
           border: `0.5px solid ${t.glassBorder}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <EcoMark size={20}/>
-        </div>
-      )}
-      <div style={{ flex: 1, paddingTop: 6, minWidth: 0 }}>
+        }}
+      />
+    ) : (
+      <div style={{
+        width: 28, height: 28, borderRadius: '50%',
+        background: t.accent,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: t.accentOn, fontWeight: 500, fontSize: 12, flexShrink: 0,
+        letterSpacing: -0.3,
+      }}>{profile.username ? profile.initial : tr('detail.chat.you')}</div>
+    )
+  ) : (
+    <div style={{
+      width: 28, height: 28, borderRadius: '50%',
+      background: t.bg3,
+      border: `0.5px solid ${t.glassBorder}`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0,
+    }}>
+      <EcoMark size={18}/>
+    </div>
+  );
+
+  // Estilo de la burbuja. Sutil: ambas usan fondos del tema (no fills sólidos
+  // de accent). Diferenciamos al user con un tinte accent muy bajo + borde
+  // accent suave y al agente con bg2 + borde neutro.
+  const bubbleStyle: React.CSSProperties = isUser
+    ? {
+        background: t.accentFaint,
+        color: t.text0,
+        border: `1px solid color-mix(in oklch, ${t.accent} 28%, transparent)`,
+        borderRadius: '18px 18px 6px 18px',
+        padding: '10px 14px',
+      }
+    : {
+        background: t.bg2,
+        color: t.text0,
+        border: `1px solid ${t.glassBorder}`,
+        borderRadius: '18px 18px 18px 6px',
+        padding: '10px 14px',
+      };
+
+  return (
+    <div style={{
+      display: 'flex',
+      gap: 8,
+      alignItems: 'flex-end',
+      justifyContent: isUser ? 'flex-end' : 'flex-start',
+    }}>
+      {!isUser && avatar}
+      {/* Contenedor del mensaje — el maxWidth se aplica acá UNA SOLA VEZ.
+          flex-column con alignItems controla si la burbuja queda alineada
+          a la der/izq dentro de ese 80%. */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: isUser ? 'flex-end' : 'flex-start',
+        gap: 4,
+        minWidth: 0,
+        maxWidth: '80%',
+      }}>
         <div style={{
-          fontFamily: t.fontSans, fontSize: 11.5, color: t.text2, marginBottom: 4,
-          display: 'flex', alignItems: 'center', gap: 8,
+          fontFamily: t.fontSans, fontSize: 10.5, color: t.text3,
+          paddingLeft: isUser ? 0 : 4, paddingRight: isUser ? 4 : 0,
         }}>
-          <span style={{ color: t.text1, fontWeight: 500 }}>{isUser ? tr('detail.chat.you') : agent}</span>
+          {isUser ? tr('detail.chat.you') : agent}
         </div>
         {msg.text && (
           <div style={{
-            fontFamily: t.fontSans, fontSize: 13.5, color: t.text0,
-            lineHeight: 1.6, whiteSpace: 'pre-wrap',
+            ...bubbleStyle,
+            fontFamily: t.fontSans, fontSize: 13.5,
+            lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            // La burbuja se adapta al contenido pero no excede el container
+            // (que ya tiene maxWidth: 80%). Sin maxWidth propio se ve natural.
+            width: 'fit-content',
           }}>{msg.text}</div>
         )}
         {msg.toolCalls && msg.toolCalls.length > 0 && (
-          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{
+            marginTop: 2, display: 'flex', flexDirection: 'column', gap: 6,
+            width: '100%',
+          }}>
             {msg.toolCalls.map((tc) => <ToolCallRow key={tc.id} tc={tc}/>)}
           </div>
         )}
       </div>
-      <span style={{ fontSize: 10, color: t.text3, fontFamily: t.fontMono, marginTop: 8 }}>#{index + 1}</span>
+      {isUser && avatar}
     </div>
   );
 }

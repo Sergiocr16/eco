@@ -1,7 +1,10 @@
 export type ThemeMode =
   | 'dark' | 'light' | 'system' | 'amoled'
   | 'nord' | 'tokyo' | 'gruvbox' | 'solarized-dark' | 'solarized-light'
-  | 'sepia' | 'slate' | 'dracula' | 'rose-pine';
+  | 'sepia' | 'slate' | 'dracula' | 'rose-pine'
+  | 'catppuccin-mocha' | 'catppuccin-latte'
+  | 'pink' | 'cyberpunk' | 'synthwave' | 'forest' | 'ocean' | 'coffee'
+  | 'lavender' | 'monokai' | 'baby-pink';
 
 export type EffectiveThemeMode = Exclude<ThemeMode, 'system'>;
 
@@ -325,6 +328,237 @@ const ROSE_PINE_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'acce
   desktopBg: '#13111c',
 };
 
+// Catppuccin Mocha — rosado/morado warm dark, muy popular en VS Code.
+const CATPPUCCIN_MOCHA_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#1e1e2e',
+  bg1: '#181825',
+  bg2: 'rgba(245,224,220,0.04)',
+  bg3: 'rgba(245,224,220,0.07)',
+  bg4: 'rgba(245,224,220,0.10)',
+  glassBg: 'rgba(30, 30, 46, 0.72)',
+  glassBorder: 'rgba(245,224,220,0.10)',
+  glassBorderHi: 'rgba(245,224,220,0.16)',
+  text0: '#cdd6f4',
+  text1: '#a6adc8',
+  text2: '#9399b2',
+  text3: '#6c7086',
+  chromeBg: 'rgba(30, 30, 46, 0.82)',
+  windowBg: '#1e1e2e',
+  windowBorder: 'rgba(245,224,220,0.10)',
+  desktopBg: '#11111b',
+};
+
+// Catppuccin Latte — light cremoso con tintes peach/rosado.
+const CATPPUCCIN_LATTE_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#eff1f5',
+  bg1: '#e6e9ef',
+  bg2: 'rgba(76,79,105,0.03)',
+  bg3: 'rgba(76,79,105,0.06)',
+  bg4: 'rgba(76,79,105,0.10)',
+  glassBg: 'rgba(239, 241, 245, 0.82)',
+  glassBorder: 'rgba(76,79,105,0.10)',
+  glassBorderHi: 'rgba(76,79,105,0.16)',
+  text0: '#4c4f69',
+  text1: '#5c5f77',
+  text2: '#6c6f85',
+  text3: '#8c8fa1',
+  chromeBg: 'rgba(239, 241, 245, 0.88)',
+  windowBg: '#eff1f5',
+  windowBorder: 'rgba(76,79,105,0.10)',
+  desktopBg: '#dce0e8',
+};
+
+// Pink — millennial pink dark. Rosado vibrante de fondo oscuro tipo Berry.
+const PINK_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#2a1226',
+  bg1: '#371a30',
+  bg2: 'rgba(255,200,220,0.04)',
+  bg3: 'rgba(255,200,220,0.07)',
+  bg4: 'rgba(255,200,220,0.10)',
+  glassBg: 'rgba(42, 18, 38, 0.72)',
+  glassBorder: 'rgba(255,200,220,0.10)',
+  glassBorderHi: 'rgba(255,200,220,0.16)',
+  text0: '#ffe0ed',
+  text1: '#e8b8d0',
+  text2: '#b88aa0',
+  text3: '#7a5a6e',
+  chromeBg: 'rgba(42, 18, 38, 0.82)',
+  windowBg: '#2a1226',
+  windowBorder: 'rgba(255,200,220,0.10)',
+  desktopBg: '#1f0d1c',
+};
+
+// Cyberpunk — neon rosa + cyan sobre negro profundo.
+const CYBERPUNK_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#0d0221',
+  bg1: '#1a0633',
+  bg2: 'rgba(255,107,237,0.05)',
+  bg3: 'rgba(255,107,237,0.08)',
+  bg4: 'rgba(255,107,237,0.12)',
+  glassBg: 'rgba(13, 2, 33, 0.78)',
+  glassBorder: 'rgba(255,107,237,0.14)',
+  glassBorderHi: 'rgba(255,107,237,0.22)',
+  text0: '#f5f5ff',
+  text1: '#d8b4fe',
+  text2: '#a78bfa',
+  text3: '#7c3aed',
+  chromeBg: 'rgba(13, 2, 33, 0.88)',
+  windowBg: '#0d0221',
+  windowBorder: 'rgba(255,107,237,0.14)',
+  desktopBg: '#070114',
+};
+
+// Synthwave — púrpura/rosado retro años 80.
+const SYNTHWAVE_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#241734',
+  bg1: '#2a1b4a',
+  bg2: 'rgba(255,164,228,0.05)',
+  bg3: 'rgba(255,164,228,0.08)',
+  bg4: 'rgba(255,164,228,0.12)',
+  glassBg: 'rgba(36, 23, 52, 0.75)',
+  glassBorder: 'rgba(255,164,228,0.12)',
+  glassBorderHi: 'rgba(255,164,228,0.20)',
+  text0: '#ffe9f7',
+  text1: '#d4a8ea',
+  text2: '#a079bd',
+  text3: '#6e4f8a',
+  chromeBg: 'rgba(36, 23, 52, 0.85)',
+  windowBg: '#241734',
+  windowBorder: 'rgba(255,164,228,0.12)',
+  desktopBg: '#1a0f28',
+};
+
+// Forest — verde profundo de bosque con tonos cálidos.
+const FOREST_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#1a2421',
+  bg1: '#243431',
+  bg2: 'rgba(212,231,217,0.04)',
+  bg3: 'rgba(212,231,217,0.07)',
+  bg4: 'rgba(212,231,217,0.10)',
+  glassBg: 'rgba(26, 36, 33, 0.72)',
+  glassBorder: 'rgba(212,231,217,0.10)',
+  glassBorderHi: 'rgba(212,231,217,0.16)',
+  text0: '#d4e7d9',
+  text1: '#a8c7af',
+  text2: '#82a78a',
+  text3: '#5d7c64',
+  chromeBg: 'rgba(26, 36, 33, 0.82)',
+  windowBg: '#1a2421',
+  windowBorder: 'rgba(212,231,217,0.10)',
+  desktopBg: '#121b18',
+};
+
+// Ocean — azul marino profundo tipo abismo.
+const OCEAN_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#0a1a2e',
+  bg1: '#16263d',
+  bg2: 'rgba(173,216,230,0.04)',
+  bg3: 'rgba(173,216,230,0.07)',
+  bg4: 'rgba(173,216,230,0.10)',
+  glassBg: 'rgba(10, 26, 46, 0.75)',
+  glassBorder: 'rgba(173,216,230,0.10)',
+  glassBorderHi: 'rgba(173,216,230,0.18)',
+  text0: '#e0f0ff',
+  text1: '#a8c8e8',
+  text2: '#7896b8',
+  text3: '#536e8c',
+  chromeBg: 'rgba(10, 26, 46, 0.85)',
+  windowBg: '#0a1a2e',
+  windowBorder: 'rgba(173,216,230,0.10)',
+  desktopBg: '#061322',
+};
+
+// Coffee — café warm cálido, vibe cafetería.
+const COFFEE_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#2a1e15',
+  bg1: '#352620',
+  bg2: 'rgba(255,224,189,0.04)',
+  bg3: 'rgba(255,224,189,0.07)',
+  bg4: 'rgba(255,224,189,0.10)',
+  glassBg: 'rgba(42, 30, 21, 0.74)',
+  glassBorder: 'rgba(255,224,189,0.10)',
+  glassBorderHi: 'rgba(255,224,189,0.16)',
+  text0: '#ffe0bd',
+  text1: '#d6b596',
+  text2: '#a98a6c',
+  text3: '#75614c',
+  chromeBg: 'rgba(42, 30, 21, 0.84)',
+  windowBg: '#2a1e15',
+  windowBorder: 'rgba(255,224,189,0.10)',
+  desktopBg: '#1e150e',
+};
+
+// Lavender — lila claro, vibe primaveral suave.
+const LAVENDER_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#f4f0fa',
+  bg1: '#ede4f7',
+  bg2: 'rgba(120,80,180,0.04)',
+  bg3: 'rgba(120,80,180,0.07)',
+  bg4: 'rgba(120,80,180,0.10)',
+  glassBg: 'rgba(244, 240, 250, 0.82)',
+  glassBorder: 'rgba(120,80,180,0.10)',
+  glassBorderHi: 'rgba(120,80,180,0.16)',
+  text0: '#3b2459',
+  text1: '#5e3f80',
+  text2: '#856aa3',
+  text3: '#ad94c4',
+  chromeBg: 'rgba(244, 240, 250, 0.88)',
+  windowBg: '#f4f0fa',
+  windowBorder: 'rgba(120,80,180,0.10)',
+  desktopBg: '#e6d8f5',
+};
+
+// Baby Pink — pastel suave rosa nube, light theme cute.
+const BABY_PINK_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#fce4ec',
+  bg1: '#fad4e2',
+  bg2: 'rgba(180,60,110,0.04)',
+  bg3: 'rgba(180,60,110,0.07)',
+  bg4: 'rgba(180,60,110,0.10)',
+  glassBg: 'rgba(252, 228, 236, 0.82)',
+  glassBorder: 'rgba(180,60,110,0.10)',
+  glassBorderHi: 'rgba(180,60,110,0.16)',
+  text0: '#4a1d33',
+  text1: '#723a55',
+  text2: '#9f5d7d',
+  text3: '#c98ba8',
+  chromeBg: 'rgba(252, 228, 236, 0.88)',
+  windowBg: '#fce4ec',
+  windowBorder: 'rgba(180,60,110,0.10)',
+  desktopBg: '#f8c8da',
+};
+
+// Monokai — clásico café/verde/rosa de Sublime Text.
+const MONOKAI_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#272822',
+  bg1: '#3e3d32',
+  bg2: 'rgba(248,248,242,0.04)',
+  bg3: 'rgba(248,248,242,0.07)',
+  bg4: 'rgba(248,248,242,0.10)',
+  glassBg: 'rgba(39, 40, 34, 0.74)',
+  glassBorder: 'rgba(248,248,242,0.10)',
+  glassBorderHi: 'rgba(248,248,242,0.16)',
+  text0: '#f8f8f2',
+  text1: '#cccccc',
+  text2: '#75715e',
+  text3: '#5a5751',
+  chromeBg: 'rgba(39, 40, 34, 0.84)',
+  windowBg: '#272822',
+  windowBorder: 'rgba(248,248,242,0.10)',
+  desktopBg: '#1e1f1a',
+};
+
 // Mapping de cada modo a su base. Mantenemos los tres originales por compat
 // y agregamos las nuevas variantes.
 const THEME_BASES: Record<EffectiveThemeMode, Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'>> = {
@@ -340,6 +574,17 @@ const THEME_BASES: Record<EffectiveThemeMode, Omit<Tokens, 'accent' | 'accentDim
   'slate': SLATE_BASE,
   'dracula': DRACULA_BASE,
   'rose-pine': ROSE_PINE_BASE,
+  'catppuccin-mocha': CATPPUCCIN_MOCHA_BASE,
+  'catppuccin-latte': CATPPUCCIN_LATTE_BASE,
+  'pink': PINK_BASE,
+  'cyberpunk': CYBERPUNK_BASE,
+  'synthwave': SYNTHWAVE_BASE,
+  'forest': FOREST_BASE,
+  'ocean': OCEAN_BASE,
+  'coffee': COFFEE_BASE,
+  'lavender': LAVENDER_BASE,
+  'monokai': MONOKAI_BASE,
+  'baby-pink': BABY_PINK_BASE,
 };
 
 // Luminosidad del accent por tema — los oscuros usan accent claro (~76-82%),
@@ -357,6 +602,17 @@ const ACCENT_LUMINOSITY: Record<EffectiveThemeMode, number> = {
   'slate': 78,
   'dracula': 78,
   'rose-pine': 76,
+  'catppuccin-mocha': 76,
+  'catppuccin-latte': 58,
+  'pink': 80,
+  'cyberpunk': 82,
+  'synthwave': 80,
+  'forest': 74,
+  'ocean': 76,
+  'coffee': 74,
+  'lavender': 56,
+  'monokai': 76,
+  'baby-pink': 56,
 };
 
 // Metadata para mostrar al usuario en el picker de Apariencia.
@@ -372,12 +628,30 @@ export const THEME_VARIANTS: { id: EffectiveThemeMode; name: string; kind: Theme
   { id: 'solarized-light', name: 'Solarized Light', kind: 'light', preview: '#fdf6e3' },
   { id: 'sepia',           name: 'Sepia',           kind: 'light', preview: '#f6f0e1' },
   { id: 'slate',           name: 'Slate',           kind: 'dark',  preview: '#0f172a' },
-  { id: 'dracula',         name: 'Dracula',         kind: 'dark',  preview: '#282a36' },
-  { id: 'rose-pine',       name: 'Rosé Pine',       kind: 'dark',  preview: '#191724' },
+  { id: 'dracula',          name: 'Dracula',          kind: 'dark',  preview: '#282a36' },
+  { id: 'rose-pine',        name: 'Rosé Pine',        kind: 'dark',  preview: '#191724' },
+  { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', kind: 'dark',  preview: '#1e1e2e' },
+  { id: 'catppuccin-latte', name: 'Catppuccin Latte', kind: 'light', preview: '#eff1f5' },
+  { id: 'pink',             name: 'Pink',             kind: 'dark',  preview: '#2a1226' },
+  { id: 'cyberpunk',        name: 'Cyberpunk',        kind: 'dark',  preview: '#0d0221' },
+  { id: 'synthwave',        name: 'Synthwave',        kind: 'dark',  preview: '#241734' },
+  { id: 'forest',           name: 'Forest',           kind: 'dark',  preview: '#1a2421' },
+  { id: 'ocean',            name: 'Ocean',            kind: 'dark',  preview: '#0a1a2e' },
+  { id: 'coffee',           name: 'Coffee',           kind: 'dark',  preview: '#2a1e15' },
+  { id: 'lavender',         name: 'Lavender',         kind: 'light', preview: '#f4f0fa' },
+  { id: 'monokai',          name: 'Monokai',          kind: 'dark',  preview: '#272822' },
+  { id: 'baby-pink',        name: 'Baby Pink',        kind: 'light', preview: '#fce4ec' },
 ];
 
 export function isLightTheme(mode: EffectiveThemeMode): boolean {
-  return mode === 'light' || mode === 'solarized-light' || mode === 'sepia';
+  return (
+    mode === 'light' ||
+    mode === 'solarized-light' ||
+    mode === 'sepia' ||
+    mode === 'catppuccin-latte' ||
+    mode === 'lavender' ||
+    mode === 'baby-pink'
+  );
 }
 
 export function buildTokens(mode: EffectiveThemeMode, accentHue: number): Tokens {

@@ -108,7 +108,7 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     const accent = nextAccent(bubbles);
     const bubble: Bubble = {
       id: newId('b'),
-      title: opts?.title?.trim() || translate('bubble.default_title', loadLang(), { n: bubbles.length + 1 }),
+      title: opts?.title?.trim() || translate('agent.default_title', loadLang(), { n: bubbles.length + 1 }),
       workspace: opts?.workspace ?? defaultWorkspace,
       sessionId: null,
       messages: [],

@@ -20,6 +20,27 @@ function proxyUrlFor(url: string): string {
 
 const STORAGE_TABS = 'eco.browser.tabs';
 const STORAGE_ACTIVE = 'eco.browser.active';
+const STORAGE_BOOKMARKS = 'eco.browser.bookmarks';
+
+// ─────────────────────────── Marcadores
+export type Bookmark = { id: string; title: string; url: string };
+
+function readBookmarks(): Bookmark[] {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_BOOKMARKS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((b: unknown): b is Bookmark =>
+      !!b && typeof (b as Bookmark).id === 'string'
+        && typeof (b as Bookmark).url === 'string'
+        && typeof (b as Bookmark).title === 'string',
+    );
+  } catch { return []; }
+}
+function writeBookmarks(list: Bookmark[]) {
+  try { window.localStorage.setItem(STORAGE_BOOKMARKS, JSON.stringify(list)); } catch { /* noop */ }
+}
 
 function readTabs(): Tab[] {
   try {
@@ -78,10 +99,27 @@ export function BrowserScreen() {
   const [refreshTick, setRefreshTick] = useState<Record<string, number>>({});
   const [loadFailed, setLoadFailed] = useState<Record<string, boolean>>({});
   const [loadFailMsg, setLoadFailMsg] = useState<Record<string, string>>({});
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => readBookmarks());
   const browserRefs = useRef<Record<string, SmartBrowserHandle | null>>({});
 
   // Persist on changes.
   useEffect(() => { writeTabs(tabs, activeId); }, [tabs, activeId]);
+  useEffect(() => { writeBookmarks(bookmarks); }, [bookmarks]);
+
+  function addBookmark(url: string, title: string) {
+    if (!url) return;
+    // Si ya existe, no duplicamos.
+    if (bookmarks.some((b) => b.url === url)) return;
+    const bm: Bookmark = {
+      id: 'bm_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
+      title: (title || hostname(url) || url).slice(0, 60),
+      url,
+    };
+    setBookmarks((prev) => [...prev, bm]);
+  }
+  function removeBookmark(id: string) {
+    setBookmarks((prev) => prev.filter((b) => b.id !== id));
+  }
 
   // Cuando cambia el tab activo, mostrar su URL en la URL bar.
   useEffect(() => {
@@ -320,6 +358,32 @@ export function BrowserScreen() {
             cursor: draft.trim() ? 'pointer' : 'not-allowed',
             opacity: draft.trim() ? 1 : 0.5,
           }}>Ir</button>
+        {/* Botón ⭐ marcador — guarda el sitio actual o lo quita si ya está */}
+        {activeTab?.url && (() => {
+          const existing = bookmarks.find((b) => b.url === activeTab.url);
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                if (existing) removeBookmark(existing.id);
+                else addBookmark(activeTab.url, activeTab.title);
+              }}
+              title={existing ? 'Quitar marcador' : 'Agregar marcador'}
+              style={{
+                ...navBtnStyle(t, false),
+                color: existing ? t.warn : t.text1,
+                background: existing ? t.bg3 : t.bg2,
+              }}>
+              {/* Star icon — filled si está marcado */}
+              <svg width="12" height="12" viewBox="0 0 24 24"
+                fill={existing ? t.warn : 'none'}
+                stroke={existing ? t.warn : 'currentColor'}
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </button>
+          );
+        })()}
         <button
           type="button"
           onClick={() => activeTab?.url && openInOs(activeTab.url)}
@@ -344,6 +408,26 @@ export function BrowserScreen() {
           {runtime === 'electron' || runtime === 'tauri' ? '◆ full' : '○ web'}
         </span>
       </div>
+
+      {/* Barra de marcadores — solo se muestra si hay alguno guardado */}
+      {bookmarks.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '6px 12px',
+          borderBottom: `1px solid ${t.glassBorder}`,
+          background: t.bg1,
+          overflowX: 'auto', overflowY: 'hidden',
+          whiteSpace: 'nowrap',
+        }}>
+          {bookmarks.map((bm) => (
+            <BookmarkChip
+              key={bm.id} bm={bm}
+              onClick={() => goActive(bm.url)}
+              onRemove={() => removeBookmark(bm.id)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Contenido — renderizamos SOLO la tab activa. Trade-off: al cambiar
           de tab se recrea el webview (pierde scroll), pero garantiza que
@@ -514,6 +598,61 @@ function Home({ onPick }: { onPick: (url: string) => void }) {
 
 function hostname(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
+
+function BookmarkChip({
+  bm, onClick, onRemove,
+}: {
+  bm: Bookmark;
+  onClick: () => void;
+  onRemove: () => void;
+}) {
+  const t = useTokens();
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        padding: '4px 8px 4px 10px',
+        borderRadius: 6,
+        background: hover ? t.bg3 : 'transparent',
+        border: `1px solid ${hover ? t.glassBorderHi : t.glassBorder}`,
+        flexShrink: 0,
+        transition: 'background 140ms, border-color 140ms',
+      }}>
+      <button
+        type="button"
+        onClick={onClick}
+        title={bm.url}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          background: 'transparent', border: 0, cursor: 'pointer', padding: 0,
+          color: t.text1,
+          maxWidth: 180,
+          fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+        }}>
+        <IconGlobe size={11}/>
+        <span style={{
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>{bm.title}</span>
+      </button>
+      {hover && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          title="Quitar marcador"
+          style={{
+            width: 16, height: 16, padding: 0, border: 0, borderRadius: 4,
+            background: 'transparent', color: t.text3, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+          <IconX size={9}/>
+        </button>
+      )}
+    </div>
+  );
 }
 
 function navBtnStyle(t: ReturnType<typeof useTokens>, disabled = false): React.CSSProperties {

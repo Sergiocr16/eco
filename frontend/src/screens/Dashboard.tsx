@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { apiFetch } from '@/lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
 import {
@@ -7,7 +8,8 @@ import {
 import {
   IconWave, IconMic, IconSend, IconPlus, IconGrid, IconGraph, IconExt, IconColumns,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal,
-  IconClock, IconAlert, IconZap, IconCpu, IconFile, IconEdit, IconTrash,
+  IconClock, IconAlert, IconZap, IconCpu, IconEdit, IconTrash,
+  IconGlobe, IconLayers, IconShield, type IconProps,
 } from '@/design/icons';
 import type { Bubble, VoiceState } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
@@ -95,7 +97,7 @@ export function Dashboard(props: Props) {
           style={{ display: 'flex', alignItems: 'center', gap: 32, padding: '12px 8px 32px' }}>
           <VoiceOrb state={voiceState} onClick={onMicToggle}/>
 
-          <div style={{ flex: 1, maxWidth: 380 }}>
+          <div style={{ width: 380, flexShrink: 0 }}>
             <div style={{
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
               color: t.accent, letterSpacing: 1.5, textTransform: 'uppercase',
@@ -122,11 +124,7 @@ export function Dashboard(props: Props) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 12 }}>
-            <Stat icon={IconCpu} label={tr('dash.stat.messages')} value={String(bubbles.reduce((a, b) => a + b.messages.length, 0))}/>
-            <Stat icon={IconZap} label={tr('dash.stat.sessions')} value={String(bubbles.length)}/>
-            <Stat icon={IconFile} label={tr('dash.stat.workspaces')} value={String(new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 0)}/>
-          </div>
+          <DashboardCards bubbles={bubbles} onOpenAgent={onOpenAgent}/>
         </motion.div>
 
         <SectionLabel count={bubbles.length} action={
@@ -136,24 +134,7 @@ export function Dashboard(props: Props) {
               <IconBtn icon={IconColumns} size={28} active={view === 'kanban'} onClick={() => setView('kanban')}/>
               <IconBtn icon={IconGraph} size={28} active={view === 'graph'} onClick={() => setView('graph')}/>
             </div>
-            {/* Botón "Nuevo agente" disponible en TODAS las vistas. En grid
-                también está la card grande, pero acá queda accesible para
-                kanban y graph donde no hay esa card. */}
-            <button
-              type="button"
-              onClick={() => onCreateAgent()}
-              title={tr('dash.bubble.new')}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '6px 12px', borderRadius: 8, border: 0,
-                background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-                cursor: 'pointer',
-                boxShadow: `0 0 12px ${t.accentGlow}`,
-              }}>
-              <IconPlus size={13} strokeWidth={2.5}/>
-              {tr('dash.bubble.new')}
-            </button>
+            <CreateAgentButton onCreate={onCreateAgent}/>
           </div>
         }>{tr('dash.section.agents')}</SectionLabel>
 
@@ -224,23 +205,247 @@ function greetingFor(d: Date, tr: (k: string, v?: Record<string, string | number
   return tr('dash.greeting.evening');
 }
 
-function Stat({ icon: Icon, label, value }: { icon: (p: { size?: number }) => JSX.Element; label: string; value: string }) {
-  const t = useTokens();
+// ─────────────────────────── Dashboard top cards
+// 4 cards con info útil: próxima acción, agentes en vivo, recursos en uso,
+// estado del sistema. Diseño Liquid Glass con icono prominente + número
+// grande + sub-label.
+
+function DashboardCards({
+  bubbles,
+}: {
+  bubbles: Bubble[];
+  onOpenAgent: (id: string) => void;
+}) {
   return (
-    <Glass radius={14} style={{ padding: 14, minWidth: 110 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: t.text2 }}>
-        <Icon size={12}/>
-        <span style={{
-          fontSize: 10.5, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500,
-        }}>{label}</span>
-      </div>
-      <div style={{
-        marginTop: 6, fontFamily: t.fontSans, fontSize: 22, fontWeight: 600,
-        color: t.text0, letterSpacing: -0.5,
-      }}>{value}</div>
-    </Glass>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'row',
+      flexWrap: 'nowrap',
+      alignItems: 'stretch',
+      gap: 14,
+      marginBottom: 8,
+      // Las cards viven en el lado DERECHO del header — usamos marginLeft
+      // auto para empujarlas al borde derecho dentro del flex padre.
+      marginLeft: 'auto',
+      // Width generoso para que se vean prominentes, no apretadas.
+      flex: '0 0 auto',
+    }}>
+      <div style={{ width: 240, display: 'flex' }}><LiveAgentsCard bubbles={bubbles}/></div>
+      <div style={{ width: 240, display: 'flex' }}><ResourcesCard bubbles={bubbles}/></div>
+      <div style={{ width: 240, display: 'flex' }}><SystemStatusCard/></div>
+    </div>
   );
 }
+
+function CardShell({
+  icon: Icon, iconColor, accentBorder = false, onClick, children,
+}: {
+  icon: (p: IconProps) => JSX.Element;
+  iconColor: string;
+  accentBorder?: boolean;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  const t = useTokens();
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        ...glassEffect(t, { hovered: hover, intensity: 'normal' }),
+        borderRadius: 14,
+        padding: '14px 16px',
+        cursor: onClick ? 'pointer' : 'default',
+        position: 'relative',
+        transition: 'transform 200ms ease, border-color 200ms ease',
+        transform: hover && onClick ? 'translateY(-2px)' : 'translateY(0)',
+        border: `1px solid ${accentBorder ? t.accent : (hover ? t.glassBorderHi : t.glassBorder)}`,
+        boxShadow: accentBorder
+          ? `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 20px ${t.accentGlow}, ${t.shadowMd}`
+          : `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`,
+        overflow: 'hidden',
+        // Llena 100% del slot del flex container — así todas las cards
+        // quedan exactamente del mismo ancho y alto aunque su contenido varíe.
+        width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+      <div style={{
+        width: 34, height: 34, borderRadius: 9,
+        background: iconColor,
+        color: t.accentOn,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginBottom: 10,
+        boxShadow: `0 0 10px ${iconColor}`,
+      }}>
+        <Icon size={17} strokeWidth={2}/>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+
+function LiveAgentsCard({ bubbles }: { bubbles: Bubble[] }) {
+  const t = useTokens();
+  const tr = useT();
+  const running = bubbles.filter((b) => b.status === 'running' || b.status === 'thinking' || b.status === 'executing').length;
+  const waiting = bubbles.filter((b) => b.status === 'waiting').length;
+  const errors = bubbles.filter((b) => b.status === 'error').length;
+  const idle = bubbles.length - running - waiting - errors;
+  const active = running + waiting;
+  const total = bubbles.length;
+  const pct = (n: number) => total === 0 ? 0 : (n / total) * 100;
+
+  return (
+    <CardShell icon={IconZap} iconColor={t.accent}>
+      <div style={{
+        fontSize: 10.5, color: t.text2, fontFamily: t.fontSans,
+        letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500,
+        marginBottom: 4,
+      }}>{tr('dash.card.live.title')}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{
+          fontSize: 28, fontFamily: t.fontSans, fontWeight: 700,
+          color: active > 0 ? t.accent : t.text0, letterSpacing: -0.8,
+        }}>{active}</span>
+        <span style={{ fontSize: 13, color: t.text3 }}>/ {total}</span>
+      </div>
+      {/* Mini barra horizontal apilada: running | waiting | errors | idle */}
+      <div style={{
+        height: 6, borderRadius: 3, marginTop: 8,
+        background: t.bg3, overflow: 'hidden',
+        display: 'flex',
+      }}>
+        {running > 0 && <div style={{ width: `${pct(running)}%`, background: t.ok }}/>}
+        {waiting > 0 && <div style={{ width: `${pct(waiting)}%`, background: t.warn }}/>}
+        {errors > 0 && <div style={{ width: `${pct(errors)}%`, background: t.err }}/>}
+        {idle > 0 && <div style={{ width: `${pct(idle)}%`, background: t.text3, opacity: 0.4 }}/>}
+      </div>
+      <div style={{
+        display: 'flex', gap: 10, marginTop: 7,
+        fontSize: 10.5, color: t.text2, fontFamily: t.fontMono,
+      }}>
+        <span><span style={{ color: t.ok }}>●</span> {running}</span>
+        <span><span style={{ color: t.warn }}>●</span> {waiting}</span>
+        {errors > 0 && <span><span style={{ color: t.err }}>●</span> {errors}</span>}
+      </div>
+    </CardShell>
+  );
+}
+
+function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
+  const t = useTokens();
+  const tr = useT();
+  // PTYs abiertos: bubble.ptyOpen === true
+  const ptys = bubbles.filter((b) => b.ptyOpen).length;
+  // Worktrees: workspaces únicos en uso (cada bubble con workspace tiene worktree).
+  const worktrees = new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size;
+  // Servers + browsers: leemos del localStorage (servers via dev_status NO se
+  // persiste — usamos un fallback simple por ahora). Para el conteo exacto
+  // habría que escuchar eco:dev_status; lo dejamos como mejora futura.
+  let browsers = 0;
+  try {
+    for (const b of bubbles) {
+      if (window.localStorage.getItem(`eco.browser.url.${b.id}`)) browsers += 1;
+    }
+  } catch { /* noop */ }
+
+  const items = [
+    { icon: IconTerminal, count: ptys,      color: t.warn,   label: tr('dash.card.res.ptys') },
+    { icon: IconCpu,      count: 0,         color: t.busy,   label: tr('dash.card.res.servers') }, // TODO live
+    { icon: IconGlobe,    count: browsers,  color: t.accent, label: tr('dash.card.res.browsers') },
+    { icon: IconFolder,   count: worktrees, color: t.ok,     label: tr('dash.card.res.worktrees') },
+  ];
+
+  return (
+    <CardShell icon={IconLayers} iconColor={t.busy}>
+      <div style={{
+        fontSize: 10.5, color: t.text2, fontFamily: t.fontSans,
+        letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500,
+        marginBottom: 8,
+      }}>{tr('dash.card.res.title')}</div>
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6,
+      }}>
+        {items.map((it, i) => (
+          <div key={i} title={it.label}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 6px', borderRadius: 6,
+              background: t.bg2,
+              color: it.count > 0 ? it.color : t.text3,
+            }}>
+            <it.icon size={12} strokeWidth={2}/>
+            <span style={{
+              fontFamily: t.fontMono, fontSize: 12, fontWeight: 600,
+              color: it.count > 0 ? t.text0 : t.text3,
+            }}>{it.count}</span>
+          </div>
+        ))}
+      </div>
+    </CardShell>
+  );
+}
+
+function SystemStatusCard() {
+  const t = useTokens();
+  const tr = useT();
+  // Estados básicos — backend siempre OK (si estás viendo esto, está vivo).
+  const [apiKey, setApiKey] = useState<'ok' | 'missing' | 'invalid'>('missing');
+  const [listenerUp, setListenerUp] = useState<boolean>(false);
+  useEffect(() => {
+    let cancel = false;
+    apiFetch('/config/api-key').then(async (r) => {
+      if (cancel) return;
+      if (r.ok) {
+        const data = await r.json().catch(() => ({}));
+        setApiKey(data?.configured ? 'ok' : 'missing');
+      }
+    }).catch(() => { /* noop */ });
+    // El listener Python expone /voice/ping a través del backend. Si no
+    // está corriendo, /voice/status retorna { running: false }.
+    apiFetch('/info').then(async (r) => {
+      if (cancel || !r.ok) return;
+      const data = await r.json().catch(() => ({}));
+      setListenerUp(!!data?.listener?.running);
+    }).catch(() => { /* noop */ });
+    return () => { cancel = true; };
+  }, []);
+
+  const rows = [
+    { label: tr('dash.card.sys.backend'),  color: t.ok },
+    { label: tr('dash.card.sys.apikey'),   color: apiKey === 'ok' ? t.ok : (apiKey === 'invalid' ? t.err : t.warn) },
+    { label: tr('dash.card.sys.listener'), color: listenerUp ? t.ok : t.text3 },
+  ];
+
+  return (
+    <CardShell icon={IconShield} iconColor={t.ok}>
+      <div style={{
+        fontSize: 10.5, color: t.text2, fontFamily: t.fontSans,
+        letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500,
+        marginBottom: 8,
+      }}>{tr('dash.card.sys.title')}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: r.color,
+              boxShadow: `0 0 6px ${r.color}`,
+            }}/>
+            <span style={{ fontSize: 12, color: t.text1, fontFamily: t.fontSans }}>{r.label}</span>
+          </div>
+        ))}
+      </div>
+    </CardShell>
+  );
+}
+
 
 function VoiceOrb({ state, onClick }: { state: VoiceState; onClick: () => void }) {
   const t = useTokens();
@@ -442,6 +647,159 @@ function AgentBubble({
         </div>
       </div>
     </div>
+  );
+}
+
+// Hook + modal compartido para naming de agente nuevo. Lo usan el botón
+// del header del Dashboard y la columna idle del Kanban.
+function useNameAgentDialog(onCreate: (title?: string) => void) {
+  const [open, setOpen] = useState(false);
+  const dialog = <NameAgentDialog open={open} onClose={() => setOpen(false)} onCreate={onCreate}/>;
+  return { open: () => setOpen(true), dialog };
+}
+
+function NameAgentDialog({
+  open, onClose, onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (title?: string) => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setDraft('');
+      const id = window.setTimeout(() => inputRef.current?.focus(), 60);
+      return () => window.clearTimeout(id);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  function submit() {
+    const v = draft.trim();
+    onClose();
+    onCreate(v || undefined);
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(0,0,0,0.5)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(440px, 100%)',
+          background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
+          borderRadius: 16, boxShadow: t.shadowLg,
+          padding: 20,
+          display: 'flex', flexDirection: 'column', gap: 12,
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: t.accentFaint, color: t.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IconPlus size={17} strokeWidth={2.4}/>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>
+              {tr('dash.bubble.new')}
+            </div>
+            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 1 }}>
+              {tr('dash.bubble.name_label')}
+            </div>
+          </div>
+        </div>
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          placeholder={tr('dash.bubble.name_placeholder')}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            background: t.bg2, border: `1px solid ${t.glassBorder}`,
+            borderRadius: 10, padding: '10px 12px',
+            fontFamily: t.fontSans, fontSize: 13.5, color: t.text0,
+            outline: 'none',
+          }}
+        />
+        <div style={{ fontSize: 10.5, color: t.text3 }}>
+          {tr('dash.bubble.enter_hint')}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              flex: 1, height: 36, borderRadius: 999,
+              border: `1px solid ${t.glassBorder}`,
+              background: 'transparent', color: t.text1,
+              fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+            }}>
+            {tr('common.cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            style={{
+              flex: 1, height: 36, borderRadius: 999, border: 0,
+              background: t.accent, color: t.accentOn,
+              fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+              cursor: 'pointer',
+            }}>
+            {tr('common.create')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Botón "Nuevo agente" (header del Dashboard) — pill prominent.
+function CreateAgentButton({ onCreate }: { onCreate: (title?: string) => void }) {
+  const t = useTokens();
+  const tr = useT();
+  const { open, dialog } = useNameAgentDialog(onCreate);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={open}
+        title={tr('dash.bubble.new')}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '6px 12px', borderRadius: 8, border: 0,
+          background: t.accent, color: t.accentOn,
+          fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
+          cursor: 'pointer',
+          boxShadow: `0 0 12px ${t.accentGlow}`,
+        }}>
+        <IconPlus size={13} strokeWidth={2.5}/>
+        {tr('dash.bubble.new')}
+      </button>
+      {dialog}
+    </>
   );
 }
 
@@ -677,6 +1035,7 @@ function KanbanView({
 }) {
   const t = useTokens();
   const tr = useT();
+  const { open: openNameDialog, dialog: nameDialog } = useNameAgentDialog(onCreateAgent);
 
   type ColumnDef = {
     id: string;
@@ -743,6 +1102,7 @@ function KanbanView({
       display: 'flex', gap: 12, alignItems: 'flex-start',
       overflowX: 'auto', paddingBottom: 8,
     }}>
+      {nameDialog}
       {visibleCols.map((col) => {
         const items = byColumn.get(col.id) ?? [];
         return (
@@ -808,7 +1168,7 @@ function KanbanView({
             {col.id === 'idle' && (
               <button
                 type="button"
-                onClick={() => onCreateAgent()}
+                onClick={openNameDialog}
                 style={{
                   marginTop: 'auto',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -1112,9 +1472,9 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   return (
     <Glass radius={20} style={{
       position: 'relative',
-      // Altura: ~70% del viewport del navegador para que el modelo
-      // tenga aire pero quede dentro de pantalla. Mínimo 520px.
-      height: 'min(85vh, 1100px)', minHeight: 520,
+      // Altura responsive — 92vh para que el modelo aproveche casi toda la
+      // ventana, con tope a 1600px para pantallas muy altas. Mínimo 520px.
+      height: 'min(92vh, 1600px)', minHeight: 520,
       padding: 0, overflow: 'hidden',
     }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }}/>
@@ -1420,7 +1780,7 @@ function CommandBar({
 }
 
 function DashboardRail({
-  bubbles, activeBubbleId, availableWorkspaces, onFocus, onOpenAgent, wakeActive,
+  bubbles, activeBubbleId, availableWorkspaces, onOpenAgent, wakeActive,
 }: {
   bubbles: Bubble[];
   activeBubbleId: string | null;
@@ -1453,7 +1813,7 @@ function DashboardRail({
           {recent.length === 0 ? (
             <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('dash.rail.no_activity')}</div>
           ) : recent.map((b) => (
-            <RecentRow key={b.id} bubble={b} active={b.id === activeBubbleId} onClick={() => onFocus(b.id)}/>
+            <RecentRow key={b.id} bubble={b} active={b.id === activeBubbleId} onClick={() => onOpenAgent(b.id)}/>
           ))}
         </div>
       </div>
@@ -1483,21 +1843,6 @@ function DashboardRail({
       <div style={{ flex: 1 }}/>
 
       <ListeningWave active={wakeActive} label={tr('wake.listening')}/>
-
-      <Glass radius={12} style={{ padding: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <StatusDot color={t.ok} pulse size={7}/>
-          <span style={{ fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, color: t.text0 }}>{tr('rail.cli.label')}</span>
-          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text2, marginLeft: 'auto' }}>{tr('rail.cli.local')}</span>
-        </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: t.text2, lineHeight: 1.5 }}
-          dangerouslySetInnerHTML={{
-            __html: tr('rail.cli.model', {
-              model: `<span style="color:${t.text1};font-family:${t.fontMono}">claude-sonnet-4-5</span>`,
-            }),
-          }}
-        />
-      </Glass>
     </div>
   );
 }

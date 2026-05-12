@@ -12,6 +12,7 @@ import * as gitOps from './git-ops.js';
 import * as devServer from './dev-server.js';
 import { proxyPage } from './browser-proxy.js';
 import * as obsidian from './obsidian.js';
+import { getClaudeAuthStatus } from './claude-auth.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
 import { listSkills } from './skills.js';
@@ -242,6 +243,11 @@ const ApiKeyRequestSchema = z.object({
 
 app.get('/config/api-key', (_req: Request, res: Response) => {
   res.json({ hasKey: hasApiKey(), masked: maskedApiKey() });
+});
+
+// Estado completo de autenticación: CLI logueado + API key + cuál usa el SDK.
+app.get('/config/claude-auth', (_req: Request, res: Response) => {
+  res.json(getClaudeAuthStatus());
 });
 
 app.post('/config/api-key', async (req: Request, res: Response) => {

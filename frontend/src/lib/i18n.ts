@@ -129,6 +129,31 @@ const DICT = {
   'dash.stat.messages': { es: 'Mensajes', en: 'Messages' },
   'dash.stat.sessions': { es: 'Sesiones', en: 'Sessions' },
   'dash.stat.workspaces': { es: 'Workspaces', en: 'Workspaces' },
+
+  // Top cards del dashboard
+  'dash.card.next.title':     { es: 'Próxima acción', en: 'Next action' },
+  'dash.card.next.alldone':   { es: 'Todo al día', en: 'All caught up' },
+  'dash.card.next.waiting':   { es: 'Esperando tu respuesta', en: 'Waiting for input' },
+  'dash.card.next.error':     { es: 'Necesita revisión', en: 'Needs review' },
+  'dash.card.next.thinking':  { es: 'Pensando…', en: 'Thinking…' },
+  'dash.card.next.executing': { es: 'Ejecutando una tarea', en: 'Running a task' },
+  'dash.card.next.running':   { es: 'En progreso', en: 'In progress' },
+  'dash.card.next.idle':      { es: 'Inactivo — podés cerrarlo', en: 'Idle — safe to close' },
+
+  'dash.card.live.title':     { es: 'Agentes en vivo', en: 'Live agents' },
+
+  'dash.card.res.title':      { es: 'Recursos en uso', en: 'Open resources' },
+  'dash.card.res.ptys':       { es: 'Terminales abiertos', en: 'Open terminals' },
+  'dash.card.res.servers':    { es: 'Dev servers', en: 'Dev servers' },
+  'dash.card.res.browsers':   { es: 'Navegadores con URL', en: 'Browsers with URL' },
+  'dash.card.res.worktreesactivos': { es: 'Worktrees', en: 'Worktrees' },
+  'dash.card.res.worktrees':  { es: 'Worktrees', en: 'Worktrees' },
+
+  'dash.card.sys.title':      { es: 'Estado del sistema', en: 'System status' },
+  'dash.card.sys.backend':    { es: 'Backend Eco', en: 'Eco backend' },
+  'dash.card.sys.apikey':     { es: 'API key Claude', en: 'Claude API key' },
+  'dash.card.sys.listener':   { es: 'Listener de voz', en: 'Voice listener' },
+
   'dash.section.agents': { es: 'Agentes', en: 'Agents' },
   'dash.new_bubble': { es: 'Nuevo agente', en: 'New agent' },
   'dash.new_bubble_hint': {
@@ -183,7 +208,7 @@ const DICT = {
     es: 'Sin workspaces. Agregalos en Ajustes → Carpetas.',
     en: 'No workspaces. Add them in Settings → Folders.',
   },
-  'agent.default_title': { es: 'Conversación {{n}}', en: 'Conversation {{n}}' },
+  'agent.default_title': { es: 'Agente {{n}}', en: 'Agent {{n}}' },
   'voice.err.permission': { es: 'Permiso de micrófono denegado', en: 'Microphone permission denied' },
   'voice.err.no_mic': { es: 'No se encontró micrófono', en: 'No microphone found' },
   'voice.err.recognition': { es: 'Error de reconocimiento', en: 'Recognition error' },
@@ -560,9 +585,20 @@ const DICT = {
   // ─────────────────────────── Settings — Voice
   'settings.voice.title': { es: 'Voz', en: 'Voice' },
   'settings.voice.sub': {
-    es: 'Controla cómo Eco te escucha y te responde.',
-    en: 'Control how Eco listens and responds.',
+    es: 'Eco usa una voz masculina natural en español. Pensada para confirmaciones cortas — no para leer respuestas largas.',
+    en: 'Eco uses a natural male Spanish voice. Designed for short confirmations — not for reading long replies.',
   },
+  'settings.voice.voice_label': { es: 'Voz de Eco', en: 'Eco\'s voice' },
+  'settings.voice.test_btn': { es: 'Probar', en: 'Test' },
+  'settings.voice.loading': { es: 'Cargando voces…', en: 'Loading voices…' },
+  'settings.voice.intent_hint': {
+    es: 'Se elige automáticamente la mejor voz local (Piper) instalada. Si no hay Piper, cae a la voz del sistema.',
+    en: 'Automatically picks the best local Piper voice installed. Falls back to system voice if none.',
+  },
+  'settings.voice.rate': { es: 'Velocidad', en: 'Rate' },
+  'settings.voice.rate_desc': { es: '1× = normal · más bajo = más lento', en: '1× = normal · lower = slower' },
+  'settings.voice.volume': { es: 'Volumen', en: 'Volume' },
+  'settings.voice.volume_desc': { es: 'Solo afecta la voz, no el audio del sistema', en: 'Only affects voice, not system audio' },
   'settings.voice.wake_word': { es: 'Palabra de activación', en: 'Wake word' },
   'settings.voice.wake_word_desc': {
     es: 'Eco se activa cuando la escucha.',
@@ -591,6 +627,55 @@ const DICT = {
     es: 'Configura tu acceso a los modelos de Anthropic.',
     en: 'Configure your access to Anthropic models.',
   },
+  // Autenticación con Claude — explica las 2 vías (CLI vs API key)
+  'settings.claude.auth.using_cli': {
+    es: 'Autenticado con tu sesión de Claude Code',
+    en: 'Authenticated via your Claude Code session',
+  },
+  'settings.claude.auth.using_apikey': {
+    es: 'Autenticado con API key',
+    en: 'Authenticated via API key',
+  },
+  'settings.claude.auth.using_none': {
+    es: 'Sin método de autenticación configurado',
+    en: 'No authentication method configured',
+  },
+  'settings.claude.auth.priority_hint': {
+    es: 'Si tenés ambos, Eco prefiere la sesión CLI (sin costo extra)',
+    en: 'If both are present, Eco prefers the CLI session (no extra cost)',
+  },
+  'settings.claude.auth.active': { es: 'Activo', en: 'Active' },
+  'settings.claude.auth.or': { es: 'o', en: 'or' },
+  'settings.claude.auth.cli_title': {
+    es: 'Sesión de Claude Code CLI · recomendado',
+    en: 'Claude Code CLI session · recommended',
+  },
+  'settings.claude.auth.cli_desc': {
+    es: 'Si tenés Claude Pro o Max, hacé `claude login` una vez en tu terminal. El consumo va contra tu suscripción — sin costo extra por mensaje.',
+    en: 'If you have Claude Pro or Max, run `claude login` once in your terminal. Usage counts against your subscription — no extra cost per message.',
+  },
+  'settings.claude.auth.cli_installed':     { es: 'CLI detectado', en: 'CLI detected' },
+  'settings.claude.auth.cli_not_installed': { es: 'CLI no encontrado en el path configurado', en: 'CLI not found at configured path' },
+  'settings.claude.auth.cli_loggedin':      { es: 'sesión activa en', en: 'session active in' },
+  'settings.claude.auth.cli_notloggedin':   { es: 'sin sesión iniciada', en: 'no session' },
+  'settings.claude.auth.apikey_title': {
+    es: 'API Key directa de Anthropic',
+    en: 'Direct Anthropic API key',
+  },
+  'settings.claude.auth.apikey_desc': {
+    es: 'Pegá una key sk-ant-… para uso pay-per-use. Cada mensaje consume tu API budget según los tokens. Útil si no tenés suscripción Pro/Max.',
+    en: 'Paste an sk-ant-… key for pay-per-use. Each message consumes your API budget based on tokens. Useful if you don\'t have a Pro/Max subscription.',
+  },
+
+  'settings.claude.model_info.title': {
+    es: 'Modelo actual',
+    en: 'Current model',
+  },
+  'settings.claude.model_info.desc': {
+    es: 'Sonnet 4.5 — balance ideal de inteligencia y velocidad. Para cambiar, editá ECO_MODEL en backend/.env (override avanzado).',
+    en: 'Sonnet 4.5 — best balance of intelligence and speed. To change, edit ECO_MODEL in backend/.env (advanced override).',
+  },
+
   'settings.claude.apikey.title': { es: 'API Key de Anthropic', en: 'Anthropic API Key' },
   'settings.claude.apikey.desc': {
     es: 'Se guarda en ~/.eco/api-key con permisos 600. En sesiones con PIN, se cifra con la clave derivada (próximamente).',
@@ -620,6 +705,7 @@ const DICT = {
   },
   'settings.folders.add_placeholder': { es: 'Pegá una ruta absoluta…', en: 'Paste an absolute path…' },
   'settings.folders.add_btn': { es: 'Agregar', en: 'Add' },
+  'settings.folders.pick_native': { es: 'Elegir carpeta con Finder…', en: 'Pick folder with Finder…' },
   'settings.folders.adding': { es: 'Agregando…', en: 'Adding…' },
   'settings.folders.hint': {
     es: 'La ruta debe ser absoluta y existir. Se bloquean rutas del sistema (/etc, /sys, /proc, etc.).',
@@ -635,26 +721,40 @@ const DICT = {
   // ─────────────────────────── Settings — Security
   'settings.security.title': { es: 'Seguridad', en: 'Security' },
   'settings.security.sub': {
-    es: 'Define qué acciones requieren confirmación explícita.',
-    en: 'Define which actions require explicit confirmation.',
+    es: 'Bloqueo de la app y manejo de datos locales.',
+    en: 'App locking and local data management.',
   },
-  'settings.security.safe_mode': { es: 'Modo seguro global', en: 'Global safe mode' },
-  'settings.security.safe_mode_desc': {
-    es: 'Pide confirmación antes de cualquier modificación de archivos.',
-    en: 'Asks for confirmation before any file modification.',
+  'settings.security.lock_inactivity': { es: 'Bloquear tras inactividad', en: 'Lock after inactivity' },
+  'settings.security.lock_inactivity_desc': {
+    es: 'Pide tu PIN cuando no haya actividad por este tiempo. Pone Eco en lock — los agentes siguen corriendo en background.',
+    en: 'Asks for your PIN after this period of inactivity. Locks Eco — agents keep running in the background.',
   },
-  'settings.security.audit_log': { es: 'Registro de auditoría', en: 'Audit log' },
-  'settings.security.audit_log_desc': {
-    es: 'Guarda log permanente de cada acción ejecutada por agentes.',
-    en: 'Permanent log of every action executed by agents.',
+  'settings.security.lock_now': { es: 'Bloquear pantalla ahora', en: 'Lock screen now' },
+  'settings.security.lock_now_desc': {
+    es: 'Cierra la sesión local; tendrás que reingresar tu PIN. Los agentes corriendo no se interrumpen.',
+    en: 'Closes the local session; you\'ll need to re-enter your PIN. Running agents are not interrupted.',
   },
-  'settings.security.lock_inactivity': { es: 'Bloquear Eco tras inactividad', en: 'Lock Eco after inactivity' },
-  'settings.security.delete_all': { es: 'Borrar todos los datos locales', en: 'Delete all local data' },
-  'settings.security.delete_all_desc': {
-    es: 'Elimina cuenta, agentes, historial y caché. No reversible.',
-    en: 'Deletes account, agents, history and cache. Not reversible.',
+  'settings.security.lock_now_btn': { es: 'Bloquear', en: 'Lock' },
+
+  'settings.security.clear.title': { es: 'Limpiar datos locales', en: 'Clear local data' },
+  'settings.security.clear.desc': {
+    es: 'Borra preferencias, historial de agentes, foto de perfil y caché del navegador interno. NO toca tu cuenta ni los worktrees del repo.',
+    en: 'Removes preferences, agent history, profile photo and internal browser cache. Does NOT touch your account or repo worktrees.',
   },
-  'settings.security.delete_btn': { es: 'Borrar todo', en: 'Delete all' },
+  'settings.security.clear.btn': { es: 'Limpiar', en: 'Clear' },
+  'settings.security.clear.confirm1': {
+    es: '¿Limpiar todos los datos locales? Se reiniciará la app.',
+    en: 'Clear all local data? The app will reload.',
+  },
+  'settings.security.clear.confirm2': {
+    es: 'Última confirmación. Esto NO se puede deshacer.',
+    en: 'Last confirmation. This CANNOT be undone.',
+  },
+  'settings.security.clear.done': {
+    es: 'Datos locales borrados. Recargando…',
+    en: 'Local data cleared. Reloading…',
+  },
+
   'settings.security.minutes': { es: '{{n}} minutos', en: '{{n}} minutes' },
   'settings.security.one_hour': { es: '1 hora', en: '1 hour' },
   'settings.security.never': { es: 'Nunca', en: 'Never' },
