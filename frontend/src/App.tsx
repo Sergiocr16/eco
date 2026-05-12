@@ -142,8 +142,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         // del agente.
         bubbles.setBubblePtyOpen(bubbleId, running);
       },
-      onDevStatus: (bubbleId, status, url, command, skill) => {
-        ecoEmit('eco:dev_status', { bubbleId, status, url, command, ...(skill ? { skill } : {}) });
+      onDevStatus: (bubbleId, status, url, command, skill, role) => {
+        ecoEmit('eco:dev_status', { bubbleId, role, status, url, command, ...(skill ? { skill } : {}) });
       },
       onError: () => { /* ya manejado en socket.error */ },
       onClientAction: (sourceBubbleId, action) => {
@@ -390,7 +390,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   function bubbleIsBusy(id: string): boolean {
     const b = bubbles.bubbles.find((x) => x.id === id);
     if (!b) return false;
-    return b.status === 'thinking' || b.status === 'executing' || b.status === 'running' || b.ptyOpen === true;
+    // "Activo" = Claude está procesando algo. Tener un PTY abierto NO basta —
+    // un shell idle no es trabajo activo. El server corriendo lo trackeamos
+    // por separado en otros lugares (Dashboard).
+    return b.status === 'thinking' || b.status === 'executing' || b.status === 'running' || b.status === 'pending';
   }
 
   function requestCloseBubble(id: string, opts?: { afterClose?: () => void }) {

@@ -239,14 +239,16 @@ function DockIcon({
           color: active ? t.accent : accentColor,
         }}>{initial}</span>
         {/* Status dot esquina superior derecha */}
-        {(isActive || bubble.ptyOpen) && (
+        {/* Dot solo cuando Claude está procesando — un PTY abierto solo no
+            cuenta como "activo". */}
+        {isActive && (
           <span style={{
             position: 'absolute', top: 5, right: 5,
             width: 7, height: 7, borderRadius: '50%',
-            background: isActive ? sColor : t.accent,
+            background: sColor,
             border: `1.5px solid ${t.glassBg}`,
-            boxShadow: `0 0 6px ${isActive ? sColor : t.accent}`,
-            animation: isActive ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
+            boxShadow: `0 0 6px ${sColor}`,
+            animation: 'eco-shimmer 1.1s ease-in-out infinite',
           }}/>
         )}
       </motion.button>

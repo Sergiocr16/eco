@@ -16,6 +16,7 @@ import { stateColor, type AgentState } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useProfile } from '@/hooks/useProfile';
+import { useBubbleActive } from '@/hooks/useBubbleActive';
 
 type Props = {
   bubbles: Bubble[];
@@ -1355,11 +1356,9 @@ function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) 
   const t = useTokens();
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
-  // Un agente cuenta como "activo" si su SDK está corriendo (thinking/executing/
-  // running) O si tiene un PTY abierto (terminal/Claude CLI activo). Así la
-  // tarjeta del Dashboard refleja que la conversación sigue viva aunque el
-  // chat esté idle.
-  const isActive = state === 'thinking' || state === 'executing' || state === 'running' || !!bubble.ptyOpen;
+  // "Activo" = Claude procesando, dev server arriba, o página web abierta.
+  // Un PTY abierto solo no cuenta (shell idle no es trabajo).
+  const isActive = useBubbleActive(bubble);
   const lastMsg = bubble.messages[bubble.messages.length - 1];
   return (
     <button
@@ -1392,12 +1391,12 @@ function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) 
           fontFamily: t.fontSans, fontSize: 12.5, color: t.text0, fontWeight: 500,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{bubble.title}</span>
-        {(isActive || bubble.ptyOpen) && (
+        {isActive && (
           <span style={{
             width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
             background: sColor,
             boxShadow: `0 0 6px ${sColor}`,
-            animation: isActive ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
+            animation: 'eco-shimmer 1.1s ease-in-out infinite',
           }}/>
         )}
       </div>
@@ -1424,13 +1423,26 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   const t = useTokens();
   const tr = useT();
   const [hover, setHover] = useState<string | null>(null);
-  // Estados live de servers por bubbleId — escuchamos el eco-bus.
-  const [serverRunning, setServerRunning] = useState<Record<string, boolean>>({});
+  // Estados live de servers por (bubbleId, role) — un agente puede tener
+  // frontend y backend corriendo a la vez; cada role se trackea por separado
+  // para que parar uno no apague el indicador del otro.
+  const [serverRoles, setServerRoles] = useState<Record<string, Record<string, boolean>>>({});
   useEffect(() => {
     return ecoOn('eco:dev_status', (d) => {
-      setServerRunning((prev) => ({ ...prev, [d.bubbleId]: d.status === 'running' || d.status === 'starting' }));
+      const role = d.role ?? 'main';
+      const isRunning = d.status === 'running' || d.status === 'starting';
+      setServerRoles((prev) => ({
+        ...prev,
+        [d.bubbleId]: { ...(prev[d.bubbleId] ?? {}), [role]: isRunning },
+      }));
     });
   }, []);
+  // Helper: hay algún server corriendo para esa burbuja (cualquier rol)?
+  function anyServerRunning(bubbleId: string): boolean {
+    const roles = serverRoles[bubbleId];
+    if (!roles) return false;
+    return Object.values(roles).some(Boolean);
+  }
   // Estado live del Claude remote control por bubbleId — leemos del localStorage
   // al inicio y escuchamos un CustomEvent que dispara el botón al cambiar.
   const [remoteByBubble, setRemoteByBubble] = useState<Record<string, boolean>>(() => {
@@ -1504,10 +1516,14 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     const state = (b.status as AgentState) || 'idle';
     const hasChat = b.messages.length > 0;
     const hasPty = !!b.ptyOpen;
-    const hasServer = !!serverRunning[b.id];
+    const hasServer = anyServerRunning(b.id);
     let hasBrowser = false;
     try { hasBrowser = !!window.localStorage.getItem(`eco.browser.url.${b.id}`); } catch { /* noop */ }
     const hasRemote = !!remoteByBubble[b.id];
+    // "Activo" para el bond/electrón = Claude trabajando o subsistema vivo
+    // (server up, browser abierto). PTY abierto solo NO cuenta.
+    const claudeBusy = state === 'thinking' || state === 'executing' || state === 'running' || state === 'pending';
+    const isActive = claudeBusy || hasServer || hasBrowser;
     return {
       ...b, state,
       orbitR, period, phaseDeg,
@@ -1516,7 +1532,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
       x: cx + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
       y: cy + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
       size: 22 + (state === 'running' ? 8 : 0),
-      hasChat, hasPty, hasServer, hasBrowser, hasRemote,
+      hasChat, hasPty, hasServer, hasBrowser, hasRemote, isActive,
     };
   });
 
@@ -1665,7 +1681,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             dentro de los círculos. */}
         {nodes.map((n) => {
           // Activo = SDK corriendo o PTY abierto (la terminal cuenta como vida).
-          const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing' || n.hasPty;
+          const isActive = n.isActive;
           const sColor = stateColor(n.state, t);
           const stroke = hover === n.id ? t.accent : (isActive ? sColor : t.text2);
           const opacity = hover === n.id ? 0.85 : (isActive ? 0.6 : 0.22);
@@ -1735,7 +1751,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             rotación. Wobble local muy leve para que se sientan "vivos"
             sin moverse del orbital. */}
         {nodes.map((n, i) => {
-          const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing' || n.hasPty;
+          const isActive = n.isActive;
           const isHover = hover === n.id;
           const sColor = stateColor(n.state, t);
           // Wobble local de 2-3 px alrededor de la posición fija — apenas

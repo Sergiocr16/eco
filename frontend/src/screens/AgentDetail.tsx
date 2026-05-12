@@ -256,11 +256,7 @@ export function AgentDetail({
                   color: t.text0, letterSpacing: -0.3, cursor: 'text',
                 }}>{bubble.title}</h2>
             )}
-            <Pill color={state === 'idle' && bubble.ptyOpen ? t.ok : sColor}>
-              {state === 'idle' && bubble.ptyOpen
-                ? tr('state.terminal_live')
-                : (STATE_LABELS_I18N[state] || tr('state.idle'))}
-            </Pill>
+            <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('detail.header.bubble')}</span>
