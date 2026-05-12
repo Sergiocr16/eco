@@ -83,18 +83,26 @@ El default `medium` da +30–40% de precisión sobre `base` a cambio de 2-3×
 latencia. En una Mac moderna sigue siendo casi imperceptible.
 Si la latencia molesta, bajá a `small`.
 
-## Custom wake word "Eco"
+## Custom wake word "Hey Eco"
 
-Hoy usa el modelo pre-entrenado `hey_jarvis_v0.1`. Para entrenar un modelo
-custom para "Eco" / "Hey Eco":
+Por defecto el listener detecta automáticamente si tenés
+`models/hey_eco.onnx` y lo usa. Si no existe, cae a `hey_jarvis_v0.1`
+como fallback (funciona pero no es el wake word "real").
+
+Para entrenar el modelo custom de "Hey Eco" la primera vez:
 
 ```bash
-# (próxima iteración, ~30 min con audio sintético)
-python -m openwakeword.train --target-word "eco" ...
+cd listener
+pip install -r training/requirements-train.txt
+python training/train_wake.py --negatives-dir ~/audio-noise/ -v
 ```
 
-El modelo entrenado se guarda como `models/hey_eco.onnx` y se setea con
-`ECO_WAKE_MODEL=hey_eco`.
+Ver instrucciones detalladas en [`training/README.md`](training/README.md).
+El training tarda ~20-35 min en Mac y deja `models/hey_eco.onnx`.
+
+**Todo el proceso es 100% offline** — usa Piper TTS local para generar el
+dataset sintético, no llama a ningún servicio externo. El modelo `.onnx`
+final también corre offline con onnxruntime.
 
 ## Empaquetado (futuro)
 

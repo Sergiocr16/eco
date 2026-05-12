@@ -63,7 +63,18 @@ MAX_COMMAND_SECONDS = 12.0  # tope absoluto de un comando
 
 DEFAULT_BACKEND = os.environ.get("ECO_BACKEND", "http://127.0.0.1:7000")
 DEFAULT_TOKEN_FILE = os.environ.get("ECO_TOKEN_FILE", str(Path.home() / ".eco" / "token"))
-DEFAULT_WAKE_MODEL = os.environ.get("ECO_WAKE_MODEL", "hey_jarvis_v0.1")
+def _detect_default_wake_model() -> str:
+    """Prefiere el modelo custom 'hey_eco' si existe en models/, sino cae a hey_jarvis."""
+    override = os.environ.get("ECO_WAKE_MODEL")
+    if override:
+        return override
+    custom = Path(__file__).parent / "models" / "hey_eco.onnx"
+    if custom.exists():
+        return "hey_eco"
+    return "hey_jarvis_v0.1"
+
+
+DEFAULT_WAKE_MODEL = _detect_default_wake_model()
 DEFAULT_WAKE_THRESHOLD = float(os.environ.get("ECO_WAKE_THRESHOLD", "0.5"))
 DEFAULT_WHISPER_SIZE = os.environ.get("ECO_WHISPER_MODEL", "medium")
 DEFAULT_LANG = os.environ.get("ECO_LANG", "es")
@@ -257,8 +268,18 @@ def run(args: argparse.Namespace) -> int:
     )
     log.info("Whisper listo")
 
-    # Wake word
-    wake = WakeWordModel(wakeword_models=[args.wake_model], inference_framework="onnx")
+    # Wake word: si el modelo es 'hey_eco' y el archivo .onnx existe en models/, lo cargamos por path.
+    # Sino, lo pasamos por nombre y openwakeword lo busca en su pool pre-entrenado.
+    custom_path = Path(__file__).parent / "models" / f"{args.wake_model}.onnx"
+    if custom_path.exists():
+        log.info("Cargando modelo custom desde %s", custom_path)
+        wake = WakeWordModel(wakeword_models=[str(custom_path)], inference_framework="onnx")
+    else:
+        if args.wake_model.startswith("hey_eco"):
+            log.warning("Modelo custom %s no encontrado. Caigo a hey_jarvis_v0.1. "
+                        "Entrenalo siguiendo training/README.md", args.wake_model)
+            args.wake_model = "hey_jarvis_v0.1"
+        wake = WakeWordModel(wakeword_models=[args.wake_model], inference_framework="onnx")
     label = next(iter(wake.models.keys()))
     log.info("Wake word model cargado: %s", label)
 
