@@ -9,13 +9,14 @@ import { useProfile } from '@/hooks/useProfile';
 import { setVoiceTarget } from '@/lib/voice-router';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { BranchPicker } from '@/components/BranchPicker';
+import { BrowserPanel } from '@/components/BrowserPanel';
 import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore,
-  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff,
+  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe,
   IconCheck, IconX, IconBolt, IconDiff,
   IconEdit, IconFolder, IconTrash, IconCopy,
   type IconProps,
@@ -145,7 +146,7 @@ type Props = {
   voiceInterim: string;
 };
 
-type Tab = 'chat' | 'terminal' | 'files' | 'plan';
+type Tab = 'chat' | 'terminal' | 'files' | 'plan' | 'browser';
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
@@ -282,6 +283,7 @@ export function AgentDetail({
         <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
         <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label={tr('detail.tab.files')} icon={IconFile} badge={filesChanged.length}/>
         <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
+        <TabBtn active={tab === 'browser'} onClick={() => setTab('browser')} label={tr('detail.tab.browser')} icon={IconGlobe}/>
         <SkillsPicker
           workspace={bubble.workspace}
           onRun={(skill) => onSend(buildSkillPrompt(skill))}
@@ -303,6 +305,10 @@ export function AgentDetail({
           {tab === 'terminal' && <TerminalPanel bubble={bubble}/>}
           {tab === 'files' && <FilesPanel files={filesChanged} workspace={bubble.workspace} bubbleId={bubble.id}/>}
           {tab === 'plan' && <PlanPanel bubble={bubble}/>}
+          {/* Navegador queda MONTADO siempre una vez abierto, solo se oculta cuando
+              cambiás de pestaña. Así el iframe no recarga y la sesión del browser
+              (cookies, localStorage del sitio, scroll position) se preserva. */}
+          <KeepAliveBrowser visible={tab === 'browser'} bubbleId={bubble.id} workspace={bubble.workspace}/>
         </div>
         <AgentSidebar bubble={bubble} onSend={onSend}/>
       </div>
@@ -1338,9 +1344,21 @@ function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: st
   );
 }
 
+const SIDEBAR_COLLAPSE_KEY = 'eco.detail.sidebar.collapsed';
+
 function AgentSidebar({ bubble }: { bubble: Bubble; onSend: (text: string) => void }) {
   const t = useTokens();
   const tr = useT();
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return window.localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === '1'; } catch { return false; }
+  });
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      const next = !v;
+      try { window.localStorage.setItem(SIDEBAR_COLLAPSE_KEY, next ? '1' : '0'); } catch { /* noop */ }
+      return next;
+    });
+  }
   const STATE_LABELS_I18N: Record<AgentState, string> = {
     idle: tr('state.idle'),
     pending: tr('state.pending'),
@@ -1354,22 +1372,63 @@ function AgentSidebar({ bubble }: { bubble: Bubble; onSend: (text: string) => vo
   };
   const min = Math.max(1, Math.round((Date.now() - bubble.createdAt) / 60000));
   const toolCallCount = bubble.messages.reduce((acc, m) => acc + (m.toolCalls?.length ?? 0), 0);
+
+  // Versión colapsada: solo una barra finita con un botón para re-expandir.
+  if (collapsed) {
+    return (
+      <div style={{
+        width: 32, flexShrink: 0,
+        borderLeft: `1px solid ${t.glassBorder}`,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        padding: '12px 0',
+      }}>
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          title="Mostrar panel"
+          style={{
+            width: 22, height: 22, border: 0, borderRadius: 6,
+            background: 'transparent', color: t.text2, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: t.fontMono, fontSize: 12,
+          }}>‹</button>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       width: 280, flexShrink: 0,
       borderLeft: `1px solid ${t.glassBorder}`,
-      overflow: 'auto', padding: '20px 18px',
+      overflow: 'auto', padding: '14px 18px 20px',
       display: 'flex', flexDirection: 'column', gap: 18,
     }}>
-      <div>
-        <SectionLabel>{tr('detail.sidebar.stats')}</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <StatBox label={tr('detail.stat.time_active')} value={`${min}m`}/>
-          <StatBox label={tr('detail.stat.messages')} value={String(bubble.messages.length)}/>
-          <StatBox label={tr('detail.stat.tool_calls')} value={String(toolCallCount)}/>
-          <StatBox label={tr('detail.stat.state')} value={STATE_LABELS_I18N[(bubble.status as AgentState) || 'idle']}/>
-        </div>
+      {/* Header con botón de colapso */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          title="Ocultar panel"
+          style={{
+            width: 22, height: 22, border: 0, borderRadius: 6,
+            background: 'transparent', color: t.text3, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: t.fontMono, fontSize: 12,
+          }}>›</button>
       </div>
+
+      {bubble.workspace && (
+        <div>
+          <SectionLabel>Git</SectionLabel>
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 8,
+            position: 'relative',
+          }}>
+            <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
+            <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
+          </div>
+        </div>
+      )}
 
       <div>
         <SectionLabel>{tr('detail.sidebar.next')}</SectionLabel>
@@ -1389,18 +1448,15 @@ function AgentSidebar({ bubble }: { bubble: Bubble; onSend: (text: string) => vo
         </Glass>
       </div>
 
-      {bubble.workspace && (
-        <div>
-          <SectionLabel>Git</SectionLabel>
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: 8,
-            position: 'relative',
-          }}>
-            <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
-            <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
-          </div>
+      <div>
+        <SectionLabel>{tr('detail.sidebar.stats')}</SectionLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <StatBox label={tr('detail.stat.time_active')} value={`${min}m`}/>
+          <StatBox label={tr('detail.stat.messages')} value={String(bubble.messages.length)}/>
+          <StatBox label={tr('detail.stat.tool_calls')} value={String(toolCallCount)}/>
+          <StatBox label={tr('detail.stat.state')} value={STATE_LABELS_I18N[(bubble.status as AgentState) || 'idle']}/>
         </div>
-      )}
+      </div>
 
     </div>
   );
@@ -1421,6 +1477,25 @@ function StatBox({ label, value }: { label: string; value: string }) {
         marginTop: 4, fontFamily: t.fontSans, fontSize: 17, fontWeight: 600,
         color: t.text0, letterSpacing: -0.3,
       }}>{value}</div>
+    </div>
+  );
+}
+
+// Wrapper que mantiene el BrowserPanel montado entre cambios de pestaña.
+// Solo se monta la PRIMERA vez que el user entra al tab Navegador; después
+// queda vivo y se oculta con display:none cuando cambiás de tab. Eso preserva
+// el iframe (no recarga la página), su scroll, cookies, etc.
+function KeepAliveBrowser({ visible, bubbleId, workspace }: { visible: boolean; bubbleId: string; workspace: string }) {
+  const [hasMounted, setHasMounted] = useState(visible);
+  useEffect(() => { if (visible && !hasMounted) setHasMounted(true); }, [visible, hasMounted]);
+  if (!hasMounted) return null;
+  return (
+    <div style={{
+      display: visible ? 'flex' : 'none',
+      flexDirection: 'column',
+      flex: 1, minHeight: 0,
+    }}>
+      <BrowserPanel bubbleId={bubbleId} workspace={workspace}/>
     </div>
   );
 }

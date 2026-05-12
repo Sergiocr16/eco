@@ -12,7 +12,8 @@ type ServerMsg =
   | { type: 'error'; code: string; message: string }
   | { type: 'client_action'; action: ClientAction }
   | { type: 'voice_transcribed'; text: string; ts: number }
-  | { type: 'pty_status'; bubbleId: string; running: boolean };
+  | { type: 'pty_status'; bubbleId: string; running: boolean }
+  | { type: 'dev_status'; bubbleId: string; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string };
 
 export type ClientAction =
   | { kind: 'open_bubble'; id: string; title: string; focus: boolean }
@@ -78,6 +79,13 @@ export type SocketHandlers = {
   onThinkingChange?: (bubbleId: string, thinking: boolean) => void;
   onExecutingChange?: (bubbleId: string, executing: boolean) => void;
   onPtyStatus?: (bubbleId: string, running: boolean) => void;
+  onDevStatus?: (
+    bubbleId: string,
+    status: 'idle' | 'starting' | 'running' | 'stopped' | 'error',
+    url: string,
+    command: string,
+    skill?: string,
+  ) => void;
   onClientAction?: (sourceBubbleId: string, action: ClientAction) => void;
   onVoiceTranscribed?: (text: string) => void;
 };
@@ -209,6 +217,9 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         }
         else if (msg.type === 'pty_status') {
           handlersRef.current.onPtyStatus?.(msg.bubbleId, msg.running);
+        }
+        else if (msg.type === 'dev_status') {
+          handlersRef.current.onDevStatus?.(msg.bubbleId, msg.status, msg.url, msg.command, msg.skill);
         }
         else if (msg.type === 'session_started') {
           // already handled in system init

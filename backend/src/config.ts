@@ -72,6 +72,10 @@ export function isAllowedWorkspace(target: string | undefined): boolean {
   if (!target || !isAbsolute(target)) return false;
   const real = safeRealpath(target);
   if (!real) return false;
+  // Aceptamos worktrees creados por Eco mismo (~/.eco/worktrees/<bubbleId>)
+  // como permitidos automáticamente — son derivados de workspaces ya autorizados.
+  const ecoWorktreesRoot = `${homedir()}/.eco/worktrees`;
+  if (real === ecoWorktreesRoot || real.startsWith(ecoWorktreesRoot + sep)) return true;
   return config.workspaces.some(
     (allowed) => real === allowed || real.startsWith(allowed + sep),
   );

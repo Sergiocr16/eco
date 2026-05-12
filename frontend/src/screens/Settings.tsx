@@ -635,10 +635,11 @@ function SectionAppearance() {
     <div style={{ maxWidth: 720 }}>
       <Header title={tr('settings.appearance.title')} sub={tr('settings.appearance.sub')}/>
       <SectionLabel>{tr('settings.appearance.theme')}</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 22 }}>
         {([
           { id: 'dark', label: tr('settings.appearance.theme.dark'), preview: '#0a0a0c' },
           { id: 'light', label: tr('settings.appearance.theme.light'), preview: '#f5f5f7' },
+          { id: 'amoled', label: 'AMOLED', preview: '#000000' },
           { id: 'system', label: tr('settings.appearance.theme.system'), preview: 'linear-gradient(135deg, #0a0a0c 50%, #f5f5f7 50%)' },
         ] as const).map((m) => (
           <button key={m.id} type="button" onClick={() => setMode(m.id)} style={{
@@ -659,14 +660,39 @@ function SectionAppearance() {
       </div>
 
       <SectionLabel>{tr('settings.appearance.accent')}</SectionLabel>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 22 }}>
-        {ACCENT_HUES.map((a) => (
-          <button key={a.hue} type="button" onClick={() => setAccentHue(a.hue)} title={a.name} style={{
-            width: 36, height: 36, borderRadius: '50%', border: 0, cursor: 'pointer',
-            background: `oklch(70% 0.13 ${a.hue})`,
-            boxShadow: accentHue === a.hue ? `0 0 0 2px ${t.bg1}, 0 0 0 4px oklch(74% 0.13 ${a.hue})` : 'none',
-          }}/>
-        ))}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10,
+        marginBottom: 22,
+      }}>
+        {ACCENT_HUES.map((a) => {
+          const selected = accentHue === a.hue;
+          return (
+            <button key={a.hue} type="button" onClick={() => setAccentHue(a.hue)}
+              title={a.name}
+              style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                padding: '8px 4px', borderRadius: 10,
+                background: selected ? t.accentFaint : 'transparent',
+                border: `1px solid ${selected ? t.accentDim : 'transparent'}`,
+                cursor: 'pointer',
+                transition: 'background 140ms, border-color 140ms',
+              }}>
+              <span style={{
+                width: 32, height: 32, borderRadius: '50%',
+                background: `oklch(70% 0.13 ${a.hue})`,
+                border: `2px solid ${selected ? `oklch(78% 0.14 ${a.hue})` : 'transparent'}`,
+                boxShadow: selected
+                  ? `0 0 0 2px ${t.bg1}, 0 0 0 4px oklch(74% 0.13 ${a.hue})`
+                  : `0 1px 3px rgba(0,0,0,0.2)`,
+              }}/>
+              <span style={{
+                fontSize: 10.5, color: selected ? t.accent : t.text2,
+                fontFamily: t.fontSans, fontWeight: 500,
+                textAlign: 'center', whiteSpace: 'nowrap',
+              }}>{a.name.replace(' (Eco)', '')}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

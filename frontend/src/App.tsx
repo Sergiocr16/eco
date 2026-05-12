@@ -5,6 +5,7 @@ import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
 import { Settings } from './screens/Settings';
 import { FileExplorer } from './screens/FileExplorer';
+import { BrowserScreen } from './screens/BrowserScreen';
 import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
@@ -135,6 +136,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         // ptyOpen para una indicación visual eventual, sin tocar el status
         // del agente.
         bubbles.setBubblePtyOpen(bubbleId, running);
+      },
+      onDevStatus: (bubbleId, status, url, command, skill) => {
+        ecoEmit('eco:dev_status', { bubbleId, status, url, command, ...(skill ? { skill } : {}) });
       },
       onError: () => { /* ya manejado en socket.error */ },
       onClientAction: (sourceBubbleId, action) => {
@@ -477,6 +481,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   />
                 ) : screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles}/>
+                ) : screen === 'browser' ? (
+                  <BrowserScreen/>
                 ) : screen === 'settings' ? (
                   <Settings/>
                 ) : screen === 'history' ? (

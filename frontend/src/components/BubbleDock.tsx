@@ -48,7 +48,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
   );
 }
 
-const SIZE = 36;
+const SIZE = 44;
 
 function DockIcon({
   bubble, index, active, onClick,
@@ -66,27 +66,45 @@ function DockIcon({
   const sColor = stateColor(state, t);
   const isActive = state === 'thinking' || state === 'executing' || state === 'running';
   const initial = bubbleLetter(bubble.title);
-  const bgAccent = bubble.accent || t.bg3;
+  const accentColor = bubble.accent || t.accent;
+
+  // Recortamos el título para mostrar bajo el ícono (máx ~7 chars, palabras enteras si caben).
+  const shortLabel = (() => {
+    const title = (bubble.title ?? '').trim();
+    if (!title) return '';
+    if (title.length <= 7) return title;
+    const firstWord = title.split(/\s+/)[0] ?? title;
+    if (firstWord.length <= 7) return firstWord;
+    return firstWord.slice(0, 6) + '…';
+  })();
 
   return (
     <div
       onMouseEnter={() => { setHover(true); setTimeout(() => setShowTip(true), 220); }}
       onMouseLeave={() => { setHover(false); setShowTip(false); }}
       style={{
-        // Reservamos exactamente SIZE para que el zoom (vía transform) no
-        // empuje a los vecinos ni provoque scroll.
-        width: SIZE, height: SIZE,
+        // Reservamos espacio para ícono + label. El zoom transforma sin empujar vecinos.
+        width: SIZE + 8, minHeight: SIZE + 14,
         position: 'relative',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start',
+        gap: 1,
       }}
     >
+      {/* Barra accent a la izquierda cuando active — mismo look que los nav icons */}
+      {active && (
+        <span style={{
+          position: 'absolute', left: -8, top: SIZE / 2 - 10, // alineado al centro del ícono
+          width: 3, height: 20, borderRadius: 999, background: t.accent,
+          pointerEvents: 'none', zIndex: 1,
+        }}/>
+      )}
       <motion.button
         type="button"
         onClick={onClick}
         initial={{ opacity: 0, scale: 0.6, y: -8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.6, y: 8 }}
-        whileHover={{ scale: 1.45 }}
+        whileHover={{ scale: 1.15 }}
         whileTap={{ scale: 0.92 }}
         transition={{
           type: 'spring', stiffness: 380, damping: 26,
@@ -95,50 +113,43 @@ function DockIcon({
         style={{
           width: SIZE, height: SIZE,
           padding: 0, border: 0, cursor: 'pointer',
-          borderRadius: 10,
-          background: bgAccent,
-          color: t.text0,
+          borderRadius: 12,
+          background: active ? t.bg3 : (hover ? t.bg2 : 'transparent'),
+          color: active ? t.accent : t.text2,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          position: 'relative', overflow: 'hidden',
-          // Crece hacia la derecha (no contra el borde de la app).
+          position: 'relative',
           transformOrigin: 'left center',
-          boxShadow: active
-            ? `0 6px 18px color-mix(in oklch, ${t.accent} 35%, transparent), 0 0 0 1.5px ${t.accent} inset`
-            : hover
-              ? `0 8px 22px rgba(0,0,0,0.35), 0 1px 1px rgba(255,255,255,0.08) inset`
-              : `0 3px 10px rgba(0,0,0,0.22), 0 1px 1px rgba(255,255,255,0.06) inset, 0 0 0 0.5px ${t.glassBorder} inset`,
+          transition: 'background 140ms',
         }}>
-        {/* Highlight superior para look de ícono macOS */}
         <span style={{
-          position: 'absolute', inset: 0,
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 50%)',
-          pointerEvents: 'none',
-        }}/>
-        <span style={{
-          fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, letterSpacing: -0.4,
-          color: t.text0, position: 'relative',
+          fontFamily: t.fontSans, fontSize: 16, fontWeight: 600, letterSpacing: -0.3,
+          // Color de la inicial = accent del agente, así cada uno se diferencia.
+          color: active ? t.accent : accentColor,
         }}>{initial}</span>
         {/* Status dot esquina superior derecha */}
         {(isActive || bubble.ptyOpen) && (
           <span style={{
-            position: 'absolute', top: 3, right: 3,
-            width: 6, height: 6, borderRadius: '50%',
+            position: 'absolute', top: 6, right: 6,
+            width: 7, height: 7, borderRadius: '50%',
             background: isActive ? sColor : t.accent,
+            border: `1.5px solid ${t.windowBg}`,
             boxShadow: `0 0 6px ${isActive ? sColor : t.accent}`,
             animation: isActive ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
           }}/>
         )}
       </motion.button>
 
-      {/* Indicador "conectado a Eco" — dot accent al costado derecho del slot */}
-      {isActive && (
-        <span style={{
-          position: 'absolute', right: -6, top: '50%', transform: 'translateY(-50%)',
-          width: 4, height: 4, borderRadius: '50%', background: t.accent,
-          boxShadow: `0 0 5px ${t.accent}`,
-          pointerEvents: 'none',
-        }}/>
-      )}
+      {/* Label corto debajo del ícono — primera palabra del título o "Xxx…" */}
+      <span style={{
+        maxWidth: SIZE + 4,
+        fontFamily: t.fontSans, fontSize: 9, fontWeight: 500,
+        color: active ? t.accent : t.text3,
+        textAlign: 'center',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        pointerEvents: 'none',
+        letterSpacing: -0.1,
+        lineHeight: 1.1,
+      }}>{shortLabel}</span>
 
       {/* Tooltip */}
       <AnimatePresence>

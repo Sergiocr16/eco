@@ -19,7 +19,7 @@ export type MetaAction =
   | { kind: 'toggle_voice'; on: boolean }
   | { kind: 'set_theme'; mode: 'dark' | 'light' | 'system' }
   | { kind: 'scroll'; dir: 'up' | 'down' | 'top' | 'bottom' }
-  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'files' | 'plan' }
+  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' }
   | { kind: 'confirm'; answer: 'yes' | 'no' }
   | { kind: 'repeat_last' }
   | { kind: 'tts_rate'; dir: 'faster' | 'slower' | 'normal' }
@@ -27,7 +27,7 @@ export type MetaAction =
   | { kind: 'help' }
   | { kind: 'unknown' };
 
-export type Screen = 'dashboard' | 'detail' | 'files' | 'history' | 'settings' | 'login' | 'onboarding';
+export type Screen = 'dashboard' | 'detail' | 'files' | 'history' | 'settings' | 'login' | 'onboarding' | 'browser';
 
 export type MetaActionFeedback = {
   title: string;
@@ -101,10 +101,15 @@ const ALIASES: Record<string, string> = {
   'abajo': 'scroll_down', 'arriba': 'scroll_up',
 
   // Tabs en detail (requieren ver "ver"/"abrí" o palabra directa cuando se está en detail)
-  'terminal': 'tab_terminal',
-  'plan': 'tab_plan',
-  'chat': 'tab_chat',
-  'conversacion': 'tab_chat',
+  'terminal': 'tab_terminal', 'terminales': 'tab_terminal',
+  'consola': 'tab_terminal', 'shell': 'tab_terminal',
+  'plan': 'tab_plan', 'planes': 'tab_plan',
+  'tarea': 'tab_plan', 'tareas': 'tab_plan', 'pasos': 'tab_plan',
+  'chat': 'tab_chat', 'chats': 'tab_chat',
+  'conversacion': 'tab_chat', 'conversaciones': 'tab_chat',
+  'mensajes': 'tab_chat',
+  'navegador': 'tab_browser', 'browser': 'tab_browser', 'web': 'tab_browser',
+  'pagina': 'tab_browser', 'sitio': 'tab_browser', 'internet': 'tab_browser',
 
   // Sí / No / Confirm
   'si': 'confirm_yes', 'yes': 'confirm_yes', 'ok': 'confirm_yes',
@@ -257,6 +262,20 @@ export function parseMetaCommand(
   const restTokens = afterLeading.slice(keywordIdx + 1);
   const argRaw = stripQuotes(restTokens.join(' '));
   const argClean = dropFillers(restTokens).join(' ').trim();
+
+  // Si el verbo es de apertura/navegación (`create`/`goto`) Y el primer token del
+  // argumento matchea un alias de tab, lo interpretamos como switch de pestaña
+  // (cuando estamos en una conversación). Esto soporta:
+  //   "Eco abre terminal" / "abrí el navegador" / "ir al plan" / "mostrame archivos"
+  if ((commandKey === 'create' || commandKey === 'goto') && currentScreen === 'detail') {
+    const firstArg = dropFillers(restTokens)[0] ?? '';
+    const aliased = ALIASES[firstArg];
+    if (aliased === 'tab_terminal') return { kind: 'switch_tab', tab: 'terminal' };
+    if (aliased === 'tab_browser')  return { kind: 'switch_tab', tab: 'browser' };
+    if (aliased === 'tab_plan')     return { kind: 'switch_tab', tab: 'plan' };
+    if (aliased === 'tab_chat')     return { kind: 'switch_tab', tab: 'chat' };
+    if (aliased === 'archivos_ctx') return { kind: 'switch_tab', tab: 'files' };
+  }
   // Conservamos el texto original con casing/acentos para el título (más bonito).
   // Calculamos el índice absoluto del keyword en allTokens para que preserveCasing arranque ahí.
   const absoluteKeywordIdx = leadingSkipped + keywordIdx;
@@ -282,6 +301,7 @@ export function parseMetaCommand(
     case 'tab_files':    return { kind: 'switch_tab', tab: 'files' };
     case 'tab_plan':     return { kind: 'switch_tab', tab: 'plan' };
     case 'tab_chat':     return { kind: 'switch_tab', tab: 'chat' };
+    case 'tab_browser':  return { kind: 'switch_tab', tab: 'browser' };
     case 'confirm_yes':  return { kind: 'confirm', answer: 'yes' };
     case 'confirm_no':   return { kind: 'confirm', answer: 'no' };
     case 'repeat':       return { kind: 'repeat_last' };

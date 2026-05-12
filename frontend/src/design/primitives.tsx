@@ -23,19 +23,47 @@ export function Glass({ children, style = {}, radius, hover = false, onClick, cl
       className={className}
       style={{
         position: 'relative',
-        background: t.glassBg,
-        backdropFilter: 'blur(24px) saturate(140%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(140%)',
-        border: `1px solid ${h ? t.glassBorderHi : t.glassBorder}`,
+        ...glassEffect(t, { hovered: h }),
         borderRadius: radius ?? t.r3,
-        boxShadow: t.glassInset,
-        transition: 'border-color 160ms ease, transform 160ms ease',
+        transition: 'border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease',
         ...style,
       }}
     >
       {children}
     </div>
   );
+}
+
+// Liquid Glass — efecto estilo Apple. Para usar como spread en cualquier
+// elemento que quiera lucir como tarjeta de cristal:
+//   style={{ ...glassEffect(t), padding: 12 }}
+//
+// Composición:
+//   - backdrop-filter blur + saturate → desenfoca lo que hay detrás
+//   - background semi-transparente con tinte del tema
+//   - border + 1px inset highlight arriba (simula el filo refractado de Apple)
+//   - shadow sutil debajo
+export function glassEffect(
+  t: Tokens,
+  opts: { hovered?: boolean; intensity?: 'subtle' | 'normal' | 'strong' } = {},
+): CSSProperties {
+  const intensity = opts.intensity ?? 'normal';
+  const blur =
+    intensity === 'strong' ? 32 : intensity === 'subtle' ? 18 : 26;
+  const sat = intensity === 'strong' ? 180 : intensity === 'subtle' ? 140 : 160;
+  return {
+    background: t.glassBg,
+    backdropFilter: `blur(${blur}px) saturate(${sat}%)`,
+    WebkitBackdropFilter: `blur(${blur}px) saturate(${sat}%)`,
+    border: `1px solid ${opts.hovered ? t.glassBorderHi : t.glassBorder}`,
+    // El doble shadow: inset top de 1px que simula el highlight del cristal
+    // (catch-light apple-style), y el drop shadow para flotación.
+    boxShadow: [
+      'inset 0 1px 0 rgba(255,255,255,0.06)',
+      'inset 0 0 0 0.5px rgba(255,255,255,0.02)',
+      t.shadowMd,
+    ].join(', '),
+  };
 }
 
 export type BtnKind = 'primary' | 'secondary' | 'ghost' | 'danger';

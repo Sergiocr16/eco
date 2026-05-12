@@ -29,6 +29,8 @@ export default defineConfig({
       '/git': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/pty': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/voice': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/dev': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/proxy': { target: 'http://127.0.0.1:7000', changeOrigin: false },
     },
   },
 });

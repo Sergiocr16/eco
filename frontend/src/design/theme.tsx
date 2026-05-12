@@ -3,7 +3,7 @@ import { buildTokens, type ThemeMode, type Tokens } from './tokens';
 
 type ThemeContextValue = {
   mode: ThemeMode;
-  effectiveMode: 'dark' | 'light';
+  effectiveMode: 'dark' | 'light' | 'amoled';
   accentHue: number;
   setMode: (m: ThemeMode) => void;
   setAccentHue: (hue: number) => void;
@@ -41,7 +41,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener?.('change', onChange);
   }, []);
 
-  const effectiveMode: 'dark' | 'light' = mode === 'system' ? systemMode : mode;
+  const effectiveMode: 'dark' | 'light' | 'amoled' = mode === 'system' ? systemMode : mode;
 
   const t = useMemo(() => buildTokens(effectiveMode, accentHue), [effectiveMode, accentHue]);
 
@@ -55,7 +55,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    document.documentElement.style.colorScheme = effectiveMode;
+    // CSS color-scheme solo acepta 'dark' o 'light'; mapeamos amoled → dark.
+    const css = effectiveMode === 'light' ? 'light' : 'dark';
+    document.documentElement.style.colorScheme = css;
     document.body.style.background = t.desktopBg;
     document.body.style.color = t.text0;
   }, [effectiveMode, t.desktopBg, t.text0]);

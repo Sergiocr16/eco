@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { EcoMark } from '@/design/EcoMark';
 import {
-  IconCommand, IconFolderOpen, IconHistory, IconSettings, type IconProps,
+  IconCommand, IconFolderOpen, IconHistory, IconSettings, IconGlobe, type IconProps,
 } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 import { AccountMenu } from './AccountMenu';
 import { BubbleDock } from './BubbleDock';
 import type { Bubble } from '@/lib/types';
 
-export type Screen = 'dashboard' | 'files' | 'history' | 'settings' | 'detail' | 'login' | 'onboarding';
+export type Screen = 'dashboard' | 'files' | 'history' | 'settings' | 'detail' | 'login' | 'onboarding' | 'browser';
 
 const DOCK_PREF_KEY = 'eco.dock.enabled';
 const DOCK_EVENT = 'eco:dock-pref-change';
@@ -33,6 +33,7 @@ type Props = {
 const ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: string }[] = [
   { id: 'dashboard', icon: IconCommand, labelKey: 'nav.dashboard' },
   { id: 'files',     icon: IconFolderOpen, labelKey: 'nav.files' },
+  { id: 'browser',   icon: IconGlobe, labelKey: 'nav.browser' },
   { id: 'history',   icon: IconHistory, labelKey: 'nav.history' },
   { id: 'settings',  icon: IconSettings, labelKey: 'nav.settings' },
 ];

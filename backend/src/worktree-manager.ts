@@ -10,7 +10,7 @@
 // referencias en disco se pueden recolectar manualmente con `git worktree prune`.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isAllowedWorkspace } from './config.js';
@@ -122,4 +122,79 @@ export function getWorktree(bubbleId: string): string | null {
 /** Retorna [bubbleId, path] para enumeración (snapshots, etc.). */
 export function listWorktrees(): Array<{ bubbleId: string; path: string }> {
   return [...worktrees.entries()].map(([bubbleId, path]) => ({ bubbleId, path }));
+}
+
+/**
+ * Barre `~/.eco/worktrees/` y borra todos los worktrees "limpios":
+ *  - El path no existe / no es repo git válido → rm -rf.
+ *  - O no tiene archivos modificados/untracked AND no tiene commits ahead del upstream.
+ * Llamado al arrancar Eco, periódicamente, y al cerrar.
+ */
+export function pruneCleanWorktrees(): { removed: string[]; kept: string[] } {
+  const removed: string[] = [];
+  const kept: string[] = [];
+  if (!existsSync(WORKTREES_ROOT)) return { removed, kept };
+
+  let entries: string[] = [];
+  try { entries = readdirSync(WORKTREES_ROOT); } catch { return { removed, kept }; }
+
+  for (const name of entries) {
+    const path = join(WORKTREES_ROOT, name);
+    try {
+      const st = statSync(path);
+      if (!st.isDirectory()) continue;
+    } catch { continue; }
+
+    // 1) Si el path no es un repo git válido (huérfano), lo borramos.
+    if (!isGitRepo(path)) {
+      try {
+        rmSync(path, { recursive: true, force: true });
+        worktrees.delete(name);
+        removed.push(name);
+      } catch { kept.push(name); }
+      continue;
+    }
+
+    // 2) ¿Tiene cambios o untracked?
+    const status = runGit(['status', '--porcelain'], path, 5000);
+    if (!status.ok) { kept.push(name); continue; }
+    if (status.stdout.trim().length > 0) { kept.push(name); continue; }
+
+    // 3) ¿Tiene commits ahead del upstream o de la rama base?
+    // Probamos varios upstreams en orden. Si ninguno es comparable, asumimos limpio.
+    let hasCommits = false;
+    const compareRefs = ['@{upstream}', 'origin/HEAD', 'origin/main', 'origin/master'];
+    for (const ref of compareRefs) {
+      const ahead = runGit(['rev-list', '--count', `${ref}..HEAD`], path, 5000);
+      if (ahead.ok && ahead.stdout.trim() && ahead.stdout.trim() !== '0') {
+        hasCommits = true; break;
+      }
+      // Si el ref no existe, probamos el siguiente. Si todos fallan: dejamos hasCommits=false.
+    }
+    if (hasCommits) { kept.push(name); continue; }
+
+    // 4) Worktree limpio → intentamos `git worktree remove --force` desde el repo padre.
+    let removedOk = false;
+    const commonDir = runGit(['rev-parse', '--git-common-dir'], path, 3000);
+    if (commonDir.ok && commonDir.stdout.trim()) {
+      const absCommon = commonDir.stdout.trim();
+      const parent = absCommon.replace(/\/?\.git\/?$/, '');
+      if (parent && existsSync(parent)) {
+        const r = runGit(['worktree', 'remove', path, '--force'], parent, 5000);
+        if (r.ok) removedOk = true;
+      }
+    }
+    // Fallback: si el `worktree remove` falla, borramos el dir nomás.
+    if (!removedOk) {
+      try { rmSync(path, { recursive: true, force: true }); removedOk = true; } catch { /* noop */ }
+    }
+    if (removedOk) {
+      worktrees.delete(name);
+      removed.push(name);
+    } else {
+      kept.push(name);
+    }
+  }
+
+  return { removed, kept };
 }

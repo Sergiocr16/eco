@@ -2,10 +2,10 @@ import { useEffect, useRef, useState, type FormEvent, type CSSProperties, type K
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
 import {
-  Glass, IconBtn, StatusDot, Pill, Kbd, AgentGlyph, SectionLabel, bubbleLetter,
+  Glass, glassEffect, IconBtn, StatusDot, Pill, Kbd, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import {
-  IconWave, IconMic, IconSend, IconPlus, IconGrid, IconGraph, IconExt,
+  IconWave, IconMic, IconSend, IconPlus, IconGrid, IconGraph, IconExt, IconColumns,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal,
   IconClock, IconAlert, IconZap, IconCpu, IconFile, IconEdit, IconTrash,
 } from '@/design/icons';
@@ -37,7 +37,7 @@ export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
   const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, availableWorkspaces, interimText, voiceError, wakeActive } = props;
-  const [view, setView] = useState<'grid' | 'graph'>('grid');
+  const [view, setView] = useState<'grid' | 'graph' | 'kanban'>('grid');
 
   const active = bubbles.filter((b) => ['running', 'thinking', 'executing', 'waiting'].includes(b.status as string));
   const running = active.filter((b) => b.status === 'running' || b.status === 'thinking' || b.status === 'executing');
@@ -114,6 +114,7 @@ export function Dashboard(props: Props) {
         <SectionLabel count={bubbles.length} action={
           <div style={{ display: 'flex', gap: 4 }}>
             <IconBtn icon={IconGrid} size={28} active={view === 'grid'} onClick={() => setView('grid')}/>
+            <IconBtn icon={IconColumns} size={28} active={view === 'kanban'} onClick={() => setView('kanban')}/>
             <IconBtn icon={IconGraph} size={28} active={view === 'graph'} onClick={() => setView('graph')}/>
           </div>
         }>{tr('dash.section.agents')}</SectionLabel>
@@ -159,6 +160,12 @@ export function Dashboard(props: Props) {
               <NewAgentCard onCreate={onCreateAgent}/>
             </motion.div>
           </div>
+        ) : view === 'kanban' ? (
+          <KanbanView
+            bubbles={bubbles}
+            onOpenAgent={onOpenAgent}
+            onCreateAgent={onCreateAgent}
+          />
         ) : (
           <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
         )}
@@ -307,13 +314,12 @@ function AgentBubble({
       onMouseLeave={() => { setHover(false); setMenuOpen(false); }}
       style={{
         position: 'relative',
-        background: t.bg2,
-        border: `0.5px solid ${hover ? t.glassBorderHi : t.glassBorder}`,
+        ...glassEffect(t, { hovered: hover, intensity: 'normal' }),
         borderRadius: 18,
         padding: '18px 18px 14px',
         cursor: renaming ? 'default' : 'pointer',
-        transition: 'all 200ms ease',
-        boxShadow: hover ? t.shadowMd : 'none',
+        transition: 'border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease',
+        transform: hover ? 'translateY(-1px)' : 'translateY(0)',
         overflow: 'visible',
         minHeight: 200,
         display: 'flex', flexDirection: 'column',
@@ -428,9 +434,10 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
     return (
       <div
         style={{
+          ...glassEffect(t, { intensity: 'normal' }),
           border: `1px solid ${t.accentDim}`,
+          background: `linear-gradient(135deg, ${t.accentFaint}, ${t.glassBg})`,
           borderRadius: 18, minHeight: 200,
-          background: t.accentFaint,
           padding: 22,
           display: 'flex', flexDirection: 'column', gap: 14,
         }}
@@ -488,13 +495,15 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
       onClick={() => setNaming(true)}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
+        ...glassEffect(t, { hovered: h, intensity: 'subtle' }),
         border: `1px dashed ${h ? t.accentDim : t.glassBorder}`,
+        background: h ? t.accentFaint : t.glassBg,
         borderRadius: 18, minHeight: 200,
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', gap: 10, cursor: 'pointer',
-        background: h ? t.accentFaint : 'transparent',
         color: h ? t.accent : t.text2,
-        transition: 'all 160ms',
+        transform: h ? 'translateY(-1px)' : 'translateY(0)',
+        transition: 'background 200ms ease, border-color 200ms ease, transform 200ms ease',
       }}>
       <div style={{
         width: 44, height: 44, borderRadius: '50%',
@@ -622,6 +631,232 @@ function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
   };
 }
 
+// ──────────────────── Vista Kanban ─────────────────────────────────────────
+// Columnas por estado. Cada agente es una card chiquita arrastrable visualmente
+// (drag real es feature aparte — por ahora click para abrir).
+function KanbanView({
+  bubbles, onOpenAgent, onCreateAgent,
+}: {
+  bubbles: Bubble[];
+  onOpenAgent: (id: string) => void;
+  onCreateAgent: (title?: string) => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+
+  type ColumnDef = {
+    id: string;
+    label: string;
+    color: string;
+    match: (b: Bubble) => boolean;
+  };
+
+  const columns: ColumnDef[] = [
+    {
+      id: 'active',
+      label: 'Activos',
+      color: t.accent,
+      match: (b) =>
+        b.status === 'thinking' || b.status === 'executing' || b.status === 'running',
+    },
+    {
+      id: 'waiting',
+      label: 'En espera',
+      color: t.warn,
+      match: (b) => b.status === 'waiting' || b.status === 'paused' || b.status === 'pending',
+    },
+    {
+      id: 'idle',
+      label: 'Inactivos',
+      color: t.text2,
+      match: (b) =>
+        (b.status === 'idle' || !b.status) &&
+        !(b.ptyOpen) /* idle puros, sin shell abierto */,
+    },
+    {
+      id: 'shell',
+      label: 'Con shell abierto',
+      color: t.busy,
+      match: (b) => (b.status === 'idle' || !b.status) && !!b.ptyOpen,
+    },
+    {
+      id: 'done',
+      label: 'Terminados',
+      color: t.ok,
+      match: (b) => b.status === 'done',
+    },
+    {
+      id: 'error',
+      label: 'Con error',
+      color: t.err,
+      match: (b) => b.status === 'error',
+    },
+  ];
+
+  // Asignamos cada agente a la primera columna que matchee.
+  const byColumn = new Map<string, Bubble[]>();
+  for (const col of columns) byColumn.set(col.id, []);
+  for (const b of bubbles) {
+    for (const col of columns) {
+      if (col.match(b)) { byColumn.get(col.id)!.push(b); break; }
+    }
+  }
+  // Mostramos solo columnas con al menos un agente, excepto Activos que siempre.
+  const visibleCols = columns.filter((c) => c.id === 'active' || (byColumn.get(c.id)?.length ?? 0) > 0);
+
+  return (
+    <div style={{
+      display: 'flex', gap: 12, alignItems: 'flex-start',
+      overflowX: 'auto', paddingBottom: 8,
+    }}>
+      {visibleCols.map((col) => {
+        const items = byColumn.get(col.id) ?? [];
+        return (
+          <motion.div
+            key={col.id}
+            layout
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+            style={{
+              flex: '0 0 280px',
+              background: t.bg2,
+              border: `1px solid ${t.glassBorder}`,
+              borderRadius: 14,
+              padding: 12,
+              minHeight: 200,
+              display: 'flex', flexDirection: 'column', gap: 10,
+            }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '2px 4px',
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%', background: col.color,
+                boxShadow: col.id === 'active' ? `0 0 6px ${col.color}` : 'none',
+              }}/>
+              <span style={{
+                fontFamily: t.fontSans, fontSize: 12.5, color: t.text0, fontWeight: 600,
+                letterSpacing: -0.1, flex: 1,
+              }}>{col.label}</span>
+              <span style={{
+                fontFamily: t.fontMono, fontSize: 11, color: t.text3,
+                padding: '1px 7px', borderRadius: 999,
+                background: t.bg3,
+              }}>{items.length}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <AnimatePresence initial={false} mode="popLayout">
+                {items.map((b, i) => (
+                  <motion.div
+                    key={b.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.95, y: 8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -8 }}
+                    transition={{
+                      type: 'spring', stiffness: 360, damping: 28,
+                      delay: Math.min(i * 0.02, 0.15),
+                    }}
+                    whileHover={{ y: -2 }}
+                  >
+                    <KanbanCard bubble={b} onOpen={() => onOpenAgent(b.id)}/>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {items.length === 0 && (
+                <div style={{
+                  padding: '14px 8px', textAlign: 'center',
+                  fontSize: 11.5, color: t.text3, fontFamily: t.fontSans,
+                }}>Vacío.</div>
+              )}
+            </div>
+            {col.id === 'idle' && (
+              <button
+                type="button"
+                onClick={() => onCreateAgent()}
+                style={{
+                  marginTop: 'auto',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  padding: '8px 10px', border: `1px dashed ${t.glassBorder}`,
+                  borderRadius: 10, background: 'transparent', cursor: 'pointer',
+                  color: t.text2, fontFamily: t.fontSans, fontSize: 11.5,
+                }}>
+                <IconPlus size={12}/> {tr('dash.new_bubble')}
+              </button>
+            )}
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
+function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) {
+  const t = useTokens();
+  const state = (bubble.status as AgentState) || 'idle';
+  const sColor = stateColor(state, t);
+  const isActive = state === 'thinking' || state === 'executing' || state === 'running';
+  const lastMsg = bubble.messages[bubble.messages.length - 1];
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      style={{
+        width: '100%', textAlign: 'left',
+        display: 'flex', flexDirection: 'column', gap: 6,
+        padding: 10, borderRadius: 12,
+        ...glassEffect(t, { intensity: 'subtle' }),
+        // El border de glassEffect lo sobreescribimos cuando el agente está activo
+        // para que muestre el color del estado.
+        border: `1px solid ${isActive ? sColor : t.glassBorder}`,
+        cursor: 'pointer',
+        boxShadow: isActive
+          ? `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 14px color-mix(in oklch, ${sColor} 30%, transparent), ${t.shadowMd}`
+          : `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`,
+        transition: 'border-color 180ms, box-shadow 180ms, transform 180ms',
+      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <span style={{
+          width: 26, height: 26, borderRadius: 8, flexShrink: 0,
+          background: bubble.accent || t.bg3,
+          color: t.text0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
+        }}>{bubbleLetter(bubble.title)}</span>
+        <span style={{
+          flex: 1, minWidth: 0,
+          fontFamily: t.fontSans, fontSize: 12.5, color: t.text0, fontWeight: 500,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{bubble.title}</span>
+        {(isActive || bubble.ptyOpen) && (
+          <span style={{
+            width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+            background: sColor,
+            boxShadow: `0 0 6px ${sColor}`,
+            animation: isActive ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
+          }}/>
+        )}
+      </div>
+      {lastMsg && (
+        <div style={{
+          fontSize: 11, color: t.text2, lineHeight: 1.4,
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+          {lastMsg.role === 'user' ? '› ' : '← '}{lastMsg.text.slice(0, 120)}
+        </div>
+      )}
+      {bubble.workspace && (
+        <div style={{
+          fontFamily: t.fontMono, fontSize: 10, color: t.text3,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{bubble.workspace.split('/').pop()}</div>
+      )}
+    </button>
+  );
+}
+
 function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (id: string) => void }) {
   const t = useTokens();
   const tr = useT();
@@ -670,20 +905,21 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           style={{ transformOrigin: `${cx}px ${cy}px` }}
         />
 
-        {/* Conexiones + partículas de datos viajando desde Eco hacia cada nodo activo */}
+        {/* Conexiones — siempre visibles. Inactivas en gris suave, activas brillando + flow. */}
         {nodes.map((n) => {
           const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing';
           const sColor = stateColor(n.state, t);
-          const stroke = hover === n.id ? t.accent : (isActive ? sColor : t.text3);
-          const opacity = hover === n.id ? 0.9 : (isActive ? 0.6 : 0.16);
+          const stroke = hover === n.id ? t.accent : (isActive ? sColor : t.text2);
+          // Inactivas en 0.4 (antes 0.16) → siempre se ven sin distraer.
+          const opacity = hover === n.id ? 0.95 : (isActive ? 0.75 : 0.4);
           return (
             <g key={'e-' + n.id}>
               <line
                 x1={cx} y1={cy} x2={n.x} y2={n.y}
                 stroke={stroke}
                 strokeOpacity={opacity}
-                strokeWidth={hover === n.id ? 1.6 : (isActive ? 1.4 : 1)}
-                strokeDasharray={isActive ? '4 6' : (hover === n.id ? '0' : '3 4')}
+                strokeWidth={hover === n.id ? 1.6 : (isActive ? 1.6 : 1.1)}
+                strokeDasharray={isActive ? '4 6' : (hover === n.id ? '0' : '0')}
                 strokeLinecap="round"
                 style={isActive ? {
                   animation: 'eco-flow 1.1s linear infinite',
@@ -772,24 +1008,47 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
                   transition={{ type: 'spring', stiffness: 300, damping: 22 }}
                 />
               )}
+              {/* Animación de actividad: triple anillo expansivo + glow del nodo */}
               {isActive && (
-                <motion.circle
-                  cx={n.x} cy={n.y} r={n.size}
-                  fill="none"
-                  stroke={sColor} strokeOpacity={0.5}
-                  animate={{ r: [n.size, n.size + 10], opacity: [0.45, 0] }}
-                  transition={{ duration: 2, ease: 'easeOut', repeat: Infinity }}
-                />
+                <>
+                  <motion.circle
+                    cx={n.x} cy={n.y} r={n.size}
+                    fill="none" stroke={sColor} strokeWidth={1.5}
+                    animate={{ r: [n.size, n.size + 16], opacity: [0.55, 0] }}
+                    transition={{ duration: 2, ease: 'easeOut', repeat: Infinity }}
+                  />
+                  <motion.circle
+                    cx={n.x} cy={n.y} r={n.size}
+                    fill="none" stroke={sColor} strokeWidth={1.2}
+                    animate={{ r: [n.size, n.size + 16], opacity: [0.4, 0] }}
+                    transition={{ duration: 2, ease: 'easeOut', repeat: Infinity, delay: 0.66 }}
+                  />
+                  <motion.circle
+                    cx={n.x} cy={n.y} r={n.size}
+                    fill="none" stroke={sColor} strokeWidth={1}
+                    animate={{ r: [n.size, n.size + 16], opacity: [0.3, 0] }}
+                    transition={{ duration: 2, ease: 'easeOut', repeat: Infinity, delay: 1.33 }}
+                  />
+                  {/* Halo glow estático que pulsa la intensidad */}
+                  <motion.circle
+                    cx={n.x} cy={n.y} r={n.size + 4}
+                    fill={sColor}
+                    animate={{ opacity: [0.18, 0.32, 0.18] }}
+                    transition={{ duration: 1.4, ease: 'easeInOut', repeat: Infinity }}
+                    style={{ filter: `blur(8px)` }}
+                  />
+                </>
               )}
               <motion.circle
                 cx={n.x} cy={n.y}
                 fill={t.bg1}
-                stroke={isHover ? t.accent : t.glassBorder}
-                strokeWidth={isHover ? 1.5 : 1}
-                animate={isActive ? { r: [n.size, n.size + 1.5, n.size] } : { r: n.size }}
+                stroke={isActive ? sColor : (isHover ? t.accent : t.glassBorder)}
+                strokeWidth={isActive ? 2 : (isHover ? 1.5 : 1)}
+                animate={isActive ? { r: [n.size, n.size + 2, n.size] } : { r: n.size }}
                 transition={isActive ? {
-                  duration: 1.8, repeat: Infinity, ease: 'easeInOut',
+                  duration: 1.4, repeat: Infinity, ease: 'easeInOut',
                 } : { duration: 0.3 }}
+                style={isActive ? { filter: `drop-shadow(0 0 8px ${sColor})` } : undefined}
               />
               <text x={n.x} y={n.y + 1} textAnchor="middle" dominantBaseline="middle"
                 fill={n.accent} fontFamily={t.fontSans} fontSize="13" fontWeight="600"

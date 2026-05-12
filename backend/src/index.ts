@@ -5,8 +5,10 @@ import { createServer } from 'node:http';
 import { config, isAllowedWorkspace } from './config.js';
 import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
 import { attachPtyServer, killBubblePty } from './pty-server.js';
-import { getWorktree, removeWorktree, ensureWorktree } from './worktree-manager.js';
+import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
+import * as devServer from './dev-server.js';
+import { proxyPage } from './browser-proxy.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
 import { listSkills } from './skills.js';
@@ -369,10 +371,72 @@ app.post('/git/commit', (req: Request, res: Response) => {
   res.json(gitOps.commitWithMessage(dir, message));
 });
 
+// ─── Dev server por agente ────────────────────────────────────────────────
+app.post('/dev/start', async (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const command = typeof req.body?.command === 'string' ? req.body.command : undefined;
+  const result = await devServer.startDevServer(bubbleId, dir, command);
+  res.json(result);
+});
+
+app.post('/dev/stop', (req: Request, res: Response) => {
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  res.json(devServer.stopDevServer(bubbleId));
+});
+
+app.post('/dev/restart', async (req: Request, res: Response) => {
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const result = await devServer.restartDevServer(bubbleId);
+  res.json(result);
+});
+
+app.get('/dev/status', (req: Request, res: Response) => {
+  const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const s = devServer.devStatus(bubbleId);
+  if (!s) return res.json({ status: 'idle', port: 0, url: '', command: '', exitCode: null });
+  res.json({
+    status: s.status, port: s.port, url: s.url, command: s.command,
+    exitCode: s.exitCode, startedAt: s.startedAt, exitedAt: s.exitedAt,
+  });
+});
+
+app.post('/dev/skill', async (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  const skill = typeof req.body?.skill === 'string' ? req.body.skill : '';
+  const action = typeof req.body?.action === 'string' ? req.body.action : '';
+  if (!bubbleId || !skill) return errResponse(res, 400, 'http.invalid_body', 'bubbleId y skill requeridos');
+  if (!['up', 'down', 'restart', 'status'].includes(action)) {
+    return errResponse(res, 400, 'http.invalid_body', 'action debe ser up|down|restart|status');
+  }
+  const result = await devServer.runSkillAction(bubbleId, dir, skill, action as 'up' | 'down' | 'restart' | 'status');
+  res.json(result);
+});
+
+app.get('/dev/logs', (req: Request, res: Response) => {
+  const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  res.type('text/plain').send(devServer.devLogs(bubbleId));
+});
+
+// Proxy del navegador interno — strip de X-Frame-Options/CSP para permitir
+// embedding en iframe. Solo HTML inicial; sitios JS-pesados (Google, etc.)
+// seguirán rompiendo y deberán abrirse en el navegador del sistema.
+app.get('/proxy/site', proxyPage);
+
 app.post('/pty/kill', (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
   const killed = killBubblePty(bubbleId);
+  // Matamos también el dev server del agente si existe.
+  devServer.stopDevServer(bubbleId);
   // El worktree de la burbuja también se libera; la rama eco/<id> queda
   // viva en el repo padre para que el usuario pueda mergear si quiere.
   const worktreeRemoved = removeWorktree(bubbleId);
@@ -444,4 +508,42 @@ server.listen(config.port, config.host, () => {
   console.log(`   Orígenes:  ${config.allowedOrigins.join(', ')}`);
   console.log(`   Conexiones máx: ${config.maxOpenConnections}`);
   console.log(`   Auth:      Bearer ${authToken.slice(0, 8)}…  (archivo: ~/.eco/token)\n`);
+
+  // GC de worktrees: limpia los que no tienen cambios al startup.
+  try {
+    const r = pruneCleanWorktrees();
+    if (r.removed.length > 0) {
+      console.log(`   Worktrees limpios eliminados al startup: ${r.removed.length} (${r.removed.slice(0, 3).join(', ')}${r.removed.length > 3 ? '…' : ''})`);
+    }
+  } catch (e) {
+    console.error('[worktree-prune] error en startup:', e);
+  }
 });
+
+// GC periódico cada 15 min mientras corre.
+const PRUNE_INTERVAL_MS = 15 * 60 * 1000;
+const pruneTimer = setInterval(() => {
+  try {
+    const r = pruneCleanWorktrees();
+    if (r.removed.length > 0) {
+      console.log(`[worktree-prune] eliminados ${r.removed.length}: ${r.removed.join(', ')}`);
+    }
+  } catch (e) {
+    console.error('[worktree-prune] error:', e);
+  }
+}, PRUNE_INTERVAL_MS);
+pruneTimer.unref();
+
+// GC al cerrar gracefully (Ctrl-C, kill TERM).
+function shutdown(signal: string) {
+  console.log(`\n[eco] recibí ${signal}, limpiando worktrees sin cambios…`);
+  try {
+    const r = pruneCleanWorktrees();
+    if (r.removed.length > 0) {
+      console.log(`[eco] worktrees eliminados: ${r.removed.length}`);
+    }
+  } catch { /* noop */ }
+  process.exit(0);
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

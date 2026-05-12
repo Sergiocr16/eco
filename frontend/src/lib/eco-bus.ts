@@ -3,9 +3,16 @@
 
 export type EcoBusEvents = {
   'eco:scroll': { dir: 'up' | 'down' | 'top' | 'bottom' };
-  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'files' | 'plan' };
+  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' };
   'eco:confirm': { answer: 'yes' | 'no' };
   'eco:wake_detected': { ts: number };
+  'eco:dev_status': {
+    bubbleId: string;
+    status: 'idle' | 'starting' | 'running' | 'stopped' | 'error';
+    url: string;
+    command: string;
+    skill?: string;
+  };
 };
 
 type EventName = keyof EcoBusEvents;

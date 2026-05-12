@@ -142,6 +142,9 @@ export const IconList = (p: IconProps) => (
 export const IconGrid = (p: IconProps) => (
   <Base {...p}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></Base>
 );
+export const IconColumns = (p: IconProps) => (
+  <Base {...p}><rect x="3" y="3" width="5" height="18"/><rect x="10" y="3" width="5" height="12"/><rect x="17" y="3" width="4" height="15"/></Base>
+);
 export const IconGraph = (p: IconProps) => (
   <Base {...p}><circle cx="12" cy="12" r="2.5"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M10 11l-4-4M14 11l4-4M10 13l-4 4M14 13l4 4"/></Base>
 );

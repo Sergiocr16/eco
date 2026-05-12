@@ -28,4 +28,5 @@ export type ServerMessage =
   | { type: 'error'; code: string; message: string }
   | { type: 'client_action'; action: ClientAction }
   | { type: 'voice_transcribed'; text: string; ts: number }
-  | { type: 'pty_status'; bubbleId: string; running: boolean };
+  | { type: 'pty_status'; bubbleId: string; running: boolean; active?: boolean }
+  | { type: 'dev_status'; bubbleId: string; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string };

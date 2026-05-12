@@ -1,4 +1,4 @@
-export type ThemeMode = 'dark' | 'light' | 'system';
+export type ThemeMode = 'dark' | 'light' | 'system' | 'amoled';
 
 export type Tokens = {
   bg0: string;
@@ -113,9 +113,28 @@ const LIGHT_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFa
   shadowLg: '0 20px 60px -20px rgba(0,0,0,0.20), 0 4px 12px rgba(0,0,0,0.06)',
 };
 
-export function buildTokens(mode: 'dark' | 'light', accentHue: number): Tokens {
-  const base = mode === 'light' ? LIGHT_BASE : DARK_BASE;
-  const L = mode === 'light' ? 60 : 78;
+// AMOLED: variante de dark con negro absoluto (true black) para pantallas OLED.
+// Apaga píxeles → ahorra batería + contraste más fuerte.
+const AMOLED_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#000000',
+  bg1: '#000000',
+  bg2: 'rgba(255,255,255,0.025)',
+  bg3: 'rgba(255,255,255,0.045)',
+  bg4: 'rgba(255,255,255,0.07)',
+  glassBg: 'rgba(8, 8, 10, 0.7)',
+  glassBorder: 'rgba(255,255,255,0.06)',
+  glassBorderHi: 'rgba(255,255,255,0.11)',
+  chromeBg: 'rgba(0, 0, 0, 0.85)',
+  windowBg: '#000000',
+  windowBorder: 'rgba(255,255,255,0.06)',
+  desktopBg: '#000000',
+};
+
+export function buildTokens(mode: 'dark' | 'light' | 'amoled', accentHue: number): Tokens {
+  const base = mode === 'light' ? LIGHT_BASE : mode === 'amoled' ? AMOLED_BASE : DARK_BASE;
+  // AMOLED bumps accent luminosity para destacar sobre el negro absoluto.
+  const L = mode === 'light' ? 60 : mode === 'amoled' ? 82 : 78;
   return {
     ...base,
     accent: `oklch(${L}% 0.13 ${accentHue})`,
@@ -169,8 +188,15 @@ export type VoiceState = 'idle' | 'listening' | 'thinking' | 'executing' | 'spea
 
 export const ACCENT_HUES = [
   { hue: 165, name: 'Mint (Eco)' },
+  { hue: 145, name: 'Verde' },
+  { hue: 195, name: 'Turquesa' },
   { hue: 220, name: 'Cian' },
-  { hue: 270, name: 'Violeta' },
-  { hue: 25,  name: 'Naranja' },
+  { hue: 240, name: 'Azul' },
+  { hue: 260, name: 'Índigo' },
+  { hue: 285, name: 'Violeta' },
   { hue: 320, name: 'Magenta' },
+  { hue: 350, name: 'Rosa' },
+  { hue: 15,  name: 'Coral' },
+  { hue: 40,  name: 'Naranja' },
+  { hue: 75,  name: 'Ámbar' },
 ];
