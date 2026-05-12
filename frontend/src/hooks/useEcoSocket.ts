@@ -11,7 +11,8 @@ type ServerMsg =
   | { type: 'done' }
   | { type: 'error'; code: string; message: string }
   | { type: 'client_action'; action: ClientAction }
-  | { type: 'voice_transcribed'; text: string; ts: number };
+  | { type: 'voice_transcribed'; text: string; ts: number }
+  | { type: 'pty_status'; bubbleId: string; running: boolean };
 
 export type ClientAction =
   | { kind: 'open_bubble'; id: string; title: string; focus: boolean }
@@ -76,6 +77,7 @@ export type SocketHandlers = {
   onError?: (bubbleId: string | null, message: string) => void;
   onThinkingChange?: (bubbleId: string, thinking: boolean) => void;
   onExecutingChange?: (bubbleId: string, executing: boolean) => void;
+  onPtyStatus?: (bubbleId: string, running: boolean) => void;
   onClientAction?: (sourceBubbleId: string, action: ClientAction) => void;
   onVoiceTranscribed?: (text: string) => void;
 };
@@ -205,6 +207,9 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         else if (msg.type === 'voice_transcribed') {
           handlersRef.current.onVoiceTranscribed?.(msg.text);
         }
+        else if (msg.type === 'pty_status') {
+          handlersRef.current.onPtyStatus?.(msg.bubbleId, msg.running);
+        }
         else if (msg.type === 'session_started') {
           // already handled in system init
         } else if (msg.type === 'done') {
@@ -274,6 +279,7 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
     ws.send(JSON.stringify({
       type: 'prompt',
       text: opts.text,
+      bubbleId: opts.bubbleId,
       ...(opts.workspace ? { workspace: opts.workspace } : {}),
       ...(opts.resumeSessionId ? { resumeSessionId: opts.resumeSessionId } : {}),
     }));

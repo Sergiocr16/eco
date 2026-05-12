@@ -4,10 +4,12 @@ import { resolve } from 'node:path';
 import { z } from 'zod';
 import { isAllowedWorkspace, isInsideWorkspace } from './config.js';
 import { buildSafeEnv } from './security.js';
+import { getWorktree } from './worktree-manager.js';
 
 export const DiffRequestSchema = z.object({
   path: z.string().min(1).max(4096),
   workspace: z.string().min(1).max(4096),
+  bubbleId: z.string().max(128).optional(),
   ref: z.string().min(1).max(80).optional(),
 });
 
@@ -61,7 +63,11 @@ export async function fileDiff(req: DiffRequest): Promise<DiffResult> {
   if (!isAllowedWorkspace(req.workspace)) {
     throw Object.assign(new Error('Workspace no permitido'), { httpStatus: 403 });
   }
-  if (!isInsideWorkspace(req.path, req.workspace)) {
+  // Si la burbuja tiene worktree, sus archivos viven ahí, no en el repo padre.
+  // El workspace efectivo para los chequeos pasa a ser el worktree.
+  const effectiveWorkspace = (req.bubbleId && getWorktree(req.bubbleId)) || req.workspace;
+
+  if (!isInsideWorkspace(req.path, effectiveWorkspace)) {
     throw Object.assign(new Error('Path fuera del workspace'), { httpStatus: 403 });
   }
 
@@ -71,17 +77,17 @@ export async function fileDiff(req: DiffRequest): Promise<DiffResult> {
   }
 
   // Verificar si hay git
-  const gitDir = realpathSafe(`${req.workspace}/.git`);
+  const gitDir = realpathSafe(`${effectiveWorkspace}/.git`);
   if (gitDir && existsSync(gitDir)) {
     const ref = req.ref ?? 'HEAD';
-    const rel = relativeTo(req.workspace, fullPath);
+    const rel = relativeTo(effectiveWorkspace, fullPath);
     const args = ['diff', '--no-color', '-U3', ref, '--', rel];
-    const { stdout } = await runGit(args, req.workspace);
+    const { stdout } = await runGit(args, effectiveWorkspace);
     if (stdout.trim()) {
       return { mode: 'git', diff: stdout, hasChanges: true };
     }
     // Sin cambios contra HEAD — probar si es archivo nuevo no trackeado
-    const untracked = await runGit(['ls-files', '--others', '--exclude-standard', '--', rel], req.workspace);
+    const untracked = await runGit(['ls-files', '--others', '--exclude-standard', '--', rel], effectiveWorkspace);
     if (untracked.stdout.trim()) {
       // Archivo nuevo — mostrar todo el contenido con prefijo +
       return readAsCreated(fullPath, rel);

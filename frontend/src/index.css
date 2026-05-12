@@ -42,3 +42,11 @@ select {
   0%, 60%, 100% { opacity: 0.2; transform: scale(0.7); }
   30% { opacity: 1; transform: scale(1); }
 }
+@keyframes eco-flow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -24; }
+}
+@keyframes eco-breath {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}

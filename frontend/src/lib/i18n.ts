@@ -79,6 +79,32 @@ const DICT = {
   'nav.settings': { es: 'Ajustes', en: 'Settings' },
   'nav.account': { es: 'Cuenta', en: 'Account' },
 
+  // ─────────────────────────── Account menu
+  'account.signed_in_as': { es: 'Sesión iniciada como', en: 'Signed in as' },
+  'account.lock': { es: 'Bloquear pantalla', en: 'Lock screen' },
+  'account.lock.sub': { es: 'Pide el PIN para volver', en: 'Requires PIN to unlock' },
+  'account.destroy': { es: 'Cerrar sesión y eliminar usuario', en: 'Sign out and delete user' },
+  'account.destroy.sub': { es: 'Empieza de cero con otra cuenta', en: 'Start fresh with another account' },
+  'account.destroy.title': { es: '¿Eliminar este usuario?', en: 'Delete this user?' },
+  'account.destroy.warning': {
+    es: 'Se borrará tu usuario y la frase de recuperación queda inútil. Esta acción no se puede deshacer.',
+    en: 'Your user will be deleted and the recovery phrase becomes useless. This cannot be undone.',
+  },
+  'account.destroy.pin_placeholder': { es: 'PIN actual', en: 'Current PIN' },
+  'account.destroy.confirm': { es: 'Eliminar usuario', en: 'Delete user' },
+  'account.destroy.loading': { es: 'Eliminando…', en: 'Deleting…' },
+  'account.destroy.cancel': { es: 'Cancelar', en: 'Cancel' },
+  'account.photo.change': { es: 'Cambiar foto', en: 'Change photo' },
+  'account.photo.remove': { es: 'Quitar foto', en: 'Remove photo' },
+  'account.photo.err_type': { es: 'Tiene que ser una imagen', en: 'Must be an image' },
+  'account.photo.err_save': { es: 'No se pudo guardar', en: 'Could not save' },
+  'diff.search': { es: 'Buscar en el diff…', en: 'Search in diff…' },
+  'settings.general.dock': { es: 'Dock de burbujas', en: 'Bubble dock' },
+  'settings.general.dock_desc': {
+    es: 'Lista las conversaciones activas en el sidebar izquierdo con vista previa al pasar el cursor.',
+    en: 'Show active conversations in the left sidebar with hover preview.',
+  },
+
   // ─────────────────────────── Dashboard
   'dash.greeting.morning': { es: 'Buenos días', en: 'Good morning' },
   'dash.greeting.afternoon': { es: 'Buenas tardes', en: 'Good afternoon' },
@@ -297,6 +323,7 @@ const DICT = {
   'detail.header.id': { es: 'ID', en: 'ID' },
   'detail.btn.listen_off_title': { es: 'Detener escucha', en: 'Stop listening' },
   'detail.btn.listen_on_title': { es: 'Activar escucha', en: 'Start listening' },
+  'detail.btn.interrupt': { es: 'Detener al agente', en: 'Stop the agent' },
   'detail.chat.write_to': { es: 'Escríbele a {{name}}…', en: 'Write to {{name}}…' },
   'detail.chat.listening_hint': {
     es: 'Escuchando · hablá normal o decí "Eco" para comandos',
@@ -427,6 +454,7 @@ const DICT = {
   'state.done': { es: 'Finalizado', en: 'Done' },
   'state.error': { es: 'Error', en: 'Error' },
   'state.thinking': { es: 'Pensando', en: 'Thinking' },
+  'state.executing': { es: 'Ejecutando', en: 'Executing' },
 
   // ─────────────────────────── Graph view
   'graph.legend.nodes': { es: '{{n}} nodos conectados a Eco', en: '{{n}} nodes connected to Eco' },

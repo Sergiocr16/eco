@@ -120,6 +120,14 @@ function SectionGeneral() {
       <Header title={tr('settings.general.title')} sub={tr('settings.general.sub')}/>
       <GeneralToggleRow icon={IconBolt} title={tr('settings.general.listen_on_boot')} storageKey="eco.voice.autostart" defaultOn/>
       <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>
+      <GeneralToggleRow
+        icon={IconCommand}
+        title={tr('settings.general.dock')}
+        desc={tr('settings.general.dock_desc')}
+        storageKey="eco.dock.enabled"
+        broadcastEvent="eco:dock-pref-change"
+        defaultOn
+      />
       <Row
         icon={IconFolder}
         title={tr('settings.general.default_folder')}
@@ -710,8 +718,13 @@ function ToggleControlled({ defaultOn = false }: { defaultOn?: boolean }) {
   return <Toggle on={on} onChange={setOn}/>;
 }
 
-function GeneralToggleRow({ icon, title, storageKey, defaultOn }: {
-  icon: (p: IconProps) => JSX.Element; title: string; storageKey: string; defaultOn?: boolean;
+function GeneralToggleRow({ icon, title, desc, storageKey, defaultOn, broadcastEvent }: {
+  icon: (p: IconProps) => JSX.Element; title: string; desc?: string;
+  storageKey: string; defaultOn?: boolean;
+  // Si se provee, dispara un CustomEvent con ese nombre tras guardar — útil
+  // para que componentes en la misma pestaña reaccionen (el evento 'storage'
+  // del navegador no se dispara en la pestaña que escribió).
+  broadcastEvent?: string;
 }) {
   const [on, setOn] = useState(() => {
     if (typeof window === 'undefined') return defaultOn ?? false;
@@ -720,10 +733,13 @@ function GeneralToggleRow({ icon, title, storageKey, defaultOn }: {
     return v === '1';
   });
   return (
-    <Row icon={icon} title={title} control={
+    <Row icon={icon} title={title} desc={desc} control={
       <Toggle on={on} onChange={(v) => {
         setOn(v);
-        try { window.localStorage.setItem(storageKey, v ? '1' : '0'); } catch { /* noop */ }
+        try {
+          window.localStorage.setItem(storageKey, v ? '1' : '0');
+          if (broadcastEvent) window.dispatchEvent(new CustomEvent(broadcastEvent));
+        } catch { /* noop */ }
       }}/>
     }/>
   );

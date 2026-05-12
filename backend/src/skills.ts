@@ -97,27 +97,54 @@ function scanMarkdownDir(
   return out;
 }
 
-function scanPluginSkills(): SkillInfo[] {
-  const marketplacesDir = join(homedir(), '.claude', 'plugins', 'marketplaces');
-  if (!existsSync(marketplacesDir)) return [];
+function listDirs(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  try {
+    return readdirSync(dir).filter((entry) => {
+      try { return statSync(join(dir, entry)).isDirectory(); } catch { return false; }
+    });
+  } catch { return []; }
+}
+
+function scanPluginRoot(pluginRoot: string, pluginName: string): SkillInfo[] {
   const out: SkillInfo[] = [];
+  const skillsDir = join(pluginRoot, 'skills');
+  const commandsDir = join(pluginRoot, 'commands');
+  const agentsDir = join(pluginRoot, 'agents');
+  if (existsSync(skillsDir)) out.push(...scanSkillsDir(skillsDir, 'plugin', pluginName));
+  if (existsSync(commandsDir)) out.push(...scanMarkdownDir(commandsDir, 'plugin', 'command', pluginName));
+  if (existsSync(agentsDir)) out.push(...scanMarkdownDir(agentsDir, 'plugin', 'agent', pluginName));
+  return out;
+}
 
-  let marketplaces: string[] = [];
-  try { marketplaces = readdirSync(marketplacesDir); } catch { return out; }
+function scanPluginSkills(): SkillInfo[] {
+  const out: SkillInfo[] = [];
+  const pluginsDir = join(homedir(), '.claude', 'plugins');
 
-  for (const market of marketplaces) {
-    const pluginsDir = join(marketplacesDir, market, 'plugins');
-    if (!existsSync(pluginsDir)) continue;
-    let plugins: string[] = [];
-    try { plugins = readdirSync(pluginsDir); } catch { continue; }
+  // Marketplaces: <market>/plugins/<plugin>/{skills,commands,agents}
+  const marketplacesDir = join(pluginsDir, 'marketplaces');
+  for (const market of listDirs(marketplacesDir)) {
+    const marketPlugins = join(marketplacesDir, market, 'plugins');
+    for (const plugin of listDirs(marketPlugins)) {
+      out.push(...scanPluginRoot(join(marketPlugins, plugin), plugin));
+    }
+  }
 
-    for (const plugin of plugins) {
-      const skillsDir = join(pluginsDir, plugin, 'skills');
-      const commandsDir = join(pluginsDir, plugin, 'commands');
-      const agentsDir = join(pluginsDir, plugin, 'agents');
-      if (existsSync(skillsDir)) out.push(...scanSkillsDir(skillsDir, 'plugin', plugin));
-      if (existsSync(commandsDir)) out.push(...scanMarkdownDir(commandsDir, 'plugin', 'command', plugin));
-      if (existsSync(agentsDir)) out.push(...scanMarkdownDir(agentsDir, 'plugin', 'agent', plugin));
+  // Cache de plugins instalados: <market>/<plugin>/<version>/{skills,commands,agents}
+  // (esto es donde Claude Code expande los plugins activos; los marketplaces son
+  // metadata, el cache son los archivos reales.)
+  const cacheDir = join(pluginsDir, 'cache');
+  for (const market of listDirs(cacheDir)) {
+    for (const plugin of listDirs(join(cacheDir, market))) {
+      const versionsDir = join(cacheDir, market, plugin);
+      for (const version of listDirs(versionsDir)) {
+        // Algunos plugins anidan otra carpeta con el nombre del plugin antes de las dirs reales.
+        const versionDir = join(versionsDir, version);
+        out.push(...scanPluginRoot(versionDir, plugin));
+        // Fallback: nested layout <version>/<plugin>/{skills,...}
+        const nested = join(versionDir, plugin);
+        if (existsSync(nested)) out.push(...scanPluginRoot(nested, plugin));
+      }
     }
   }
   return out;
@@ -125,26 +152,45 @@ function scanPluginSkills(): SkillInfo[] {
 
 export function listSkills(workspace?: string): SkillInfo[] {
   const sources = config.skillSources;
+  // Key compuesta: name + kind para no colisionar entre, p.ej.,
+  // un command "frontend-design" y un skill "frontend-design".
   const collected = new Map<string, SkillInfo>();
+  const keyOf = (s: SkillInfo) => `${s.kind}:${s.name}`;
 
   if (sources.includes('user')) {
-    for (const skill of scanSkillsDir(join(homedir(), '.claude', 'skills'), 'user')) {
-      collected.set(skill.name, skill);
+    const userRoot = join(homedir(), '.claude');
+    for (const skill of scanSkillsDir(join(userRoot, 'skills'), 'user')) {
+      collected.set(keyOf(skill), skill);
+    }
+    for (const cmd of scanMarkdownDir(join(userRoot, 'commands'), 'user', 'command')) {
+      collected.set(keyOf(cmd), cmd);
+    }
+    for (const agent of scanMarkdownDir(join(userRoot, 'agents'), 'user', 'agent')) {
+      collected.set(keyOf(agent), agent);
     }
     for (const skill of scanPluginSkills()) {
-      // plugin como fallback si no hay user-direct con ese nombre
-      if (!collected.has(skill.name)) collected.set(skill.name, skill);
+      // plugin como fallback si no hay user-direct con ese nombre+kind
+      const k = keyOf(skill);
+      if (!collected.has(k)) collected.set(k, skill);
     }
   }
 
   if (sources.includes('project') && workspace) {
     if (isAllowedWorkspace(workspace)) {
-      for (const skill of scanSkillsDir(join(workspace, '.claude', 'skills'), 'project')) {
-        // project overrides user/plugin con el mismo nombre
-        collected.set(skill.name, skill);
+      const projRoot = join(workspace, '.claude');
+      for (const skill of scanSkillsDir(join(projRoot, 'skills'), 'project')) {
+        collected.set(keyOf(skill), skill);
+      }
+      for (const cmd of scanMarkdownDir(join(projRoot, 'commands'), 'project', 'command')) {
+        collected.set(keyOf(cmd), cmd);
+      }
+      for (const agent of scanMarkdownDir(join(projRoot, 'agents'), 'project', 'agent')) {
+        collected.set(keyOf(agent), agent);
       }
     }
   }
 
-  return [...collected.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...collected.values()].sort((a, b) =>
+    a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind.localeCompare(b.kind),
+  );
 }

@@ -138,7 +138,7 @@ export const AGENT_TYPES: Record<AgentType, { label: string; glyph: string }> = 
   terminal:   { label: 'Terminal', glyph: 'T' },
 };
 
-export type AgentState = 'idle' | 'pending' | 'running' | 'waiting' | 'paused' | 'done' | 'error' | 'thinking';
+export type AgentState = 'idle' | 'pending' | 'running' | 'waiting' | 'paused' | 'done' | 'error' | 'thinking' | 'executing';
 
 export const STATE_LABELS: Record<AgentState, string> = {
   idle: 'Inactivo',
@@ -149,11 +149,13 @@ export const STATE_LABELS: Record<AgentState, string> = {
   done: 'Finalizado',
   error: 'Error',
   thinking: 'Pensando',
+  executing: 'Ejecutando',
 };
 
 export function stateColor(state: AgentState, t: Tokens): string {
   switch (state) {
     case 'running': return t.accent;
+    case 'executing': return t.accent;
     case 'thinking': return t.busy;
     case 'waiting': case 'pending': return t.warn;
     case 'done': return t.ok;

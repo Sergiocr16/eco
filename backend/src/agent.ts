@@ -25,6 +25,7 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'MultiEdit']);
 export const ALLOWED_TOOL_NAMES: string[] = [
   'Read', 'Grep', 'Glob', 'LS', 'TodoWrite',
   'Write', 'Edit', 'MultiEdit', 'NotebookEdit',
+  'Bash', 'KillBash', 'BashOutput',
   ...ECO_MCP_TOOL_NAMES,
 ];
 
@@ -33,8 +34,10 @@ function makeCanUseTool(workspace: string): CanUseTool {
     if (process.env.ECO_AUDIT_TOOLS) {
       console.error(`[audit] canUseTool: ${toolName} workspace=${workspace}`);
     }
-    // Eco MCP tools (open_bubble, etc.) son siempre permitidas — son del propio sistema.
-    if (toolName.startsWith('mcp__eco__')) {
+    // MCP tools — Eco propias (open_bubble, etc.) y las que el usuario tenga conectadas
+    // a través de settingSources (Notion, Obsidian, Pencil, Vercel, etc.).
+    // Confiamos en lo que el usuario ya autorizó en su config de Claude Code.
+    if (toolName.startsWith('mcp__')) {
       return { behavior: 'allow', updatedInput: input };
     }
     if (SAFE_READ_TOOLS.has(toolName)) {
@@ -53,11 +56,7 @@ function makeCanUseTool(workspace: string): CanUseTool {
     }
 
     if (toolName === 'Bash' || toolName === 'KillBash' || toolName === 'BashOutput') {
-      return {
-        behavior: 'deny',
-        message: 'Bash deshabilitado en este nivel de permisos. Confirmación interactiva pendiente (UI).',
-        interrupt: false,
-      };
+      return { behavior: 'allow', updatedInput: input };
     }
 
     if (toolName === 'WebFetch' || toolName === 'WebSearch') {
@@ -100,7 +99,9 @@ export function runAgent(opts: AgentRunOptions): Query {
     abortController: opts.abortController,
     pathToClaudeCodeExecutable: config.claudeCliPath,
     model: config.model,
-    permissionMode: 'default',
+    // 'acceptEdits' = auto mode: el SDK no espera approval de edits ni de comandos.
+    // canUseTool sigue corriendo como gate fino (workspace-bound writes, etc.).
+    permissionMode: 'acceptEdits',
     canUseTool: makeCanUseTool(cwd),
     mcpServers,
     systemPrompt: {
@@ -123,7 +124,7 @@ export function runAgent(opts: AgentRunOptions): Query {
       ].join('\n'),
     },
     tools: ALLOWED_TOOL_NAMES,
-    disallowedTools: ['Bash', 'KillBash', 'BashOutput', 'WebFetch', 'WebSearch', 'Task'],
+    disallowedTools: ['WebFetch', 'WebSearch', 'Task'],
     settingSources: config.skillSources,
     includePartialMessages: true,
     env: buildSafeEnv(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}) as Record<string, string>,

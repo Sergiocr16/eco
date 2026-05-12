@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { translateBackendError } from '@/lib/backend-errors';
+import { writeProfileUsername } from './useProfile';
 
 const SESSION_KEY = 'eco.session';
 
@@ -65,6 +66,10 @@ export function useAuth() {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  // Sync username a localStorage para que componentes globales (avatar, etc.)
+  // puedan derivar la inicial sin tener que recibir prop drilling de auth.
+  useEffect(() => { writeProfileUsername(state.username); }, [state.username]);
+
   const register = useCallback(async (payload: RegisterPayload): Promise<RegisterResult> => {
     try {
       const r = await apiFetch('/auth/register', {
@@ -75,7 +80,9 @@ export function useAuth() {
       const data = await r.json();
       if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
       writeSession(data.session);
-      setState({ status: 'authenticated', username: data.username, error: null });
+      // No transicionamos a 'authenticated' acá: la AuthScreen primero muestra
+      // la frase de recuperación. La transición la dispara el usuario llamando
+      // a refresh() al confirmar que la guardó.
       return { ok: true, username: data.username, recoveryPhrase: data.recoveryPhrase };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'Error' };
@@ -109,7 +116,8 @@ export function useAuth() {
       const data = await r.json();
       if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
       writeSession(data.session);
-      setState({ status: 'authenticated', username: data.username, error: null });
+      // Mismo motivo que en register(): no autenticamos hasta que el usuario
+      // confirme la nueva frase de recuperación; el confirm dispara refresh().
       return { ok: true, username: data.username, newRecoveryPhrase: data.newRecoveryPhrase };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'Error' };
@@ -122,5 +130,27 @@ export function useAuth() {
     setState((s) => ({ ...s, status: s.username ? 'needs_login' : 'no_user' }));
   }, []);
 
-  return { state, refresh, register, login, recover, logout };
+  // Bloquea la pantalla: invalida la sesión local y server, pero conserva el usuario.
+  // Al desbloquear, se pide el PIN (LoginView).
+  const lock = logout;
+
+  // Borra el usuario por completo (requiere PIN). Después queda 'no_user' → RegisterView.
+  const destroyUser = useCallback(async (pin: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+    try {
+      const r = await apiFetch('/auth/user', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      const data = await r.json();
+      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
+      writeSession(null);
+      setState({ status: 'no_user', username: null, error: null });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Error' };
+    }
+  }, []);
+
+  return { state, refresh, register, login, recover, logout, lock, destroyUser };
 }

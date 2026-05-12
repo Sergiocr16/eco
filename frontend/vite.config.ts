@@ -15,7 +15,9 @@ export default defineConfig({
     host: '127.0.0.1',
     strictPort: true,
     proxy: {
+      '/ws/pty': { target: 'ws://127.0.0.1:7000', ws: true, changeOrigin: false },
       '/ws': { target: 'ws://127.0.0.1:7000', ws: true, changeOrigin: false },
+      '/auth': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/health': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/info': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/tts': { target: 'http://127.0.0.1:7000', changeOrigin: false },
@@ -24,6 +26,9 @@ export default defineConfig({
       '/shell': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/file': { target: 'http://127.0.0.1:7000', changeOrigin: false },
       '/config': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/git': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/pty': { target: 'http://127.0.0.1:7000', changeOrigin: false },
+      '/voice': { target: 'http://127.0.0.1:7000', changeOrigin: false },
     },
   },
 });

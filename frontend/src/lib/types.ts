@@ -41,6 +41,9 @@ export type Bubble = {
   pinned: boolean;
   createdAt: number;
   updatedAt: number;
+  // True si hay un PTY (shell) abierto en el backend para esta burbuja. NO implica
+  // que esté ejecutando un comando — el shell zsh queda vivo entre comandos.
+  ptyOpen?: boolean;
 };
 
 export type BubbleAction =

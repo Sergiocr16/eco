@@ -52,7 +52,11 @@ export function AuthScreen({ authState, authActions }: Props) {
         {recoveryToShow ? (
           <ShowRecoveryView
             phrase={recoveryToShow}
-            onConfirm={() => setRecoveryToShow(null)}
+            onConfirm={() => {
+              setRecoveryToShow(null);
+              // Recién acá habilitamos el ingreso: el usuario confirmó que guardó la frase.
+              void authActions.refresh();
+            }}
             isReset={view === 'recover'}
           />
         ) : view === 'register' ? (

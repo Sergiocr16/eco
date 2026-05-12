@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Bubble, Message } from '@/lib/types';
 import { translate, loadLang } from '@/lib/i18n';
+import { apiFetch } from '@/lib/api';
 
 const STORAGE_KEY = 'eco.bubbles.v1';
 const ACTIVE_KEY = 'eco.bubbles.active';
@@ -74,6 +75,7 @@ export type UseBubblesResult = {
   setBubbleSessionId: (id: string, sessionId: string) => void;
   setBubbleMessages: (id: string, updater: (messages: Message[]) => Message[]) => void;
   setBubbleWorkspace: (id: string, workspace: string) => void;
+  setBubblePtyOpen: (id: string, open: boolean) => void;
 };
 
 export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
@@ -129,6 +131,12 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
       const remaining = bubbles.filter((b) => b.id !== id);
       return remaining[0]?.id ?? null;
     });
+    // Best-effort: matar el PTY que haya quedado corriendo en el backend.
+    void apiFetch('/pty/kill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bubbleId: id }),
+    }).catch(() => { /* noop */ });
   }, [bubbles]);
 
   const focusBubble = useCallback((id: string) => {
@@ -148,6 +156,10 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
 
   const setBubbleStatus = useCallback((id: string, status: Bubble['status']) => {
     setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, status } : b));
+  }, []);
+
+  const setBubblePtyOpen = useCallback((id: string, open: boolean) => {
+    setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, ptyOpen: open } : b));
   }, []);
 
   const setBubbleSessionId = useCallback((id: string, sessionId: string) => {
@@ -205,5 +217,6 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     setBubbleSessionId,
     setBubbleMessages,
     setBubbleWorkspace,
+    setBubblePtyOpen,
   };
 }

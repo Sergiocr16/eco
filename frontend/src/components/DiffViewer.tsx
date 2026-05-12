@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconX, IconDiff, IconExt } from '@/design/icons';
+import { IconX, IconDiff, IconSearch } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { useT } from '@/hooks/useI18n';
 import { translateBackendError } from '@/lib/backend-errors';
@@ -16,15 +16,21 @@ type Props = {
   open: boolean;
   path: string | null;
   workspace: string;
+  bubbleId?: string;
   onClose: () => void;
 };
 
-export function DiffViewer({ open, path, workspace, onClose }: Props) {
+export function DiffViewer({ open, path, workspace, bubbleId, onClose }: Props) {
   const t = useTokens();
   const tr = useT();
   const [result, setResult] = useState<DiffResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (open) setQuery('');
+  }, [open, path]);
 
   useEffect(() => {
     if (!open || !path) return;
@@ -35,7 +41,7 @@ export function DiffViewer({ open, path, workspace, onClose }: Props) {
     apiFetch('/file/diff', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, workspace }),
+      body: JSON.stringify({ path, workspace, ...(bubbleId ? { bubbleId } : {}) }),
     })
       .then(async (r) => {
         if (cancelled) return;
@@ -100,6 +106,32 @@ export function DiffViewer({ open, path, workspace, onClose }: Props) {
                 loading ? tr('diff.loading') : ''}
             </div>
           </div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 8px', borderRadius: 8,
+            background: t.bg2, border: `1px solid ${t.glassBorder}`,
+            color: t.text2,
+          }}>
+            <IconSearch size={12}/>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={tr('diff.search')}
+              spellCheck={false}
+              autoCorrect="off"
+              style={{
+                background: 'transparent', border: 0, outline: 'none',
+                fontFamily: t.fontMono, fontSize: 12, color: t.text0,
+                width: 180,
+              }}
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery('')}
+                style={{ background: 'transparent', border: 0, color: t.text3, cursor: 'pointer', padding: 0 }}>
+                <IconX size={12}/>
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -128,7 +160,7 @@ export function DiffViewer({ open, path, workspace, onClose }: Props) {
             </div>
           )}
           {result?.hasChanges && (
-            <DiffRender diff={result.diff} mode={result.mode}/>
+            <DiffRender diff={result.diff} mode={result.mode} query={query}/>
           )}
         </div>
       </div>
@@ -136,8 +168,77 @@ export function DiffViewer({ open, path, workspace, onClose }: Props) {
   );
 }
 
-function DiffRender({ diff, mode }: { diff: string; mode: DiffResult['mode'] }) {
+// ─── Parser de unified diff a hunks con líneas izquierda/derecha ───────────
+type DiffSide = 'context' | 'added' | 'deleted';
+type DiffRow = {
+  oldNum: number | null;
+  newNum: number | null;
+  oldText: string | null;
+  newText: string | null;
+  side: DiffSide;
+};
+type DiffHunk = { header: string; rows: DiffRow[] };
+
+function parseUnifiedDiff(diff: string): DiffHunk[] {
+  const lines = diff.split('\n');
+  const hunks: DiffHunk[] = [];
+  let cur: { header: string; oldStart: number; newStart: number; rows: DiffRow[] } | null = null;
+  let oldN = 0, newN = 0;
+  const pendingDel: { num: number; text: string }[] = [];
+  const flushPendingDel = () => {
+    for (const d of pendingDel) {
+      cur!.rows.push({ oldNum: d.num, newNum: null, oldText: d.text, newText: null, side: 'deleted' });
+    }
+    pendingDel.length = 0;
+  };
+
+  for (const raw of lines) {
+    if (raw.startsWith('diff --git') || raw.startsWith('index ') || raw.startsWith('new file') ||
+        raw.startsWith('deleted file') || raw.startsWith('--- ') || raw.startsWith('+++ ') ||
+        raw.startsWith('similarity ') || raw.startsWith('rename ')) {
+      continue;
+    }
+    if (raw.startsWith('@@')) {
+      if (cur) { flushPendingDel(); hunks.push({ header: cur.header, rows: cur.rows }); }
+      // formato: @@ -A,B +C,D @@ ...
+      const m = /^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/.exec(raw);
+      const oldStart = m ? Number(m[1]) : 1;
+      const newStart = m ? Number(m[2]) : 1;
+      oldN = oldStart; newN = newStart;
+      cur = { header: raw, oldStart, newStart, rows: [] };
+      continue;
+    }
+    if (!cur) continue;
+    if (raw.startsWith('+')) {
+      // Si tenemos una deleción "espejo" en cola, las pareamos en una sola fila.
+      const pair = pendingDel.shift();
+      cur.rows.push({
+        oldNum: pair?.num ?? null,
+        newNum: newN,
+        oldText: pair?.text ?? null,
+        newText: raw.slice(1),
+        side: pair ? 'added' /* modificada */ : 'added',
+      });
+      // Si fue una mod par, marcamos ambos como modificación (re-uso 'added' visualmente).
+      newN += 1;
+    } else if (raw.startsWith('-')) {
+      pendingDel.push({ num: oldN, text: raw.slice(1) });
+      oldN += 1;
+    } else {
+      flushPendingDel();
+      const text = raw.startsWith(' ') ? raw.slice(1) : raw;
+      cur.rows.push({ oldNum: oldN, newNum: newN, oldText: text, newText: text, side: 'context' });
+      oldN += 1; newN += 1;
+    }
+  }
+  if (cur) { flushPendingDel(); hunks.push({ header: cur.header, rows: cur.rows }); }
+  return hunks;
+}
+
+function DiffRender({ diff, mode, query }: { diff: string; mode: DiffResult['mode']; query: string }) {
   const t = useTokens();
+  const q = query.trim().toLowerCase();
+
   if (mode === 'plain') {
     return (
       <pre style={{
@@ -145,51 +246,156 @@ function DiffRender({ diff, mode }: { diff: string; mode: DiffResult['mode'] }) 
         fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.6,
         color: t.text1, whiteSpace: 'pre',
         overflow: 'auto',
-      }}>{diff}</pre>
+      }}>{highlightInPre(diff, q, t)}</pre>
     );
   }
-  const lines = diff.split('\n');
+
+  const allHunks = useMemo(() => parseUnifiedDiff(diff), [diff]);
+  // Filtrar: dejamos hunks que tienen al menos una fila con match.
+  const visibleHunks = useMemo(() => {
+    if (!q) return allHunks;
+    return allHunks
+      .map((h) => ({
+        ...h,
+        rows: h.rows.filter((r) =>
+          (r.oldText ?? '').toLowerCase().includes(q) ||
+          (r.newText ?? '').toLowerCase().includes(q)
+        ),
+      }))
+      .filter((h) => h.rows.length > 0);
+  }, [allHunks, q]);
+
+  if (q && visibleHunks.length === 0) {
+    return (
+      <div style={{ padding: 24, fontSize: 13, color: t.text2 }}>
+        No hay coincidencias para «{query}».
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {lines.map((line, i) => <DiffLine key={i} line={line}/>)}
+      {visibleHunks.map((h, i) => (
+        <div key={i} style={{ marginBottom: i === visibleHunks.length - 1 ? 0 : 8 }}>
+          <div style={{
+            padding: '6px 12px',
+            background: `color-mix(in oklch, oklch(70% 0.14 240) 8%, transparent)`,
+            color: 'oklch(70% 0.14 240)',
+            fontFamily: t.fontMono, fontSize: 11.5,
+            borderTop: `1px solid ${t.glassBorder}`,
+            borderBottom: `1px solid ${t.glassBorder}`,
+          }}>{h.header}</div>
+          <table style={{
+            width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed',
+            fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.55,
+          }}>
+            <colgroup>
+              <col style={{ width: 44 }}/>
+              <col/>
+              <col style={{ width: 44 }}/>
+              <col/>
+            </colgroup>
+            <tbody>
+              {h.rows.map((r, j) => <DiffRowView key={j} row={r} query={q}/>)}
+            </tbody>
+          </table>
+        </div>
+      ))}
     </div>
   );
 }
 
-function DiffLine({ line }: { line: string }) {
-  const t = useTokens();
-  let color = t.text1;
-  let bg = 'transparent';
-  let prefix = ' ';
-  if (line.startsWith('+++') || line.startsWith('---')) {
-    color = t.text2;
-    bg = `color-mix(in oklch, ${t.text0} 5%, transparent)`;
-  } else if (line.startsWith('@@')) {
-    color = 'oklch(70% 0.14 240)';
-    bg = `color-mix(in oklch, oklch(70% 0.14 240) 8%, transparent)`;
-  } else if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted file')) {
-    color = t.text3;
-  } else if (line.startsWith('+')) {
-    color = t.ok;
-    bg = `color-mix(in oklch, ${t.ok} 9%, transparent)`;
-    prefix = '+';
-  } else if (line.startsWith('-')) {
-    color = t.err;
-    bg = `color-mix(in oklch, ${t.err} 9%, transparent)`;
-    prefix = '-';
+// Resalta los matches en celdas split.
+function highlightMatch(text: string, q: string): React.ReactNode {
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(q, i);
+    if (idx === -1) { out.push(text.slice(i)); break; }
+    if (idx > i) out.push(text.slice(i, idx));
+    out.push(
+      <mark key={idx} style={{
+        background: 'oklch(85% 0.18 90 / 0.55)',
+        color: 'inherit', padding: 0, borderRadius: 2,
+      }}>{text.slice(idx, idx + q.length)}</mark>
+    );
+    i = idx + q.length;
   }
-  void prefix;
-  return (
-    <div style={{
-      fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.55,
-      color, background: bg,
-      padding: '0 16px',
+  return out;
+}
+
+function highlightInPre(text: string, q: string, t: ReturnType<typeof useTokens>): React.ReactNode {
+  if (!q) return text;
+  // Para el modo plain devolvemos los fragments.
+  void t;
+  return highlightMatch(text, q);
+}
+
+function DiffRowView({ row, query }: { row: DiffRow; query: string }) {
+  const t = useTokens();
+  const leftHas = row.oldText !== null;
+  const rightHas = row.newText !== null;
+  // Una fila pareada con texto a ambos lados que difieren = modificación.
+  const isMod = leftHas && rightHas && row.oldText !== row.newText;
+  const leftKind: DiffSide = leftHas && (row.side === 'deleted' || isMod) ? 'deleted' : 'context';
+  const rightKind: DiffSide = rightHas && (row.side === 'added' || isMod) ? 'added' : 'context';
+
+  const cellStyle = (kind: DiffSide): React.CSSProperties => {
+    const bg = kind === 'added'
+      ? `color-mix(in oklch, ${t.ok} 12%, transparent)`
+      : kind === 'deleted'
+        ? `color-mix(in oklch, ${t.err} 12%, transparent)`
+        : 'transparent';
+    const fg = kind === 'added' ? t.ok
+      : kind === 'deleted' ? t.err
+      : t.text1;
+    return {
+      padding: '0 10px',
       whiteSpace: 'pre',
-      borderLeft: line.startsWith('+') ? `2px solid ${t.ok}` :
-                  line.startsWith('-') ? `2px solid ${t.err}` :
-                  '2px solid transparent',
-    }}>{line || ' '}</div>
+      background: bg, color: fg,
+      borderRight: `1px solid ${t.glassBorder}`,
+      verticalAlign: 'top',
+      overflow: 'hidden', textOverflow: 'ellipsis',
+    };
+  };
+  const numStyle = (kind: DiffSide): React.CSSProperties => {
+    const bg = kind === 'added'
+      ? `color-mix(in oklch, ${t.ok} 18%, transparent)`
+      : kind === 'deleted'
+        ? `color-mix(in oklch, ${t.err} 18%, transparent)`
+        : `color-mix(in oklch, ${t.text0} 4%, transparent)`;
+    return {
+      width: 44, padding: '0 6px', textAlign: 'right',
+      color: t.text3, background: bg,
+      borderRight: `1px solid ${t.glassBorder}`,
+      userSelect: 'none', verticalAlign: 'top',
+      fontVariantNumeric: 'tabular-nums',
+    };
+  };
+
+  return (
+    <tr>
+      <td style={numStyle(leftKind)}>{row.oldNum ?? ''}</td>
+      <td style={cellStyle(leftKind)}>
+        {leftHas ? (
+          <span style={{ display: 'inline-block', width: 14, color: t.text3 }}>
+            {leftKind === 'deleted' ? '−' : ' '}
+          </span>
+        ) : null}
+        <span>{leftHas ? highlightMatch(row.oldText ?? '', query) : ''}</span>
+      </td>
+      <td style={numStyle(rightKind)}>{row.newNum ?? ''}</td>
+      <td style={cellStyle(rightKind)}>
+        {rightHas ? (
+          <span style={{ display: 'inline-block', width: 14, color: t.text3 }}>
+            {rightKind === 'added' ? '+' : ' '}
+          </span>
+        ) : null}
+        <span>{rightHas ? highlightMatch(row.newText ?? '', query) : ''}</span>
+      </td>
+    </tr>
   );
 }
 
-export { IconExt };

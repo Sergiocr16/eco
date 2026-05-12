@@ -2,8 +2,11 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import helmet from 'helmet';
 import { createServer } from 'node:http';
-import { config } from './config.js';
+import { config, isAllowedWorkspace } from './config.js';
 import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
+import { attachPtyServer, killBubblePty } from './pty-server.js';
+import { getWorktree, removeWorktree, ensureWorktree } from './worktree-manager.js';
+import * as gitOps from './git-ops.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
 import { listSkills } from './skills.js';
@@ -37,7 +40,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
     origin: config.allowedOrigins,
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Eco-Client'],
     credentials: false,
     maxAge: 600,
@@ -246,6 +249,46 @@ app.post('/voice/transcribed', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+app.get('/file/changes', async (req: Request, res: Response) => {
+  const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : '';
+  const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
+  if (!workspace) return res.json({ workspace: '', files: [], git: false });
+  if (!isAllowedWorkspace(workspace)) {
+    return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
+  }
+  // Si la burbuja tiene worktree, sus cambios son los del worktree (no del repo padre).
+  // Si todavía no se creó (Files tab abierto antes que la primera prompt o shell),
+  // lo creamos lazy acá.
+  const effective = bubbleId ? ensureWorktree(bubbleId, workspace) : workspace;
+  const { spawn } = await import('node:child_process');
+  const proc = spawn('git', ['-C', effective, 'status', '--porcelain=v1', '--untracked-files=all'], {
+    timeout: 5000,
+  });
+  let out = '';
+  proc.stdout.on('data', (d) => { out += d.toString(); });
+  proc.on('close', (code) => {
+    if (code !== 0) return res.json({ workspace, files: [], git: false });
+    const files: { path: string; change: 'created' | 'modified' | 'deleted' | 'renamed' }[] = [];
+    for (const line of out.split('\n')) {
+      if (!line) continue;
+      // formato: XY <path>  (X=index, Y=worktree). "??" = untracked.
+      const xy = line.slice(0, 2);
+      const path = line.slice(3).trim();
+      if (!path) continue;
+      let change: 'created' | 'modified' | 'deleted' | 'renamed';
+      if (xy === '??' || xy.includes('A')) change = 'created';
+      else if (xy.includes('D')) change = 'deleted';
+      else if (xy.includes('R')) change = 'renamed';
+      else change = 'modified';
+      // Para renames "R  old -> new", quedate con el destino.
+      const finalPath = path.includes(' -> ') ? path.split(' -> ').pop()! : path;
+      files.push({ path: finalPath, change });
+    }
+    res.json({ workspace: effective, files, git: true });
+  });
+  proc.on('error', () => res.json({ workspace: effective, files: [], git: false }));
+});
+
 app.post('/file/diff', async (req: Request, res: Response) => {
   const parsed = DiffRequestSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
@@ -257,6 +300,83 @@ app.post('/file/diff', async (req: Request, res: Response) => {
     const message = err instanceof Error ? err.message : 'Error';
     res.status(status).json({ error: 'file.diff_failed', message });
   }
+});
+
+// ─── Git ops por burbuja (operan dentro del worktree de la burbuja) ────────
+function effectiveWorkspaceFromReq(req: Request, res: Response): string | null {
+  const workspace = (typeof req.body?.workspace === 'string' ? req.body.workspace : null)
+    ?? (typeof req.query.workspace === 'string' ? req.query.workspace : null);
+  const bubbleId = (typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : null)
+    ?? (typeof req.query.bubbleId === 'string' ? req.query.bubbleId : null);
+  if (!workspace) {
+    errResponse(res, 400, 'http.invalid_body', 'workspace requerido');
+    return null;
+  }
+  if (!isAllowedWorkspace(workspace)) {
+    errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
+    return null;
+  }
+  return bubbleId ? ensureWorktree(bubbleId, workspace) : workspace;
+}
+
+app.get('/git/branches', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  res.json(gitOps.listBranches(dir));
+});
+
+app.post('/git/checkout', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const branch = typeof req.body?.branch === 'string' ? req.body.branch : '';
+  const create = req.body?.create === true;
+  if (!branch) return errResponse(res, 400, 'http.invalid_body', 'branch requerido');
+  res.json(gitOps.checkoutBranch(dir, branch, create));
+});
+
+app.post('/git/pull', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  res.json(gitOps.pull(dir));
+});
+
+app.post('/git/fetch', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  res.json(gitOps.fetch(dir));
+});
+
+app.post('/git/rename-branch', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const newName = typeof req.body?.newName === 'string' ? req.body.newName : '';
+  if (!newName) return errResponse(res, 400, 'http.invalid_body', 'newName requerido');
+  res.json(gitOps.renameBranch(dir, newName));
+});
+
+app.post('/git/commit-suggest', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const context = typeof req.body?.context === 'string' ? req.body.context : '';
+  res.json(gitOps.suggestCommitMessage(dir, context));
+});
+
+app.post('/git/commit', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const message = typeof req.body?.message === 'string' ? req.body.message : '';
+  if (!message) return errResponse(res, 400, 'http.invalid_body', 'message requerido');
+  res.json(gitOps.commitWithMessage(dir, message));
+});
+
+app.post('/pty/kill', (req: Request, res: Response) => {
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const killed = killBubblePty(bubbleId);
+  // El worktree de la burbuja también se libera; la rama eco/<id> queda
+  // viva en el repo padre para que el usuario pueda mergear si quiere.
+  const worktreeRemoved = removeWorktree(bubbleId);
+  res.json({ ok: true, killed, worktreeRemoved });
 });
 
 const shellConcurrency = { active: 0, max: 3 };
@@ -313,6 +433,7 @@ app.post('/tts', async (req: Request, res: Response) => {
 
 const server = createServer(app);
 attachWebSocket(server, authToken);
+attachPtyServer(server, authToken);
 
 server.listen(config.port, config.host, () => {
   console.log(`\n🟢 Eco backend listo`);

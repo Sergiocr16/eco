@@ -49,9 +49,32 @@ const FILLERS = new Set([
   'burbuja', 'burbujas', 'conversacion', 'conversaciones',
   'chat', 'chats', 'agente', 'agentes', 'ventana', 'ventanas',
   'terminal', 'terminales',
-  'a', 'al', 'a la', 'de', 'sobre', 'para', 'con', 'llamada', 'llamado',
-  'nueva', 'nuevo',
+  'a', 'al', 'a la', 'de', 'del', 'sobre', 'para', 'con', 'llamada', 'llamado',
+  'nueva', 'nuevo', 'nuevamente',
+  'que', 'es', 'sea', 'aqui', 'aca', 'alla', 'alli',
 ]);
+
+// Palabras de relleno discursivo / cortesía / clíticos al INICIO de un comando.
+// Se saltan para que «por favor abrime una conversación» = «abrime conversación»,
+// «necesito entrar a Aditum» = «entrar a Aditum», etc.
+// Importante: estas palabras NO deben coincidir con alias (no metas verbos acá).
+const LEADING_FILLERS = new Set([
+  'me', 'te', 'se',
+  'por', 'favor', 'porfa', 'porfis', 'plis', 'please',
+  'ahora', 'ya', 'tambien', 'tan', 'pues', 'bueno',
+  'eh', 'em', 'mmm', 'mm', 'che', 'oye', 'oi',
+  'a ver', 'ver', // "a ver entrá" → "entrá"
+  'necesito', 'necesitas', 'necesita',
+  'quiero', 'queres', 'queria', 'querria',
+  'podes', 'podras', 'podria', 'podrias', 'puedes', 'puede', 'pueden',
+  'hay', 'hace', 'falta',
+]);
+
+function skipLeadingFillers(tokens: string[]): { tokens: string[]; skipped: number } {
+  let i = 0;
+  while (i < tokens.length && LEADING_FILLERS.has(tokens[i]!)) i++;
+  return { tokens: tokens.slice(i), skipped: i };
+}
 
 // Alias → comando canónico
 const ALIASES: Record<string, string> = {
@@ -104,22 +127,44 @@ const ALIASES: Record<string, string> = {
   'fuerte': 'tts_louder', 'alto': 'tts_louder',
   'bajito': 'tts_quieter', 'bajo': 'tts_quieter',
 
-  // Burbujas
-  'abrir': 'create', 'abre': 'create', 'crear': 'create', 'crea': 'create',
-  'nueva': 'create', 'nuevo': 'create', 'iniciar': 'create', 'empezar': 'create',
-  'create': 'create',
+  // Burbujas — apertura / creación (smart: si existe con ese título, focusea; sino crea)
+  'abrir': 'create', 'abre': 'create', 'abrime': 'create', 'abreme': 'create',
+  'crear': 'create', 'crea': 'create', 'creame': 'create', 'creeme': 'create',
+  'nueva': 'create', 'nuevo': 'create',
+  'iniciar': 'create', 'inicia': 'create', 'empezar': 'create', 'empieza': 'create',
+  'arrancar': 'create', 'arranca': 'create', 'arrancame': 'create',
+  'lanzar': 'create', 'lanza': 'create', 'lanzame': 'create',
+  'levantar': 'create', 'levanta': 'create', 'levantame': 'create',
+  'agregar': 'create', 'agrega': 'create', 'agregame': 'create',
+  'sumar': 'create', 'suma': 'create',
+  // 'entrar' a una conversación = abrirla (si existe focusea, sino crea)
+  'entrar': 'create', 'entra': 'create', 'entrame': 'create', 'entrame en': 'create',
+  'ingresar': 'create', 'ingresa': 'create', 'ingresame': 'create',
+  'meterme': 'create', 'meteme': 'create', 'meter': 'create',
+  'create': 'create', 'open': 'create', 'start': 'create', 'new': 'create',
 
   'renombrar': 'rename', 'renombra': 'rename', 'rename': 'rename',
   'rebautizar': 'rename', 'rebautiza': 'rename',
+  'titular': 'rename', 'titula': 'rename',
+  'ponele': 'rename', 'llamala': 'rename', 'llamalo': 'rename',
 
-  'cerrar': 'close', 'cierra': 'close', 'borrar': 'close', 'borra': 'close',
-  'eliminar': 'close', 'elimina': 'close', 'close': 'close', 'sacar': 'close',
-  'destruir': 'close',
+  'cerrar': 'close', 'cierra': 'close', 'cerrame': 'close', 'cierrame': 'close',
+  'borrar': 'close', 'borra': 'close', 'borrame': 'close',
+  'eliminar': 'close', 'elimina': 'close', 'eliminame': 'close',
+  'close': 'close', 'sacar': 'close', 'sacame': 'close', 'saca': 'close',
+  'destruir': 'close', 'destruye': 'close',
+  'matar': 'close', 'mata': 'close', 'matala': 'close', 'matalo': 'close',
+  'tirar': 'close', 'tira': 'close',
 
-  'ir': 'goto', 've': 'goto', 'anda': 'goto', 'andate': 'goto',
-  'cambiar': 'goto', 'cambia': 'goto', 'focus': 'goto', 'enfocar': 'goto',
-  'enfoca': 'goto', 'mostrar': 'goto', 'mostrame': 'goto', 'muestrame': 'goto',
-  'llevame': 'goto', 'llevar': 'goto',
+  // 'ir/llevar/mostrar' a una burbuja existente
+  'ir': 'goto', 've': 'goto', 'vete': 'goto', 'anda': 'goto', 'andate': 'goto',
+  'cambiar': 'goto', 'cambia': 'goto', 'cambiame': 'goto',
+  'focus': 'goto', 'enfocar': 'goto', 'enfoca': 'goto', 'enfocame': 'goto',
+  'mostrar': 'goto', 'mostrame': 'goto', 'muestra': 'goto', 'muestrame': 'goto',
+  'llevame': 'goto', 'llevar': 'goto', 'lleva': 'goto',
+  'pasar': 'goto', 'pasa': 'goto', 'pasame': 'goto',
+  'volar': 'goto', 'vuela': 'goto', 'volame': 'goto',
+  'go': 'goto', 'goto': 'goto',
 
   'siguiente': 'next', 'next': 'next', 'proxima': 'next', 'proximo': 'next',
   'despues': 'next', 'avanzar': 'next', 'avanza': 'next',
@@ -180,11 +225,24 @@ export function parseMetaCommand(
   const text = rest.trim();
   if (!text) return { kind: 'unknown' };
 
-  // Tomamos la primera palabra como keyword
+  // 1) Normalizamos y partimos en tokens.
+  // 2) Saltamos rellenos de cortesía/clíticos al inicio ("por favor", "necesito", "me", etc.).
+  // 3) Buscamos el primer token que matchee un alias — así toleramos cosas como
+  //    "abrime una conversación", "necesito entrar a Aditum", "che ayudame y abrí X".
   const norm = normalize(text);
-  const tokens = norm.split(' ');
-  const firstToken = tokens[0] ?? '';
-  let commandKey = ALIASES[firstToken];
+  const allTokens = norm.split(' ');
+  const { tokens: afterLeading, skipped: leadingSkipped } = skipLeadingFillers(allTokens);
+
+  let keywordIdx = -1;
+  let commandKey: string | undefined;
+  for (let i = 0; i < afterLeading.length; i++) {
+    const t = afterLeading[i]!;
+    if (ALIASES[t]) {
+      commandKey = ALIASES[t];
+      keywordIdx = i;
+      break;
+    }
+  }
 
   if (!commandKey) return { kind: 'unknown' };
 
@@ -193,12 +251,16 @@ export function parseMetaCommand(
     commandKey = currentScreen === 'detail' ? 'tab_files' : 'files';
   }
 
-  // Argumento = resto del texto, con fillers removidos
-  const restTokens = tokens.slice(1);
+  // Argumento = resto del texto después del keyword, con fillers removidos.
+  // Los tokens previos al keyword (después de los leading fillers) los descartamos:
+  // ya fueron "soft fillers" que no eran palabras de cortesía pero tampoco verbos canónicos.
+  const restTokens = afterLeading.slice(keywordIdx + 1);
   const argRaw = stripQuotes(restTokens.join(' '));
   const argClean = dropFillers(restTokens).join(' ').trim();
-  // Conservamos el texto original con casing/acentos para el título (más bonito)
-  const titleFromOriginal = preserveCasing(rest, argRaw);
+  // Conservamos el texto original con casing/acentos para el título (más bonito).
+  // Calculamos el índice absoluto del keyword en allTokens para que preserveCasing arranque ahí.
+  const absoluteKeywordIdx = leadingSkipped + keywordIdx;
+  const titleFromOriginal = preserveCasingFromIndex(rest, absoluteKeywordIdx, argRaw);
 
   switch (commandKey) {
     case 'dashboard': return { kind: 'goto_dashboard' };
@@ -261,20 +323,20 @@ export function parseMetaCommand(
   }
 }
 
-// Conserva el casing del texto original al extraer el argumento.
-// Si el user escribió "Eco abrir Aditum", queremos "Aditum" no "aditum".
-function preserveCasing(originalText: string, normalizedArg: string): string {
+// Conserva el casing del texto original al extraer el argumento, sabiendo que
+// el keyword puede no ser el primer token (puede haber leading fillers antes).
+// `keywordIdx` = índice del token-keyword en el split por espacios del original
+// normalizado (alineado tras saltar leading fillers).
+function preserveCasingFromIndex(originalText: string, keywordIdx: number, normalizedArg: string): string {
   if (!normalizedArg) return '';
-  // Tomamos el sufijo del original después del primer token (la keyword)
   const trimmed = originalText.trim();
-  const firstSpace = trimmed.indexOf(' ');
-  if (firstSpace === -1) return '';
-  let argFromOriginal = trimmed.slice(firstSpace + 1).trim();
-  argFromOriginal = stripQuotes(argFromOriginal);
-
-  // Quitamos fillers manteniendo orden/casing del original
-  const words = argFromOriginal.split(/\s+/);
-  const filtered = words.filter((w) => !FILLERS.has(normalize(w)));
+  // Spliteamos preservando el casing original.
+  const words = trimmed.split(/\s+/);
+  if (keywordIdx + 1 >= words.length) return '';
+  const argWords = words.slice(keywordIdx + 1);
+  const joined = stripQuotes(argWords.join(' '));
+  // Quitamos fillers manteniendo orden/casing del original.
+  const filtered = joined.split(/\s+/).filter((w) => !FILLERS.has(normalize(w)));
   return filtered.join(' ').trim();
 }
 

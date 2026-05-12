@@ -12,7 +12,7 @@ import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
 import { emit as ecoEmit } from './lib/eco-bus';
-import { playWakeBeep, playDismissBeep } from './lib/wake-beep';
+import { getVoiceTarget, writeVoiceToPty } from './lib/voice-router';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
@@ -43,14 +43,13 @@ function AuthGate() {
   if (auth.state.status !== 'authenticated') {
     return <AuthScreen authState={auth.state} authActions={auth}/>;
   }
-  return <Shell/>;
+  return <Shell auth={auth}/>;
 }
 
-function Shell() {
+function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const t = useTokens();
   const { setMode } = useTheme();
   const { lang } = useI18n();
-  const tr = useT();
   const [wakeActive, setWakeActive] = useState(false);
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [screen, setScreen] = useState<Screen>('dashboard');
@@ -58,6 +57,7 @@ function Shell() {
   const [feedback, setFeedback] = useState<FeedbackPayload | null>(null);
   const [overlay, setOverlay] = useState<'status' | 'help' | null>(null);
   const [wsPickerForBubble, setWsPickerForBubble] = useState<string | null>(null);
+  const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
 
   const workspacesHook = useWorkspaces();
   const defaultWs = workspacesHook.list.workspaces[0] ?? '';
@@ -127,6 +127,15 @@ function Shell() {
         bubbles.setBubbleStatus(bubbleId, status);
       },
       onDone: (bubbleId) => bubbles.setBubbleStatus(bubbleId, 'idle'),
+      onPtyStatus: (bubbleId, running) => {
+        // El shell PTY siempre está "vivo" mientras la sesión exista (zsh queda
+        // esperando input). Si propagamos esto a bubble.status, la burbuja
+        // se queda en "Ejecutando" para siempre, lo cual es engañoso porque
+        // realmente no hay un comando corriendo. Lo trackeamos aparte como
+        // ptyOpen para una indicación visual eventual, sin tocar el status
+        // del agente.
+        bubbles.setBubblePtyOpen(bubbleId, running);
+      },
       onError: () => { /* ya manejado en socket.error */ },
       onClientAction: (sourceBubbleId, action) => {
         if (action.kind === 'open_bubble') {
@@ -144,6 +153,15 @@ function Shell() {
   function handleIncomingVoiceText(text: string) {
     const { isMeta, rest } = stripWakePrefix(text);
     const inBubble = screen === 'detail' && !!detailBubbleId;
+
+    // Caso 0: el sub-tab Shell del terminal pidió la voz para sí.
+    // Sólo desviamos voz "libre" (sin prefijo Eco) — los comandos meta siguen su flujo.
+    if (inBubble && !isMeta && getVoiceTarget() === 'pty') {
+      if (writeVoiceToPty(text + '\n')) {
+        clearWake();
+        return;
+      }
+    }
 
     // Caso 1: dentro de una burbuja, sin prefijo Eco → input a la conversación
     if (inBubble && !isMeta) {
@@ -165,11 +183,9 @@ function Shell() {
 
   function activateWake() {
     setWakeActive(true);
-    playWakeBeep();
     if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current);
     wakeTimerRef.current = setTimeout(() => {
       setWakeActive(false);
-      playDismissBeep();
       wakeTimerRef.current = null;
     }, 3000);
   }
@@ -362,6 +378,29 @@ function Shell() {
     setScreen('dashboard');
   }
 
+  function bubbleIsBusy(id: string): boolean {
+    const b = bubbles.bubbles.find((x) => x.id === id);
+    if (!b) return false;
+    return b.status === 'thinking' || b.status === 'executing' || b.status === 'running' || b.ptyOpen === true;
+  }
+
+  function requestCloseBubble(id: string, opts?: { afterClose?: () => void }) {
+    if (bubbleIsBusy(id)) {
+      setConfirmCloseId(id);
+      return;
+    }
+    bubbles.removeBubble(id);
+    opts?.afterClose?.();
+  }
+
+  function confirmCloseNow() {
+    if (!confirmCloseId) return;
+    const id = confirmCloseId;
+    setConfirmCloseId(null);
+    bubbles.removeBubble(id);
+    if (detailBubbleId === id) handleBackFromDetail();
+  }
+
   function handleMicToggle() {
     if (voice.state === 'off' || voice.state === 'unsupported') voice.start();
     else voice.stop();
@@ -411,6 +450,12 @@ function Shell() {
           screen={screen === 'detail' ? 'dashboard' : screen}
           onScreenChange={handleScreenChange}
           agentCount={activeCount}
+          username={auth.state.username}
+          onLock={auth.lock}
+          onDestroyUser={auth.destroyUser}
+          bubbles={bubbles.bubbles}
+          activeBubbleId={detailBubbleId ?? bubbles.activeBubbleId}
+          onOpenAgent={handleOpenAgent}
         />
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           <ScreenError error={socket.error}/>
@@ -420,10 +465,10 @@ function Shell() {
                     workspaces={workspacesHook.list.workspaces}
                     onBack={handleBackFromDetail}
                     onSend={handleAgentDetailSend}
+                    onInterrupt={socket.interrupt}
                     onRename={(title) => bubbles.renameBubble(detailBubble.id, title)}
                     onClose={() => {
-                      bubbles.removeBubble(detailBubble.id);
-                      handleBackFromDetail();
+                      requestCloseBubble(detailBubble.id, { afterClose: handleBackFromDetail });
                     }}
                     onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(detailBubble.id, ws)}
                     onMicToggle={handleMicToggle}
@@ -442,6 +487,7 @@ function Shell() {
                     activeBubbleId={bubbles.activeBubbleId}
                     voiceState={voiceStateForOrb}
                     listening={voice.state === 'listening'}
+                    wakeActive={wakeActive}
                     interimText={voice.interimText}
                     voiceError={voice.error}
                     onSend={handleDashboardSend}
@@ -450,7 +496,7 @@ function Shell() {
                     onCreateAgent={handleCreateAgent}
                     onFocus={(id) => bubbles.focusBubble(id)}
                     onRename={(id, title) => bubbles.renameBubble(id, title)}
-                    onRemove={(id) => bubbles.removeBubble(id)}
+                    onRemove={(id) => requestCloseBubble(id)}
                     onChangeWorkspace={(id, ws) => bubbles.setBubbleWorkspace(id, ws)}
                     availableWorkspaces={workspacesHook.list.workspaces}
                   />
@@ -458,7 +504,11 @@ function Shell() {
         </div>
       </div>
 
-      <WakeIndicator active={wakeActive} label={tr('wake.listening')}/>
+      <ConfirmCloseBubble
+        bubble={confirmCloseId ? bubbles.bubbles.find((b) => b.id === confirmCloseId) ?? null : null}
+        onCancel={() => setConfirmCloseId(null)}
+        onConfirm={confirmCloseNow}
+      />
       <CommandFeedback payload={feedback}/>
       <StatusOverlay
         open={overlay !== null}
@@ -481,37 +531,6 @@ function Shell() {
   );
 }
 
-function WakeIndicator({ active, label }: { active: boolean; label: string }) {
-  const t = useTokens();
-  return (
-    <div
-      aria-hidden={!active}
-      style={{
-        position: 'fixed', top: 14, left: '50%',
-        transform: `translate(-50%, ${active ? '0' : '-22px'}) scale(${active ? 1 : 0.94})`,
-        opacity: active ? 1 : 0,
-        transition: 'opacity 200ms ease, transform 240ms cubic-bezier(0.16, 1, 0.3, 1)',
-        zIndex: 210, pointerEvents: 'none',
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 14px',
-        background: t.glassBg,
-        backdropFilter: 'blur(40px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-        border: `1px solid color-mix(in oklch, ${t.accent} 40%, transparent)`,
-        borderRadius: 999,
-        boxShadow: `0 0 24px color-mix(in oklch, ${t.accent} 30%, transparent)`,
-        fontFamily: t.fontSans, fontSize: 12.5, color: t.text0, fontWeight: 500,
-      }}
-    >
-      <span style={{
-        width: 8, height: 8, borderRadius: '50%', background: t.accent,
-        animation: active ? 'eco-shimmer 0.9s ease-in-out infinite' : 'none',
-        boxShadow: `0 0 8px ${t.accent}`,
-      }}/>
-      <span>{label}</span>
-    </div>
-  );
-}
 
 function ScreenError({ error }: { error: string | null }) {
   const t = useTokens();
@@ -583,4 +602,79 @@ function relTime(ts: number): string {
   if (m < 60) return `${m}m`;
   if (m < 60 * 24) return `${Math.round(m / 60)}h`;
   return `${Math.round(m / (60 * 24))}d`;
+}
+
+function ConfirmCloseBubble({
+  bubble, onCancel, onConfirm,
+}: {
+  bubble: Bubble | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useTokens();
+  useEffect(() => {
+    if (!bubble) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+      else if (e.key === 'Enter') onConfirm();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [bubble, onCancel, onConfirm]);
+  if (!bubble) return null;
+  const reason = bubble.status === 'thinking' ? 'pensando'
+    : bubble.status === 'executing' ? 'ejecutando'
+    : bubble.status === 'running' ? 'corriendo'
+    : 'con shell abierta';
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 230,
+        background: 'rgba(0,0,0,0.55)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(420px, 100%)',
+          background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
+          borderRadius: 18, boxShadow: t.shadowLg,
+          padding: 24,
+        }}>
+        <h2 style={{
+          margin: 0, fontSize: 17, fontWeight: 600, color: t.text0, letterSpacing: -0.3,
+        }}>¿Cerrar «{bubble.title}»?</h2>
+        <p style={{ margin: '8px 0 18px', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
+          La burbuja está {reason}. Si la cerrás ahora, se interrumpe el trabajo
+          en curso y se libera su worktree.
+        </p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              padding: '8px 14px', borderRadius: 10,
+              background: t.bg3, color: t.text0,
+              border: `1px solid ${t.glassBorder}`,
+              cursor: 'pointer',
+              fontFamily: t.fontSans, fontSize: 13,
+            }}>Cancelar</button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            style={{
+              padding: '8px 14px', borderRadius: 10,
+              background: t.err, color: t.accentOn,
+              border: 0, cursor: 'pointer',
+              fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
+              boxShadow: `0 0 18px color-mix(in oklch, ${t.err} 30%, transparent)`,
+            }}>Cerrar igual</button>
+        </div>
+      </div>
+    </div>
+  );
 }

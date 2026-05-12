@@ -133,6 +133,7 @@ function StatusRow({ bubble, onSelect }: { bubble: Bubble; onSelect: () => void 
     done: tr('state.done'),
     error: tr('state.error'),
     thinking: tr('state.thinking'),
+    executing: tr('state.executing'),
   };
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);

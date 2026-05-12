@@ -2,14 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useTokens } from '@/design/theme';
 import { DiffViewer } from '@/components/DiffViewer';
+import { RealTerminal } from '@/components/RealTerminal';
+import { SkillsPicker } from '@/components/SkillsPicker';
+import type { SkillInfo } from '@/hooks/useSkills';
+import { useProfile } from '@/hooks/useProfile';
+import { setVoiceTarget } from '@/lib/voice-router';
+import { useGitChanges } from '@/hooks/useGitChanges';
+import { BranchPicker } from '@/components/BranchPicker';
 import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore,
-  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic,
-  IconCheck, IconX, IconBolt, IconDiff, IconExt, IconShield,
+  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff,
+  IconCheck, IconX, IconBolt, IconDiff,
   IconEdit, IconFolder, IconTrash, IconCopy,
   type IconProps,
 } from '@/design/icons';
@@ -129,6 +136,7 @@ type Props = {
   workspaces: string[];
   onBack: () => void;
   onSend: (text: string) => void;
+  onInterrupt: () => void;
   onRename: (title: string) => void;
   onClose: () => void;
   onChangeWorkspace: (workspace: string) => void;
@@ -140,7 +148,7 @@ type Props = {
 type Tab = 'chat' | 'terminal' | 'files' | 'plan';
 
 export function AgentDetail({
-  bubble, workspaces, onBack, onSend, onRename, onClose, onChangeWorkspace,
+  bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
   onMicToggle, listening, voiceInterim,
 }: Props) {
   const t = useTokens();
@@ -154,6 +162,7 @@ export function AgentDetail({
     done: tr('state.done'),
     error: tr('state.error'),
     thinking: tr('state.thinking'),
+    executing: tr('state.executing'),
   };
   const [tab, setTab] = useState<Tab>('chat');
   const [renaming, setRenaming] = useState(false);
@@ -170,7 +179,19 @@ export function AgentDetail({
     setRenaming(false);
   }
 
-  const filesChanged = collectFilesChanged(bubble);
+  const agentFiles = collectFilesChanged(bubble);
+  const gitChanges = useGitChanges(bubble.workspace, bubble.id);
+  const filesChanged = useMemo(() => {
+    const map = new Map<string, FileChange>();
+    for (const f of agentFiles) map.set(f.path, f);
+    const ws = bubble.workspace;
+    for (const g of gitChanges) {
+      // gitChanges paths ya vienen absolutos (el hook los expande)
+      if (!map.has(g.path)) map.set(g.path, { path: g.path, change: g.change, agent: 'git' });
+    }
+    void ws;
+    return [...map.values()];
+  }, [agentFiles, gitChanges, bubble.workspace]);
 
   // Comandos por voz: cambiar tab desde fuera del componente.
   useEffect(() => ecoOn('eco:switch_tab', ({ tab }) => setTab(tab)), []);
@@ -227,7 +248,7 @@ export function AgentDetail({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 6, position: 'relative' }}>
+        <div style={{ display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
           <Btn
             icon={listening ? IconStop : IconMic}
             kind={listening ? 'primary' : 'secondary'}
@@ -253,6 +274,7 @@ export function AgentDetail({
       </div>
 
       <div style={{
+        position: 'relative',
         display: 'flex', gap: 2, padding: '0 24px',
         borderBottom: `1px solid ${t.glassBorder}`,
       }}>
@@ -260,6 +282,10 @@ export function AgentDetail({
         <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
         <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label={tr('detail.tab.files')} icon={IconFile} badge={filesChanged.length}/>
         <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
+        <SkillsPicker
+          workspace={bubble.workspace}
+          onRun={(skill) => onSend(buildSkillPrompt(skill))}
+        />
       </div>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -268,16 +294,17 @@ export function AgentDetail({
             <ChatPanel
               bubble={bubble}
               onSend={onSend}
+              onInterrupt={onInterrupt}
               onMicToggle={onMicToggle}
               listening={listening}
               voiceInterim={voiceInterim}
             />
           )}
           {tab === 'terminal' && <TerminalPanel bubble={bubble}/>}
-          {tab === 'files' && <FilesPanel files={filesChanged} workspace={bubble.workspace}/>}
+          {tab === 'files' && <FilesPanel files={filesChanged} workspace={bubble.workspace} bubbleId={bubble.id}/>}
           {tab === 'plan' && <PlanPanel bubble={bubble}/>}
         </div>
-        <AgentSidebar bubble={bubble}/>
+        <AgentSidebar bubble={bubble} onSend={onSend}/>
       </div>
     </div>
   );
@@ -330,10 +357,11 @@ function TabBtn({ active, onClick, label, icon: Icon, badge }: {
 }
 
 function ChatPanel({
-  bubble, onSend, onMicToggle, listening, voiceInterim,
+  bubble, onSend, onInterrupt, onMicToggle, listening, voiceInterim,
 }: {
   bubble: Bubble;
   onSend: (text: string) => void;
+  onInterrupt: () => void;
   onMicToggle: () => void;
   listening: boolean;
   voiceInterim: string;
@@ -426,25 +454,42 @@ function ChatPanel({
             }}
           />
           <IconBtn
-            icon={listening ? IconStop : IconMic}
+            icon={listening ? IconMicOff : IconMic}
             size={32}
             active={listening}
             title={listening ? tr('detail.btn.listen_off_title') : tr('detail.btn.listen_on_title')}
             onClick={onMicToggle}
           />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!draft.trim()}
-            style={{
-              width: 32, height: 32, borderRadius: 10,
-              background: draft.trim() ? t.accent : t.bg3,
-              color: draft.trim() ? t.accentOn : t.text3,
-              border: 0, cursor: draft.trim() ? 'pointer' : 'not-allowed',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-            <IconSend size={14}/>
-          </button>
+          {bubble.status === 'thinking' || bubble.status === 'executing' || bubble.status === 'running' ? (
+            <button
+              type="button"
+              onClick={onInterrupt}
+              title={tr('detail.btn.interrupt')}
+              style={{
+                width: 32, height: 32, borderRadius: 10,
+                background: t.err,
+                color: t.accentOn,
+                border: 0, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 0 12px color-mix(in oklch, ${t.err} 35%, transparent)`,
+              }}>
+              <IconStop size={14}/>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!draft.trim()}
+              style={{
+                width: 32, height: 32, borderRadius: 10,
+                background: draft.trim() ? t.accent : t.bg3,
+                color: draft.trim() ? t.accentOn : t.text3,
+                border: 0, cursor: draft.trim() ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+              <IconSend size={14}/>
+            </button>
+          )}
         </Glass>
         {suggestions.suggestions.length > 0 && (
           <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
@@ -470,17 +515,31 @@ function ChatPanel({
 function ChatBubble({ msg, agent, index }: { msg: Message; agent: string; index: number }) {
   const t = useTokens();
   const tr = useT();
+  const profile = useProfile();
   const isUser = msg.role === 'user';
 
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       {isUser ? (
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%',
-          background: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: t.accentOn, fontWeight: 500, fontSize: 13, flexShrink: 0,
-        }}>{tr('detail.chat.you')}</div>
+        profile.photo ? (
+          <img
+            src={profile.photo}
+            alt={profile.username ?? tr('detail.chat.you')}
+            style={{
+              width: 32, height: 32, borderRadius: '50%',
+              objectFit: 'cover', flexShrink: 0,
+              border: `0.5px solid ${t.glassBorder}`,
+            }}
+          />
+        ) : (
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            background: t.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: t.accentOn, fontWeight: 500, fontSize: 14, flexShrink: 0,
+            letterSpacing: -0.3,
+          }}>{profile.username ? profile.initial : tr('detail.chat.you')}</div>
+        )
       ) : (
         <div style={{
           width: 32, height: 32, borderRadius: '50%',
@@ -624,6 +683,111 @@ type TermLine =
   | { kind: 'meta'; text: string };
 
 function TerminalPanel({ bubble }: { bubble: Bubble }) {
+  const t = useTokens();
+  const [subTab, setSubTab] = useState<'shell' | 'agent' | 'cmds'>('shell');
+  useEffect(() => {
+    setVoiceTarget(subTab === 'shell' ? 'pty' : 'chat');
+    return () => { setVoiceTarget('chat'); };
+  }, [subTab]);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div style={{
+        display: 'flex', gap: 4, padding: '8px 10px',
+        borderBottom: `1px solid ${t.glassBorder}`,
+        background: t.bg1,
+      }}>
+        <SubTabBtn active={subTab === 'shell'} onClick={() => setSubTab('shell')}>Shell</SubTabBtn>
+        <SubTabBtn active={subTab === 'agent'} onClick={() => setSubTab('agent')}>Agente</SubTabBtn>
+        <SubTabBtn active={subTab === 'cmds'} onClick={() => setSubTab('cmds')}>Comandos</SubTabBtn>
+      </div>
+      <div style={{
+        flex: 1, minHeight: 0, position: 'relative',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {subTab === 'shell' && (
+          <RealTerminal workspace={bubble.workspace} bubbleId={bubble.id} />
+        )}
+        {subTab === 'agent' && <AgentBashLog bubble={bubble}/>}
+        {subTab === 'cmds' && <SimulatedTerminal bubble={bubble}/>}
+      </div>
+    </div>
+  );
+}
+
+function SubTabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  const t = useTokens();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '6px 12px', borderRadius: 8, border: 0, cursor: 'pointer',
+        background: active ? t.bg3 : 'transparent',
+        color: active ? t.accent : t.text2,
+        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
+        transition: 'background 140ms, color 140ms',
+      }}>{children}</button>
+  );
+}
+
+function AgentBashLog({ bubble }: { bubble: Bubble }) {
+  const t = useTokens();
+  const calls = bubble.messages.flatMap((m) => (m.toolCalls ?? []).filter((tc) => tc.name === 'Bash'));
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [calls.length]);
+  if (calls.length === 0) {
+    return (
+      <div style={{
+        padding: 24, color: t.text3, fontSize: 12.5,
+        fontFamily: t.fontSans,
+      }}>
+        El agente no ha ejecutado comandos de Bash todavía en esta conversación.
+      </div>
+    );
+  }
+  return (
+    <div ref={scrollRef} style={{
+      height: '100%', overflow: 'auto', padding: '14px 20px',
+      fontFamily: t.fontMono, fontSize: 12.5, lineHeight: 1.55,
+      background: t.bg0,
+    }}>
+      {calls.map((tc) => {
+        const cmd = typeof tc.input.command === 'string' ? tc.input.command : '';
+        const desc = typeof tc.input.description === 'string' ? tc.input.description : '';
+        const out = tc.output ?? '';
+        const statusColor =
+          tc.status === 'success' ? t.ok :
+          tc.status === 'error' ? t.err :
+          tc.status === 'denied' ? t.text3 :
+          t.accent;
+        return (
+          <div key={tc.id} style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%', background: statusColor,
+                animation: tc.status === 'running' ? 'eco-shimmer 0.9s ease-in-out infinite' : 'none',
+              }}/>
+              <span style={{ color: t.accent }}>$</span>
+              <span style={{ color: t.text0, whiteSpace: 'pre-wrap' }}>{cmd}</span>
+            </div>
+            {desc && <div style={{ color: t.text3, fontSize: 11, marginLeft: 14 }}>{desc}</div>}
+            {out && (
+              <pre style={{
+                margin: '4px 0 0 14px', padding: 0,
+                color: t.text1, whiteSpace: 'pre-wrap',
+                fontFamily: 'inherit', fontSize: 'inherit',
+              }}>{out}</pre>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SimulatedTerminal({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
   const tr = useT();
   const [lines, setLines] = useState<TermLine[]>(() => [
@@ -855,7 +1019,7 @@ function normalizePosixPath(p: string): string {
   return '/' + out.join('/');
 }
 
-function FilesPanel({ files, workspace }: { files: FileChange[]; workspace: string }) {
+function FilesPanel({ files, workspace, bubbleId }: { files: FileChange[]; workspace: string; bubbleId: string }) {
   const t = useTokens();
   const tr = useT();
   const [diffPath, setDiffPath] = useState<string | null>(null);
@@ -892,8 +1056,7 @@ function FilesPanel({ files, workspace }: { files: FileChange[]; workspace: stri
                   <Pill color={f.change === 'created' ? t.ok : t.accent}>{f.change === 'created' ? tr('detail.files.created') : tr('detail.files.modified_one')}</Pill>
                 </div>
               </div>
-              <Btn kind="ghost" size="sm" icon={IconDiff} onClick={() => setDiffPath(f.path)}>{tr('files.diff_btn')}</Btn>
-              <IconBtn icon={IconExt} size={28} title={tr('detail.files.open_editor')}/>
+              <Btn kind="secondary" size="sm" icon={IconDiff} onClick={() => setDiffPath(f.path)}>{tr('files.diff_btn')}</Btn>
             </Glass>
           ))}
         </div>
@@ -902,6 +1065,7 @@ function FilesPanel({ files, workspace }: { files: FileChange[]; workspace: stri
         open={!!diffPath}
         path={diffPath}
         workspace={workspace}
+        bubbleId={bubbleId}
         onClose={() => setDiffPath(null)}
       />
     </>
@@ -995,7 +1159,186 @@ function PlanPanel({ bubble }: { bubble: Bubble }) {
   );
 }
 
-function AgentSidebar({ bubble }: { bubble: Bubble }) {
+function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
+  const t = useTokens();
+  type Phase = 'idle' | 'suggesting' | 'preview' | 'committing' | 'done' | 'error';
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [extra, setExtra] = useState('');
+  const [message, setMessage] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [commitResult, setCommitResult] = useState<string | null>(null);
+
+  async function suggest() {
+    setErr(null); setCommitResult(null); setPhase('suggesting');
+    try {
+      const r = await apiFetch('/git/commit-suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace, bubbleId, context: extra.trim() }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.ok) { setMessage(d.message ?? ''); setPhase('preview'); }
+      else { setErr(d.error || 'No se pudo generar'); setPhase('error'); }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error'); setPhase('error');
+    }
+  }
+
+  async function commit() {
+    if (!message.trim()) return;
+    setErr(null); setPhase('committing');
+    try {
+      const r = await apiFetch('/git/commit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace, bubbleId, message }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.ok) {
+        setCommitResult(d.message ?? 'Commit creado');
+        setPhase('done');
+        setMessage(''); setExtra('');
+      } else {
+        setErr(d.error || 'Commit falló'); setPhase('error');
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error'); setPhase('error');
+    }
+  }
+
+  function reset() {
+    setPhase('idle'); setMessage(''); setExtra(''); setErr(null); setCommitResult(null);
+  }
+
+  return (
+    <Glass radius={10} style={{ padding: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 6,
+          background: t.accentFaint, color: t.accent,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <IconBolt size={11}/>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>Commit con AI</div>
+          <div style={{ fontSize: 10, color: t.text3, marginTop: 0 }}>
+            Analiza el diff y propone mensaje
+          </div>
+        </div>
+      </div>
+
+      {phase === 'idle' || phase === 'error' || phase === 'done' ? (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {phase === 'done' && commitResult && (
+            <div style={{
+              padding: '6px 8px', borderRadius: 6,
+              background: `color-mix(in oklch, ${t.ok} 12%, transparent)`,
+              color: t.ok, fontFamily: t.fontMono, fontSize: 10.5,
+              whiteSpace: 'pre-wrap', maxHeight: 80, overflow: 'auto',
+            }}>{commitResult}</div>
+          )}
+          {phase === 'error' && err && (
+            <div style={{
+              padding: '6px 8px', borderRadius: 6,
+              background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
+              color: t.err, fontFamily: t.fontMono, fontSize: 10.5,
+              whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
+            }}>{err}</div>
+          )}
+          <input
+            value={extra}
+            onChange={(e) => setExtra(e.target.value)}
+            placeholder="Contexto opcional (ej: fix login bug)"
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: t.bg2, border: `1px solid ${t.glassBorder}`,
+              borderRadius: 6, padding: '5px 8px',
+              fontFamily: t.fontSans, fontSize: 11, color: t.text0,
+              outline: 'none',
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') void suggest(); }}
+          />
+          <button
+            type="button"
+            onClick={() => void suggest()}
+            style={{
+              height: 26, padding: '0 8px', border: 0, borderRadius: 6,
+              background: t.accentDim, color: t.accentOn,
+              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+            }}>
+            Generar mensaje
+          </button>
+        </div>
+      ) : phase === 'suggesting' ? (
+        <div style={{ marginTop: 8, padding: '6px 8px', fontSize: 11, color: t.text2, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: '50%', background: t.accent,
+            animation: 'eco-shimmer 0.9s ease-in-out infinite',
+          }}/>
+          Analizando diff…
+        </div>
+      ) : (
+        // Preview / committing
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={6}
+            disabled={phase === 'committing'}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: t.bg2, border: `1px solid ${t.glassBorder}`,
+              borderRadius: 6, padding: '6px 8px',
+              fontFamily: t.fontMono, fontSize: 11, color: t.text0,
+              outline: 'none', resize: 'vertical', minHeight: 80,
+              lineHeight: 1.5,
+            }}
+          />
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button
+              type="button"
+              onClick={reset}
+              disabled={phase === 'committing'}
+              style={{
+                flex: 1, height: 26, border: 0, borderRadius: 6,
+                background: t.bg2, color: t.text1,
+                fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+              }}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => void suggest()}
+              disabled={phase === 'committing'}
+              style={{
+                flex: 1, height: 26, border: 0, borderRadius: 6,
+                background: t.bg3, color: t.text1,
+                fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+              }}>
+              Regenerar
+            </button>
+            <button
+              type="button"
+              onClick={() => void commit()}
+              disabled={phase === 'committing' || !message.trim()}
+              style={{
+                flex: 1.4, height: 26, border: 0, borderRadius: 6,
+                background: t.accent, color: t.accentOn,
+                fontFamily: t.fontSans, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                opacity: phase === 'committing' || !message.trim() ? 0.6 : 1,
+              }}>
+              {phase === 'committing' ? 'Commiteando…' : 'Hacer commit'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Glass>
+  );
+}
+
+function AgentSidebar({ bubble }: { bubble: Bubble; onSend: (text: string) => void }) {
   const t = useTokens();
   const tr = useT();
   const STATE_LABELS_I18N: Record<AgentState, string> = {
@@ -1007,6 +1350,7 @@ function AgentSidebar({ bubble }: { bubble: Bubble }) {
     done: tr('state.done'),
     error: tr('state.error'),
     thinking: tr('state.thinking'),
+    executing: tr('state.executing'),
   };
   const min = Math.max(1, Math.round((Date.now() - bubble.createdAt) / 60000));
   const toolCallCount = bubble.messages.reduce((acc, m) => acc + (m.toolCalls?.length ?? 0), 0);
@@ -1045,21 +1389,19 @@ function AgentSidebar({ bubble }: { bubble: Bubble }) {
         </Glass>
       </div>
 
-      <div style={{ marginTop: 'auto' }}>
-        <Glass radius={12} style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <IconShield size={16} strokeWidth={1.5}/>
-          <div style={{ flex: 1, fontSize: 12, color: t.text1 }}>{tr('detail.sidebar.safe_mode')}</div>
+      {bubble.workspace && (
+        <div>
+          <SectionLabel>Git</SectionLabel>
           <div style={{
-            width: 28, height: 16, borderRadius: 999, background: t.accent,
+            display: 'flex', flexDirection: 'column', gap: 8,
             position: 'relative',
           }}>
-            <div style={{
-              position: 'absolute', top: 2, right: 2,
-              width: 12, height: 12, borderRadius: '50%', background: t.accentOn,
-            }}/>
+            <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
+            <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
           </div>
-        </Glass>
-      </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -1081,4 +1423,10 @@ function StatBox({ label, value }: { label: string; value: string }) {
       }}>{value}</div>
     </div>
   );
+}
+
+function buildSkillPrompt(skill: SkillInfo): string {
+  // Todo se invoca como slash command: /dev-up, /code-review, etc.
+  // Claude Code resuelve el comando contra la SKILL.md / agente del workspace.
+  return `/${skill.name}`;
 }

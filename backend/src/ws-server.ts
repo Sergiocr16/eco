@@ -4,6 +4,8 @@ import { runAgent } from './agent.js';
 import { ClientMessageSchema, type ServerMessage } from './protocol.js';
 import { config } from './config.js';
 import { extractBearer, tokensMatch } from './auth.js';
+import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import { ensureWorktree } from './worktree-manager.js';
 
 const globalPromptTimestamps: number[] = [];
 
@@ -19,10 +21,17 @@ export function broadcastServerMessage(msg: ServerMessage): void {
   broadcastFn?.(msg);
 }
 
+// Snapshot opcional: cualquier módulo (pty-server, voice, …) registra un provider
+// que se invoca al conectar un cliente nuevo para sincronizarlo con el estado actual.
+type SnapshotProvider = () => ServerMessage[];
+const snapshotProviders: SnapshotProvider[] = [];
+export function registerSnapshotProvider(fn: SnapshotProvider) {
+  snapshotProviders.push(fn);
+}
+
 export function attachWebSocket(httpServer: Server, authToken: string) {
   const wss = new WebSocketServer({
-    server: httpServer,
-    path: '/ws',
+    noServer: true,
     maxPayload: 128 * 1024,
     handleProtocols: (protocols) => {
       const tokenProto = [...protocols].find((p) => p.startsWith('eco.token.'));
@@ -49,6 +58,15 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
     },
   });
 
+  // Dispatch del 'upgrade' del HTTP server: solo manejamos /ws acá (sin trailing /pty u otros).
+  httpServer.on('upgrade', (req, socket, head) => {
+    const path = (req.url || '').split('?')[0];
+    if (path !== '/ws') return; // dejamos que otros listeners (pty, etc.) lo manejen
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  });
+
   broadcastFn = (msg: ServerMessage) => {
     const data = JSON.stringify(msg);
     for (const client of wss.clients) {
@@ -61,6 +79,7 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
   wss.on('connection', (ws) => {
     let activeAbort: AbortController | null = null;
     let activeTimeout: NodeJS.Timeout | null = null;
+    let activeQuery: Query | null = null;
 
     const send = (msg: ServerMessage) => {
       if (ws.readyState !== ws.OPEN) return;
@@ -70,6 +89,11 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       }
       ws.send(JSON.stringify(msg));
     };
+
+    // Sincronizar al cliente nuevo con el estado actual (PTYs corriendo, etc.).
+    for (const provider of snapshotProviders) {
+      try { for (const msg of provider()) send(msg); } catch { /* noop */ }
+    }
 
     const error = (code: string, message: string) =>
       send({ type: 'error', code, message });
@@ -89,6 +113,11 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       const msg = result.data;
 
       if (msg.type === 'interrupt') {
+        // 1) Pedir al SDK que corte limpio (cancela tool en curso, cierra stream).
+        if (activeQuery?.interrupt) {
+          try { await activeQuery.interrupt(); } catch { /* noop */ }
+        }
+        // 2) Forzar el abort del controller por si el SDK no responde.
         activeAbort?.abort();
         return;
       }
@@ -111,13 +140,20 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       activeTimeout = setTimeout(() => ac.abort(), config.promptTimeoutMs);
 
       try {
+        // Cada burbuja con un workspace git obtiene su propio worktree. Eso
+        // mantiene aislados los cambios de varias conversaciones sobre el mismo repo.
+        const effectiveWorkspace = (msg.bubbleId && msg.workspace)
+          ? ensureWorktree(msg.bubbleId, msg.workspace)
+          : msg.workspace;
+
         const q = runAgent({
           prompt: msg.text,
-          workspace: msg.workspace,
+          workspace: effectiveWorkspace,
           abortController: ac,
           resumeSessionId: msg.resumeSessionId,
           onClientAction: (action) => send({ type: 'client_action', action }),
         });
+        activeQuery = q;
 
         for await (const sdkMsg of q) {
           if (
@@ -141,6 +177,7 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
         if (activeTimeout) clearTimeout(activeTimeout);
         activeTimeout = null;
         activeAbort = null;
+        activeQuery = null;
       }
     });
 

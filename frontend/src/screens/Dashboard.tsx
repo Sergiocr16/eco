@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
 import {
   Glass, IconBtn, StatusDot, Pill, Kbd, AgentGlyph, SectionLabel, bubbleLetter,
@@ -18,6 +19,7 @@ type Props = {
   activeBubbleId: string | null;
   voiceState: VoiceState;
   listening: boolean;
+  wakeActive: boolean;
   interimText: string;
   onSend: (text: string) => void;
   onMicToggle: () => void;
@@ -34,10 +36,10 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, availableWorkspaces, interimText, voiceError } = props;
+  const { bubbles, activeBubbleId, voiceState, onSend, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, availableWorkspaces, interimText, voiceError, wakeActive } = props;
   const [view, setView] = useState<'grid' | 'graph'>('grid');
 
-  const active = bubbles.filter((b) => ['running', 'thinking', 'waiting'].includes(b.status as string));
+  const active = bubbles.filter((b) => ['running', 'thinking', 'executing', 'waiting'].includes(b.status as string));
   const running = active.filter((b) => b.status === 'running' || b.status === 'thinking' || b.status === 'executing');
   const waiting = active.filter((b) => b.status === 'waiting' as string);
   const errors = bubbles.filter((b) => b.status === 'error' as string);
@@ -61,13 +63,18 @@ export function Dashboard(props: Props) {
         availableWorkspaces={availableWorkspaces}
         onFocus={onFocus}
         onOpenAgent={onOpenAgent}
+        wakeActive={wakeActive}
       />
 
       <div ref={mainScrollRef} style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         padding: '28px 32px 110px', overflow: 'auto', position: 'relative',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 32, padding: '12px 8px 32px' }}>
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 32, padding: '12px 8px 32px' }}>
           <VoiceOrb state={voiceState} onClick={onMicToggle}/>
 
           <div style={{ flex: 1, maxWidth: 380 }}>
@@ -102,7 +109,7 @@ export function Dashboard(props: Props) {
             <Stat icon={IconZap} label={tr('dash.stat.sessions')} value={String(bubbles.length)}/>
             <Stat icon={IconFile} label={tr('dash.stat.workspaces')} value={String(new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 0)}/>
           </div>
-        </div>
+        </motion.div>
 
         <SectionLabel count={bubbles.length} action={
           <div style={{ display: 'flex', gap: 4 }}>
@@ -117,18 +124,40 @@ export function Dashboard(props: Props) {
             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
             gap: 14,
           }}>
-            {bubbles.map((b) => (
-              <AgentBubble
-                key={b.id}
-                bubble={b}
-                workspaces={availableWorkspaces}
-                onClick={() => onOpenAgent(b.id)}
-                onRename={(title) => onRename(b.id, title)}
-                onRemove={() => onRemove(b.id)}
-                onChangeWorkspace={(ws) => onChangeWorkspace(b.id, ws)}
-              />
-            ))}
-            <NewAgentCard onCreate={onCreateAgent}/>
+            <AnimatePresence initial={false} mode="popLayout">
+              {bubbles.map((b, i) => (
+                <motion.div
+                  key={b.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.92, y: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.94, y: -8 }}
+                  transition={{
+                    type: 'spring', stiffness: 320, damping: 28,
+                    delay: Math.min(i * 0.03, 0.25),
+                  }}
+                  whileHover={{ y: -2 }}
+                >
+                  <AgentBubble
+                    bubble={b}
+                    workspaces={availableWorkspaces}
+                    onClick={() => onOpenAgent(b.id)}
+                    onRename={(title) => onRename(b.id, title)}
+                    onRemove={() => onRemove(b.id)}
+                    onChangeWorkspace={(ws) => onChangeWorkspace(b.id, ws)}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            <motion.div
+              layout
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: 'spring', stiffness: 280, damping: 26, delay: 0.1 }}
+              whileHover={{ y: -2 }}
+            >
+              <NewAgentCard onCreate={onCreateAgent}/>
+            </motion.div>
           </div>
         ) : (
           <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
@@ -249,6 +278,7 @@ function AgentBubble({
     done: tr('state.done'),
     error: tr('state.error'),
     thinking: tr('state.thinking'),
+    executing: tr('state.executing'),
   };
   const lastMsg = bubble.messages[bubble.messages.length - 1];
   const lastText = lastMsg?.text || tr('dash.bubble.no_msg');
@@ -343,7 +373,7 @@ function AgentBubble({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-        <StatusDot color={sColor} pulse={state === 'running' || state === 'thinking'} size={7}/>
+        <StatusDot color={sColor} pulse={state === 'running' || state === 'thinking' || state === 'executing'} size={7}/>
         <span style={{ fontSize: 11.5, color: sColor, fontWeight: 500 }}>{STATE_LABELS_I18N[state] || tr('state.idle')}</span>
       </div>
 
@@ -361,7 +391,7 @@ function AgentBubble({
           onChange={onChangeWorkspace}
         />
         <div style={{ display: 'flex', gap: 2 }}>
-          {state === 'running' || state === 'thinking' ? (
+          {state === 'running' || state === 'thinking' || state === 'executing' ? (
             <IconBtn icon={IconPause} size={26} title={tr('dash.bubble.pause')}/>
           ) : state === 'paused' ? (
             <IconBtn icon={IconPlay} size={26} title={tr('dash.bubble.resume')}/>
@@ -624,60 +654,157 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             <stop offset="0%" stopColor={t.accent} stopOpacity="0.18"/>
             <stop offset="100%" stopColor={t.accent} stopOpacity="0"/>
           </radialGradient>
+          {/* Filtro gooey — hace que nodos cercanos se fundan tipo gota de mercurio */}
+          <filter id="eco-gooey">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+            <feColorMatrix in="blur" mode="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -8" result="goo"/>
+            <feBlend in="SourceGraphic" in2="goo"/>
+          </filter>
         </defs>
         <rect width={W} height={H} fill="url(#eco-grid)"/>
-        <circle cx={cx} cy={cy} r={ringR * 1.4} fill="url(#eco-glow)"/>
+        <motion.circle
+          cx={cx} cy={cy} r={ringR * 1.4} fill="url(#eco-glow)"
+          animate={{ scale: [1, 1.04, 1] }}
+          transition={{ duration: 5, ease: 'easeInOut', repeat: Infinity }}
+          style={{ transformOrigin: `${cx}px ${cy}px` }}
+        />
 
+        {/* Conexiones + partículas de datos viajando desde Eco hacia cada nodo activo */}
         {nodes.map((n) => {
-          const isActive = n.state === 'running' || n.state === 'thinking';
+          const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing';
           const sColor = stateColor(n.state, t);
+          const stroke = hover === n.id ? t.accent : (isActive ? sColor : t.text3);
+          const opacity = hover === n.id ? 0.9 : (isActive ? 0.6 : 0.16);
           return (
-            <line key={'e-' + n.id}
-              x1={cx} y1={cy} x2={n.x} y2={n.y}
-              stroke={hover === n.id ? t.accent : (isActive ? sColor : t.text3)}
-              strokeOpacity={hover === n.id ? 0.7 : (isActive ? 0.35 : 0.2)}
-              strokeWidth={hover === n.id ? 1.5 : 1}
-              strokeDasharray={isActive ? '0' : '3 4'}
-            />
+            <g key={'e-' + n.id}>
+              <line
+                x1={cx} y1={cy} x2={n.x} y2={n.y}
+                stroke={stroke}
+                strokeOpacity={opacity}
+                strokeWidth={hover === n.id ? 1.6 : (isActive ? 1.4 : 1)}
+                strokeDasharray={isActive ? '4 6' : (hover === n.id ? '0' : '3 4')}
+                strokeLinecap="round"
+                style={isActive ? {
+                  animation: 'eco-flow 1.1s linear infinite',
+                  filter: `drop-shadow(0 0 6px ${sColor})`,
+                } : undefined}
+              />
+              {/* Partículas: dos puntos que viajan de Eco hacia el nodo, desfasados.
+                  Simula "Eco entregando datos a la burbuja". */}
+              {isActive && (
+                <>
+                  <motion.circle
+                    r="2.5"
+                    fill={sColor}
+                    style={{ filter: `drop-shadow(0 0 6px ${sColor})` }}
+                    initial={{ cx, cy, opacity: 0 }}
+                    animate={{
+                      cx: [cx, n.x],
+                      cy: [cy, n.y],
+                      opacity: [0, 1, 1, 0],
+                    }}
+                    transition={{
+                      duration: 1.5, repeat: Infinity, ease: 'easeIn',
+                      times: [0, 0.15, 0.85, 1],
+                    }}
+                  />
+                  <motion.circle
+                    r="1.8"
+                    fill={sColor}
+                    style={{ filter: `drop-shadow(0 0 5px ${sColor})`, opacity: 0.75 }}
+                    initial={{ cx, cy, opacity: 0 }}
+                    animate={{
+                      cx: [cx, n.x],
+                      cy: [cy, n.y],
+                      opacity: [0, 0.7, 0.7, 0],
+                    }}
+                    transition={{
+                      duration: 1.5, repeat: Infinity, ease: 'easeIn',
+                      times: [0, 0.15, 0.85, 1],
+                      delay: 0.6,
+                    }}
+                  />
+                </>
+              )}
+            </g>
           );
         })}
 
+        {/* Hub central — pulsa cuando hay algo corriendo */}
         <circle cx={cx} cy={cy} r="34" fill={t.bg1}
           stroke={t.accent} strokeWidth="1" strokeOpacity="0.6"/>
-        <circle cx={cx} cy={cy} r="28" fill="none"
-          stroke={t.accent} strokeWidth="0.5" strokeOpacity="0.4"/>
+        <motion.circle
+          cx={cx} cy={cy} r="28" fill="none"
+          stroke={t.accent} strokeWidth="0.5" strokeOpacity="0.4"
+          animate={{ r: [28, 32, 28], opacity: [0.4, 0.15, 0.4] }}
+          transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity }}
+        />
         <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle"
           fill={t.text0} fontFamily={t.fontSans} fontSize="15" fontWeight="500"
           letterSpacing="-0.3">Eco</text>
 
-        {nodes.map((n) => {
-          const isActive = n.state === 'running' || n.state === 'thinking';
+        {/* Nodos — flotación leve + breathing del radio */}
+        {nodes.map((n, i) => {
+          const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing';
           const isHover = hover === n.id;
           const sColor = stateColor(n.state, t);
+          const floatAmp = 2 + (i % 3);
+          const floatDur = 3 + (i % 4) * 0.5;
+          const phase = i * 0.13;
           return (
-            <g key={n.id} style={{ cursor: 'pointer' }}
+            <motion.g
+              key={n.id}
+              style={{ cursor: 'pointer' }}
+              animate={{ y: [0, -floatAmp, 0, floatAmp, 0] }}
+              transition={{
+                duration: floatDur, repeat: Infinity, ease: 'easeInOut', delay: phase,
+              }}
               onMouseEnter={() => setHover(n.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => onOpenAgent(n.id)}>
               {isHover && (
-                <circle cx={n.x} cy={n.y} r={n.size + 6} fill="none"
-                  stroke={t.accent} strokeWidth="1" strokeOpacity="0.5"/>
+                <motion.circle
+                  cx={n.x} cy={n.y} r={n.size + 6} fill="none"
+                  stroke={t.accent} strokeWidth="1" strokeOpacity="0.5"
+                  initial={{ r: n.size, opacity: 0 }}
+                  animate={{ r: n.size + 6, opacity: 0.5 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+                />
               )}
-              <circle cx={n.x} cy={n.y} r={n.size} fill={t.bg1}
-                stroke={isHover ? t.accent : t.glassBorder} strokeWidth="1"/>
+              {isActive && (
+                <motion.circle
+                  cx={n.x} cy={n.y} r={n.size}
+                  fill="none"
+                  stroke={sColor} strokeOpacity={0.5}
+                  animate={{ r: [n.size, n.size + 10], opacity: [0.45, 0] }}
+                  transition={{ duration: 2, ease: 'easeOut', repeat: Infinity }}
+                />
+              )}
+              <motion.circle
+                cx={n.x} cy={n.y}
+                fill={t.bg1}
+                stroke={isHover ? t.accent : t.glassBorder}
+                strokeWidth={isHover ? 1.5 : 1}
+                animate={isActive ? { r: [n.size, n.size + 1.5, n.size] } : { r: n.size }}
+                transition={isActive ? {
+                  duration: 1.8, repeat: Infinity, ease: 'easeInOut',
+                } : { duration: 0.3 }}
+              />
               <text x={n.x} y={n.y + 1} textAnchor="middle" dominantBaseline="middle"
                 fill={n.accent} fontFamily={t.fontSans} fontSize="13" fontWeight="600"
-                style={{ textTransform: 'uppercase' }}>
+                style={{ textTransform: 'uppercase', pointerEvents: 'none' }}>
                 {bubbleLetter(n.title)}
               </text>
               <circle cx={n.x + n.size * 0.72} cy={n.y - n.size * 0.72} r="4" fill={sColor}
                 style={{ filter: isActive ? `drop-shadow(0 0 4px ${sColor})` : 'none' }}/>
               <text x={n.x} y={n.y + n.size + 16} textAnchor="middle"
                 fill={isHover ? t.text0 : t.text1}
-                fontFamily={t.fontSans} fontSize="11.5" fontWeight="500">
+                fontFamily={t.fontSans} fontSize="11.5" fontWeight="500"
+                style={{ pointerEvents: 'none' }}>
                 {n.title.length > 14 ? n.title.slice(0, 14) + '…' : n.title}
               </text>
-            </g>
+            </motion.g>
           );
         })}
       </svg>
@@ -791,13 +918,14 @@ function CommandBar({
 }
 
 function DashboardRail({
-  bubbles, activeBubbleId, availableWorkspaces, onFocus, onOpenAgent,
+  bubbles, activeBubbleId, availableWorkspaces, onFocus, onOpenAgent, wakeActive,
 }: {
   bubbles: Bubble[];
   activeBubbleId: string | null;
   availableWorkspaces: string[];
   onFocus: (id: string) => void;
   onOpenAgent: (id: string) => void;
+  wakeActive: boolean;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -852,6 +980,8 @@ function DashboardRail({
 
       <div style={{ flex: 1 }}/>
 
+      <ListeningWave active={wakeActive} label={tr('wake.listening')}/>
+
       <Glass radius={12} style={{ padding: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusDot color={t.ok} pulse size={7}/>
@@ -866,6 +996,55 @@ function DashboardRail({
           }}
         />
       </Glass>
+    </div>
+  );
+}
+
+function ListeningWave({ active, label }: { active: boolean; label: string }) {
+  const t = useTokens();
+  const BARS = 7;
+  return (
+    <div
+      aria-hidden={!active}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 12px',
+        borderRadius: 12,
+        background: active
+          ? `color-mix(in oklch, ${t.accent} 12%, transparent)`
+          : 'transparent',
+        border: `1px solid ${active ? `color-mix(in oklch, ${t.accent} 35%, transparent)` : 'transparent'}`,
+        opacity: active ? 1 : 0,
+        maxHeight: active ? 60 : 0,
+        marginBottom: active ? 4 : 0,
+        overflow: 'hidden',
+        transition: 'opacity 200ms ease, max-height 240ms cubic-bezier(0.16, 1, 0.3, 1), margin-bottom 240ms',
+      }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 2,
+        height: 22, flexShrink: 0,
+      }}>
+        {Array.from({ length: BARS }).map((_, i) => (
+          <span
+            key={i}
+            style={{
+              width: 3, height: '100%', borderRadius: 2,
+              background: t.accent,
+              transformOrigin: 'center',
+              animation: active
+                ? `eco-wave-bar 1s ease-in-out ${i * 0.08}s infinite`
+                : 'none',
+              opacity: active ? 1 : 0.4,
+              boxShadow: active ? `0 0 6px color-mix(in oklch, ${t.accent} 60%, transparent)` : 'none',
+            }}
+          />
+        ))}
+      </div>
+      <span style={{
+        fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+        color: t.text0, letterSpacing: -0.1,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>{label}</span>
     </div>
   );
 }
