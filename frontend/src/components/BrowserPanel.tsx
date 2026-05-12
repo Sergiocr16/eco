@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconPlay, IconStop, IconSearch } from '@/design/icons';
+import { IconArrowL, IconResume, IconGlobe, IconExt, IconX } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn } from '@/lib/eco-bus';
-import { useSkills } from '@/hooks/useSkills';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 
 type Props = {
   bubbleId: string;
-  workspace: string;
+  // workspace queda como prop por compat con el callsite, pero ya no se usa
+  // adentro — el control del server se movió al ServerPanel.
+  workspace?: string;
 };
 
 type DevStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
@@ -37,7 +38,7 @@ function normalizeUrl(input: string): string {
 
 const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
-export function BrowserPanel({ bubbleId, workspace }: Props) {
+export function BrowserPanel({ bubbleId }: Props) {
   const t = useTokens();
   const iframeRef = useRef<HTMLIFrameElement>(null); // legacy: scrollIntoView solo
   const smartRef = useRef<SmartBrowserHandle | null>(null);
@@ -49,23 +50,11 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [devOpen, setDevOpen] = useState(false);
-  // Dev server por agente
+  // Estado del dev server por agente — solo para mostrar logs/URL en el panel
+  // DevTools, ya NO se controla desde acá (eso vive en el ServerPanel).
   const [serverStatus, setServerStatus] = useState<DevStatus>('idle');
   const [serverUrl, setServerUrl] = useState('');
-  const [serverCmd, setServerCmd] = useState('');
-  const [serverBusy, setServerBusy] = useState<'start' | 'stop' | 'restart' | null>(null);
-  const [serverErr, setServerErr] = useState<string | null>(null);
-  const [cmdOverrideOpen, setCmdOverrideOpen] = useState(false);
-  const [cmdOverride, setCmdOverride] = useState('');
   const lastAutoNavRef = useRef<string>('');
-  // Skill linkeado al server: se elige la 1ra vez y queda guardado en localStorage.
-  const skillKey = `eco.dev.skill.${bubbleId}`;
-  const [skill, setSkill] = useState<string>(() => {
-    try { return window.localStorage.getItem(skillKey) ?? ''; } catch { return ''; }
-  });
-  const [pickingSkill, setPickingSkill] = useState(false);
-  const [skillQuery, setSkillQuery] = useState('');
-  const skillsHook = useSkills(workspace);
   type DevEntry = { ts: number; kind: 'log' | 'warn' | 'error' | 'info' | 'net'; text: string };
   const [devLog, setDevLog] = useState<DevEntry[]>([]);
   const [devTab, setDevTab] = useState<'console' | 'elements' | 'server'>('console');
@@ -111,7 +100,6 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
         const d = await r.json() as { status: DevStatus; url: string; command: string };
         setServerStatus(d.status);
         setServerUrl(d.url);
-        setServerCmd(d.command);
       } catch { /* noop */ }
     })();
     return () => { cancelled = true; };
@@ -136,11 +124,6 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
       if (d.bubbleId !== bubbleId) return;
       setServerStatus(d.status);
       setServerUrl(d.url);
-      setServerCmd(d.command);
-      if (d.skill && d.skill !== skill) {
-        setSkill(d.skill);
-        try { window.localStorage.setItem(skillKey, d.skill); } catch { /* noop */ }
-      }
       // Auto-navegamos cuando arranca, una sola vez por arranque.
       if (d.status === 'running' && d.url && lastAutoNavRef.current !== d.url) {
         lastAutoNavRef.current = d.url;
@@ -188,66 +171,6 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     return () => { cancelled = true; clearInterval(iv); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverStatus, bubbleId]);
-
-  function chooseSkill(name: string) {
-    setSkill(name);
-    try { window.localStorage.setItem(skillKey, name); } catch { /* noop */ }
-    setPickingSkill(false);
-    // Tras elegir, arrancamos automático.
-    void skillAction('up', name);
-  }
-
-  function clearSkill() {
-    setSkill('');
-    try { window.localStorage.removeItem(skillKey); } catch { /* noop */ }
-    setPickingSkill(true);
-  }
-
-  async function skillAction(action: 'up' | 'down' | 'restart' | 'status', overrideSkill?: string) {
-    const useSkill = (overrideSkill ?? skill).trim();
-    if (!useSkill) { setPickingSkill(true); return; }
-    const busyKind: 'start' | 'stop' | 'restart' =
-      action === 'down' ? 'stop' : action === 'restart' ? 'restart' : 'start';
-    setServerBusy(busyKind); setServerErr(null);
-    try {
-      const r = await apiFetch('/dev/skill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace, bubbleId, skill: useSkill, action }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (d.ok === false) setServerErr(d.error || `Falló /${useSkill} ${action}`);
-    } catch (e) {
-      setServerErr(e instanceof Error ? e.message : 'Error');
-    } finally { setServerBusy(null); }
-  }
-
-  async function startServer(commandOverride?: string) {
-    setServerBusy('start'); setServerErr(null);
-    try {
-      const body: Record<string, unknown> = { workspace, bubbleId };
-      const cmd = commandOverride?.trim() ?? cmdOverride.trim();
-      if (cmd) body.command = cmd;
-      const r = await apiFetch('/dev/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (d.ok === false) {
-        setServerErr(d.error || 'No se pudo iniciar');
-      } else if (d.command) {
-        setServerCmd(d.command);
-        setCmdOverrideOpen(false);
-        setCmdOverride('');
-      }
-    } catch (e) {
-      setServerErr(e instanceof Error ? e.message : 'Error');
-    } finally { setServerBusy(null); }
-  }
-
-  // (Helpers legacy de stop/restart vía /dev/stop /dev/restart están en el
-  // backend para el modo "comando inferido". El flujo principal ahora es por skill.)
 
   async function loadLogs(): Promise<string> {
     try {
@@ -302,10 +225,6 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     return () => { clearTimeout(iv); ifr?.removeEventListener('load', onLoad); };
   }, [url, refreshKey]);
 
-  const statusColor = serverStatus === 'running' ? t.ok
-    : serverStatus === 'starting' ? t.warn
-    : serverStatus === 'error' ? t.err
-    : t.text3;
   const statusLabel = serverStatus === 'idle' ? 'sin server'
     : serverStatus === 'starting' ? 'iniciando…'
     : serverStatus === 'running' ? 'corriendo'
@@ -317,260 +236,6 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
       flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
       background: t.bg0,
     }}>
-      {/* Dev server bar */}
-      {workspace && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '6px 12px',
-          borderBottom: `1px solid ${t.glassBorder}`,
-          background: t.bg1,
-          minHeight: 36, flexWrap: 'wrap',
-        }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '3px 8px', borderRadius: 999,
-            background: `color-mix(in oklch, ${statusColor} 14%, transparent)`,
-            color: statusColor, fontFamily: t.fontMono, fontSize: 10.5,
-          }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: statusColor,
-              animation: serverStatus === 'starting' || serverStatus === 'running'
-                ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
-              boxShadow: serverStatus === 'running' ? `0 0 6px ${statusColor}` : 'none',
-            }}/>
-            {statusLabel}
-            {serverUrl && <span style={{ marginLeft: 4 }}>· :{new URL(serverUrl).port}</span>}
-          </div>
-          {serverCmd && (
-            <span style={{
-              fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
-              maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              flex: 1, minWidth: 0,
-            }} title={serverCmd}>{serverCmd}</span>
-          )}
-          <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', alignItems: 'center' }}>
-            {skill && (
-              <span style={{
-                fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
-                padding: '2px 8px', borderRadius: 999,
-                background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              }} title={`Skill: /${skill}`}>
-                /{skill}
-                <button type="button" onClick={clearSkill}
-                  title="Cambiar skill"
-                  style={{
-                    marginLeft: 6, background: 'transparent', border: 0,
-                    color: t.text3, cursor: 'pointer', padding: 0,
-                  }}>×</button>
-              </span>
-            )}
-            {serverStatus !== 'running' && serverStatus !== 'starting' ? (
-              <button
-                type="button"
-                onClick={() => skill ? void skillAction('up') : setPickingSkill(true)}
-                disabled={!!serverBusy}
-                style={{ ...pillBtnStyle(t, false, t.accent), opacity: serverBusy ? 0.6 : 1 }}>
-                <IconPlay size={11}/>
-                <span style={{ marginLeft: 4 }}>
-                  {serverBusy === 'start' ? 'Iniciando…' : (skill ? 'Iniciar' : 'Elegir skill para correr servidor')}
-                </span>
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void skillAction('restart')}
-                  disabled={!!serverBusy}
-                  title="Reiniciar"
-                  style={pillBtnStyle(t)}>
-                  <IconResume size={11}/>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void skillAction('down')}
-                  disabled={!!serverBusy}
-                  style={{ ...pillBtnStyle(t, false, t.err), opacity: serverBusy ? 0.6 : 1 }}>
-                  <IconStop size={11}/>
-                  <span style={{ marginLeft: 4 }}>Detener</span>
-                </button>
-              </>
-            )}
-          </div>
-          {pickingSkill && (
-            <div style={{
-              width: '100%', marginTop: 4, padding: 10, borderRadius: 8,
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              display: 'flex', flexDirection: 'column', gap: 8,
-            }}>
-              <div style={{ fontSize: 11.5, color: t.text1, fontFamily: t.fontSans }}>
-                Elegí un skill que sepa levantar el server (con <code style={{ fontFamily: t.fontMono, fontSize: 10.5 }}>/&lt;skill&gt; up · down · restart · status</code>).
-                Eco lo invoca con <code style={{ fontFamily: t.fontMono, fontSize: 10.5 }}>claude -p</code> y queda linkeado al agente.
-              </div>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 8px', borderRadius: 6,
-                background: t.bg3, border: `1px solid ${t.glassBorder}`,
-              }}>
-                <IconSearch size={11}/>
-                <input
-                  autoFocus
-                  value={skillQuery}
-                  onChange={(e) => setSkillQuery(e.target.value)}
-                  placeholder="Buscar skill por nombre o descripción…"
-                  spellCheck={false}
-                  autoCorrect="off"
-                  style={{
-                    flex: 1, minWidth: 0,
-                    background: 'transparent', border: 0, outline: 'none',
-                    fontFamily: t.fontMono, fontSize: 11.5, color: t.text0,
-                  }}
-                />
-                {skillQuery && (
-                  <button type="button" onClick={() => setSkillQuery('')}
-                    style={{ background: 'transparent', border: 0, color: t.text3, cursor: 'pointer', padding: 0 }}>
-                    <IconX size={10}/>
-                  </button>
-                )}
-              </div>
-              <div style={{
-                maxHeight: 360, overflow: 'auto',
-                display: 'flex', flexDirection: 'column', gap: 2,
-              }}>
-                {skillsHook.loading ? (
-                  <div style={{ padding: 10, fontSize: 11, color: t.text3, textAlign: 'center' }}>Cargando…</div>
-                ) : skillsHook.skills.length === 0 ? (
-                  <div style={{ padding: 10, fontSize: 11, color: t.text3 }}>
-                    No hay skills disponibles en este workspace. Creá uno en <code>{workspace}/.claude/commands/</code> o <code>~/.claude/commands/</code>.
-                  </div>
-                ) : (
-                  // Ordenamos: project primero (más relevantes), después user, después plugin.
-                  // No filtramos por kind — cualquier skill/command/agent puede manejar server lifecycle.
-                  (() => {
-                    const q = skillQuery.trim().toLowerCase();
-                    const matched = q
-                      ? skillsHook.skills.filter((s) =>
-                          s.name.toLowerCase().includes(q) ||
-                          (s.description ?? '').toLowerCase().includes(q),
-                        )
-                      : skillsHook.skills;
-                    return [...matched]
-                      .sort((a, b) => {
-                        const order = { project: 0, user: 1, plugin: 2 } as const;
-                        const oa = order[a.source] ?? 3;
-                        const ob = order[b.source] ?? 3;
-                        if (oa !== ob) return oa - ob;
-                        return a.name.localeCompare(b.name);
-                      });
-                  })().map((sk) => (
-                      <button
-                        key={`${sk.source}:${sk.kind}:${sk.name}`}
-                        type="button"
-                        onClick={() => chooseSkill(sk.name)}
-                        style={{
-                          display: 'flex', alignItems: 'flex-start', gap: 8,
-                          padding: '6px 8px', border: 0, borderRadius: 6,
-                          background: 'transparent', cursor: 'pointer',
-                          color: t.text1, textAlign: 'left',
-                          fontFamily: t.fontSans, fontSize: 12,
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = t.bg3}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                        <span style={{
-                          fontFamily: t.fontMono, fontSize: 11.5,
-                          color: sk.source === 'project' ? t.accent : t.text1,
-                          fontWeight: 500, flexShrink: 0,
-                        }}>/{sk.name}</span>
-                        <span style={{
-                          padding: '0 5px', borderRadius: 4, fontSize: 9.5,
-                          background: t.bg3, color: t.text3,
-                          fontFamily: t.fontMono, flexShrink: 0, marginTop: 1,
-                        }}>{sk.kind}</span>
-                        <span style={{
-                          flex: 1, color: t.text2, fontSize: 11, lineHeight: 1.4,
-                          overflow: 'hidden', textOverflow: 'ellipsis',
-                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                        }}>{sk.description}</span>
-                      </button>
-                    ))
-                )}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setPickingSkill(false)}
-                  style={{
-                    padding: '4px 10px', borderRadius: 6, border: 0, cursor: 'pointer',
-                    background: t.bg3, color: t.text1,
-                    fontFamily: t.fontSans, fontSize: 11,
-                  }}>Cancelar</button>
-              </div>
-            </div>
-          )}
-          {cmdOverrideOpen && serverStatus !== 'running' && serverStatus !== 'starting' && (
-            <div style={{ width: '100%', display: 'flex', gap: 6, marginTop: 4 }}>
-              <input
-                value={cmdOverride}
-                onChange={(e) => setCmdOverride(e.target.value)}
-                placeholder="Comando custom (avanzado, sin usar skill)"
-                spellCheck={false}
-                autoCorrect="off"
-                style={{
-                  flex: 1,
-                  background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                  borderRadius: 6, padding: '5px 8px',
-                  fontFamily: t.fontMono, fontSize: 11, color: t.text0, outline: 'none',
-                }}
-                onKeyDown={(e) => { if (e.key === 'Enter') void startServer(); }}
-              />
-              <button type="button" onClick={() => void startServer()}
-                style={{ ...pillBtnStyle(t, false, t.accent), padding: '0 12px' }}>
-                <IconPlay size={11}/>
-              </button>
-            </div>
-          )}
-          {serverErr && (
-            <div style={{
-              width: '100%',
-              padding: '6px 8px', borderRadius: 6,
-              background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-              color: t.err, fontFamily: t.fontMono, fontSize: 10.5,
-              whiteSpace: 'pre-wrap', maxHeight: 80, overflow: 'auto',
-              display: 'flex', alignItems: 'flex-start', gap: 6,
-            }}>
-              <span style={{ flex: 1 }}>{serverErr}</span>
-              <button type="button" onClick={() => setServerErr(null)}
-                style={{ background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', padding: 0 }}>
-                <IconX size={10}/>
-              </button>
-            </div>
-          )}
-          {serverStatus === 'error' && (
-            <div style={{
-              width: '100%',
-              padding: '6px 8px', borderRadius: 6,
-              background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-              color: t.err, fontFamily: t.fontSans, fontSize: 11,
-              display: 'flex', alignItems: 'center', gap: 8,
-            }}>
-              <span style={{ flex: 1 }}>
-                El server salió con error. Mirá los logs para entender qué pasó.
-              </span>
-              <button
-                type="button"
-                onClick={async () => {
-                  setServerLogs(await loadLogs());
-                  setDevOpen(true);
-                  setDevTab('server');
-                }}
-                style={{
-                  padding: '3px 10px', borderRadius: 5, border: 0, cursor: 'pointer',
-                  background: t.err, color: t.accentOn,
-                  fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-                }}>Ver logs</button>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* URL bar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
@@ -898,21 +563,6 @@ function zoomBtnStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
     background: 'transparent', color: t.text1, cursor: 'pointer',
     fontFamily: t.fontMono, fontSize: 13, lineHeight: 1,
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  };
-}
-
-function pillBtnStyle(
-  t: ReturnType<typeof useTokens>,
-  active = false,
-  bg?: string,
-): React.CSSProperties {
-  return {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    height: 24, padding: '0 8px', border: 0, borderRadius: 6,
-    background: bg ?? (active ? t.accent : t.bg2),
-    color: bg ? t.accentOn : (active ? t.accentOn : t.text1),
-    cursor: 'pointer',
-    fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
   };
 }
 

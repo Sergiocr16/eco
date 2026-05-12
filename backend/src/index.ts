@@ -10,7 +10,6 @@ import { attachPtyServer, killBubblePty } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
 import * as devServer from './dev-server.js';
-import { proxyPage } from './browser-proxy.js';
 import * as obsidian from './obsidian.js';
 import { getClaudeAuthStatus } from './claude-auth.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
@@ -52,12 +51,10 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   crossOriginOpenerPolicy: false,
   crossOriginEmbedderPolicy: false,
-  // helmet pone X-Frame-Options: SAMEORIGIN por default, lo cual bloquea
-  // que el iframe del navegador interno (origen frontend) embeba respuestas
-  // del backend (origen backend). El navegador necesita /proxy/site
-  // específicamente para evadir bloqueos de embedding — apagar el header
-  // global. El handler de /proxy/site además sobreescribe el header del
-  // upstream para que el iframe pueda cargar.
+  // helmet pone X-Frame-Options: SAMEORIGIN por default, que bloquearía iframes
+  // cross-origin contra respuestas del backend (frontend dev en :5174 vs backend
+  // :7000). Como el backend no sirve contenido sensible navegable, apagar el
+  // header global es seguro.
   frameguard: false,
 }));
 app.use(
@@ -496,11 +493,6 @@ app.get('/dev/logs', (req: Request, res: Response) => {
   const role = parseRole(req.query.role);
   res.type('text/plain').send(devServer.devLogs(bubbleId, role));
 });
-
-// Proxy del navegador interno — strip de X-Frame-Options/CSP para permitir
-// embedding en iframe. Solo HTML inicial; sitios JS-pesados (Google, etc.)
-// seguirán rompiendo y deberán abrirse en el navegador del sistema.
-app.get('/proxy/site', proxyPage);
 
 // ─────────────────────────── Obsidian
 app.get('/integrations/obsidian/status', (_req: Request, res: Response) => {

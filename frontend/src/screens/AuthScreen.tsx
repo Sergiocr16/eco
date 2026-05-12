@@ -4,7 +4,6 @@ import { Btn, Glass } from '@/design/primitives';
 import {
   IconUser, IconShield, IconKey, IconCheck, IconArrowL,
 } from '@/design/icons';
-import { EcoMarkHorizontal } from '@/design/EcoMark';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { useT } from '@/hooks/useI18n';
@@ -32,7 +31,6 @@ export function AuthScreen({ authState, authActions }: Props) {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: t.windowBg, color: t.text0,
       overflow: 'hidden',
     }}>
@@ -41,7 +39,10 @@ export function AuthScreen({ authState, authActions }: Props) {
 
 
       <div style={{
-        position: 'relative', zIndex: 2,
+        position: 'absolute',
+        top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        zIndex: 2,
         width: 'min(380px, calc(100vw - 48px))',
         padding: '24px 4px',
       }}>
@@ -76,24 +77,16 @@ export function AuthScreen({ authState, authActions }: Props) {
         </div>
       </div>
 
-      {/* Logo arriba a la izquierda */}
-      <div style={{
-        position: 'absolute', top: 24, left: 28,
-        zIndex: 2,
-        color: t.text0,
-        pointerEvents: 'none',
-      }}>
-        <EcoMarkHorizontal size={56}/>
-      </div>
-
-      {/* Version abajo a la derecha */}
+      {/* eco · version — abajo a la derecha, discreto */}
       <div style={{
         position: 'absolute', bottom: 14, right: 18,
         zIndex: 2,
         color: t.text3, fontSize: 10.5, fontFamily: t.fontMono,
         pointerEvents: 'none',
+        display: 'flex', alignItems: 'baseline', gap: 6,
       }}>
-        v0.1.0
+        <span style={{ color: t.text2, fontWeight: 500 }}>eco</span>
+        <span>v0.1.0</span>
       </div>
     </div>
   );
@@ -262,20 +255,6 @@ function DriftingOrbs() {
         mixBlendMode: 'screen',
       }}/>
 
-      {/* Glitch line — barra horizontal que aparece muy ocasionalmente */}
-      <div style={{
-        position: 'absolute', top: '38%', left: 0, right: 0,
-        height: 2,
-        background: `linear-gradient(to right,
-          transparent,
-          color-mix(in oklch, ${t.accent} 60%, transparent) 40%,
-          color-mix(in oklch, ${t.accent} 80%, transparent) 50%,
-          color-mix(in oklch, ${t.accent} 60%, transparent) 60%,
-          transparent)`,
-        animation: 'aurora-glitch 7s ease-in-out infinite',
-        animationDelay: '-2s',
-        pointerEvents: 'none', zIndex: 1,
-      }}/>
 
       {/* Shapes geométricos sutiles — círculos outline drifting */}
       <svg style={{

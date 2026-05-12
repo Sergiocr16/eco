@@ -27,7 +27,7 @@ export type MetaAction =
   | { kind: 'help' }
   | { kind: 'unknown' };
 
-export type Screen = 'dashboard' | 'detail' | 'files' | 'history' | 'settings' | 'login' | 'onboarding' | 'browser';
+export type Screen = 'dashboard' | 'detail' | 'files' | 'history' | 'settings' | 'login' | 'onboarding';
 
 export type MetaActionFeedback = {
   title: string;

@@ -6,7 +6,6 @@ import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
 import { Settings } from './screens/Settings';
 import { FileExplorer } from './screens/FileExplorer';
-import { BrowserScreen } from './screens/BrowserScreen';
 import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
@@ -514,8 +513,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   />
                 ) : screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles}/>
-                ) : screen === 'browser' ? (
-                  <BrowserScreen/>
                 ) : screen === 'settings' ? (
                   <Settings/>
                 ) : screen === 'history' ? (

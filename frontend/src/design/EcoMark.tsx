@@ -81,11 +81,12 @@ export function EcoMarkHorizontal({ size = 56, mono = false }: { size?: number; 
 // /assets/eco-wordmark.svg. Útil donde queremos texto puro (hub central
 // del Bohr model, dock home, etc.) heredando el color del contexto.
 export function EcoWordmark({ size = 28 }: { size?: number }) {
-  // viewBox 140×40 → aspect 3.5. Calculamos altura para mantenerlo.
+  // viewBox ajustado al extent visual de "eco" (~95px) para que el centro
+  // del SVG coincida con el centro óptico del texto.
   const height = size;
-  const width = Math.round(size * 3.5);
+  const width = Math.round(size * 2.4);
   return (
-    <svg width={width} height={height} viewBox="0 0 140 40" fill="none" role="img" aria-label="eco">
+    <svg width={width} height={height} viewBox="0 0 96 40" fill="none" role="img" aria-label="eco">
       <text
         x="0" y="32"
         fontFamily='-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif'

@@ -92,7 +92,6 @@ const DICT = {
   // ─────────────────────────── Sidebar / nav
   'nav.dashboard': { es: 'Inicio', en: 'Home' },
   'nav.files': { es: 'Archivos', en: 'Files' },
-  'nav.browser': { es: 'Navegador', en: 'Browser' },
   'nav.history': { es: 'Historial', en: 'History' },
   'nav.settings': { es: 'Ajustes', en: 'Settings' },
   'nav.account': { es: 'Cuenta', en: 'Account' },

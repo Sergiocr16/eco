@@ -1,12 +1,12 @@
 import { useTokens } from '@/design/theme';
 import { EcoMarkStacked } from '@/design/EcoMark';
 import {
-  IconCommand, IconFolderOpen, IconHistory, IconSettings, IconGlobe, type IconProps,
+  IconCommand, IconFolderOpen, IconHistory, IconSettings, type IconProps,
 } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 import { AccountMenu } from './AccountMenu';
 
-export type Screen = 'dashboard' | 'files' | 'history' | 'settings' | 'detail' | 'login' | 'onboarding' | 'browser';
+export type Screen = 'dashboard' | 'files' | 'history' | 'settings' | 'detail' | 'login' | 'onboarding';
 
 type Props = {
   screen: Screen;
@@ -20,7 +20,6 @@ type Props = {
 const ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: string }[] = [
   { id: 'dashboard', icon: IconCommand, labelKey: 'nav.dashboard' },
   { id: 'files',     icon: IconFolderOpen, labelKey: 'nav.files' },
-  { id: 'browser',   icon: IconGlobe, labelKey: 'nav.browser' },
   { id: 'history',   icon: IconHistory, labelKey: 'nav.history' },
   { id: 'settings',  icon: IconSettings, labelKey: 'nav.settings' },
 ];
