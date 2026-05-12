@@ -565,7 +565,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       />
       <FloatingBubbleDock
         bubbles={bubbles.bubbles}
-        activeBubbleId={detailBubbleId ?? bubbles.activeBubbleId}
+        // En dashboard ningún agente está "activo" en el dock — el dot
+        // pertenece al botón Home. Solo cuando estamos dentro del detalle
+        // de un agente marcamos esa burbuja.
+        activeBubbleId={screen === 'detail' ? detailBubbleId : null}
         onOpenAgent={handleOpenAgent}
         onGoHome={handleBackFromDetail}
         atHome={screen === 'dashboard'}
