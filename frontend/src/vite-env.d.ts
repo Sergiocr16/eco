@@ -21,5 +21,7 @@ interface EcoElectronConfig {
 interface Window {
   electronAPI?: {
     getConfig: () => Promise<EcoElectronConfig>;
+    log?: (...args: unknown[]) => void;
+    pickFolder?: (opts?: { title?: string; defaultPath?: string }) => Promise<{ canceled: boolean; path: string }>;
   };
 }

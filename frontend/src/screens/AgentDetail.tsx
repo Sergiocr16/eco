@@ -10,13 +10,14 @@ import { setVoiceTarget } from '@/lib/voice-router';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { BranchPicker } from '@/components/BranchPicker';
 import { BrowserPanel } from '@/components/BrowserPanel';
+import { ServerPanel } from '@/components/ServerPanel';
 import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore,
-  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe,
+  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
   IconCheck, IconX, IconBolt, IconDiff,
   IconEdit, IconFolder, IconTrash, IconCopy,
   type IconProps,
@@ -26,6 +27,7 @@ import { stateColor, type AgentState } from '@/design/tokens';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { stripWakePrefix } from '@/lib/meta-commands';
 import { useT } from '@/hooks/useI18n';
+import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
 import { translateBackendError } from '@/lib/backend-errors';
 import { on as ecoOn } from '@/lib/eco-bus';
 
@@ -146,7 +148,7 @@ type Props = {
   voiceInterim: string;
 };
 
-type Tab = 'chat' | 'terminal' | 'files' | 'plan' | 'browser';
+type Tab = 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server';
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
@@ -284,6 +286,7 @@ export function AgentDetail({
         <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label={tr('detail.tab.files')} icon={IconFile} badge={filesChanged.length}/>
         <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
         <TabBtn active={tab === 'browser'} onClick={() => setTab('browser')} label={tr('detail.tab.browser')} icon={IconGlobe}/>
+        <TabBtn active={tab === 'server'} onClick={() => setTab('server')} label={tr('detail.tab.server')} icon={IconCpu}/>
         <SkillsPicker
           workspace={bubble.workspace}
           onRun={(skill) => onSend(buildSkillPrompt(skill))}
@@ -309,6 +312,7 @@ export function AgentDetail({
               cambiás de pestaña. Así el iframe no recarga y la sesión del browser
               (cookies, localStorage del sitio, scroll position) se preserva. */}
           <KeepAliveBrowser visible={tab === 'browser'} bubbleId={bubble.id} workspace={bubble.workspace}/>
+          {tab === 'server' && <ServerPanel bubbleId={bubble.id} workspace={bubble.workspace}/>}
         </div>
         <AgentSidebar bubble={bubble} onSend={onSend}/>
       </div>
@@ -1458,6 +1462,75 @@ function AgentSidebar({ bubble }: { bubble: Bubble; onSend: (text: string) => vo
         </div>
       </div>
 
+      <SaveToObsidianButton bubble={bubble}/>
+
+    </div>
+  );
+}
+
+function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
+  const t = useTokens();
+  const { status: obs } = useObsidian();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Solo se muestra si Obsidian está activado y el vault existe.
+  if (!obs.enabled || !obs.vaultExists) return null;
+
+  async function save() {
+    setBusy(true);
+    setResult(null);
+    const r = await saveSessionToObsidian({
+      bubbleId: bubble.id,
+      title: bubble.title || 'Sesión',
+      workspace: bubble.workspace ?? '',
+      createdAt: bubble.createdAt,
+      updatedAt: bubble.updatedAt,
+      messages: bubble.messages.map((m) => ({
+        role: (m.role === 'assistant' || m.role === 'user' || m.role === 'system' || m.role === 'tool') ? m.role : 'assistant',
+        text: m.text || '',
+        createdAt: m.createdAt,
+      })),
+    });
+    if (r.ok) setResult({ ok: true, text: `Guardado: ${r.path.split('/').slice(-2).join('/')}` });
+    else setResult({ ok: false, text: r.error });
+    setBusy(false);
+    setTimeout(() => setResult(null), 5000);
+  }
+
+  return (
+    <div>
+      <SectionLabel>Obsidian</SectionLabel>
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={busy}
+        style={{
+          width: '100%', padding: '10px 12px',
+          borderRadius: 10,
+          border: `1px solid ${t.glassBorder}`,
+          background: t.bg2,
+          color: t.text0,
+          cursor: busy ? 'not-allowed' : 'pointer',
+          fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+          display: 'flex', alignItems: 'center', gap: 8,
+          opacity: busy ? 0.6 : 1,
+          transition: 'background 140ms',
+        }}
+        onMouseEnter={(e) => { if (!busy) e.currentTarget.style.background = t.bg3; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = t.bg2; }}>
+        <IconLayers size={13}/>
+        {busy ? 'Guardando…' : 'Guardar sesión en Obsidian'}
+      </button>
+      {result && (
+        <div style={{
+          marginTop: 6, padding: '6px 10px', borderRadius: 6,
+          background: result.ok ? t.accentFaint : t.bg2,
+          color: result.ok ? t.accent : t.err,
+          fontSize: 10.5, fontFamily: t.fontMono, lineHeight: 1.4,
+          wordBreak: 'break-word',
+        }}>{result.text}</div>
+      )}
     </div>
   );
 }

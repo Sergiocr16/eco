@@ -11,10 +11,10 @@ type Props = {
   onOpenAgent: (id: string) => void;
 };
 
-// Dock vertical en el sidebar de 64px. Estilo macOS — íconos rounded square,
-// zoom solo en el ítem hovered (no propaga a vecinos), transform origin a la
-// izquierda para que crezca hacia el canvas y no contra el borde.
+// Dock estilo macOS — flotante en bottom-center, horizontal, con blur y
+// magnificación que crece hacia arriba (sin empujar vecinos).
 export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
+  const t = useTokens();
   if (bubbles.length === 0) return null;
 
   const ordered = [...bubbles].sort((a, b) => {
@@ -24,14 +24,34 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 240, damping: 28 }}
       style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-        padding: '4px 0',
-        width: '100%',
+        position: 'fixed',
+        bottom: 14, left: '50%',
+        transform: 'translateX(-50%)',
+        // El dock pill: pequeño padding lateral, blur de cristal, border sutil.
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        gap: 4,
+        padding: '8px 10px',
+        borderRadius: 18,
+        background: t.glassBg,
+        backdropFilter: 'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border: `1px solid ${t.glassBorder}`,
+        boxShadow: [
+          'inset 0 1px 0 rgba(255,255,255,0.08)',
+          '0 8px 32px rgba(0,0,0,0.35)',
+          '0 2px 6px rgba(0,0,0,0.2)',
+        ].join(', '),
+        zIndex: 80,
+        // overflow visible para que la magnificación se "escape" del pill.
         overflow: 'visible',
+        // Max width — si hay muchas burbujas, scroll horizontal interno.
+        maxWidth: '92vw',
       }}>
       <AnimatePresence initial={false}>
         {ordered.map((b, i) => (
@@ -48,7 +68,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent }: Props) {
   );
 }
 
-const SIZE = 44;
+const SIZE = 40;
 
 function DockIcon({
   bubble, index, active, onClick,
@@ -68,100 +88,85 @@ function DockIcon({
   const initial = bubbleLetter(bubble.title);
   const accentColor = bubble.accent || t.accent;
 
-  // Recortamos el título para mostrar bajo el ícono (máx ~7 chars, palabras enteras si caben).
-  const shortLabel = (() => {
-    const title = (bubble.title ?? '').trim();
-    if (!title) return '';
-    if (title.length <= 7) return title;
-    const firstWord = title.split(/\s+/)[0] ?? title;
-    if (firstWord.length <= 7) return firstWord;
-    return firstWord.slice(0, 6) + '…';
-  })();
-
   return (
     <div
       onMouseEnter={() => { setHover(true); setTimeout(() => setShowTip(true), 220); }}
       onMouseLeave={() => { setHover(false); setShowTip(false); }}
       style={{
-        // Reservamos espacio para ícono + label. El zoom transforma sin empujar vecinos.
-        width: SIZE + 8, minHeight: SIZE + 14,
+        // Reservamos espacio fijo — el zoom transforma sin empujar vecinos.
+        width: SIZE, minHeight: SIZE,
         position: 'relative',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start',
-        gap: 1,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'flex-end',
       }}
     >
-      {/* Barra accent a la izquierda cuando active — mismo look que los nav icons */}
-      {active && (
-        <span style={{
-          position: 'absolute', left: -8, top: SIZE / 2 - 10, // alineado al centro del ícono
-          width: 3, height: 20, borderRadius: 999, background: t.accent,
-          pointerEvents: 'none', zIndex: 1,
-        }}/>
-      )}
       <motion.button
         type="button"
         onClick={onClick}
-        initial={{ opacity: 0, scale: 0.6, y: -8 }}
+        initial={{ opacity: 0, scale: 0.6, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.6, y: 8 }}
-        whileHover={{ scale: 1.15 }}
+        whileHover={{ scale: 1.35, y: -6 }}
         whileTap={{ scale: 0.92 }}
         transition={{
-          type: 'spring', stiffness: 380, damping: 26,
+          type: 'spring', stiffness: 380, damping: 22,
           delay: index * 0.02,
         }}
         style={{
           width: SIZE, height: SIZE,
           padding: 0, border: 0, cursor: 'pointer',
-          borderRadius: 12,
-          background: active ? t.bg3 : (hover ? t.bg2 : 'transparent'),
+          borderRadius: 11,
+          background: active ? t.bg3 : (hover ? t.bg2 : 'rgba(255,255,255,0.04)'),
           color: active ? t.accent : t.text2,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           position: 'relative',
-          transformOrigin: 'left center',
+          // Magnificación hacia arriba (bottom origin) — estilo dock macOS.
+          transformOrigin: 'bottom center',
           transition: 'background 140ms',
+          boxShadow: active
+            ? `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px ${t.accent}33`
+            : 'inset 0 1px 0 rgba(255,255,255,0.05)',
         }}>
         <span style={{
-          fontFamily: t.fontSans, fontSize: 16, fontWeight: 600, letterSpacing: -0.3,
-          // Color de la inicial = accent del agente, así cada uno se diferencia.
+          fontFamily: t.fontSans, fontSize: 15, fontWeight: 600, letterSpacing: -0.3,
           color: active ? t.accent : accentColor,
         }}>{initial}</span>
         {/* Status dot esquina superior derecha */}
         {(isActive || bubble.ptyOpen) && (
           <span style={{
-            position: 'absolute', top: 6, right: 6,
+            position: 'absolute', top: 5, right: 5,
             width: 7, height: 7, borderRadius: '50%',
             background: isActive ? sColor : t.accent,
-            border: `1.5px solid ${t.windowBg}`,
+            border: `1.5px solid ${t.glassBg}`,
             boxShadow: `0 0 6px ${isActive ? sColor : t.accent}`,
             animation: isActive ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
           }}/>
         )}
       </motion.button>
 
-      {/* Label corto debajo del ícono — primera palabra del título o "Xxx…" */}
-      <span style={{
-        maxWidth: SIZE + 4,
-        fontFamily: t.fontSans, fontSize: 9, fontWeight: 500,
-        color: active ? t.accent : t.text3,
-        textAlign: 'center',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        pointerEvents: 'none',
-        letterSpacing: -0.1,
-        lineHeight: 1.1,
-      }}>{shortLabel}</span>
+      {/* Dot indicador "abierta" abajo del ícono — convención macOS. */}
+      {active && (
+        <span style={{
+          position: 'absolute', bottom: -6, left: '50%',
+          transform: 'translateX(-50%)',
+          width: 4, height: 4, borderRadius: '50%',
+          background: t.accent,
+          boxShadow: `0 0 4px ${t.accent}`,
+          pointerEvents: 'none',
+        }}/>
+      )}
 
-      {/* Tooltip */}
+      {/* Tooltip arriba */}
       <AnimatePresence>
         {hover && showTip && (
           <motion.div
-            initial={{ opacity: 0, x: -6, scale: 0.95 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -6, scale: 0.95 }}
+            initial={{ opacity: 0, y: 4, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.95 }}
             transition={{ duration: 0.14, ease: 'easeOut' }}
             style={{
-              position: 'absolute', left: 'calc(100% + 22px)', top: '50%',
-              transform: 'translateY(-50%)',
+              position: 'absolute', bottom: 'calc(100% + 18px)', left: '50%',
+              transform: 'translateX(-50%)',
               padding: '6px 10px', borderRadius: 8,
               background: t.bg1,
               border: `1px solid ${t.glassBorderHi}`,

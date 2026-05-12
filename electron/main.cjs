@@ -6,7 +6,7 @@
 // El sidecar listener Python NO se empaqueta — sigue corriéndose aparte.
 // En esta versión Eco funciona sin él (Web Speech API en dev).
 
-const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -162,6 +162,18 @@ async function createWindow() {
 
 ipcMain.on('eco:renderer-log', (_e, args) => {
   console.log('[renderer]', ...(Array.isArray(args) ? args : [args]));
+});
+
+// Folder picker nativo del OS — usado por Settings → Integraciones para
+// elegir la carpeta del vault Obsidian.
+ipcMain.handle('eco:pick-folder', async (_e, opts) => {
+  const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
+    title: (opts && opts.title) || 'Elegir carpeta',
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: (opts && opts.defaultPath) || undefined,
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true, path: '' };
+  return { canceled: false, path: result.filePaths[0] };
 });
 
 // IPC: el renderer pide el token o el backend URL desde el preload.

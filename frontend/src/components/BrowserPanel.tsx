@@ -117,6 +117,19 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     return () => { cancelled = true; };
   }, [bubbleId]);
 
+  // Auto-navigate desde el ServerPanel: cuando el user clickea la URL del
+  // server o el server arranca, emitimos 'eco:browser_navigate' para que
+  // este BrowserPanel se cargue a esa URL automático.
+  useEffect(() => {
+    return ecoOn('eco:browser_navigate', (d) => {
+      if (d.bubbleId !== bubbleId) return;
+      if (!d.url) return;
+      setLoadFailed(false);
+      setUrl(d.url);
+      setRefreshKey((k) => k + 1);
+    });
+  }, [bubbleId]);
+
   // Live updates via eco-bus (App.tsx re-emite dev_status del WS).
   useEffect(() => {
     return ecoOn('eco:dev_status', (d) => {

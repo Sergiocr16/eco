@@ -32,6 +32,10 @@ type Session = {
   port: number;
   url: string;
   proc: ChildProcess | null;
+  // Process group ID. Cuando spawneamos con `detached: true`, el child se
+  // convierte en el líder de su propio process group y su pgid === proc.pid.
+  // Usamos esto para matar TODA la descendencia con `process.kill(-pgid, …)`.
+  pgid: number | null;
   status: DevStatus;
   output: string;            // ring buffer
   startedAt: number | null;
@@ -64,6 +68,69 @@ function broadcastStatus(s: Session) {
 
 function appendOutput(s: Session, chunk: string) {
   s.output = (s.output + chunk).slice(-BUFFER_MAX);
+}
+
+// ─── Cleanup robusto del server ───────────────────────────────────────────
+// Problema típico: `spawn('bash', ['-c', cmd])` crea bash + sus hijos. Al
+// hacer kill al `bash`, los hijos (gulp, vite, java, etc.) quedan HUÉRFANOS
+// con el puerto tomado. Solución: process group con `detached: true` y luego
+// `process.kill(-pgid, SIG)` mata el grupo entero (padre + descendencia).
+//
+// Defensa adicional: si después del kill el puerto sigue tomado por algo
+// (p.ej. un worker que sobrevivió porque hace setsid o se daemonizó), lo
+// matamos con `lsof -ti :<port> | xargs kill -9`.
+
+function killProcessGroup(pgid: number, signal: NodeJS.Signals): boolean {
+  try {
+    // `-pgid` (negativo) le dice a kill que mate todo el process group.
+    process.kill(-pgid, signal);
+    return true;
+  } catch {
+    // ESRCH si ya está muerto, EPERM si no tenemos permiso — ambos OK.
+    return false;
+  }
+}
+
+/** PIDs que están bindeando el puerto (lsof). Vacío si está libre. */
+function pidsHoldingPort(port: number): number[] {
+  try {
+    const r = spawnSync('lsof', ['-ti', `:${port}`, '-sTCP:LISTEN'], {
+      timeout: 1500, encoding: 'utf-8',
+    });
+    if (r.status !== 0) return [];
+    return r.stdout.split(/\s+/).map((s) => parseInt(s, 10)).filter((n) => Number.isFinite(n));
+  } catch { return []; }
+}
+
+/**
+ * Asegura que el puerto quede LIBRE.
+ * Estrategia: SIGTERM al grupo → espera 2.5s → si sigue colgado, busca PIDs
+ * bindeados al puerto y los mata uno por uno con SIGKILL. Si después de 5s
+ * total el puerto sigue ocupado, devuelve error con los PIDs que sobreviven.
+ */
+async function ensurePortFree(port: number, pgid: number | null): Promise<{ ok: true } | { ok: false; pids: number[] }> {
+  if (pgid && pgid > 0) {
+    killProcessGroup(pgid, 'SIGTERM');
+  }
+  // Poll: cada 250ms hasta 2.5s o hasta que el puerto esté libre.
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (pidsHoldingPort(port).length === 0) return { ok: true };
+  }
+  // SIGKILL al grupo (si todavía existe).
+  if (pgid && pgid > 0) killProcessGroup(pgid, 'SIGKILL');
+  // Adicionalmente, matamos cualquier PID que esté bindeando el puerto.
+  // Esto cubre procesos que se daemonizaron a otro grupo.
+  const stuckPids = pidsHoldingPort(port);
+  for (const pid of stuckPids) {
+    try { process.kill(pid, 'SIGKILL'); } catch { /* noop */ }
+  }
+  // Una pasada final de poll: 2.5s más.
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (pidsHoldingPort(port).length === 0) return { ok: true };
+  }
+  return { ok: false, pids: pidsHoldingPort(port) };
 }
 
 /** Reserva un puerto libre pidiéndole al OS uno random (puerto 0). */
@@ -212,9 +279,10 @@ async function retryWithNewPort(s: Session) {
   if (s.retries >= MAX_RETRIES) return;
   s.retries += 1;
 
-  // 1) Matar lo que haya quedado.
-  try { s.proc?.kill('SIGTERM'); } catch { /* noop */ }
-  setTimeout(() => { try { s.proc?.kill('SIGKILL'); } catch { /* noop */ } }, 3000);
+  // 1) Matar el grupo entero y liberar el puerto antes de reintentar.
+  await ensurePortFree(s.port, s.pgid);
+  s.proc = null;
+  s.pgid = null;
 
   // 2) Pedir a Claude que parchee los configs con el contexto del fallo.
   appendOutput(s, `\n[eco] Puerto en conflicto detectado. Pidiendo a Claude que parchee configs (intento ${s.retries}/${MAX_RETRIES})…\n`);
@@ -235,14 +303,6 @@ async function retryWithNewPort(s: Session) {
     return;
   }
 
-  // 4) Esperar a que el proc viejo muera, después spawn de nuevo.
-  await new Promise<void>((res) => {
-    let waited = 0;
-    const iv = setInterval(() => {
-      waited += 200;
-      if (!s.proc || waited > 4000) { clearInterval(iv); res(); }
-    }, 200);
-  });
   spawnSession(s);
 }
 
@@ -330,12 +390,21 @@ function spawnSession(s: Session) {
   // bash -c (sin -l) para que NO re-source .bash_profile/.zshrc, que podrían
   // pisar nuestro PATH augmentado con el node_modules/.bin del repo padre.
   // El PATH que pasamos en env ya incluye todo lo necesario (nvm, brew, locales).
+  //
+  // `detached: true` crea un nuevo process group con pgid = proc.pid. Esto
+  // permite matar el grupo ENTERO (padre bash + todos sus hijos) con un solo
+  // `process.kill(-pgid, …)` cuando se hace stop. Sin esto, kill al bash deja
+  // a gulp/vite/java huérfanos con el puerto tomado.
   const proc = spawn('/bin/bash', ['-c', s.command], {
     cwd: s.workspace,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
+  // Importante: NO desreferenciar (proc.unref()) — queremos que Node mantenga
+  // el handle. La diferencia con un spawn no-detached es el pgid.
   s.proc = proc;
+  s.pgid = typeof proc.pid === 'number' ? proc.pid : null;
 
   let conflictTriggered = false;
   const onData = (data: Buffer) => {
@@ -360,6 +429,7 @@ function spawnSession(s: Session) {
     s.exitCode = code ?? (signal ? -1 : 0);
     s.exitedAt = Date.now();
     s.proc = null;
+    s.pgid = null;
     // Si nunca llegó a "running" y se cae rápido, lo marcamos error.
     s.status = (s.status === 'running' || code === 0) ? 'stopped' : 'error';
     broadcastStatus(s);
@@ -369,6 +439,7 @@ function spawnSession(s: Session) {
     s.status = 'error';
     s.exitedAt = Date.now();
     s.proc = null;
+    s.pgid = null;
     broadcastStatus(s);
   });
 }
@@ -398,7 +469,7 @@ export async function startDevServer(
   const s: Session = existing ?? {
     bubbleId, workspace, command: cmd, port,
     url: `http://127.0.0.1:${port}`,
-    proc: null, status: 'idle', output: '',
+    proc: null, pgid: null, status: 'idle', output: '',
     startedAt: null, exitCode: null, exitedAt: null,
     retries: 0,
   };
@@ -413,34 +484,54 @@ export async function startDevServer(
   return { ok: true, command: cmd, port, url: s.url };
 }
 
-export function stopDevServer(bubbleId: string): { ok: boolean; error?: string } {
+/**
+ * Detiene el server y **garantiza** que el puerto quede libre.
+ * Estrategia:
+ *  1. SIGTERM al process GROUP entero (mata padre + todos los hijos)
+ *  2. Polling de 2.5s — si el puerto se libera, hecho
+ *  3. SIGKILL al grupo + a cualquier PID que siga bindeando el puerto
+ *  4. Polling de 2.5s más
+ *  5. Si después de 5s sigue colgado, devolvemos error con los PIDs supervivientes
+ *     para que el user los pueda inspeccionar manualmente.
+ */
+export async function stopDevServer(bubbleId: string): Promise<{ ok: boolean; error?: string }> {
   const s = sessions.get(bubbleId);
-  if (!s || !s.proc) return { ok: false, error: 'No hay server corriendo' };
-  try {
-    s.proc.kill('SIGTERM');
-    // Force kill a los 5s si no respondió.
-    setTimeout(() => { try { s.proc?.kill('SIGKILL'); } catch { /* noop */ } }, 5000);
+  if (!s) return { ok: false, error: 'Sesión no existe' };
+  if (!s.proc && pidsHoldingPort(s.port).length === 0) {
+    s.status = 'stopped';
+    broadcastStatus(s);
     return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'kill falló' };
   }
+
+  const pgid = s.pgid;
+  const port = s.port;
+  appendOutput(s, `\n[eco] Deteniendo server (pgid=${pgid ?? '?'}, port=${port})…\n`);
+
+  const r = await ensurePortFree(port, pgid);
+  // Resetear estado (los listeners de proc.on('exit') ya limpiaron proc/pgid).
+  if (r.ok) {
+    s.status = 'stopped';
+    s.proc = null;
+    s.pgid = null;
+    appendOutput(s, `[eco] Server detenido. Puerto ${port} libre.\n`);
+    broadcastStatus(s);
+    return { ok: true };
+  }
+  // Puerto sigue colgado — devolvemos error explícito con los PIDs.
+  const msg = `Puerto ${port} sigue ocupado por PIDs: ${r.pids.join(', ')}. Inspeccioná con \`lsof -i :${port}\`.`;
+  appendOutput(s, `[eco] ${msg}\n`);
+  s.status = 'error';
+  broadcastStatus(s);
+  return { ok: false, error: msg };
 }
 
 export async function restartDevServer(bubbleId: string): Promise<StartResult> {
   const s = sessions.get(bubbleId);
   if (!s) return { ok: false, error: 'Sesión no existe' };
-  if (s.proc) {
-    stopDevServer(bubbleId);
-    // Esperamos a que muera; máx 6s.
-    await new Promise<void>((res) => {
-      let waited = 0;
-      const iv = setInterval(() => {
-        waited += 200;
-        if (!sessions.get(bubbleId)?.proc || waited > 6000) {
-          clearInterval(iv); res();
-        }
-      }, 200);
-    });
+  // Stop completo antes de start — garantiza que el puerto está libre.
+  if (s.proc || pidsHoldingPort(s.port).length > 0) {
+    const stopRes = await stopDevServer(bubbleId);
+    if (!stopRes.ok) return { ok: false, error: `No pude liberar el puerto: ${stopRes.error}` };
   }
   return startDevServer(bubbleId, s.workspace, s.command);
 }
@@ -582,16 +673,17 @@ export async function runSkillAction(
   if (!bubbleId || !workspace || !skill) return { ok: false, error: 'bubbleId, workspace y skill requeridos' };
 
   // Recuperamos o creamos la session.
-  let s = sessions.get(bubbleId);
-  if (!s) {
-    s = {
+  let existing = sessions.get(bubbleId);
+  if (!existing) {
+    existing = {
       bubbleId, workspace, command: `/${skill} ${action}`, port: 0, url: '',
-      proc: null, status: 'idle', output: '',
+      proc: null, pgid: null, status: 'idle', output: '',
       startedAt: null, exitCode: null, exitedAt: null,
       retries: 0, skill,
     };
-    sessions.set(bubbleId, s);
+    sessions.set(bubbleId, existing);
   }
+  const s: Session = existing;
   s.skill = skill;
   s.command = `/${skill} ${action}`;
 

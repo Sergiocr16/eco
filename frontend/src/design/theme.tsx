@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { buildTokens, type ThemeMode, type Tokens } from './tokens';
+import { buildTokens, isLightTheme, type ThemeMode, type EffectiveThemeMode, type Tokens } from './tokens';
 
 type ThemeContextValue = {
   mode: ThemeMode;
-  effectiveMode: 'dark' | 'light' | 'amoled';
+  effectiveMode: EffectiveThemeMode;
   accentHue: number;
   setMode: (m: ThemeMode) => void;
   setAccentHue: (hue: number) => void;
@@ -41,7 +41,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener?.('change', onChange);
   }, []);
 
-  const effectiveMode: 'dark' | 'light' | 'amoled' = mode === 'system' ? systemMode : mode;
+  const effectiveMode: EffectiveThemeMode = mode === 'system' ? systemMode : mode;
 
   const t = useMemo(() => buildTokens(effectiveMode, accentHue), [effectiveMode, accentHue]);
 
@@ -55,9 +55,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // CSS color-scheme solo acepta 'dark' o 'light'; mapeamos amoled → dark.
-    const css = effectiveMode === 'light' ? 'light' : 'dark';
-    document.documentElement.style.colorScheme = css;
+    // CSS color-scheme solo acepta 'dark' o 'light'; consultamos al tema.
+    document.documentElement.style.colorScheme = isLightTheme(effectiveMode) ? 'light' : 'dark';
     document.body.style.background = t.desktopBg;
     document.body.style.color = t.text0;
   }, [effectiveMode, t.desktopBg, t.text0]);

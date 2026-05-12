@@ -11,6 +11,7 @@ import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from
 import * as gitOps from './git-ops.js';
 import * as devServer from './dev-server.js';
 import { proxyPage } from './browser-proxy.js';
+import * as obsidian from './obsidian.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
 import { listSkills } from './skills.js';
@@ -40,7 +41,17 @@ const authToken = getOrCreateToken();
 
 const app = express();
 app.disable('x-powered-by');
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  // CORP/COOP por default son `same-origin` en helmet. En dev el frontend
+  // vive en :5173 y el backend en :7000 (mismos host, distintos puertos =
+  // distintos orígenes) — el browser rechaza la respuesta antes de leerla
+  // aunque CORS sí pase. Permitimos cross-origin acá; la seguridad real
+  // viene del CORS allowlist + Bearer token + host check, no de CORP.
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginOpenerPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 app.use(
   cors({
     // En empaquetado Electron, el renderer carga desde el mismo origen
@@ -48,7 +59,7 @@ app.use(
     // la whitelist explícita por si alguien hace cross-origin.
     origin: config.allowedOrigins,
     methods: ['GET', 'POST', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Eco-Client'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Eco-Client', 'X-Eco-Session'],
     credentials: false,
     maxAge: 600,
   }),
@@ -397,10 +408,10 @@ app.post('/dev/start', async (req: Request, res: Response) => {
   res.json(result);
 });
 
-app.post('/dev/stop', (req: Request, res: Response) => {
+app.post('/dev/stop', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
-  res.json(devServer.stopDevServer(bubbleId));
+  res.json(await devServer.stopDevServer(bubbleId));
 });
 
 app.post('/dev/restart', async (req: Request, res: Response) => {
@@ -446,12 +457,59 @@ app.get('/dev/logs', (req: Request, res: Response) => {
 // seguirán rompiendo y deberán abrirse en el navegador del sistema.
 app.get('/proxy/site', proxyPage);
 
-app.post('/pty/kill', (req: Request, res: Response) => {
+// ─────────────────────────── Obsidian
+app.get('/integrations/obsidian/status', (_req: Request, res: Response) => {
+  res.json(obsidian.status());
+});
+
+app.get('/integrations/obsidian/vaults', (_req: Request, res: Response) => {
+  // Lista los vaults que Obsidian tiene registrados en su config local.
+  res.json({ vaults: obsidian.detectInstalledVaults() });
+});
+
+const ObsidianConfigSchema = z.object({
+  enabled: z.boolean(),
+  vaultPath: z.string(),
+});
+app.post('/integrations/obsidian/config', (req: Request, res: Response) => {
+  const parsed = ObsidianConfigSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  obsidian.saveConfig(parsed.data);
+  res.json({ ok: true, status: obsidian.status() });
+});
+
+app.get('/integrations/obsidian/context', (req: Request, res: Response) => {
+  const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : '';
+  res.json({ markdown: obsidian.loadProjectContext(workspace) });
+});
+
+const SaveSessionSchema = z.object({
+  bubbleId: z.string(),
+  title: z.string(),
+  workspace: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  messages: z.array(z.object({
+    role: z.enum(['user', 'assistant', 'system', 'tool']),
+    text: z.string(),
+    createdAt: z.number(),
+  })).max(2000),
+});
+app.post('/integrations/obsidian/save-session', (req: Request, res: Response) => {
+  const parsed = SaveSessionSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
+  const r = obsidian.saveSession(parsed.data);
+  if (!r.ok) return errResponse(res, 400, 'obsidian.save_failed', r.error);
+  res.json({ ok: true, path: r.path });
+});
+
+app.post('/pty/kill', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
   const killed = killBubblePty(bubbleId);
-  // Matamos también el dev server del agente si existe.
-  devServer.stopDevServer(bubbleId);
+  // Matamos también el dev server del agente si existe (con cleanup completo
+  // de process group + verificación de puerto).
+  await devServer.stopDevServer(bubbleId);
   // El worktree de la burbuja también se libera; la rama eco/<id> queda
   // viva en el repo padre para que el usuario pueda mergear si quiere.
   const worktreeRemoved = removeWorktree(bubbleId);

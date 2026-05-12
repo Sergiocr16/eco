@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Log que llega al stdout del main process — útil para debug del renderer
   // cuando no podemos abrir DevTools.
   log: (...args) => ipcRenderer.send('eco:renderer-log', args),
+  // Folder picker nativo del OS.
+  pickFolder: (opts) => ipcRenderer.invoke('eco:pick-folder', opts),
 });

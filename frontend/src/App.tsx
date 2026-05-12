@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider, useTokens } from './design/theme';
 import { AppSidebar, type Screen } from './components/AppSidebar';
+import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
 import { Settings } from './screens/Settings';
@@ -480,9 +481,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           username={auth.state.username}
           onLock={auth.lock}
           onDestroyUser={auth.destroyUser}
-          bubbles={bubbles.bubbles}
-          activeBubbleId={detailBubbleId ?? bubbles.activeBubbleId}
-          onOpenAgent={handleOpenAgent}
         />
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           <ScreenError error={socket.error}/>
@@ -556,7 +554,42 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         onSkip={() => setWsPickerForBubble(null)}
         onClose={() => setWsPickerForBubble(null)}
       />
+      <FloatingBubbleDock
+        bubbles={bubbles.bubbles}
+        activeBubbleId={detailBubbleId ?? bubbles.activeBubbleId}
+        onOpenAgent={handleOpenAgent}
+      />
     </>
+  );
+}
+
+// Dock flotante en bottom-center, controlado por la pref `eco.dock.enabled`.
+// Lo mantenemos como wrapper aparte para que escuche cambios del toggle desde
+// Ajustes sin obligar al App a re-renderizar todo.
+function FloatingBubbleDock({
+  bubbles, activeBubbleId, onOpenAgent,
+}: {
+  bubbles: ReturnType<typeof useBubbles>['bubbles'];
+  activeBubbleId: string | null;
+  onOpenAgent: (id: string) => void;
+}) {
+  const [enabled, setEnabled] = useState<boolean>(() => {
+    try { return window.localStorage.getItem('eco.dock.enabled') !== '0'; } catch { return true; }
+  });
+  useEffect(() => {
+    const sync = () => {
+      try { setEnabled(window.localStorage.getItem('eco.dock.enabled') !== '0'); } catch { /* noop */ }
+    };
+    window.addEventListener('storage', sync);
+    window.addEventListener('eco:dock-pref-change', sync);
+    return () => {
+      window.removeEventListener('storage', sync);
+      window.removeEventListener('eco:dock-pref-change', sync);
+    };
+  }, []);
+  if (!enabled) return null;
+  return (
+    <BubbleDock bubbles={bubbles} activeBubbleId={activeBubbleId} onOpenAgent={onOpenAgent}/>
   );
 }
 

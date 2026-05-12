@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { Btn, Glass } from '@/design/primitives';
-import { IconFolder, IconFolderOpen, IconPlus, IconX, IconCheck } from '@/design/icons';
+import { IconFolder, IconFolderOpen, IconX, IconCheck } from '@/design/icons';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useT } from '@/hooks/useI18n';
 
@@ -36,8 +36,8 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
 
   if (!open) return null;
 
-  async function handleAdd() {
-    const v = draftPath.trim();
+  async function handleAdd(pathOverride?: string) {
+    const v = (pathOverride ?? draftPath).trim();
     if (!v) return;
     setBusy(true);
     setAddError(null);
@@ -52,6 +52,25 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
       setAddError(result.error);
     }
   }
+
+  // Folder picker nativo de Electron — abre Finder en Mac. Si no estamos en
+  // Electron (web puro), cae al modo de input manual.
+  async function pickWithDialog() {
+    const api = (window as unknown as { electronAPI?: { pickFolder?: (opts: { title: string }) => Promise<{ canceled: boolean; path: string }> } }).electronAPI;
+    if (!api?.pickFolder) {
+      setAdding(true);
+      return;
+    }
+    try {
+      const r = await api.pickFolder({ title: 'Elegir carpeta para el agente' });
+      if (r.canceled || !r.path) return;
+      await handleAdd(r.path);
+    } catch {
+      setAdding(true);
+    }
+  }
+
+  const hasNativePicker = typeof window !== 'undefined' && !!window.electronAPI?.pickFolder;
 
   return (
     <div
@@ -159,7 +178,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
                   value={draftPath}
                   onChange={(e) => { setDraftPath(e.target.value); setAddError(null); }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAdd();
+                    if (e.key === 'Enter') void handleAdd();
                     if (e.key === 'Escape') { setAdding(false); setDraftPath(''); }
                   }}
                   placeholder="/Users/sergio/projects/aditum-jh"
@@ -169,7 +188,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
                     fontFamily: t.fontMono, fontSize: 12.5, color: t.text0,
                   }}
                 />
-                <Btn kind="primary" size="sm" onClick={handleAdd} disabled={busy || !draftPath.trim()} icon={IconCheck}>
+                <Btn kind="primary" size="sm" onClick={() => void handleAdd()} disabled={busy || !draftPath.trim()} icon={IconCheck}>
                   {busy ? tr('wsp.add_loading') : tr('wsp.add_btn')}
                 </Btn>
               </div>
@@ -178,31 +197,55 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
               )}
             </Glass>
           ) : (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              style={{
-                width: '100%',
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '12px 14px', borderRadius: 12,
-                background: 'transparent', border: `1px dashed ${t.glassBorderHi}`,
-                color: t.text1, cursor: 'pointer', textAlign: 'left',
-                transition: 'all 140ms',
-                marginTop: 4,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = t.accentDim;
-                e.currentTarget.style.background = t.accentFaint;
-                e.currentTarget.style.color = t.accent;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = t.glassBorderHi;
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = t.text1;
-              }}>
-              <IconPlus size={14}/>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{tr('wsp.add_other')}</span>
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+              {/* Botón primario: Elegir carpeta con Finder/Explorer nativo (Electron) */}
+              <button
+                type="button"
+                onClick={() => void pickWithDialog()}
+                disabled={busy}
+                style={{
+                  width: '100%',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '12px 14px', borderRadius: 12,
+                  background: 'transparent', border: `1px dashed ${t.glassBorderHi}`,
+                  color: t.text1, cursor: busy ? 'wait' : 'pointer', textAlign: 'left',
+                  transition: 'all 140ms',
+                }}
+                onMouseEnter={(e) => {
+                  if (busy) return;
+                  e.currentTarget.style.borderColor = t.accentDim;
+                  e.currentTarget.style.background = t.accentFaint;
+                  e.currentTarget.style.color = t.accent;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = t.glassBorderHi;
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = t.text1;
+                }}>
+                <IconFolderOpen size={14}/>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
+                  {busy ? tr('wsp.add_loading') : (hasNativePicker ? tr('wsp.pick_folder') : tr('wsp.add_other'))}
+                </span>
+                {hasNativePicker && (
+                  <span style={{ fontSize: 10, color: t.text3, fontFamily: t.fontMono }}>Finder</span>
+                )}
+              </button>
+
+              {/* Link discreto: opción de escribir el path manual (avanzado) */}
+              {hasNativePicker && (
+                <button
+                  type="button"
+                  onClick={() => setAdding(true)}
+                  style={{
+                    background: 'transparent', border: 0, color: t.text3,
+                    cursor: 'pointer', fontSize: 11, padding: '4px 0',
+                    fontFamily: t.fontSans, textAlign: 'left',
+                    textDecoration: 'underline', textUnderlineOffset: 2,
+                  }}>
+                  {tr('wsp.type_path_instead')}
+                </button>
+              )}
+            </div>
           )}
         </div>
 

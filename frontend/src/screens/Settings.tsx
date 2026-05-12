@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTheme, useTokens } from '@/design/theme';
-import { ACCENT_HUES } from '@/design/tokens';
+import { ACCENT_HUES, THEME_VARIANTS } from '@/design/tokens';
 import {
   Glass, Btn, StatusDot, SectionLabel, Toggle, fieldStyle,
 } from '@/design/primitives';
@@ -15,9 +15,10 @@ import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { useApiKey } from '@/hooks/useApiKey';
+import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useI18n, useT } from '@/hooks/useI18n';
 
-type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appearance' | 'about';
+type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appearance' | 'integrations' | 'about';
 
 export function Settings() {
   const t = useTokens();
@@ -30,6 +31,7 @@ export function Settings() {
     { id: 'folders', label: tr('settings.section.folders'), icon: IconFolder },
     { id: 'security', label: tr('settings.section.security'), icon: IconShield },
     { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
+    { id: 'integrations', label: tr('settings.section.integrations'), icon: IconBolt },
     { id: 'about', label: tr('settings.section.about'), icon: IconInfo },
   ];
   return (
@@ -68,6 +70,7 @@ export function Settings() {
         {sec === 'folders' && <SectionFolders/>}
         {sec === 'security' && <SectionSecurity/>}
         {sec === 'appearance' && <SectionAppearance/>}
+        {sec === 'integrations' && <SectionIntegrations/>}
         {sec === 'about' && <SectionAbout/>}
       </div>
     </div>
@@ -631,17 +634,24 @@ function SectionAppearance() {
   const t = useTokens();
   const tr = useT();
   const { mode, setMode, accentHue, setAccentHue } = useTheme();
+
+  // Grupo 1: modos generales (dark/light/system) — comportamiento adaptable.
+  const basicModes = [
+    { id: 'system' as const, label: tr('settings.appearance.theme.system'), preview: 'linear-gradient(135deg, #0a0a0c 50%, #fbfbfd 50%)' },
+    { id: 'dark' as const,   label: tr('settings.appearance.theme.dark'),   preview: '#0a0a0c' },
+    { id: 'light' as const,  label: tr('settings.appearance.theme.light'),  preview: '#fbfbfd' },
+  ];
+
+  // Grupo 2: temas con color characteristic — paletas curadas.
+  const curatedThemes = THEME_VARIANTS.filter((v) => v.id !== 'dark' && v.id !== 'light');
+
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div style={{ maxWidth: 760 }}>
       <Header title={tr('settings.appearance.title')} sub={tr('settings.appearance.sub')}/>
+
       <SectionLabel>{tr('settings.appearance.theme')}</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 22 }}>
-        {([
-          { id: 'dark', label: tr('settings.appearance.theme.dark'), preview: '#0a0a0c' },
-          { id: 'light', label: tr('settings.appearance.theme.light'), preview: '#f5f5f7' },
-          { id: 'amoled', label: 'AMOLED', preview: '#000000' },
-          { id: 'system', label: tr('settings.appearance.theme.system'), preview: 'linear-gradient(135deg, #0a0a0c 50%, #f5f5f7 50%)' },
-        ] as const).map((m) => (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
+        {basicModes.map((m) => (
           <button key={m.id} type="button" onClick={() => setMode(m.id)} style={{
             padding: 14, border: `1px solid ${mode === m.id ? t.accentDim : t.glassBorder}`,
             borderRadius: 14, background: mode === m.id ? t.accentFaint : t.bg2,
@@ -657,6 +667,43 @@ function SectionAppearance() {
             }}>{mode === m.id && <IconCheck size={12} strokeWidth={3}/>}{m.label}</div>
           </button>
         ))}
+      </div>
+
+      <SectionLabel>{tr('settings.appearance.theme.curated')}</SectionLabel>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 22 }}>
+        {curatedThemes.map((v) => {
+          const selected = mode === v.id;
+          return (
+            <button key={v.id} type="button" onClick={() => setMode(v.id)} style={{
+              padding: 8, border: `1px solid ${selected ? t.accentDim : t.glassBorder}`,
+              borderRadius: 12, background: selected ? t.accentFaint : t.bg2,
+              cursor: 'pointer', textAlign: 'left',
+              transition: 'all 140ms',
+            }}>
+              <div style={{
+                height: 44, borderRadius: 6, marginBottom: 6,
+                background: v.preview, border: `1px solid ${t.glassBorder}`,
+                position: 'relative',
+              }}>
+                {/* Mini accent dot para preview de cómo se ve el accent encima del fondo */}
+                <span style={{
+                  position: 'absolute', bottom: 5, right: 5,
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: `oklch(76% 0.13 ${accentHue})`,
+                  boxShadow: `0 0 4px oklch(76% 0.13 ${accentHue})`,
+                }}/>
+              </div>
+              <div style={{
+                fontSize: 11.5, color: selected ? t.accent : t.text1, fontWeight: 500,
+                display: 'flex', alignItems: 'center', gap: 4,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {selected && <IconCheck size={10} strokeWidth={3}/>}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.name}</span>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       <SectionLabel>{tr('settings.appearance.accent')}</SectionLabel>
@@ -694,6 +741,190 @@ function SectionAppearance() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function SectionIntegrations() {
+  const t = useTokens();
+  const tr = useT();
+  const { status: obs, vaults, save: saveObs, refresh } = useObsidian();
+  const [vaultDraft, setVaultDraft] = useState(obs.vaultPath);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => { setVaultDraft(obs.vaultPath); }, [obs.vaultPath]);
+
+  async function persist(enabled: boolean, vault: string) {
+    setBusy(true);
+    setMsg(null);
+    const ok = await saveObs(enabled, vault);
+    if (!ok) setMsg({ ok: false, text: 'No se pudo guardar' });
+    else { await refresh(); setMsg({ ok: true, text: 'Guardado' }); }
+    setBusy(false);
+    setTimeout(() => setMsg(null), 3000);
+  }
+
+  async function pickFolder() {
+    const picked = await pickVaultFolder();
+    if (picked) setVaultDraft(picked);
+  }
+
+  const validVault = obs.vaultExists && !!obs.vaultPath;
+  const hasElectron = typeof window !== 'undefined' && !!window.electronAPI?.pickFolder;
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <Header title={tr('settings.integrations.title')} sub={tr('settings.integrations.sub')}/>
+
+      <SectionLabel>Obsidian</SectionLabel>
+      <Glass radius={14} style={{ padding: 18, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+            background: t.accentFaint, color: t.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IconLayers size={20}/>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: t.text0, marginBottom: 4 }}>
+              {tr('settings.integrations.obsidian.title')}
+            </div>
+            <div style={{ fontSize: 12.5, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
+              {tr('settings.integrations.obsidian.desc')}
+            </div>
+
+            <div style={{
+              padding: 10, marginBottom: 12, borderRadius: 10,
+              background: t.bg2, fontSize: 11.5, color: t.text2,
+              display: 'flex', flexDirection: 'column', gap: 6,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <StatusDot color={validVault ? t.ok : (obs.vaultPath ? t.warn : t.text3)}/>
+                <span style={{ flex: 1 }}>
+                  {!obs.vaultPath ? 'Sin configurar — elegí un vault abajo.'
+                    : !obs.vaultExists ? 'El path configurado no existe en disco.'
+                    : !obs.hasParaStructure ? `Vault detectado · ${obs.noteCount} notas · estructura PARA se creará al guardar.`
+                    : `Vault listo · ${obs.noteCount} notas · estructura PARA detectada.`}
+                </span>
+              </div>
+              {obs.vaultPath && (
+                <div style={{
+                  fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                  paddingLeft: 16, wordBreak: 'break-all',
+                }}>
+                  {obs.enabled && validVault ? '✓ activo: ' : ''}{obs.vaultPath}
+                </div>
+              )}
+            </div>
+
+            {/* Vaults detectados en Obsidian. Mostramos solo si hay más de cero,
+                y resaltamos el seleccionado. */}
+            {vaults.length > 0 && (
+              <>
+                <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 4 }}>
+                  {tr('settings.integrations.obsidian.detected_label')}
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+                  {vaults.map((v) => {
+                    const selected = v.path === vaultDraft;
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => setVaultDraft(v.path)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 10px', borderRadius: 8,
+                          border: `1px solid ${selected ? t.accent : t.glassBorder}`,
+                          background: selected ? t.accentFaint : t.bg2,
+                          color: t.text0,
+                          cursor: 'pointer', textAlign: 'left',
+                          transition: 'all 140ms',
+                        }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: 6, flexShrink: 0,
+                          background: selected ? t.accent : t.bg3,
+                          color: selected ? t.accentOn : t.text1,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontFamily: t.fontSans, fontSize: 13, fontWeight: 600,
+                        }}>{v.name.charAt(0).toUpperCase()}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 500, color: t.text0 }}>
+                            {v.name}
+                            {v.open && (
+                              <span style={{ marginLeft: 8, fontSize: 9.5, color: t.ok, fontWeight: 500 }}>
+                                · {tr('settings.integrations.obsidian.vault_open')}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{
+                            fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>{v.path}</div>
+                        </div>
+                        {selected && <IconCheck size={14} style={{ color: t.accent }}/>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 4 }}>
+              {tr('settings.integrations.obsidian.vault_label')}
+            </label>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              <input
+                value={vaultDraft}
+                onChange={(e) => setVaultDraft(e.target.value)}
+                placeholder="/Users/.../Documents/Obsidian/Aditum-KB"
+                spellCheck={false}
+                autoCorrect="off"
+                style={{ ...fieldStyle(t), flex: 1 }}
+              />
+              {hasElectron && (
+                <Btn kind="ghost" size="sm" onClick={() => void pickFolder()}>
+                  {tr('settings.integrations.obsidian.pick_folder')}
+                </Btn>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Toggle
+                  on={obs.enabled && validVault}
+                  onChange={(v) => { if (validVault || !v) void persist(v, obs.vaultPath); }}
+                  disabled={!validVault}
+                />
+                <span style={{ fontSize: 12.5, color: t.text1 }}>
+                  {tr('settings.integrations.obsidian.enabled_label')}
+                </span>
+              </div>
+              <div style={{ flex: 1 }}/>
+              <Btn
+                kind="primary" size="sm"
+                onClick={() => void persist(obs.enabled, vaultDraft)}
+                disabled={busy || vaultDraft === obs.vaultPath}>
+                {busy ? '...' : tr('common.save')}
+              </Btn>
+            </div>
+
+            {msg && (
+              <div style={{
+                marginTop: 10, fontSize: 11.5,
+                color: msg.ok ? t.ok : t.err,
+              }}>{msg.text}</div>
+            )}
+
+            <div style={{ marginTop: 14, padding: 10, borderRadius: 8, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
+              <strong style={{ color: t.text2 }}>{tr('settings.integrations.obsidian.howto')}</strong>{' '}
+              {tr('settings.integrations.obsidian.howto_desc')}
+            </div>
+          </div>
+        </div>
+      </Glass>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 
 export type EcoBusEvents = {
   'eco:scroll': { dir: 'up' | 'down' | 'top' | 'bottom' };
-  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' };
+  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server' };
   'eco:confirm': { answer: 'yes' | 'no' };
   'eco:wake_detected': { ts: number };
   'eco:dev_status': {
@@ -13,6 +13,10 @@ export type EcoBusEvents = {
     command: string;
     skill?: string;
   };
+  // Pedido al BrowserPanel del agente para cargar una URL específica (por
+  // ejemplo desde el ServerPanel cuando el server arranca o el user clickea
+  // la URL del server).
+  'eco:browser_navigate': { bubbleId: string; url: string };
 };
 
 type EventName = keyof EcoBusEvents;
