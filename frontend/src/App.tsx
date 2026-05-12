@@ -23,8 +23,10 @@ import { useTheme } from './design/theme';
 import { I18nProvider, useI18n, useT } from './hooks/useI18n';
 import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
 
-const BACKEND = (import.meta.env.VITE_ECO_BACKEND as string) ?? '';
-const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
+import { ecoBackend, ecoToken } from './lib/eco-config';
+import { getTopInset } from './lib/platform';
+const BACKEND = ecoBackend();
+const TOKEN = ecoToken();
 
 export function App() {
   return (
@@ -440,14 +442,35 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     ['running', 'thinking', 'executing', 'waiting'].includes(b.status as string),
   ).length;
 
+  // Inset superior para reservar el área de los traffic lights de macOS
+  // cuando corremos como app empaquetada (titleBarStyle: hiddenInset).
+  const topInset = getTopInset();
+
   return (
     <>
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,
         background: t.windowBg,
       }}/>
+      {/* Región arrastrable invisible que cubre los traffic lights y el resto
+          de la titlebar. -webkit-app-region: drag permite mover la ventana
+          de Electron arrastrando desde acá. Va por arriba del shell para
+          asegurar que no se "tape" — pero pointerEvents:auto solo en su área. */}
+      {topInset > 0 && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, height: topInset,
+          zIndex: 9999,
+          background: 'transparent',
+          // @ts-expect-error — propiedad no-estándar de Electron/Chromium
+          WebkitAppRegion: 'drag',
+        }}/>
+      )}
+      {/* Shell del UI: top=topInset empuja TODO 36px abajo, así los traffic
+          lights de mac y el frame del sistema viven en el área superior libre. */}
       <div style={{
-        position: 'fixed', inset: 0, zIndex: 1,
+        position: 'fixed',
+        top: topInset, left: 0, right: 0, bottom: 0,
+        zIndex: 1,
         display: 'flex',
       }}>
         <AppSidebar

@@ -3,6 +3,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { buildSafeEnv } from './security.js';
 import { config } from './config.js';
 
@@ -135,10 +136,29 @@ export function checkoutBranch(workspace: string, branch: string, create = false
       ? ['checkout', '-t', branch]
       : ['checkout', branch];
 
-  const r = git(args, workspace);
+  let r = git(args, workspace);
   if (!r.ok) {
-    const msg = (r.stderr || r.stdout).trim() || 'checkout falló';
-    return { ok: false, error: msg.slice(0, 600) };
+    const stderr = (r.stderr || r.stdout) || '';
+    // Caso típico: la rama está checked-out por OTRO worktree de Eco huérfano
+    // (~/.eco/worktrees/<bubble>). Buscamos ese worktree, lo removemos a la
+    // fuerza, y reintentamos el checkout. Solo limpiamos worktrees nuestros
+    // — nunca tocamos worktrees del user fuera de ~/.eco/.
+    const conflictMatch = stderr.match(/already used by worktree at '([^']+)'/);
+    if (conflictMatch && conflictMatch[1]) {
+      const conflictingPath = conflictMatch[1];
+      const ecoRoot = `${homedir()}/.eco/worktrees`;
+      if (conflictingPath === ecoRoot || conflictingPath.startsWith(ecoRoot + '/')) {
+        console.log('[git-ops] auto-removiendo worktree huérfano de Eco:', conflictingPath);
+        git(['worktree', 'remove', conflictingPath, '--force'], workspace);
+        git(['worktree', 'prune'], workspace);
+        // Reintentamos el checkout.
+        r = git(args, workspace);
+      }
+    }
+    if (!r.ok) {
+      const msg = (r.stderr || r.stdout).trim() || 'checkout falló';
+      return { ok: false, error: msg.slice(0, 600) };
+    }
   }
   return { ok: true, message: r.stdout.trim() || `Cambiado a «${branch}»` };
 }

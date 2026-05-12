@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import { ecoToken } from '@/lib/eco-config';
 import { useTokens } from '@/design/theme';
 import { registerPtyWriter } from '@/lib/voice-router';
 
@@ -15,7 +16,8 @@ type Props = {
   resetKey?: number;
 };
 
-const TOKEN = (import.meta.env.VITE_ECO_TOKEN as string) ?? '';
+// TOKEN se resuelve por llamada (no por módulo) para que funcione tanto en
+// dev (env de Vite) como en Electron empaquetado (preload IPC).
 
 export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,7 +57,9 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
     url.searchParams.set('cols', String(term.cols));
     url.searchParams.set('rows', String(term.rows));
 
-    const protocols = TOKEN ? [`eco.token.${TOKEN}`] : undefined;
+    const token = ecoToken();
+    console.log('[RealTerminal] connecting', { url: url.toString(), hasToken: !!token, tokenLen: token.length });
+    const protocols = token ? [`eco.token.${token}`] : undefined;
     let ws: WebSocket;
     try {
       ws = new WebSocket(url.toString(), protocols);
@@ -93,13 +97,22 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
       } catch { /* noop */ }
     };
 
-    ws.onerror = () => {
+    ws.onerror = (ev) => {
+      console.error('[RealTerminal] ws.onerror', ev);
       setStatus('error');
-      setErrMsg('Error de conexión');
+      setErrMsg(`Error de conexión (url=${url.toString()}, token=${token ? `${token.length}ch` : 'vacío'})`);
     };
 
-    ws.onclose = () => {
-      setStatus((prev) => (prev === 'error' ? 'error' : 'closed'));
+    ws.onclose = (ev) => {
+      console.warn('[RealTerminal] ws.onclose', { code: ev.code, reason: ev.reason, wasClean: ev.wasClean });
+      setStatus((prev) => {
+        if (prev === 'error') return 'error';
+        if (ev.code !== 1000 && ev.code !== 1001) {
+          setErrMsg(`WS cerrado (code=${ev.code}${ev.reason ? `, reason="${ev.reason}"` : ''})`);
+          return 'error';
+        }
+        return 'closed';
+      });
     };
 
     const sendInput = (data: string) => {

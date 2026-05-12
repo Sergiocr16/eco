@@ -94,10 +94,24 @@ export function useVoice({ language = 'es-419', onPhrase, onWakeDetected }: Opti
   // Para no disparar el wake repetido durante el mismo interim
   const wakeFiredRef = useRef(false);
 
+  // Web Speech API en Electron empaquetado entra en un loop "start→end→start"
+  // porque Chromium-Electron no incluye la API key de Google Speech. En ese
+  // caso marcamos no-soportado y el usuario tiene que correr el listener
+  // Python aparte (POST /voice/transcribed hace el broadcast vía WS).
+  //
+  // Múltiples checks para asegurarnos: UA, window.electronAPI (expuesto por
+  // el preload), o un global setado por main.tsx. Cualquiera bastaba pero
+  // así somos defensivos.
+  const isElectron =
+    typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)
+    || (typeof window !== 'undefined' && typeof window.electronAPI !== 'undefined');
   const Ctor =
-    typeof window !== 'undefined'
+    !isElectron && typeof window !== 'undefined'
       ? (window.SpeechRecognition ?? window.webkitSpeechRecognition)
       : undefined;
+  if (isElectron) {
+    console.log('[useVoice] electron detected, mic disabled. UA:', typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a');
+  }
 
   const isSupported = !!Ctor;
 

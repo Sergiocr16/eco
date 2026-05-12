@@ -6,7 +6,9 @@ import { readStore as readWorkspaceStore } from './workspaces-store.js';
 import { readApiKey } from './api-key-store.js';
 
 function parseEnvWorkspaces(): string[] {
-  const raw = process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? `${homedir()}/projects/eco-test`;
+  // Default: el home del user (existe siempre). Antes era ~/projects/eco-test
+  // que rompía el PTY si esa carpeta no existía.
+  const raw = process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? homedir();
   return raw
     .split(',')
     .map((p) => p.trim())
@@ -26,9 +28,17 @@ function loadWorkspaces(): string[] {
 
 function parseAllowedOrigins(): string[] {
   const def = ['tauri://localhost', 'http://localhost:5173', 'http://127.0.0.1:5173'];
+  // El propio backend cuando sirve el frontend (Electron empaquetado) carga
+  // el renderer desde su mismo origen — hay que aceptarlo automáticamente.
+  const host = process.env.ECO_HOST ?? '127.0.0.1';
+  const port = process.env.ECO_PORT ?? '7000';
+  const ownOrigins = [
+    `http://${host}:${port}`,
+    `http://localhost:${port}`,
+  ];
   const raw = process.env.ECO_ALLOWED_ORIGINS;
-  if (!raw) return def;
-  return raw.split(',').map((o) => o.trim()).filter(Boolean);
+  const userList = raw ? raw.split(',').map((o) => o.trim()).filter(Boolean) : def;
+  return Array.from(new Set([...userList, ...ownOrigins]));
 }
 
 function safeRealpath(target: string): string | null {

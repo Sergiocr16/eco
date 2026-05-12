@@ -1,6 +1,8 @@
 # Eco
 
-Asistente personal para Mac. Voz, archivos, código y git — 100% local.
+Asistente personal para Mac, Windows y Linux. Voz, archivos, código, git
+y navegador integrados — 100% local. Distribuido como **app nativa**
+(.dmg / .exe / .AppImage) vía Electron 33.
 
 ```
         ╭───────────────────────────────────────╮
@@ -51,11 +53,28 @@ palabras + opcional foto de perfil. La cuenta vive en `~/.eco/user.json`
 con argon2id y chmod 600. Sin servidor externo, sin Firebase. Bloquear /
 cerrar sesión / eliminar usuario desde el menú de cuenta.
 
+**App nativa**: empaquetable como `.dmg` (mac arm64+x64), `.exe` (Win
+NSIS) y `.AppImage` (Linux) con `npm run dist:mac|win|linux`. Electron
+33 spawnea el backend Node como subprocess interno (sin servers
+externos). Navegador interno con `<webview>` real Chromium — sin
+restricciones de `X-Frame-Options`/CSP, con DevTools propios.
+
 ---
 
 ## Arquitectura
 
 ```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Electron main (electron/main.cjs)                                      │
+│  · Spawnea backend Node como subprocess (ELECTRON_RUN_AS_NODE=1)        │
+│  · titleBarStyle hiddenInset + trafficLightPosition (mac)               │
+│  · webPreferences.webviewTag: true → <webview> Chromium real            │
+│  · IPC eco:get-config (backend URL + token leído de ~/.eco/token)       │
+│  · IPC eco:renderer-log → stdout (debug del renderer)                   │
+│  · Backend en port 7100 (vs 7000 dev) para coexistir con `npm run dev`  │
+└──────────────┬───────────────────────────────────────────────────────────┘
+               │   carga frontend desde http://127.0.0.1:7100/
+               ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  Frontend (Vite + React + TS + Tailwind v4 + Motion 11)                 │
 │  · Liquid Glass dark/light/AMOLED · 12 acentos · Dock macOS opt-in      │
@@ -66,8 +85,10 @@ cerrar sesión / eliminar usuario desde el menú de cuenta.
 │  · xterm.js en la pestaña Shell — PTY real con reattach                 │
 │  · Commit con AI con preview editable                                   │
 │  · Dashboard: grid · kanban · graph view con partículas hacia Eco       │
-│  · Navegador global multi-pestaña (nav principal) + por-agente          │
+│  · Navegador interno con <webview> Chromium (SmartBrowserView)          │
+│    global (BrowserScreen) + por-agente (BrowserPanel)                   │
 │  · Dev server por agente vía skill `/dev-up` (puerto único, auto-retry) │
+│  · Safe area top=36 para traffic lights · drag region invisible         │
 └──────────────┬───────────────────────────────────────────────────────────┘
                │  WebSocket /ws       (Claude SDK streaming)
                │  WebSocket /ws/pty   (PTY interactivo por agente)
@@ -76,14 +97,19 @@ cerrar sesión / eliminar usuario desde el menú de cuenta.
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  Backend Node (Express + ws + node-pty + Claude Agent SDK)              │
 │  · Bind 127.0.0.1 + auth + origin + Zod + rate limit                    │
+│  · Sirve frontend bundle (express.static) cuando ECO_FRONTEND_DIST set  │
+│  · Auto-allowlist del propio origen (http://127.0.0.1:7100)             │
 │  · AppError tipado (code + message) → cliente traduce                   │
 │  · Tools MCP propias: open_bubble, rename_bubble, close_bubble          │
 │  · Tools MCP del usuario: mcp__* (Notion, Obsidian, Pencil, Vercel, …)  │
 │  · permissionMode: 'acceptEdits' (auto-mode) · Bash habilitado          │
-│  · Worktree manager: una rama eco/<id> por agente con cleanup          │
+│  · Worktree manager: una rama eco/<id> por agente con cleanup           │
 │  · /git/branches /git/checkout /git/pull /git/fetch                     │
+│  · checkout auto-recovery: si branch ya está en worktree de Eco, lo     │
+│    desbloquea con `worktree remove --force` y reintenta                 │
 │  · /git/rename-branch /git/commit-suggest (vía claude -p) /git/commit   │
-│  · PTY: spawn por agente, ring buffer 128KB, broadcast pty_status      │
+│  · PTY: spawn por agente, ring buffer 128KB, broadcast pty_status       │
+│  · PTY cwd fallback: si workspace no existe → $HOME (no crash)          │
 │  · Snapshot WS al conectar (PTYs corriendo, status, etc.)               │
 │  · Dev server por agente (`dev-server.ts`) — `/dev/up|down|restart`     │
 │  · Browser proxy (`/proxy/site`) — strip de X-Frame-Options/CSP         │
@@ -97,7 +123,7 @@ cerrar sesión / eliminar usuario desde el menú de cuenta.
                      (~/.eco/worktrees/<id>)
 
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  Listener Python (sidecar)                                              │
+│  Listener Python (sidecar — solo dev, NO en .app empaquetada)           │
 │  · openwakeword (ONNX local) escucha mic 24/7                           │
 │  · Wake word custom "Hey Eco" (training pipeline incluido)              │
 │  · faster-whisper (medium · 30-40% más preciso con initial_prompt)      │
@@ -145,6 +171,55 @@ python training/train_wake.py --negatives-dir ~/Music/ -v
 # → genera listener/models/hey_eco.onnx
 # El listener lo detecta y usa automático en el próximo arranque
 ```
+
+---
+
+## Empaquetar como app nativa (.dmg / .exe / .AppImage)
+
+Eco se distribuye como app nativa vía **Electron 33** + **electron-builder**.
+
+```bash
+# Mac (.dmg arm64+x64 universal)
+npm run dist:mac
+# → release/Eco-0.1.0-arm64.dmg  (~145 MB)
+
+# Windows (.exe NSIS, x64)
+npm run dist:win
+
+# Linux (.AppImage, x64)
+npm run dist:linux
+
+# Dev con Electron (hot-reload del renderer + backend en watch)
+npm run dev:app
+```
+
+El pipeline:
+
+1. `npm run build:backend` → compila TS → `backend/dist/*.js`
+2. `npm run build:frontend` → Vite build → `frontend/dist/`
+3. `npm run build:backend-deps` → `npm install --omit=dev` en `backend/`
+   (workspaces hoist al root, así que necesita install dedicado) + `chmod
+   +x` del `spawn-helper` de node-pty (npm a veces pierde el bit)
+4. `electron-builder --mac dmg` → packaging final, sin firmar
+   (`identity: null` para uso personal — para distribuir más allá,
+   activar code signing con Apple Developer ID + notarization)
+
+**En tiempo de runtime de la app empaquetada**:
+
+- `main.cjs` spawnea el binario Electron con `ELECTRON_RUN_AS_NODE=1`
+  como Node puro para ejecutar el backend
+- Backend escucha en `127.0.0.1:7100` (vs `7000` en dev → coexisten)
+- Backend lee `ECO_FRONTEND_DIST` del env (seteado por main.cjs) y
+  sirve `frontend/dist` como `express.static` desde el mismo origen
+  → fetch + WS sin CORS
+- Token (`~/.eco/token`) lo lee el preload via IPC y se inyecta en
+  `lib/eco-config.ts` antes del primer render (refactor de `main.tsx`
+  con dynamic import del `<App>` para garantizar el orden)
+- Web Speech API se deshabilita en Electron (no tiene API key de
+  Google → entraría en loop start/end). Para voz local en producción,
+  correr el listener Python aparte
+- `<webview>` con UA Chrome 131 fijo (sin "Electron" → Google deja de
+  redirigir a `/sorry/index`)
 
 ---
 
@@ -218,9 +293,24 @@ eco/
 │   │       ├── voice-router.ts      ← target='pty'|'chat' + writer registrado por RealTerminal
 │   │       ├── meta-commands.ts     ← parser tolerante (LEADING_FILLERS + scan)
 │   │       ├── platform.ts          ← detectRuntime() · web/electron/tauri/capacitor-ios
+│   │       ├── eco-config.ts        ← BACKEND + TOKEN resueltos al boot
 │   │       └── types, api, i18n, backend-errors, eco-bus, wake-beep
 │   ├── public/brand/                ← logo SVG + paleta oficial
 │   └── .env.example
+│
+├── electron/                  ← Wrapper Electron 33 para empaquetado
+│   ├── main.cjs               ← Main process: spawn backend, BrowserWindow, IPC
+│   ├── preload.cjs            ← Expone window.electronAPI (getConfig, log)
+│   ├── package.json           ← Config electron-builder (mac/win/linux targets)
+│   ├── scripts/
+│   │   └── prepare-backend.cjs  ← npm install --omit=dev + chmod spawn-helper
+│   └── build/
+│       ├── icon.icns          ← Ícono mac (generado desde brand/eco-logo.svg)
+│       └── icon.png           ← Ícono linux/fallback
+│
+├── release/                   ← Output de electron-builder (gitignored)
+│   ├── Eco-0.1.0-arm64.dmg
+│   └── mac-arm64/Eco.app
 │
 └── listener/                  ← Python sidecar (wake word + STT)
     ├── main.py                ← pipeline mic → wake → whisper → POST
@@ -239,13 +329,32 @@ eco/
 
 | Comando | Descripción |
 |---|---|
-| `npm run dev` | Backend + frontend en paralelo |
+| `npm run dev` | Backend + frontend en paralelo (dev en navegador) |
+| `npm run dev:app` | Backend + Vite + Electron (dev en app nativa) |
 | `npm run dev:backend` | Solo backend (puerto 7000) |
 | `npm run dev:frontend` | Solo Vite (puerto 5173 / 5174 fallback) |
+| `npm run dev:electron` | Solo Electron (espera Vite up) |
 | `npm run typecheck` | TS de ambos workspaces |
 | `npm run test:security` | Suite de tests de seguridad del backend |
 | `npm run listener:setup` | Crea venv + instala deps + baja modelos |
 | `npm run listener` | Arranca el sidecar Python |
+
+### Build / Packaging
+
+| Comando | Descripción |
+|---|---|
+| `npm run build:backend` | TS → `backend/dist/` |
+| `npm run build:frontend` | Vite build → `frontend/dist/` |
+| `npm run build:backend-deps` | `npm install --omit=dev` en `backend/` + chmod node-pty |
+| `npm run build:all` | Encadena los 3 anteriores |
+| `npm run dist` | Build all + electron-builder (todos los targets configurados) |
+| `npm run dist:mac` | `.dmg` (arm64 + x64) en `release/` |
+| `npm run dist:win` | `.exe` NSIS en `release/` |
+| `npm run dist:linux` | `.AppImage` en `release/` |
+
+Para usar la app empaquetada: arrastrá `release/mac-arm64/Eco.app` a
+`/Applications/` (o abrí el `.dmg`). Si querés actualizar después de
+rebuildear: `rm -rf /Applications/Eco.app && cp -R release/mac-arm64/Eco.app /Applications/`.
 
 ### Comandos de voz/texto en la app (prefijo `Eco`)
 
@@ -405,29 +514,47 @@ spread en cualquier card de la app.
 
 ## Navegador interno
 
-Eco tiene **dos** navegadores:
+Eco tiene **dos** navegadores: uno global (multi-pestaña en el nav
+principal) y uno por-agente (dentro de cada conversación). Ambos usan
+el mismo wrapper `SmartBrowserView` que renderiza:
+
+- **`<webview>` real Chromium** en la app empaquetada Electron — sin
+  restricciones de `X-Frame-Options` / CSP frame-ancestors, con DevTools
+  propios (click derecho → Inspect), cookies persistidas vía partition
+  `persist:eco-browser`, y user-agent Chrome 131 puro (sin "Electron"
+  en el string → Google deja de marcarte como bot).
+- **`<iframe>` fallback** en web puro (dev). Sujeto a SOP — sitios con
+  XFO/CSP no cargan. Para esos, modo proxy abajo.
+
+`SmartBrowserView` crea el `<webview>` **imperativamente** con
+`document.createElement` porque React no aplica atributos al elemento
+custom de manera fiable. Setea `allowpopups`, `partition`, `useragent`
+y `src` ANTES del `appendChild` — Electron monta el WebContents cuando
+ve el elemento en el DOM con `src` presente.
 
 ### Navegador global (nav principal · `BrowserScreen.tsx`)
 
 Pestañas múltiples con persistencia. Click en el ícono globo del
 sidebar izquierdo:
 
-- Cada tab guarda `{id, url, title, proxied}` en
-  `localStorage` (`eco.browser.tabs` + `eco.browser.active`). Al cerrar
-  y reabrir Eco recuperás todo.
+- Cada tab guarda `{id, url, title, proxied}` en `localStorage`
+  (`eco.browser.tabs` + `eco.browser.active`). Al cerrar y reabrir Eco
+  recuperás todo.
 - **URL bar** con back / reload / abrir-en-sistema. Acepta URL o
   búsqueda libre (cae a Google si no parece URL).
-- **Iframes ocultos** al cambiar de tab (no destruidos) → preservan
-  scroll, cookies y estado de la página.
-- **Watchdog** de 6s: si el iframe no dispara `load`, asume que el
-  sitio bloqueó embedding (X-Frame-Options/CSP) y muestra banner.
-- **Pill de runtime** (`◆ full` vs `○ web`) detecta si corremos en
-  Electron/Tauri (donde `<webview>` ignora XFO) o en web puro.
+- **Render solo de la tab activa** (no overlay) — el `<webview>` se
+  monta en un contenedor con layout real. Cambiar de tab recrea el
+  webview pero garantiza que carga (sin trucos de visibility:hidden).
+- **Banner de error** con `code` y descripción del fallo (`-105
+  ERR_NAME_NOT_RESOLVED`, `-104 ERR_CONNECTION_FAILED`, etc.) +
+  opciones "Probar modo proxy" / "Abrir en sistema".
+- **Pill de runtime** (`◆ full` vs `○ web`) muestra si estamos en
+  Electron (webview) o web puro (iframe).
 
 ### Modo proxy (`/proxy/site?url=…` · `browser-proxy.ts`)
 
-Fallback para sitios que bloquean iframe. Botón "Probar modo proxy"
-aparece en el banner de error. El backend:
+Fallback para web puro cuando el iframe falla. Botón "Probar modo
+proxy" aparece en el banner de error. El backend:
 
 1. Hace `fetch` del HTML con user-agent realista.
 2. Strip de headers `X-Frame-Options`, `Content-Security-Policy`,
@@ -435,30 +562,30 @@ aparece en el banner de error. El backend:
 3. Inyecta `<base href="…">` para que recursos relativos vayan al
    sitio original.
 4. Inyecta un **script puente** que intercepta `click` en `<a>` y
-   `submit` en `<form method=GET>` y los envía como `postMessage
-   {kind:'eco-browser:nav', url}` al padre — `BrowserScreen` escucha y
-   sigue navegando dentro del proxy, manteniendo encadenada la
-   navegación en lugar de "saltarse" al sitio original.
+   `submit` en `<form method=GET>` y los envía como `postMessage` al
+   padre — `BrowserScreen` escucha y sigue navegando dentro del proxy.
 
-**Limitaciones honestas**: sitios JS-pesados (Google, banks, Notion)
-detectan que están en iframe/proxy y siguen rompiendo. Para esos, el
-botón "Abrir en sistema" usa `window.open()`.
+En la `.app` empaquetada con `<webview>` Chromium real, el modo proxy
+casi nunca se necesita — webview ignora XFO/CSP frame-ancestors.
 
 ### Por-agente (`BrowserPanel.tsx`)
 
-Pestaña adicional dentro de `AgentDetail` con iframe + dev server
-controls (start/stop/restart) + DevTools panel (consola, elementos,
-logs del server) + skill picker para elegir cómo levantar el dev
-server. URL persistida en `localStorage` (`eco.browser.url.<bubbleId>`).
-`KeepAliveBrowser` wrapper preserva el iframe state al salir y volver.
+Pestaña adicional dentro de `AgentDetail` con `SmartBrowserView` + dev
+server controls (start/stop/restart) + DevTools panel (consola,
+elementos, logs del server) + skill picker para elegir cómo levantar el
+dev server. URL persistida en `localStorage`
+(`eco.browser.url.<bubbleId>`). `KeepAliveBrowser` wrapper preserva el
+state al salir y volver.
 
 ### Plataforma
 
-`lib/platform.ts` exporta `detectRuntime()` (web · electron · tauri ·
-capacitor-ios · capacitor-android) y `canEmbedArbitrarySites()`. Cuando
-Eco se empaquete como Electron, basta con cambiar `<iframe>` por
-`<webview>` cuando `canEmbedArbitrarySites()` sea true para obtener
-navegación full Chromium sin restricciones de iframe.
+`lib/platform.ts` exporta:
+
+- `detectRuntime()` → `web` · `electron` · `tauri` · `capacitor-ios` ·
+  `capacitor-android`
+- `canEmbedArbitrarySites()` → `true` en Electron/Tauri, `false` en web
+- `getTopInset()` → 36px en Electron (reserva para traffic lights mac)
+- `runtimeLabel()` → string legible para mostrar al usuario
 
 ---
 
@@ -679,8 +806,10 @@ npm run test:security
 
 | Capa | Tecnología |
 |---|---|
+| Empaquetado | **Electron 33** + electron-builder 25 (mac arm64+x64 / win NSIS / linux AppImage) |
 | Frontend | Vite 6, React 18, TS 5, Tailwind v4, Motion 11, Radix UI |
-| Terminal | xterm.js + addon-fit + addon-web-links |
+| Navegador interno | `<webview>` Chromium real con UA Chrome 131 + partition persistida |
+| Terminal | xterm.js + addon-fit + addon-web-links + node-pty (PTY real) |
 | Voz STT | openwakeword (ONNX local) + faster-whisper (CTranslate2, `medium`) |
 | Voz TTS | Piper TTS (ONNX local) — voces `es_ES-davefx-medium`, `es_MX-claude-high`, etc. |
 | Backend | Node 20, Express 4, ws, node-pty, Zod, @node-rs/argon2, bip39, Claude Agent SDK |
@@ -727,17 +856,27 @@ npm run test:security
 - **Kanban view** en el Dashboard (Activos / En espera / Inactivos / Con shell / Terminados / Con error)
 - **Navegador global** en el nav principal con multi-tab persistido en `localStorage`
 - **Browser proxy** (`/proxy/site`) con strip de XFO/CSP + click bridge para navegación encadenada
-- **Detección de runtime** (`lib/platform.ts`) — listo para `<webview>` cuando se empaquete Electron/Tauri
+- **Detección de runtime** (`lib/platform.ts`) — `web`/`electron`/`tauri`/`capacitor`
 - **Navegador por-agente** (`BrowserPanel`) con DevTools, zoom y skill picker
 - **Dev server por agente** vía skill `/dev-up` con auto-puerto, symlinks de install, URL scoring
 - Whisper `medium` por default + `initial_prompt` con vocabulario del producto
+- **Empaquetado Electron 33** — `.dmg` mac, `.exe` NSIS Windows, `.AppImage` Linux
+- **`<webview>` real Chromium** en el navegador interno (sin XFO/CSP, DevTools nativos)
+- **User-Agent Chrome 131** sin "Electron" → Google no marca como bot
+- **Backend en puerto 7100** en empaquetado (coexiste con `npm run dev` en 7000)
+- **Backend sirve frontend como static** + auto-allowlist del propio origen
+- **Safe area top=36px** + traffic light position fijo para mac
+- **PTY cwd fallback** a `$HOME` si workspace no existe (no crash con code=1)
+- **Auto-recovery de worktree conflicts** en `checkoutBranch` (limpia worktrees huérfanos de Eco)
+- **IPC log channel** `eco:renderer-log` → stdout del main process para debug
 
 **Pendiente**:
 
-- Empaquetar como `.app` de macOS con Tauri (sidecars: Node + Piper + Python + claude CLI)
+- Code signing + notarización Apple para distribuir `.dmg` firmado
+- Listener Python bundleado con PyInstaller dentro del `.app` (hoy se corre aparte)
 - Push-to-talk con Whisper en Chrome (workaround para no depender de Google Speech)
 - SQLite local para chat history de larga duración (hoy es localStorage)
-- Build para Windows multi-OS (Tauri targets)
+- Auto-update via `electron-updater` + S3/GitHub Releases
 - License gating con Paddle/LemonSqueezy (cuando vaya a venderse)
 
 ---

@@ -138,6 +138,23 @@ export function pruneCleanWorktrees(): { removed: string[]; kept: string[] } {
   let entries: string[] = [];
   try { entries = readdirSync(WORKTREES_ROOT); } catch { return { removed, kept }; }
 
+  // Limpiamos referencias administrativas huérfanas en todos los repos
+  // conocidos. Esto borra el record interno de git para worktrees cuyos
+  // directorios físicos ya no existen — sin esto, `git worktree add` falla
+  // con "already used by worktree at" aunque el path no exista.
+  const seenParents = new Set<string>();
+  for (const name of entries) {
+    const p = join(WORKTREES_ROOT, name);
+    const common = runGit(['rev-parse', '--git-common-dir'], p, 2000);
+    if (common.ok && common.stdout.trim()) {
+      const parent = common.stdout.trim().replace(/\/?\.git\/?$/, '');
+      if (parent && existsSync(parent) && !seenParents.has(parent)) {
+        seenParents.add(parent);
+        runGit(['worktree', 'prune'], parent, 5000);
+      }
+    }
+  }
+
   for (const name of entries) {
     const path = join(WORKTREES_ROOT, name);
     try {

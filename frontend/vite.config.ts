@@ -5,6 +5,9 @@ import path from 'node:path';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Paths relativos para que el bundle funcione cuando Electron lo sirve
+  // como file:// (el index.html bundleado vive adentro del .app).
+  base: './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

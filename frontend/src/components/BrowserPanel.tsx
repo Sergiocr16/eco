@@ -4,6 +4,7 @@ import { IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconPlay, IconStop, 
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn } from '@/lib/eco-bus';
 import { useSkills } from '@/hooks/useSkills';
+import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 
 type Props = {
   bubbleId: string;
@@ -38,7 +39,8 @@ const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
 export function BrowserPanel({ bubbleId, workspace }: Props) {
   const t = useTokens();
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null); // legacy: scrollIntoView solo
+  const smartRef = useRef<SmartBrowserHandle | null>(null);
   const [url, setUrl] = useState<string>(() => {
     try { return window.localStorage.getItem(storageKey(bubbleId)) ?? ''; } catch { return ''; }
   });
@@ -251,49 +253,9 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     setZoom(next ?? 1);
   }
 
-  // Captura console.* y errores del iframe vía postMessage (solo same-origin) o
-  // via wrapper injection (cross-origin no se puede). Si la página es same-origin
-  // hookeamos el console del contentWindow. Mantenemos un buffer rotativo.
-  useEffect(() => {
-    const ifr = iframeRef.current;
-    if (!ifr) return;
-    const onLoaded = () => {
-      try {
-        const win = ifr.contentWindow as Window & { console?: Console } | null;
-        if (!win) return;
-        const origConsole = win.console;
-        if (!origConsole) return;
-        const wrap = (kind: DevEntry['kind'], orig: (...a: unknown[]) => void) =>
-          (...args: unknown[]) => {
-            try {
-              const text = args.map((a) =>
-                typeof a === 'string' ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })(),
-              ).join(' ');
-              setDevLog((prev) => [...prev.slice(-499), { ts: Date.now(), kind, text }]);
-            } catch { /* noop */ }
-            orig.apply(origConsole, args);
-          };
-        (['log', 'info', 'warn', 'error'] as const).forEach((k) => {
-          const o = origConsole[k]?.bind(origConsole);
-          if (o) origConsole[k] = wrap(k, o) as typeof origConsole[typeof k];
-        });
-        win.addEventListener('error', (e: ErrorEvent) => {
-          setDevLog((prev) => [...prev.slice(-499), {
-            ts: Date.now(), kind: 'error',
-            text: `${e.message} (${e.filename}:${e.lineno})`,
-          }]);
-        });
-      } catch {
-        // cross-origin: no podemos hookear. Mostramos warning.
-        setDevLog((prev) => [...prev.slice(-499), {
-          ts: Date.now(), kind: 'warn',
-          text: 'Console captured only for same-origin pages (CORS impide acceso a cross-origin).',
-        }]);
-      }
-    };
-    ifr.addEventListener('load', onLoaded);
-    return () => { ifr.removeEventListener('load', onLoaded); };
-  }, [refreshKey, url]);
+  // Console capture: en webview de Electron usamos su DevTools nativo (botón
+  // derecho → Inspect). En iframe web puro estaríamos limitados por SOP, así
+  // que mostramos un hint en lugar del warning anterior.
 
   function runEval() {
     const code = evalInput.trim();
@@ -605,7 +567,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
       }}>
         <button
           type="button"
-          onClick={() => iframeRef.current?.contentWindow?.history.back()}
+          onClick={() => smartRef.current?.back()}
           title="Atrás"
           style={navBtnStyle(t)}>
           <IconArrowL size={12}/>
@@ -736,10 +698,8 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           </div>
         ) : (
           <>
-            <iframe
+            <div
               key={refreshKey}
-              ref={iframeRef}
-              src={url}
               style={{
                 // Zoom emulado: escalamos y expandimos el tamaño para que la "ventana
                 // virtual" del sitio sea más grande que el contenedor, dando la sensación
@@ -747,12 +707,15 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
                 width: `${100 / zoom}%`, height: `${100 / zoom}%`,
                 transform: `scale(${zoom})`,
                 transformOrigin: '0 0',
-                border: 0,
                 background: 'white',
-              }}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox"
-              referrerPolicy="no-referrer-when-downgrade"
-            />
+              }}>
+              <SmartBrowserView
+                ref={smartRef}
+                src={url}
+                onLoadFail={() => setLoadFailed(true)}
+                onLoadSuccess={() => setLoadFailed(false)}
+              />
+            </div>
             {loadFailed && (
               <div style={{
                 position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
@@ -827,7 +790,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
                 <>
                   {devLog.length === 0 ? (
                     <div style={{ color: t.text3, fontSize: 11, fontFamily: t.fontMono }}>
-                      Esperando logs… (solo same-origin se capturan automático)
+                      Para DevTools completos: click derecho en la página → Inspect.
                     </div>
                   ) : devLog.map((e, i) => (
                     <div key={i} style={{
@@ -845,8 +808,8 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
               )}
               {devTab === 'elements' && (
                 <div style={{ color: t.text3, fontSize: 11, fontFamily: t.fontMono, lineHeight: 1.55 }}>
-                  Elements panel requiere acceso al DOM del iframe.
-                  Para sitios same-origin, escribí en la consola:
+                  Para inspeccionar el DOM, usá DevTools nativos: click derecho en la página → Inspect.
+                  O escribí en la consola:
                   <pre style={{ marginTop: 8, padding: 8, background: t.bg2, borderRadius: 6, color: t.text1 }}>
 {`document.documentElement.outerHTML.slice(0, 4000)`}
                   </pre>

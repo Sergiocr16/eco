@@ -8,3 +8,18 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// Expuesta por electron/preload.cjs cuando corremos dentro de Electron.
+interface EcoElectronConfig {
+  backendUrl: string;
+  token: string;
+  platform: string;
+  appVersion: string;
+  isPackaged: boolean;
+}
+
+interface Window {
+  electronAPI?: {
+    getConfig: () => Promise<EcoElectronConfig>;
+  };
+}

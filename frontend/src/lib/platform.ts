@@ -7,7 +7,6 @@ export type Runtime = 'web' | 'electron' | 'tauri' | 'capacitor-ios' | 'capacito
 
 declare global {
   interface Window {
-    electronAPI?: unknown;
     __TAURI__?: unknown;
     Capacitor?: { getPlatform?: () => string };
   }
@@ -29,6 +28,21 @@ export function canEmbedArbitrarySites(): boolean {
   // Solo runtimes con webview real pueden ignorar X-Frame-Options/CSP.
   const r = detectRuntime();
   return r === 'electron' || r === 'tauri';
+}
+
+// Espacio reservado arriba de la ventana para que la UI no tape los traffic
+// lights de macOS (titleBarStyle: hiddenInset). En Win/Linux Electron y en
+// web puro no aplica.
+export function getTopInset(r: Runtime = detectRuntime()): number {
+  // En Electron SIEMPRE reservamos espacio. En Mac los traffic lights ocupan
+  // el área superior izquierda; en Win/Linux el frame del sistema ya cubre,
+  // pero los 36px de margen extra no estorban — mejor consistencia.
+  if (r === 'electron') return 36;
+  // Fallback web: detectar si el UA es Electron (por si falla detectRuntime).
+  if (typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)) {
+    return 36;
+  }
+  return 0;
 }
 
 export function runtimeLabel(r: Runtime = detectRuntime()): string {

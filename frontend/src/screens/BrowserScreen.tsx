@@ -5,6 +5,7 @@ import {
   IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconPlus, IconSearch,
 } from '@/design/icons';
 import { canEmbedArbitrarySites, detectRuntime, runtimeLabel } from '@/lib/platform';
+import { SmartBrowserView, type SmartBrowserHandle } from '@/components/SmartBrowserView';
 
 type Tab = {
   id: string;
@@ -76,7 +77,8 @@ export function BrowserScreen() {
   const [draft, setDraft] = useState('');
   const [refreshTick, setRefreshTick] = useState<Record<string, number>>({});
   const [loadFailed, setLoadFailed] = useState<Record<string, boolean>>({});
-  const iframeRefs = useRef<Record<string, HTMLIFrameElement | null>>({});
+  const [loadFailMsg, setLoadFailMsg] = useState<Record<string, string>>({});
+  const browserRefs = useRef<Record<string, SmartBrowserHandle | null>>({});
 
   // Persist on changes.
   useEffect(() => { writeTabs(tabs, activeId); }, [tabs, activeId]);
@@ -106,7 +108,7 @@ export function BrowserScreen() {
       }
       return next;
     });
-    delete iframeRefs.current[id];
+    delete browserRefs.current[id];
   }
 
   function navigate(targetId: string, raw: string) {
@@ -139,8 +141,7 @@ export function BrowserScreen() {
 
   function back() {
     if (!activeId) return;
-    const ifr = iframeRefs.current[activeId];
-    try { ifr?.contentWindow?.history.back(); } catch { /* noop */ }
+    browserRefs.current[activeId]?.back();
   }
 
   function openInOs(url: string) {
@@ -170,27 +171,19 @@ export function BrowserScreen() {
     return () => window.removeEventListener('message', onMsg);
   }, [activeId, tabs]);
 
-  // Watchdog para detectar bloqueo de embedding.
+  // Watchdog: si en 6s no llegó load-success ni load-fail, asumimos que
+  // el sitio bloqueó embedding (X-Frame-Options/CSP frame-ancestors). En
+  // webview de Electron esto rara vez se activa porque los headers se
+  // ignoran; en iframe es lo habitual con Google, banks, etc.
   useEffect(() => {
     if (!activeId) return;
     const tab = tabs.find((t) => t.id === activeId);
     if (!tab?.url) return;
-    let loaded = false;
-    const iv = setTimeout(() => { if (!loaded) setLoadFailed((p) => ({ ...p, [activeId]: true })); }, 6000);
-    const ifr = iframeRefs.current[activeId];
-    const onLoad = () => {
-      loaded = true; clearTimeout(iv);
-      setLoadFailed((p) => ({ ...p, [activeId]: false }));
-      // Intentar sniffear title (solo same-origin).
-      try {
-        const docTitle = ifr?.contentDocument?.title;
-        if (docTitle) {
-          setTabs((prev) => prev.map((t) => t.id === activeId ? { ...t, title: docTitle.slice(0, 60) } : t));
-        }
-      } catch { /* cross-origin, no podemos */ }
-    };
-    ifr?.addEventListener('load', onLoad);
-    return () => { clearTimeout(iv); ifr?.removeEventListener('load', onLoad); };
+    const iv = setTimeout(() => {
+      // Solo encendemos el banner si el SmartBrowserView no avisó success.
+      setLoadFailed((p) => (p[activeId] === undefined ? { ...p, [activeId]: true } : p));
+    }, 6000);
+    return () => clearTimeout(iv);
   }, [activeId, refreshTick, tabs]);
 
   const activeTab = tabs.find((tb) => tb.id === activeId) ?? null;
@@ -352,34 +345,39 @@ export function BrowserScreen() {
         </span>
       </div>
 
-      {/* Contenido — render TODOS los iframes pero ocultamos los no activos
-          para preservar su estado (cookies, scroll, page state). */}
-      <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-        {tabs.length === 0 ? (
-          <Home onPick={(url) => addTab(url)}/>
-        ) : !activeTab?.url ? (
-          <Home onPick={(url) => activeId && navigate(activeId, url)}/>
-        ) : null}
-        {tabs.map((tab) => {
-          if (!tab.url) return null;
-          const visible = tab.id === activeId;
-          const src = tab.proxied ? proxyUrlFor(tab.url) : tab.url;
-          return (
-            <iframe
-              key={`${tab.id}-${refreshTick[tab.id] ?? 0}-${tab.proxied ? 'p' : 'd'}`}
-              ref={(el) => { iframeRefs.current[tab.id] = el; }}
-              src={src}
-              style={{
-                position: 'absolute', inset: 0,
-                width: '100%', height: '100%', border: 0,
-                background: 'white',
-                display: visible ? 'block' : 'none',
+      {/* Contenido — renderizamos SOLO la tab activa. Trade-off: al cambiar
+          de tab se recrea el webview (pierde scroll), pero garantiza que
+          el <webview> de Electron se monte en un contenedor con layout
+          real (no en position:absolute oculto donde a veces no se inicia). */}
+      <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex' }}>
+        {!activeTab?.url ? (
+          <Home onPick={(url) => activeId ? navigate(activeId, url) : addTab(url)}/>
+        ) : (
+          <div
+            key={`${activeTab.id}-${refreshTick[activeTab.id] ?? 0}-${activeTab.proxied ? 'p' : 'd'}`}
+            style={{ flex: 1, position: 'relative', background: 'white' }}>
+            <SmartBrowserView
+              ref={(h) => { if (activeId) browserRefs.current[activeId] = h; }}
+              src={activeTab.proxied ? proxyUrlFor(activeTab.url) : activeTab.url}
+              onTitleChange={(title) => {
+                setTabs((prev) => prev.map((tb) => tb.id === activeTab.id ? { ...tb, title: title.slice(0, 60) } : tb));
               }}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox"
-              referrerPolicy="no-referrer-when-downgrade"
+              onNavigate={(url) => {
+                if (fullBrowser && url && url !== activeTab.url) {
+                  setTabs((prev) => prev.map((tb) => tb.id === activeTab.id ? { ...tb, url } : tb));
+                }
+              }}
+              onLoadFail={(code, desc) => {
+                setLoadFailed((p) => ({ ...p, [activeTab.id]: true }));
+                setLoadFailMsg((p) => ({ ...p, [activeTab.id]: `code=${code} ${desc}` }));
+              }}
+              onLoadSuccess={() => {
+                setLoadFailed((p) => ({ ...p, [activeTab.id]: false }));
+                setLoadFailMsg((p) => ({ ...p, [activeTab.id]: '' }));
+              }}
             />
-          );
-        })}
+          </div>
+        )}
         {activeTab?.url && activeFailed && (
           <div style={{
             position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
@@ -400,8 +398,13 @@ export function BrowserScreen() {
                 <div style={{ fontSize: 11.5, color: t.text2 }}>
                   {activeTab.proxied
                     ? 'Algunos sitios (Google, banks) detectan el contexto y rompen. Abrilo en tu navegador con ↗.'
-                    : 'Muchos sitios (Google, GitHub, banks) impiden cargarse en iframe. Probá el modo proxy o abrilo en tu navegador con ↗.'}
+                    : 'No pudo cargar. Verificá la URL o abrilo en tu navegador con ↗.'}
                 </div>
+                {activeId && loadFailMsg[activeId] && (
+                  <div style={{ marginTop: 6, fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>
+                    {loadFailMsg[activeId]}
+                  </div>
+                )}
               </div>
               <button type="button"
                 onClick={() => activeId && setLoadFailed((p) => ({ ...p, [activeId]: false }))}

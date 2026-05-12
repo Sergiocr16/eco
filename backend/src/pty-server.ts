@@ -129,12 +129,15 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     const isolated = (bubbleId && requestedWs && isAllowedWorkspace(requestedWs))
       ? ensureWorktree(bubbleId, requestedWs)
       : '';
-    const cwd =
+    const candidateCwd =
       isolated
         ? isolated
         : (requestedWs && isAllowedWorkspace(requestedWs))
           ? requestedWs
           : (config.workspaces[0] ?? homedir());
+    // Garantía: si el cwd no existe en disco, caemos a $HOME. Sin esto, el
+    // shell sale inmediatamente con code=1 (zsh: chdir failed).
+    const cwd = existsSync(candidateCwd) ? candidateCwd : homedir();
 
     const cols = clampInt(url.searchParams.get('cols'), 24, 400, 100);
     const rows = clampInt(url.searchParams.get('rows'), 6, 200, 30);

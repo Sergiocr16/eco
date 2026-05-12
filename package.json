@@ -5,20 +5,32 @@
   "private": true,
   "workspaces": [
     "backend",
-    "frontend"
+    "frontend",
+    "electron"
   ],
   "scripts": {
     "dev:backend": "npm --workspace backend run dev",
     "dev:frontend": "npm --workspace frontend run dev",
     "dev": "npm-run-all --parallel dev:backend dev:frontend",
+    "dev:electron": "wait-on http://127.0.0.1:5173 && npm --workspace electron run start",
+    "dev:app": "npm-run-all --parallel dev:backend dev:frontend dev:electron",
     "typecheck": "npm-run-all --parallel typecheck:*",
     "typecheck:backend": "npm --workspace backend run typecheck",
     "typecheck:frontend": "npm --workspace frontend run typecheck",
     "test:security": "npm --workspace backend run test:security",
     "listener": "cd listener && .venv/bin/python main.py",
-    "listener:setup": "cd listener && ./setup.sh"
+    "listener:setup": "cd listener && ./setup.sh",
+    "build:backend": "npm --workspace backend run build",
+    "build:frontend": "npm --workspace frontend run build",
+    "build:backend-deps": "node electron/scripts/prepare-backend.cjs",
+    "build:all": "npm-run-all --serial build:backend build:frontend build:backend-deps",
+    "dist": "npm run build:all && npm --workspace electron run build",
+    "dist:mac": "npm run build:all && npm --workspace electron run build:mac",
+    "dist:win": "npm run build:all && npm --workspace electron run build:win",
+    "dist:linux": "npm run build:all && npm --workspace electron run build:linux"
   },
   "devDependencies": {
-    "npm-run-all": "^4.1.5"
+    "npm-run-all": "^4.1.5",
+    "wait-on": "^8.0.1"
   }
 }

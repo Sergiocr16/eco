@@ -1,11 +1,22 @@
 node_modules/
 dist/
 build/
+# Excepción: íconos de la app empaquetada (binarios chicos, regenerables
+# desde frontend/public/brand/eco-logo.svg con qlmanage + iconutil pero
+# útil tenerlos committed para que `npm run dist:mac` funcione directo).
+!electron/build/
+!electron/build/icon.icns
+!electron/build/icon.png
+!electron/build/icon.ico
 *.log
 .env
 .env.local
 .DS_Store
 *.tsbuildinfo
+
+# Output de electron-builder — .dmg / .exe / .AppImage (cada uno ~150MB).
+# Se regenera con `npm run dist:mac|win|linux`.
+release/
 
 # Python
 __pycache__/

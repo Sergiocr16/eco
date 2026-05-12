@@ -2,6 +2,8 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import helmet from 'helmet';
 import { createServer } from 'node:http';
+import { existsSync as fsExistsSync } from 'node:fs';
+import { join as pathJoin } from 'node:path';
 import { config, isAllowedWorkspace } from './config.js';
 import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
 import { attachPtyServer, killBubblePty } from './pty-server.js';
@@ -41,6 +43,9 @@ app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
+    // En empaquetado Electron, el renderer carga desde el mismo origen
+    // (http://127.0.0.1:7000) así que CORS no se activa. Igual mantenemos
+    // la whitelist explícita por si alguien hace cross-origin.
     origin: config.allowedOrigins,
     methods: ['GET', 'POST', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Eco-Client'],
@@ -136,6 +141,16 @@ app.delete('/auth/user', async (req: Request, res: Response) => {
   deleteUser();
   res.json({ ok: true });
 });
+
+// Static del frontend cuando corre adentro de Electron empaquetado. Lo
+// montamos ANTES de los middlewares de auth para que sirva el index.html y
+// los assets (que GET sin headers especiales) sin pasar por la guardia de
+// X-Eco-Client. Index automático para `/`.
+const frontendDistEarly = process.env.ECO_FRONTEND_DIST;
+if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
+  console.log(`[static] sirviendo frontend desde ${frontendDistEarly}`);
+  app.use(express.static(frontendDistEarly, { maxAge: '1h', index: 'index.html' }));
+}
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.headers['x-eco-client'] !== '1') {
@@ -494,6 +509,16 @@ app.post('/tts', async (req: Request, res: Response) => {
     ttsConcurrency.active -= 1;
   }
 });
+
+// SPA fallback final — si llegaste hasta acá sin matchear ningún API route,
+// servimos el index.html (deep linking del navegador interno de Eco).
+if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/ws')) return next();
+    // Ya tiene auth pasada acá, así que es safe servir el shell.
+    res.sendFile(pathJoin(frontendDistEarly, 'index.html'));
+  });
+}
 
 const server = createServer(app);
 attachWebSocket(server, authToken);
