@@ -76,15 +76,14 @@ export function AuthScreen({ authState, authActions }: Props) {
         </div>
       </div>
 
-      {/* Logo centrado abajo */}
+      {/* Logo arriba a la izquierda */}
       <div style={{
-        position: 'absolute', bottom: 18, left: 0, right: 0,
+        position: 'absolute', top: 24, left: 28,
         zIndex: 2,
-        display: 'flex', justifyContent: 'center',
         color: t.text0,
         pointerEvents: 'none',
       }}>
-        <EcoMarkHorizontal size={42}/>
+        <EcoMarkHorizontal size={56}/>
       </div>
 
       {/* Version abajo a la derecha */}

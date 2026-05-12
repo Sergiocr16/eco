@@ -2,25 +2,24 @@
 // porque son cosas distintas (proceso vs página). Cuando el server arranca,
 // el panel Navegador se navega automáticamente a la URL emitida.
 //
-// Soporta dos modos: 'skill' (Claude maneja los comandos) o 'command' (bash directo).
-// En modo command admite además "dual" — frontend + backend corriendo en
-// paralelo con logs separados, gestionados como dos sesiones independientes
-// vía el rol pasado a /dev/start /dev/stop /dev/restart.
+// El usuario define el comando bash directo. Eco le pasa un $PORT único.
+// Admite "dual" — frontend + backend corriendo en paralelo con logs
+// separados, gestionados como dos sesiones independientes vía el rol
+// pasado a /dev/start /dev/stop /dev/restart.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTokens } from '@/design/theme';
 import {
-  IconPlay, IconStop, IconResume, IconSearch, IconX, IconCpu, IconAlert,
+  IconPlay, IconStop, IconResume, IconCpu, IconAlert,
   IconPlus, IconTrash, IconSettings, IconChevD, IconChevR,
 } from '@/design/icons';
 import { Glass, Btn } from '@/design/primitives';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
-import { useSkills } from '@/hooks/useSkills';
 import { useDevPresets, type PresetRole } from '@/hooks/useDevPresets';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { ecoToken } from '@/lib/eco-config';
@@ -39,7 +38,6 @@ type DevStatusEvent = {
   skill?: string;
 };
 
-const SKILL_KEY = (bubbleId: string) => `eco.dev.skill.${bubbleId}`;
 const CMD_KEY = (bubbleId: string, role: SlotRole) =>
   role === 'main' ? `eco.dev.cmd.${bubbleId}` : `eco.dev.cmd.${role}.${bubbleId}`;
 const DUAL_KEY = (bubbleId: string) => `eco.dev.dual.${bubbleId}`;
@@ -60,10 +58,6 @@ const initSlot = (): SlotState => ({
 
 export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
   const t = useTokens();
-  const [mode, setMode] = useState<'skill' | 'command'>(() => {
-    try { return window.localStorage.getItem(CMD_KEY(bubbleId, 'main')) ? 'command' : 'skill'; }
-    catch { return 'skill'; }
-  });
   const [dual, setDual] = useState<boolean>(() => {
     try { return window.localStorage.getItem(DUAL_KEY(bubbleId)) === '1'; }
     catch { return false; }
@@ -72,11 +66,6 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     setDual(v);
     try { window.localStorage.setItem(DUAL_KEY(bubbleId), v ? '1' : '0'); } catch { /* noop */ }
   };
-
-  const [activeSkill, setActiveSkill] = useState<string>(() => {
-    try { return window.localStorage.getItem(SKILL_KEY(bubbleId)) ?? ''; } catch { return ''; }
-  });
-  const [showSkillPicker, setShowSkillPicker] = useState(false);
 
   // ¿Está colapsada la sección de configuración? Persistido por agente.
   // Default: colapsado (la mayoría del tiempo el user solo quiere mirar logs).
@@ -140,7 +129,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
   // Status inicial al montar para cada rol relevante.
   useEffect(() => {
     let cancelled = false;
-    const rolesToCheck: SlotRole[] = mode === 'skill' || !dual ? ['main'] : ['frontend', 'backend'];
+    const rolesToCheck: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
     (async () => {
       for (const role of rolesToCheck) {
         try {
@@ -148,16 +137,12 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
           if (!r.ok || cancelled) continue;
           const data = await r.json();
           updateSlot(role, { status: data.status, url: data.url ?? '', command: data.command ?? '' });
-          if (data.skill && data.skill !== activeSkill) {
-            setActiveSkill(data.skill);
-            try { window.localStorage.setItem(SKILL_KEY(bubbleId), data.skill); } catch { /* noop */ }
-          }
         } catch { /* noop */ }
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bubbleId, mode, dual]);
+  }, [bubbleId, dual]);
 
   // Stream de status vía WS.
   useEffect(() => {
@@ -169,20 +154,16 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
         url: e.url ?? '',
         command: e.command ?? '',
       });
-      if (e.skill && e.skill !== activeSkill) {
-        setActiveSkill(e.skill);
-        try { window.localStorage.setItem(SKILL_KEY(bubbleId), e.skill); } catch { /* noop */ }
-      }
       // Auto-bind del navegador a la URL del frontend (o main si single).
       if (e.status === 'running' && e.url && (role === 'main' || role === 'frontend')) {
         ecoEmit('eco:browser_navigate', { bubbleId, url: e.url });
       }
     });
-  }, [bubbleId, activeSkill]);
+  }, [bubbleId]);
 
   // Poll de logs cada 1.5s para los slots activos.
   useEffect(() => {
-    const activeRoles: SlotRole[] = mode === 'skill' || !dual ? ['main'] : ['frontend', 'backend'];
+    const activeRoles: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
     const needsPoll = activeRoles.some((r) => {
       const st = slots[r].status;
       return st === 'starting' || st === 'running' || st === 'error';
@@ -205,7 +186,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     const iv = setInterval(fetchLogs, 1500);
     return () => { cancelled = true; clearInterval(iv); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bubbleId, mode, dual, slots.main.status, slots.frontend.status, slots.backend.status]);
+  }, [bubbleId, dual, slots.main.status, slots.frontend.status, slots.backend.status]);
 
   // Helpers de fetch.
   async function postWithRetry(path: string, body: Record<string, unknown>): Promise<Response> {
@@ -241,10 +222,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     });
     try {
       let r: Response;
-      if (mode === 'skill') {
-        if (!activeSkill) { updateSlot(role, { actionError: 'Elegí un skill primero.', actionBusy: null }); return; }
-        r = await postWithRetry('/dev/skill', { workspace, bubbleId, skill: activeSkill, action });
-      } else if (action === 'up') {
+      if (action === 'up') {
         const cmd = cmdFor(role);
         if (!cmd.trim()) { updateSlot(role, { actionError: 'Definí el comando para iniciar.', actionBusy: null }); return; }
         r = await postWithRetry('/dev/start', { workspace, bubbleId, command: cmd, role });
@@ -271,7 +249,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
   }
 
   async function runAllAction(action: 'up' | 'down' | 'restart') {
-    if (mode === 'skill' || !dual) { return runActionForRole('main', action); }
+    if (!dual) { return runActionForRole('main', action); }
     // Dual: corremos en paralelo para que ambos arranquen / se detengan a la vez.
     await Promise.all([
       runActionForRole('frontend', action),
@@ -279,18 +257,11 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     ]);
   }
 
-  function pickSkill(name: string) {
-    setActiveSkill(name);
-    try { window.localStorage.setItem(SKILL_KEY(bubbleId), name); } catch { /* noop */ }
-    setShowSkillPicker(false);
-  }
-
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
         {/* Header con estado(s) */}
         <PanelHeader
-          mode={mode}
           dual={dual}
           slots={slots}
           bubbleId={bubbleId}
@@ -299,13 +270,13 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
         {/* Botones de acción globales — corren ambos slots en dual */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
           {(() => {
-            const activeRoles: SlotRole[] = mode === 'skill' || !dual ? ['main'] : ['frontend', 'backend'];
+            const activeRoles: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
             const anyRunning = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting');
             const anyStoppable = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting' || slots[r].status === 'error');
             const anyBusy = activeRoles.some((r) => !!slots[r].actionBusy);
-            const startLabel = mode === 'command' && dual ? 'Iniciar ambos' : 'Iniciar';
-            const restartLabel = mode === 'command' && dual ? 'Reiniciar ambos' : 'Reiniciar';
-            const stopLabel = mode === 'command' && dual ? 'Detener ambos' : 'Detener';
+            const startLabel = dual ? 'Iniciar ambos' : 'Iniciar';
+            const restartLabel = dual ? 'Reiniciar ambos' : 'Reiniciar';
+            const stopLabel = dual ? 'Detener ambos' : 'Detener';
             return (
               <>
                 <Btn kind="primary" size="md" onClick={() => void runAllAction('up')}
@@ -348,37 +319,25 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
 
         {!configCollapsed && (
           <>
-            {/* Toggle de modo */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-              <ModeButton active={mode === 'skill'} onClick={() => setMode('skill')}
-                title="Skill de Claude"
-                sub="Recomendado · el skill define los comandos"/>
-              <ModeButton active={mode === 'command'} onClick={() => setMode('command')}
-                title="Comando bash directo"
-                sub="Vos definís los comandos, Eco gestiona puertos"/>
-            </div>
-
-        {/* En modo command, ofrecemos el toggle de dual */}
-        {mode === 'command' && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '10px 12px', marginBottom: 12, borderRadius: 10,
-            background: t.bg2, border: `1px solid ${dual ? t.accent : t.glassBorder}`,
-          }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>
-                Frontend + Backend en paralelo
+            {/* Toggle de dual */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 12px', marginBottom: 12, borderRadius: 10,
+              background: t.bg2, border: `1px solid ${dual ? t.accent : t.glassBorder}`,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>
+                  Frontend + Backend en paralelo
+                </div>
+                <div style={{ fontSize: 11, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
+                  Activá si tu proyecto necesita dos servers (ej. Vite + Express). Cada uno tiene su puerto y logs.
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
-                Activá si tu proyecto necesita dos servers (ej. Vite + Express). Cada uno tiene su puerto y logs.
-              </div>
+              <Toggle on={dual} onChange={setDualPersist}/>
             </div>
-            <Toggle on={dual} onChange={setDualPersist}/>
-          </div>
-        )}
 
         {/* En dual, picker de qué panel de logs se ve grande por defecto */}
-        {mode === 'command' && dual && (
+        {dual && (
           <div style={{
             padding: '10px 12px', marginBottom: 12, borderRadius: 10,
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
@@ -425,16 +384,8 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
           </div>
         )}
 
-        {/* Configuración por modo */}
-        {mode === 'skill' ? (
-          <SkillModeConfig
-            workspace={workspace}
-            activeSkill={activeSkill}
-            onPick={pickSkill}
-            showPicker={showSkillPicker}
-            setShowPicker={setShowSkillPicker}
-          />
-        ) : !dual ? (
+        {/* Comando(s) bash */}
+        {!dual ? (
           <CommandSlot
             role="main"
             label="Comando para iniciar el server"
@@ -471,11 +422,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
             <IconCpu size={11}/> Cómo funciona
           </div>
           <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>
-            {mode === 'skill' ? (
-              <>Eco invoca el skill <code style={mono(t)}>/{activeSkill || '<skill>'} up|down|restart</code> con <code style={mono(t)}>claude -p</code> dentro del worktree del agente. El skill debe imprimir el comando real envuelto en <code style={mono(t)}>&lt;cmd&gt;...&lt;/cmd&gt;</code>; Eco lo ejecuta con un puerto único asignado por agente (<code style={mono(t)}>$PORT</code>) y reintenta hasta 2 veces. Al detener, Eco mata el process group entero y verifica que el puerto realmente quede libre.</>
-            ) : (
-              <>Eco ejecuta tu comando dentro del worktree del agente. Setea <code style={mono(t)}>$PORT</code> a un puerto libre {dual ? 'distinto para cada slot (frontend y backend)' : 'por agente'} — el comando debe respetarlo (ej. <code style={mono(t)}>vite --port $PORT</code>, <code style={mono(t)}>process.env.PORT</code>). Al detener, Eco mata el process group entero y verifica el cleanup con <code style={mono(t)}>lsof</code>.</>
-            )}
+            Eco ejecuta tu comando dentro del worktree del agente. Setea <code style={mono(t)}>$PORT</code> a un puerto libre {dual ? 'distinto para cada slot (frontend y backend)' : 'por agente'} — el comando debe respetarlo (ej. <code style={mono(t)}>vite --port $PORT</code>, <code style={mono(t)}>process.env.PORT</code>). Al detener, Eco mata el process group entero y verifica el cleanup con <code style={mono(t)}>lsof</code>.
           </div>
         </Glass>
           </>
@@ -484,7 +431,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
         {/* Logs — single pane si no es dual, dos columnas si lo es. En dual,
             cada slot se puede minimizar; cuando uno se minimiza, el otro
             crece para ocupar el espacio. */}
-        {mode === 'command' && dual ? (
+        {dual ? (
           <div style={{
             display: 'flex', gap: 10, marginTop: 16,
             alignItems: 'stretch',
@@ -570,15 +517,14 @@ function statusLabelFor(s: Status) {
 }
 
 function PanelHeader({
-  mode, dual, slots, bubbleId,
+  dual, slots, bubbleId,
 }: {
-  mode: 'skill' | 'command';
   dual: boolean;
   slots: Record<SlotRole, SlotState>;
   bubbleId: string;
 }) {
   const t = useTokens();
-  const isDual = mode === 'command' && dual;
+  const isDual = dual;
   const visibleRoles: SlotRole[] = isDual ? ['frontend', 'backend'] : ['main'];
 
   return (
@@ -657,28 +603,6 @@ function PanelHeader({
         })}
       </div>
     </div>
-  );
-}
-
-function ModeButton({
-  active, onClick, title, sub,
-}: {
-  active: boolean; onClick: () => void; title: string; sub: string;
-}) {
-  const t = useTokens();
-  return (
-    <button type="button" onClick={onClick}
-      style={{
-        flex: 1, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-        border: `1px solid ${active ? t.accent : t.glassBorder}`,
-        background: active ? t.accentFaint : t.bg2,
-        color: active ? t.accent : t.text1,
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-        textAlign: 'left',
-      }}>
-      <div style={{ fontWeight: 600, marginBottom: 2 }}>{title}</div>
-      <div style={{ fontSize: 10.5, color: t.text3, fontWeight: 400 }}>{sub}</div>
-    </button>
   );
 }
 
@@ -1191,98 +1115,3 @@ function TerminalLogs({
   );
 }
 
-function SkillModeConfig({
-  workspace, activeSkill, onPick, showPicker, setShowPicker,
-}: {
-  workspace: string;
-  activeSkill: string;
-  onPick: (name: string) => void;
-  showPicker: boolean;
-  setShowPicker: (v: boolean) => void;
-}) {
-  const t = useTokens();
-  const { skills } = useSkills(workspace);
-  const [query, setQuery] = useState('');
-  const filtered = useMemo(() => skills
-    .filter((sk) => sk.name.toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 30), [skills, query]);
-
-  return (
-    <>
-      <div style={{
-        padding: 12, borderRadius: 10,
-        background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      }}>
-        <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>Skill activo</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <code style={{
-            flex: 1, fontFamily: t.fontMono, fontSize: 12, color: t.text0,
-            padding: '4px 8px', background: t.bg3, borderRadius: 6,
-          }}>
-            {activeSkill ? `/${activeSkill}` : 'sin seleccionar'}
-          </code>
-          <Btn kind="secondary" size="sm" onClick={() => setShowPicker(!showPicker)}>
-            {activeSkill ? 'Cambiar' : 'Elegir skill'}
-          </Btn>
-        </div>
-      </div>
-
-      {showPicker && (
-        <div style={{
-          marginTop: 8, padding: 12, borderRadius: 10,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          maxHeight: 280, display: 'flex', flexDirection: 'column', gap: 6,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <IconSearch size={12}/>
-            <input
-              autoFocus value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar skill…"
-              style={{
-                flex: 1, padding: '4px 8px', borderRadius: 6,
-                border: `1px solid ${t.glassBorder}`, background: t.bg3,
-                color: t.text0, outline: 'none',
-                fontFamily: t.fontMono, fontSize: 12,
-              }}
-            />
-            <button type="button" onClick={() => setShowPicker(false)}
-              style={{ background: 'transparent', border: 0, color: t.text3, cursor: 'pointer', padding: 0 }}>
-              <IconX size={12}/>
-            </button>
-          </div>
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            {filtered.length === 0 ? (
-              <div style={{ padding: 10, fontSize: 11.5, color: t.text3, textAlign: 'center' }}>
-                Sin skills detectados en este workspace.
-              </div>
-            ) : filtered.map((sk) => (
-              <button
-                key={`${sk.source}-${sk.name}`}
-                type="button"
-                onClick={() => onPick(sk.name)}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '6px 8px', borderRadius: 6, border: 0,
-                  background: 'transparent', color: t.text0,
-                  cursor: 'pointer', textAlign: 'left',
-                  fontFamily: t.fontSans, fontSize: 12,
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = t.bg3}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent }}>/{sk.name}</code>
-                {sk.description && (
-                  <span style={{
-                    flex: 1, color: t.text3, fontSize: 11,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>{sk.description}</span>
-                )}
-                <span style={{ fontSize: 9.5, color: t.text3 }}>{sk.source}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
