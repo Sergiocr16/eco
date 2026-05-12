@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { translate, loadLang } from '@/lib/i18n';
+import { stripWakePrefix } from '@/lib/meta-commands';
 
 declare global {
   interface Window {
@@ -73,11 +74,13 @@ type Options = {
   language?: string;
   /** Se llama con cada frase final del reconocedor. El consumidor decide si es comando meta o input a la burbuja. */
   onPhrase: (text: string) => void;
+  /** Se llama cuando el interim detecta el wake prefix "Eco/Hey Eco/..." — feedback temprano antes del final. */
+  onWakeDetected?: () => void;
 };
 
 const MIN_PHRASE_CHARS = 2;
 
-export function useVoice({ language = 'es-419', onPhrase }: Options): VoiceHookResult {
+export function useVoice({ language = 'es-419', onPhrase, onWakeDetected }: Options): VoiceHookResult {
   const [state, setState] = useState<VoiceState>('off');
   const [interimText, setInterimText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +89,10 @@ export function useVoice({ language = 'es-419', onPhrase }: Options): VoiceHookR
   const wantedRef = useRef(false);
   const onPhraseRef = useRef(onPhrase);
   useEffect(() => { onPhraseRef.current = onPhrase; }, [onPhrase]);
+  const onWakeDetectedRef = useRef(onWakeDetected);
+  useEffect(() => { onWakeDetectedRef.current = onWakeDetected; }, [onWakeDetected]);
+  // Para no disparar el wake repetido durante el mismo interim
+  const wakeFiredRef = useRef(false);
 
   const Ctor =
     typeof window !== 'undefined'
@@ -125,13 +132,25 @@ export function useVoice({ language = 'es-419', onPhrase }: Options): VoiceHookR
       }
 
       setError(null);
-      setInterimText(interim.trim());
+      const trimmedInterim = interim.trim();
+      setInterimText(trimmedInterim);
+
+      // Feedback temprano: dispara una sola vez por ciclo cuando el interim arranca con el wake prefix.
+      if (trimmedInterim && !wakeFiredRef.current) {
+        if (stripWakePrefix(trimmedInterim).isMeta) {
+          wakeFiredRef.current = true;
+          try { onWakeDetectedRef.current?.(); } catch (e) { console.error('onWakeDetected error', e); }
+        }
+      }
 
       for (const phrase of finals) {
         try { onPhraseRef.current(phrase); } catch (e) { console.error('onPhrase error', e); }
       }
 
-      if (finals.length > 0) setInterimText('');
+      if (finals.length > 0) {
+        setInterimText('');
+        wakeFiredRef.current = false;
+      }
     };
 
     r.onerror = (e) => {

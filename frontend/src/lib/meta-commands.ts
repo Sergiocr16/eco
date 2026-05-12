@@ -18,8 +18,16 @@ export type MetaAction =
   | { kind: 'resume_active' }
   | { kind: 'toggle_voice'; on: boolean }
   | { kind: 'set_theme'; mode: 'dark' | 'light' | 'system' }
+  | { kind: 'scroll'; dir: 'up' | 'down' | 'top' | 'bottom' }
+  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'files' | 'plan' }
+  | { kind: 'confirm'; answer: 'yes' | 'no' }
+  | { kind: 'repeat_last' }
+  | { kind: 'tts_rate'; dir: 'faster' | 'slower' | 'normal' }
+  | { kind: 'tts_volume'; dir: 'up' | 'down' }
   | { kind: 'help' }
   | { kind: 'unknown' };
+
+export type Screen = 'dashboard' | 'detail' | 'files' | 'history' | 'settings' | 'login' | 'onboarding';
 
 export type MetaActionFeedback = {
   title: string;
@@ -57,9 +65,44 @@ const ALIASES: Record<string, string> = {
   'ajustes': 'settings', 'configuracion': 'settings', 'config': 'settings',
   'settings': 'settings', 'preferencias': 'settings',
 
-  'archivos': 'files', 'files': 'files', 'carpetas': 'files',
+  // 'archivos' depende del contexto: pantalla en dashboard / tab en detail.
+  // El resolver final usa `currentScreen` para decidir.
+  'archivos': 'archivos_ctx', 'files': 'archivos_ctx', 'carpetas': 'archivos_ctx',
 
   'historial': 'history', 'history': 'history',
+
+  // Scroll (con o sin keyword "scroll")
+  'scroll': 'scroll',
+  'baja': 'scroll_down', 'bajar': 'scroll_down',
+  'sube': 'scroll_up', 'subir': 'scroll_up',
+  'abajo': 'scroll_down', 'arriba': 'scroll_up',
+
+  // Tabs en detail (requieren ver "ver"/"abrí" o palabra directa cuando se está en detail)
+  'terminal': 'tab_terminal',
+  'plan': 'tab_plan',
+  'chat': 'tab_chat',
+  'conversacion': 'tab_chat',
+
+  // Sí / No / Confirm
+  'si': 'confirm_yes', 'yes': 'confirm_yes', 'ok': 'confirm_yes',
+  'dale': 'confirm_yes', 'vale': 'confirm_yes',
+  'confirma': 'confirm_yes', 'confirmar': 'confirm_yes',
+  'acepta': 'confirm_yes', 'aceptar': 'confirm_yes',
+
+  'no': 'confirm_no', 'rechaza': 'confirm_no', 'rechazar': 'confirm_no',
+  'cancela': 'confirm_no', 'cancelar': 'confirm_no', 'descarta': 'confirm_no',
+
+  // Repetir último
+  'repetir': 'repeat', 'repeti': 'repeat',
+  'leeme': 'repeat', 'lee': 'repeat',
+  'releer': 'repeat',
+
+  // TTS adjustments
+  'rapido': 'tts_faster', 'rápido': 'tts_faster', 'acelera': 'tts_faster',
+  'lento': 'tts_slower', 'lenta': 'tts_slower', 'despacio': 'tts_slower',
+  'normal': 'tts_normal',
+  'fuerte': 'tts_louder', 'alto': 'tts_louder',
+  'bajito': 'tts_quieter', 'bajo': 'tts_quieter',
 
   // Burbujas
   'abrir': 'create', 'abre': 'create', 'crear': 'create', 'crea': 'create',
@@ -100,7 +143,7 @@ const ALIASES: Record<string, string> = {
   'apaga': 'mute', 'apagar': 'mute',
 
   'hablar': 'unmute', 'habla': 'unmute', 'unmute': 'unmute',
-  'leeme': 'unmute', 'prende': 'unmute', 'prender': 'unmute',
+  'prende': 'unmute', 'prender': 'unmute',
 
   // Tema
   'claro': 'theme_light', 'light': 'theme_light', 'dia': 'theme_light',
@@ -128,7 +171,12 @@ function dropFillers(tokens: string[]): string[] {
   return tokens.filter((t) => !FILLERS.has(t));
 }
 
-export function parseMetaCommand(rest: string, bubbles: Bubble[], activeBubbleId: string | null): MetaAction {
+export function parseMetaCommand(
+  rest: string,
+  bubbles: Bubble[],
+  activeBubbleId: string | null,
+  currentScreen: Screen = 'dashboard',
+): MetaAction {
   const text = rest.trim();
   if (!text) return { kind: 'unknown' };
 
@@ -136,9 +184,14 @@ export function parseMetaCommand(rest: string, bubbles: Bubble[], activeBubbleId
   const norm = normalize(text);
   const tokens = norm.split(' ');
   const firstToken = tokens[0] ?? '';
-  const commandKey = ALIASES[firstToken];
+  let commandKey = ALIASES[firstToken];
 
   if (!commandKey) return { kind: 'unknown' };
+
+  // "archivos" es ambiguo: en detail = tab Archivos; en cualquier otra pantalla = ir a screen Archivos.
+  if (commandKey === 'archivos_ctx') {
+    commandKey = currentScreen === 'detail' ? 'tab_files' : 'files';
+  }
 
   // Argumento = resto del texto, con fillers removidos
   const restTokens = tokens.slice(1);
@@ -152,6 +205,29 @@ export function parseMetaCommand(rest: string, bubbles: Bubble[], activeBubbleId
     case 'settings':  return { kind: 'goto_settings' };
     case 'files':     return { kind: 'goto_files' };
     case 'history':   return { kind: 'goto_history' };
+    case 'scroll': {
+      // "scroll abajo" / "scroll al final" / "scroll arriba" / "scroll todo arriba"
+      const a = argClean;
+      if (/\b(fin|final|abajo|bottom|end)\b/.test(a)) return { kind: 'scroll', dir: 'bottom' };
+      if (/\b(inicio|tope|arriba|top|start)\b/.test(a)) return { kind: 'scroll', dir: 'top' };
+      if (/\bsube\b|\barriba\b/.test(a)) return { kind: 'scroll', dir: 'up' };
+      // 'scroll' solo, sin arg → down (lo más común)
+      return { kind: 'scroll', dir: 'down' };
+    }
+    case 'scroll_down': return { kind: 'scroll', dir: argClean === 'todo' ? 'bottom' : 'down' };
+    case 'scroll_up':   return { kind: 'scroll', dir: argClean === 'todo' ? 'top'    : 'up'   };
+    case 'tab_terminal': return { kind: 'switch_tab', tab: 'terminal' };
+    case 'tab_files':    return { kind: 'switch_tab', tab: 'files' };
+    case 'tab_plan':     return { kind: 'switch_tab', tab: 'plan' };
+    case 'tab_chat':     return { kind: 'switch_tab', tab: 'chat' };
+    case 'confirm_yes':  return { kind: 'confirm', answer: 'yes' };
+    case 'confirm_no':   return { kind: 'confirm', answer: 'no' };
+    case 'repeat':       return { kind: 'repeat_last' };
+    case 'tts_faster':   return { kind: 'tts_rate', dir: 'faster' };
+    case 'tts_slower':   return { kind: 'tts_rate', dir: 'slower' };
+    case 'tts_normal':   return { kind: 'tts_rate', dir: 'normal' };
+    case 'tts_louder':   return { kind: 'tts_volume', dir: 'up' };
+    case 'tts_quieter':  return { kind: 'tts_volume', dir: 'down' };
     case 'create': {
       if (!titleFromOriginal) return { kind: 'create_bubble' };
       // Smart 'abrir': si existe burbuja con ese nombre, focusea; sino crea.
@@ -245,6 +321,12 @@ export function describeAction(action: MetaAction, bubbles: Bubble[], lang: Lang
     case 'resume_active':  return { title: tr('cmd.resumed') };
     case 'toggle_voice':   return { title: action.on ? tr('cmd.voice_on') : tr('cmd.voice_off') };
     case 'set_theme':      return { title: tr('cmd.theme', { mode: action.mode }) };
+    case 'scroll':         return { title: tr('cmd.scroll'), detail: tr(`cmd.scroll.${action.dir}`) };
+    case 'switch_tab':     return { title: tr('cmd.switch_tab'), detail: tr(`cmd.tab.${action.tab}`) };
+    case 'confirm':        return { title: action.answer === 'yes' ? tr('cmd.confirm_yes') : tr('cmd.confirm_no') };
+    case 'repeat_last':    return { title: tr('cmd.repeat') };
+    case 'tts_rate':       return { title: tr(`cmd.tts.${action.dir}`) };
+    case 'tts_volume':     return { title: tr(action.dir === 'up' ? 'cmd.tts.louder' : 'cmd.tts.quieter') };
     case 'help':           return { title: tr('cmd.help.title') };
     case 'unknown':        return { title: tr('cmd.unknown.title'), detail: tr('cmd.unknown.detail') };
   }
@@ -263,4 +345,9 @@ export const COMMAND_HELP: Array<{ example?: string; desc?: string; exampleKey?:
   { exampleKey: 'cmdhelp.voice.example', descKey: 'cmdhelp.voice.desc' },
   { exampleKey: 'cmdhelp.theme.example', descKey: 'cmdhelp.theme.desc' },
   { exampleKey: 'cmdhelp.help.example', descKey: 'cmdhelp.help.desc' },
+  { exampleKey: 'cmdhelp.scroll.example', descKey: 'cmdhelp.scroll.desc' },
+  { exampleKey: 'cmdhelp.tab.example', descKey: 'cmdhelp.tab.desc' },
+  { exampleKey: 'cmdhelp.confirm.example', descKey: 'cmdhelp.confirm.desc' },
+  { exampleKey: 'cmdhelp.repeat.example', descKey: 'cmdhelp.repeat.desc' },
+  { exampleKey: 'cmdhelp.tts.example', descKey: 'cmdhelp.tts.desc' },
 ];

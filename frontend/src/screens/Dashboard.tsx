@@ -11,6 +11,7 @@ import {
 import type { Bubble, VoiceState } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
+import { on as ecoOn } from '@/lib/eco-bus';
 
 type Props = {
   bubbles: Bubble[];
@@ -41,6 +42,17 @@ export function Dashboard(props: Props) {
   const waiting = active.filter((b) => b.status === 'waiting' as string);
   const errors = bubbles.filter((b) => b.status === 'error' as string);
 
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => ecoOn('eco:scroll', ({ dir }) => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+    const step = el.clientHeight * 0.85;
+    if (dir === 'top') el.scrollTo({ top: 0, behavior: 'smooth' });
+    else if (dir === 'bottom') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    else if (dir === 'up') el.scrollBy({ top: -step, behavior: 'smooth' });
+    else if (dir === 'down') el.scrollBy({ top: step, behavior: 'smooth' });
+  }), []);
+
   return (
     <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
       <DashboardRail
@@ -51,7 +63,7 @@ export function Dashboard(props: Props) {
         onOpenAgent={onOpenAgent}
       />
 
-      <div style={{
+      <div ref={mainScrollRef} style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         padding: '28px 32px 110px', overflow: 'auto', position: 'relative',
       }}>

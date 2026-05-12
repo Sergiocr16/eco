@@ -19,6 +19,7 @@ import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { stripWakePrefix } from '@/lib/meta-commands';
 import { useT } from '@/hooks/useI18n';
 import { translateBackendError } from '@/lib/backend-errors';
+import { on as ecoOn } from '@/lib/eco-bus';
 
 function copyTranscriptToClipboard(bubble: Bubble) {
   const lines: string[] = [`# ${bubble.title}`, ''];
@@ -170,6 +171,9 @@ export function AgentDetail({
   }
 
   const filesChanged = collectFilesChanged(bubble);
+
+  // Comandos por voz: cambiar tab desde fuera del componente.
+  useEffect(() => ecoOn('eco:switch_tab', ({ tab }) => setTab(tab)), []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -350,6 +354,16 @@ function ChatPanel({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [bubble.messages.length, bubble.status]);
+
+  useEffect(() => ecoOn('eco:scroll', ({ dir }) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const step = el.clientHeight * 0.85;
+    if (dir === 'top') el.scrollTo({ top: 0, behavior: 'smooth' });
+    else if (dir === 'bottom') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    else if (dir === 'up') el.scrollBy({ top: -step, behavior: 'smooth' });
+    else if (dir === 'down') el.scrollBy({ top: step, behavior: 'smooth' });
+  }), []);
 
   const submit = () => {
     const v = draft.trim();

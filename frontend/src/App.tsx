@@ -11,6 +11,8 @@ import { useBubbles } from './hooks/useBubbles';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
+import { emit as ecoEmit } from './lib/eco-bus';
+import { playWakeBeep, playDismissBeep } from './lib/wake-beep';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
@@ -48,6 +50,9 @@ function Shell() {
   const t = useTokens();
   const { setMode } = useTheme();
   const { lang } = useI18n();
+  const tr = useT();
+  const [wakeActive, setWakeActive] = useState(false);
+  const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackPayload | null>(null);
@@ -143,6 +148,7 @@ function Shell() {
     // Caso 1: dentro de una burbuja, sin prefijo Eco → input a la conversación
     if (inBubble && !isMeta) {
       sendTo(detailBubbleId!, text);
+      clearWake();
       return;
     }
 
@@ -150,10 +156,31 @@ function Shell() {
     // Caso 3: fuera de burbuja (dashboard/files/settings/history) → TODO es comando meta,
     //         con o sin prefijo. Lo que digas se interpreta como navegación.
     const command = isMeta ? rest : text;
-    const action = parseMetaCommand(command, bubbles.bubbles, detailBubbleId || bubbles.activeBubbleId);
+    const action = parseMetaCommand(command, bubbles.bubbles, detailBubbleId || bubbles.activeBubbleId, screen);
     flash(action);
     handleMetaAction(action);
+    // Comando resuelto (válido o unknown): apaga el indicador de wake si estaba activo.
+    clearWake();
   }
+
+  function activateWake() {
+    setWakeActive(true);
+    playWakeBeep();
+    if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current);
+    wakeTimerRef.current = setTimeout(() => {
+      setWakeActive(false);
+      playDismissBeep();
+      wakeTimerRef.current = null;
+    }, 3000);
+  }
+
+  function clearWake() {
+    if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current);
+    wakeTimerRef.current = null;
+    setWakeActive(false);
+  }
+
+  useEffect(() => () => { if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current); }, []);
 
   function handleMetaAction(action: MetaAction): void {
     switch (action.kind) {
@@ -214,6 +241,37 @@ function Shell() {
         tts.setEnabled(action.on); return;
       case 'set_theme':
         setMode(action.mode); return;
+      case 'scroll':
+        ecoEmit('eco:scroll', { dir: action.dir }); return;
+      case 'switch_tab':
+        ecoEmit('eco:switch_tab', { tab: action.tab }); return;
+      case 'confirm':
+        ecoEmit('eco:confirm', { answer: action.answer }); return;
+      case 'repeat_last': {
+        const focus = detailBubble ?? bubbles.activeBubble;
+        const last = focus?.messages.slice().reverse().find((m) => m.role === 'assistant' && m.text);
+        if (last) {
+          if (!tts.enabled) tts.setEnabled(true);
+          // Forzar nueva lectura aunque ya se haya leído
+          lastSpokenRef.current = null;
+          tts.speak(last.text);
+        }
+        return;
+      }
+      case 'tts_rate': {
+        const cur = tts.rate ?? 1;
+        const next = action.dir === 'faster' ? Math.min(2, cur + 0.2)
+                   : action.dir === 'slower' ? Math.max(0.5, cur - 0.2)
+                   : 1;
+        tts.setRate?.(next);
+        return;
+      }
+      case 'tts_volume': {
+        const cur = tts.volume ?? 1;
+        const next = action.dir === 'up' ? Math.min(1, cur + 0.15) : Math.max(0, cur - 0.15);
+        tts.setVolume?.(next);
+        return;
+      }
       case 'help':
         setOverlay('help'); return;
       case 'unknown':
@@ -225,6 +283,7 @@ function Shell() {
   const voice = useVoice({
     language: 'es-419',
     onPhrase: (text: string) => handleIncomingVoiceText(text),
+    onWakeDetected: () => activateWake(),
   });
 
   // Modo siempre escuchando: arranca automático si el user ya dio permiso
@@ -399,6 +458,7 @@ function Shell() {
         </div>
       </div>
 
+      <WakeIndicator active={wakeActive} label={tr('wake.listening')}/>
       <CommandFeedback payload={feedback}/>
       <StatusOverlay
         open={overlay !== null}
@@ -418,6 +478,38 @@ function Shell() {
         onClose={() => setWsPickerForBubble(null)}
       />
     </>
+  );
+}
+
+function WakeIndicator({ active, label }: { active: boolean; label: string }) {
+  const t = useTokens();
+  return (
+    <div
+      aria-hidden={!active}
+      style={{
+        position: 'fixed', top: 14, left: '50%',
+        transform: `translate(-50%, ${active ? '0' : '-22px'}) scale(${active ? 1 : 0.94})`,
+        opacity: active ? 1 : 0,
+        transition: 'opacity 200ms ease, transform 240ms cubic-bezier(0.16, 1, 0.3, 1)',
+        zIndex: 210, pointerEvents: 'none',
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 14px',
+        background: t.glassBg,
+        backdropFilter: 'blur(40px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+        border: `1px solid color-mix(in oklch, ${t.accent} 40%, transparent)`,
+        borderRadius: 999,
+        boxShadow: `0 0 24px color-mix(in oklch, ${t.accent} 30%, transparent)`,
+        fontFamily: t.fontSans, fontSize: 12.5, color: t.text0, fontWeight: 500,
+      }}
+    >
+      <span style={{
+        width: 8, height: 8, borderRadius: '50%', background: t.accent,
+        animation: active ? 'eco-shimmer 0.9s ease-in-out infinite' : 'none',
+        boxShadow: `0 0 8px ${t.accent}`,
+      }}/>
+      <span>{label}</span>
+    </div>
   );
 }
 

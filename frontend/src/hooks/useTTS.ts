@@ -3,6 +3,8 @@ import { apiFetch } from '@/lib/api';
 
 const STORAGE_ENABLED = 'eco.tts.enabled';
 const STORAGE_VOICE = 'eco.tts.voice';
+const STORAGE_RATE = 'eco.tts.rate';
+const STORAGE_VOLUME = 'eco.tts.volume';
 
 export type UnifiedVoice = {
   id: string;
@@ -19,8 +21,12 @@ export type TTSHook = {
   piperAvailable: boolean;
   voices: UnifiedVoice[];
   selectedVoiceURI: string | null;
+  rate: number;
+  volume: number;
   setEnabled: (v: boolean) => void;
   selectVoice: (uri: string) => void;
+  setRate: (r: number) => void;
+  setVolume: (v: number) => void;
   speak: (text: string) => void;
   cancel: () => void;
 };
@@ -40,6 +46,18 @@ function loadEnabled(): boolean {
 }
 function loadVoice(): string | null {
   try { return window.localStorage.getItem(STORAGE_VOICE); } catch { return null; }
+}
+function loadRate(): number {
+  try {
+    const v = Number(window.localStorage.getItem(STORAGE_RATE));
+    return Number.isFinite(v) && v >= 0.5 && v <= 2 ? v : 1;
+  } catch { return 1; }
+}
+function loadVolume(): number {
+  try {
+    const v = Number(window.localStorage.getItem(STORAGE_VOLUME));
+    return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 1;
+  } catch { return 1; }
 }
 
 async function fetchPiperVoices(): Promise<PiperVoice[]> {
@@ -75,6 +93,8 @@ export function useTTS(): TTSHook {
   const [piperVoices, setPiperVoices] = useState<PiperVoice[]>([]);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | null>(loadVoice);
+  const [rate, setRateState] = useState<number>(loadRate);
+  const [volume, setVolumeState] = useState<number>(loadVolume);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const reqIdRef = useRef(0);
@@ -152,6 +172,20 @@ export function useTTS(): TTSHook {
     try { window.localStorage.setItem(STORAGE_VOICE, id); } catch { /* noop */ }
   }, []);
 
+  const setRate = useCallback((r: number) => {
+    const clamped = Math.min(2, Math.max(0.5, r));
+    setRateState(clamped);
+    try { window.localStorage.setItem(STORAGE_RATE, String(clamped)); } catch { /* noop */ }
+    if (audioRef.current) audioRef.current.playbackRate = clamped;
+  }, []);
+
+  const setVolume = useCallback((v: number) => {
+    const clamped = Math.min(1, Math.max(0, v));
+    setVolumeState(clamped);
+    try { window.localStorage.setItem(STORAGE_VOLUME, String(clamped)); } catch { /* noop */ }
+    if (audioRef.current) audioRef.current.volume = clamped;
+  }, []);
+
   const cancel = useCallback(() => {
     audioRef.current?.pause();
     audioRef.current = null;
@@ -176,6 +210,8 @@ export function useTTS(): TTSHook {
       }
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      audio.playbackRate = rate;
+      audio.volume = volume;
       audioRef.current = audio;
       audio.onended = () => {
         if (myReq === reqIdRef.current) setSpeaking(false);
@@ -198,13 +234,14 @@ export function useTTS(): TTSHook {
       const u = new SpeechSynthesisUtterance(text);
       if (voice) { u.voice = voice; u.lang = voice.lang; }
       else { u.lang = 'es-419'; }
-      u.rate = 1.02;
+      u.rate = rate * 1.02;
+      u.volume = volume;
       u.onstart = () => { if (myReq === reqIdRef.current) setSpeaking(true); };
       u.onend = () => { if (myReq === reqIdRef.current) setSpeaking(false); };
       u.onerror = () => { if (myReq === reqIdRef.current) setSpeaking(false); };
       synth.speak(u);
     }
-  }, [browserSupported, browserVoices, cancel, enabled, selectedVoiceURI]);
+  }, [browserSupported, browserVoices, cancel, enabled, selectedVoiceURI, rate, volume]);
 
   useEffect(() => () => { cancel(); }, [cancel]);
 
@@ -215,8 +252,12 @@ export function useTTS(): TTSHook {
     piperAvailable: piperVoices.length > 0,
     voices,
     selectedVoiceURI,
+    rate,
+    volume,
     setEnabled,
     selectVoice,
+    setRate,
+    setVolume,
     speak,
     cancel,
   };
