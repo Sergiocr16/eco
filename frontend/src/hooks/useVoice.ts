@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { translate, loadLang } from '@/lib/i18n';
 
 declare global {
   interface Window {
@@ -136,18 +137,18 @@ export function useVoice({ language = 'es-419', onPhrase }: Options): VoiceHookR
     r.onerror = (e) => {
       if (e.error === 'no-speech' || e.error === 'aborted') return;
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        setError('Permiso de micrófono denegado');
+        setError(translate('voice.err.permission', loadLang()));
         wantedRef.current = false;
         setState('off');
         return;
       }
       if (e.error === 'audio-capture') {
-        setError('No se encontró micrófono');
+        setError(translate('voice.err.no_mic', loadLang()));
         wantedRef.current = false;
         setState('off');
         return;
       }
-      setError(e.error || 'Error de reconocimiento');
+      setError(e.error || translate('voice.err.recognition', loadLang()));
     };
 
     r.onend = () => {

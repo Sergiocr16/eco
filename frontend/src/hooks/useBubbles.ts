@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Bubble, Message } from '@/lib/types';
+import { translate, loadLang } from '@/lib/i18n';
 
 const STORAGE_KEY = 'eco.bubbles.v1';
 const ACTIVE_KEY = 'eco.bubbles.active';
@@ -105,7 +106,7 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     const accent = nextAccent(bubbles);
     const bubble: Bubble = {
       id: newId('b'),
-      title: opts?.title?.trim() || `Conversación ${bubbles.length + 1}`,
+      title: opts?.title?.trim() || translate('bubble.default_title', loadLang(), { n: bubbles.length + 1 }),
       workspace: opts?.workspace ?? defaultWorkspace,
       sessionId: null,
       messages: [],
