@@ -160,8 +160,18 @@ export const IconAlert = (p: IconProps) => (
 export const IconInfo = (p: IconProps) => (
   <Base {...p}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></Base>
 );
+// Icono clásico de "diff" tipo GitHub/VS Code — dos líneas con + y −
+// representando líneas agregadas/quitadas, mucho más reconocible que las
+// flechas previas. La línea con + va arriba, la línea con − abajo.
 export const IconDiff = (p: IconProps) => (
-  <Base {...p}><path d="M12 3v18M5 8l-2-2 2-2M3 6h4M19 16l2 2-2 2M21 18h-4"/></Base>
+  <Base {...p}>
+    {/* línea agregada */}
+    <path d="M4 8h12"/>
+    <path d="M19 6v4M17 8h4"/>
+    {/* línea quitada */}
+    <path d="M4 16h12"/>
+    <path d="M17 16h4"/>
+  </Base>
 );
 export const IconCommand = (p: IconProps) => (
   <Base {...p}><path d="M18 3a3 3 0 00-3 3v12a3 3 0 003 3 3 3 0 003-3 3 3 0 00-3-3H6a3 3 0 00-3 3 3 3 0 003 3 3 3 0 003-3V6a3 3 0 00-3-3 3 3 0 00-3 3 3 3 0 003 3h12a3 3 0 003-3 3 3 0 00-3-3z"/></Base>

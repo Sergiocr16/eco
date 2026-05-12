@@ -1355,7 +1355,11 @@ function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) 
   const t = useTokens();
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
-  const isActive = state === 'thinking' || state === 'executing' || state === 'running';
+  // Un agente cuenta como "activo" si su SDK está corriendo (thinking/executing/
+  // running) O si tiene un PTY abierto (terminal/Claude CLI activo). Así la
+  // tarjeta del Dashboard refleja que la conversación sigue viva aunque el
+  // chat esté idle.
+  const isActive = state === 'thinking' || state === 'executing' || state === 'running' || !!bubble.ptyOpen;
   const lastMsg = bubble.messages[bubble.messages.length - 1];
   return (
     <button
@@ -1590,7 +1594,8 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             Van de BORDE a BORDE (no de centro a centro) así no se incrustan
             dentro de los círculos. */}
         {nodes.map((n) => {
-          const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing';
+          // Activo = SDK corriendo o PTY abierto (la terminal cuenta como vida).
+          const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing' || n.hasPty;
           const sColor = stateColor(n.state, t);
           const stroke = hover === n.id ? t.accent : (isActive ? sColor : t.text2);
           const opacity = hover === n.id ? 0.85 : (isActive ? 0.6 : 0.22);
@@ -1628,7 +1633,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             rotación. Wobble local muy leve para que se sientan "vivos"
             sin moverse del orbital. */}
         {nodes.map((n, i) => {
-          const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing';
+          const isActive = n.state === 'running' || n.state === 'thinking' || n.state === 'executing' || n.hasPty;
           const isHover = hover === n.id;
           const sColor = stateColor(n.state, t);
           // Wobble local de 2-3 px alrededor de la posición fija — apenas

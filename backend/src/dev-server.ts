@@ -25,8 +25,15 @@ import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js
 
 export type DevStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 
+// Cada agente puede tener varios servers corriendo en paralelo (típicamente
+// uno de frontend y otro de backend). Distinguimos cada slot con un `role`
+// — 'main' por default (compat), 'frontend' / 'backend' cuando el user activa
+// el modo dual desde la UI.
+export type ServerRole = 'main' | 'frontend' | 'backend';
+
 type Session = {
   bubbleId: string;
+  role: ServerRole;
   workspace: string;
   command: string;
   port: number;
@@ -51,11 +58,16 @@ type Session = {
 const BUFFER_MAX = 64 * 1024;  // 64KB por server
 const sessions = new Map<string, Session>();
 
+function sessionKey(bubbleId: string, role: ServerRole = 'main'): string {
+  return `${bubbleId}|${role}`;
+}
+
 function broadcastStatus(s: Session) {
   try {
     broadcastServerMessage({
       type: 'dev_status',
       bubbleId: s.bubbleId,
+      role: s.role,
       status: s.status,
       port: s.port,
       url: s.url,
@@ -385,6 +397,12 @@ function spawnSession(s: Session) {
     HOST: '127.0.0.1',
     // Java/Spring (también respeta -Dserver.port en CLI):
     JAVA_TOOL_OPTIONS: `-Dserver.port=${s.port}`,
+    // Forzar colores ANSI aunque stdout no sea TTY — el viewer del frontend
+    // los renderiza con xterm.js para que se vean como en la terminal real.
+    FORCE_COLOR: '1',
+    CLICOLOR_FORCE: '1',  // BSD/Mac coreutils
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
   }) as Record<string, string>;
 
   // bash -c (sin -l) para que NO re-source .bash_profile/.zshrc, que podrían
@@ -450,10 +468,12 @@ export async function startDevServer(
   bubbleId: string,
   workspace: string,
   command?: string,
+  role: ServerRole = 'main',
 ): Promise<StartResult> {
   if (!bubbleId || !workspace) return { ok: false, error: 'bubbleId y workspace requeridos' };
-  const existing = sessions.get(bubbleId);
-  if (existing && existing.proc) return { ok: false, error: 'Ya hay un server corriendo para este agente' };
+  const key = sessionKey(bubbleId, role);
+  const existing = sessions.get(key);
+  if (existing && existing.proc) return { ok: false, error: `Ya hay un server (${role}) corriendo para este agente` };
 
   let port: number;
   try { port = await findFreePort(); }
@@ -467,18 +487,19 @@ export async function startDevServer(
   }
 
   const s: Session = existing ?? {
-    bubbleId, workspace, command: cmd, port,
+    bubbleId, role, workspace, command: cmd, port,
     url: `http://127.0.0.1:${port}`,
     proc: null, pgid: null, status: 'idle', output: '',
     startedAt: null, exitCode: null, exitedAt: null,
     retries: 0,
   };
+  s.role = role;
   s.command = cmd;
   s.port = port;
   s.url = `http://127.0.0.1:${port}`;
   // Reseteamos el contador de retries en cada start manual del usuario.
   s.retries = 0;
-  sessions.set(bubbleId, s);
+  sessions.set(key, s);
 
   spawnSession(s);
   return { ok: true, command: cmd, port, url: s.url };
@@ -494,8 +515,8 @@ export async function startDevServer(
  *  5. Si después de 5s sigue colgado, devolvemos error con los PIDs supervivientes
  *     para que el user los pueda inspeccionar manualmente.
  */
-export async function stopDevServer(bubbleId: string): Promise<{ ok: boolean; error?: string }> {
-  const s = sessions.get(bubbleId);
+export async function stopDevServer(bubbleId: string, role: ServerRole = 'main'): Promise<{ ok: boolean; error?: string }> {
+  const s = sessions.get(sessionKey(bubbleId, role));
   if (!s) return { ok: false, error: 'Sesión no existe' };
   if (!s.proc && pidsHoldingPort(s.port).length === 0) {
     s.status = 'stopped';
@@ -525,25 +546,25 @@ export async function stopDevServer(bubbleId: string): Promise<{ ok: boolean; er
   return { ok: false, error: msg };
 }
 
-export async function restartDevServer(bubbleId: string): Promise<StartResult> {
-  const s = sessions.get(bubbleId);
+export async function restartDevServer(bubbleId: string, role: ServerRole = 'main'): Promise<StartResult> {
+  const s = sessions.get(sessionKey(bubbleId, role));
   if (!s) return { ok: false, error: 'Sesión no existe' };
   // Stop completo antes de start — garantiza que el puerto está libre.
   if (s.proc || pidsHoldingPort(s.port).length > 0) {
-    const stopRes = await stopDevServer(bubbleId);
+    const stopRes = await stopDevServer(bubbleId, role);
     if (!stopRes.ok) return { ok: false, error: `No pude liberar el puerto: ${stopRes.error}` };
   }
-  return startDevServer(bubbleId, s.workspace, s.command);
+  return startDevServer(bubbleId, s.workspace, s.command, role);
 }
 
-export function devStatus(bubbleId: string): Session | null {
-  const s = sessions.get(bubbleId);
+export function devStatus(bubbleId: string, role: ServerRole = 'main'): Session | null {
+  const s = sessions.get(sessionKey(bubbleId, role));
   if (!s) return null;
   return s;
 }
 
-export function devLogs(bubbleId: string): string {
-  return sessions.get(bubbleId)?.output ?? '';
+export function devLogs(bubbleId: string, role: ServerRole = 'main'): string {
+  return sessions.get(sessionKey(bubbleId, role))?.output ?? '';
 }
 
 // ─── Skill-managed dev server ─────────────────────────────────────────────
@@ -672,16 +693,17 @@ export async function runSkillAction(
 ): Promise<SkillActionResult> {
   if (!bubbleId || !workspace || !skill) return { ok: false, error: 'bubbleId, workspace y skill requeridos' };
 
-  // Recuperamos o creamos la session.
-  let existing = sessions.get(bubbleId);
+  // Recuperamos o creamos la session. Skill mode usa rol 'main' (single instance).
+  const key = sessionKey(bubbleId, 'main');
+  let existing = sessions.get(key);
   if (!existing) {
     existing = {
-      bubbleId, workspace, command: `/${skill} ${action}`, port: 0, url: '',
+      bubbleId, role: 'main', workspace, command: `/${skill} ${action}`, port: 0, url: '',
       proc: null, pgid: null, status: 'idle', output: '',
       startedAt: null, exitCode: null, exitedAt: null,
       retries: 0, skill,
     };
-    sessions.set(bubbleId, existing);
+    sessions.set(key, existing);
   }
   const s: Session = existing;
   s.skill = skill;
@@ -807,7 +829,7 @@ export async function runSkillAction(
 
 /** Devuelve el skill guardado para una burbuja, si lo hay. */
 export function getDevSkill(bubbleId: string): string | null {
-  return sessions.get(bubbleId)?.skill ?? null;
+  return sessions.get(sessionKey(bubbleId, 'main'))?.skill ?? null;
 }
 
 export function killAllDevServers() {
@@ -821,6 +843,7 @@ registerSnapshotProvider(() => {
   const out: Array<{
     type: 'dev_status';
     bubbleId: string;
+    role: ServerRole;
     status: DevStatus;
     port: number;
     url: string;
@@ -832,6 +855,7 @@ registerSnapshotProvider(() => {
     out.push({
       type: 'dev_status' as const,
       bubbleId: s.bubbleId,
+      role: s.role,
       status: s.status,
       port: s.port,
       url: s.url,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
 import { Glass } from '@/design/primitives';
@@ -39,6 +40,13 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
   const [actionMsg, setActionMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
+  // Cuando el backend devuelve checkout.dirty_working_tree, abrimos este diálogo
+  // para preguntar al usuario qué hacer con los cambios locales.
+  const [dirtyPrompt, setDirtyPrompt] = useState<{
+    branch: string;
+    create: boolean;
+    files: string[];
+  } | null>(null);
 
   const refresh = async () => {
     if (!workspace) return;
@@ -92,14 +100,14 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
     }
   }
 
-  async function run(action: 'checkout' | 'pull' | 'fetch', branch?: string, create = false) {
+  async function run(action: 'checkout' | 'pull' | 'fetch', branch?: string, create = false, mode: 'plain' | 'carry' | 'discard' = 'plain') {
     if (action === 'checkout' && !branch) return;
     setActionMsg(null);
     if (action === 'checkout' && branch) setBusyBranch(branch);
     else setBusyAction(action as 'fetch' | 'pull');
     try {
       const body: Record<string, unknown> = { workspace, bubbleId };
-      if (action === 'checkout') { body.branch = branch; body.create = create; }
+      if (action === 'checkout') { body.branch = branch; body.create = create; body.mode = mode; }
       const r = await apiFetch(`/git/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -109,6 +117,13 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
       if (d.ok) {
         setActionMsg({ kind: 'ok', text: d.message || 'OK' });
         await refresh();
+      } else if (action === 'checkout' && d.code === 'checkout.dirty_working_tree' && branch) {
+        // No mostramos el error: abrimos el diálogo para que el user decida.
+        setDirtyPrompt({
+          branch,
+          create,
+          files: Array.isArray(d.files) ? d.files : [],
+        });
       } else {
         setActionMsg({ kind: 'err', text: d.error || `Error en ${action}` });
       }
@@ -377,8 +392,164 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Diálogo de conflicto: cambios sin commitear bloquean el checkout. */}
+      <AnimatePresence>
+        {dirtyPrompt && (
+          <DirtyChangesDialog
+            branch={dirtyPrompt.branch}
+            files={dirtyPrompt.files}
+            onCancel={() => setDirtyPrompt(null)}
+            onCarry={async () => {
+              const p = dirtyPrompt;
+              setDirtyPrompt(null);
+              await run('checkout', p.branch, p.create, 'carry');
+            }}
+            onDiscard={async () => {
+              const p = dirtyPrompt;
+              setDirtyPrompt(null);
+              await run('checkout', p.branch, p.create, 'discard');
+            }}
+          />
+        )}
+      </AnimatePresence>
     </Glass>
   );
+}
+
+function DirtyChangesDialog({
+  branch, files, onCancel, onCarry, onDiscard,
+}: {
+  branch: string;
+  files: string[];
+  onCancel: () => void;
+  onCarry: () => void;
+  onDiscard: () => void;
+}) {
+  const t = useTokens();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Portal a <body> para esquivar contenedores con transform/filter que
+  // capturarían el position:fixed y lo posicionarían respecto a ellos en
+  // lugar del viewport.
+  return createPortal((
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+      onClick={onCancel}>
+      <motion.div
+        initial={{ scale: 0.96, y: 6 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 6 }}
+        transition={{ duration: 0.18 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(520px, 100%)',
+          background: t.bg1,
+          border: `1px solid ${t.glassBorder}`,
+          borderRadius: 16,
+          padding: 20,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+        }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+        }}>
+          <span style={{
+            width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+            background: `color-mix(in oklch, ${t.warn} 16%, transparent)`,
+            color: t.warn,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 16, fontWeight: 600,
+          }}>!</span>
+          <div style={{ flex: 1 }}>
+            <h3 style={{
+              margin: 0, fontSize: 15, fontWeight: 600, color: t.text0, letterSpacing: -0.2,
+            }}>Cambios sin commitear</h3>
+            <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>
+              No podés saltar a <code style={{ fontFamily: t.fontMono, color: t.text1 }}>{branch}</code> sin decidir qué hacer con los cambios actuales.
+            </div>
+          </div>
+        </div>
+
+        {files.length > 0 && (
+          <div style={{
+            marginTop: 6, marginBottom: 14,
+            padding: '8px 10px', borderRadius: 8,
+            background: t.bg2, border: `1px solid ${t.glassBorder}`,
+            maxHeight: 140, overflowY: 'auto',
+          }}>
+            <div style={{
+              fontSize: 10, color: t.text3, textTransform: 'uppercase',
+              letterSpacing: 0.5, fontWeight: 600, marginBottom: 6,
+            }}>{files.length} {files.length === 1 ? 'archivo' : 'archivos'} con cambios</div>
+            {files.map((f) => (
+              <div key={f} style={{
+                fontFamily: t.fontMono, fontSize: 11.5, color: t.text1,
+                padding: '2px 0',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{f}</div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+          {/* Opción: llevar */}
+          <button type="button" onClick={onCarry}
+            style={{
+              padding: '12px 14px', borderRadius: 10, textAlign: 'left',
+              background: t.bg2, color: t.text0,
+              border: `1px solid ${t.accent}`,
+              cursor: 'pointer',
+              transition: 'background 140ms',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = t.bg2; }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: t.accent }}>
+              Llevar los cambios a {branch}
+            </div>
+            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>
+              Stash → checkout → pop. Si hay conflictos en la otra rama, los resolvés vos.
+            </div>
+          </button>
+
+          {/* Opción: descartar (con doble confirmación) */}
+          <button type="button"
+            onClick={() => {
+              if (confirmDiscard) { onDiscard(); return; }
+              setConfirmDiscard(true);
+            }}
+            style={{
+              padding: '12px 14px', borderRadius: 10, textAlign: 'left',
+              background: confirmDiscard ? `color-mix(in oklch, ${t.err} 14%, transparent)` : t.bg2,
+              color: t.text0,
+              border: `1px solid ${confirmDiscard ? t.err : t.glassBorder}`,
+              cursor: 'pointer',
+              transition: 'background 140ms, border-color 140ms',
+            }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: confirmDiscard ? t.err : t.text1 }}>
+              {confirmDiscard ? '¿Seguro? Click otra vez para descartar' : `Descartar y cambiar a ${branch}`}
+            </div>
+            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>
+              {confirmDiscard
+                ? 'Esto es irreversible. Tus cambios se perderán.'
+                : 'Tirar los cambios sin commitear y saltar a la otra rama.'}
+            </div>
+          </button>
+        </div>
+
+        <button type="button" onClick={onCancel}
+          style={{
+            width: '100%', padding: '9px 14px', borderRadius: 9,
+            background: 'transparent', color: t.text2,
+            border: `1px solid ${t.glassBorder}`,
+            fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer',
+          }}>Cancelar</button>
+      </motion.div>
+    </motion.div>
+  ), document.body);
 }
 
 function ToolbarBtn({

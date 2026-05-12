@@ -2,8 +2,9 @@
 // de rama, pull, fetch. Pensado para usarse desde el frontend tipo GitHub app.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { resolve as pathResolve, sep as pathSep } from 'node:path';
 import { buildSafeEnv } from './security.js';
 import { config } from './config.js';
 
@@ -121,22 +122,87 @@ export function listBranches(workspace: string): BranchListResult {
 
 export type GitActionResult =
   | { ok: true; message: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: string; files?: string[] };
 
-export function checkoutBranch(workspace: string, branch: string, create = false): GitActionResult {
+// Modos para resolver el conflicto cuando hay cambios sin commitear y el
+// checkout fallaría:
+//  - 'plain'   → comportamiento default (puede fallar con "would be overwritten").
+//  - 'carry'   → stash → checkout → stash pop (lleva los cambios a la nueva rama).
+//  - 'discard' → checkout --force (descarta los cambios locales sin commitear).
+export type CheckoutMode = 'plain' | 'carry' | 'discard';
+
+function listDirtyFiles(workspace: string): string[] {
+  const r = git(['status', '--porcelain'], workspace);
+  if (!r.ok) return [];
+  return r.stdout.split('\n').map((l) => l.slice(3).trim()).filter(Boolean).slice(0, 50);
+}
+
+export function checkoutBranch(
+  workspace: string,
+  branch: string,
+  create = false,
+  mode: CheckoutMode = 'plain',
+): GitActionResult {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
   if (!branch || /[\s'"`;|&$<>()\\]/.test(branch)) return { ok: false, error: 'Nombre de rama inválido' };
 
   // Si pedimos checkout de un branch remoto sin crear local, hacemos `checkout -t`
   // que crea un local trackeando el remoto.
   const isRemoteRef = branch.includes('/') && !create;
-  const args = create
+  const baseArgs = create
     ? ['checkout', '-b', branch]
     : isRemoteRef
       ? ['checkout', '-t', branch]
       : ['checkout', branch];
 
-  let r = git(args, workspace);
+  // Discard: fuerza el checkout descartando los cambios locales.
+  if (mode === 'discard') {
+    const forceArgs = create
+      ? ['checkout', '-b', branch, '--force']
+      : isRemoteRef
+        ? ['checkout', '-t', branch, '--force']
+        : ['checkout', '-f', branch];
+    const r = git(forceArgs, workspace);
+    if (!r.ok) {
+      const msg = (r.stderr || r.stdout).trim() || 'checkout falló';
+      return { ok: false, error: msg.slice(0, 600) };
+    }
+    return { ok: true, message: r.stdout.trim() || `Cambiado a «${branch}» (cambios descartados)` };
+  }
+
+  // Carry: stash con untracked → checkout → stash pop. Si pop tiene conflictos
+  // los dejamos para que el user los resuelva manualmente.
+  if (mode === 'carry') {
+    const stashLabel = `eco:branch-switch:${Date.now()}`;
+    const s = git(['stash', 'push', '-u', '-m', stashLabel], workspace);
+    if (!s.ok) {
+      return { ok: false, error: (s.stderr || s.stdout).trim().slice(0, 600) || 'stash falló' };
+    }
+    const hadStash = s.stdout.includes('Saved working directory');
+    const co = git(baseArgs, workspace);
+    if (!co.ok) {
+      // Si falló el checkout, intentamos restaurar el stash y devolver error.
+      if (hadStash) git(['stash', 'pop'], workspace);
+      return { ok: false, error: (co.stderr || co.stdout).trim().slice(0, 600) || 'checkout falló' };
+    }
+    if (hadStash) {
+      const pop = git(['stash', 'pop'], workspace);
+      if (!pop.ok) {
+        // Conflictos al popear: cambio de rama OK pero hay merge conflicts.
+        return {
+          ok: true,
+          message: `Cambiado a «${branch}». Conflictos al traer cambios — resolvelos manualmente (git stash list).`,
+        };
+      }
+      return { ok: true, message: `Cambiado a «${branch}» con tus cambios traídos.` };
+    }
+    return { ok: true, message: co.stdout.trim() || `Cambiado a «${branch}»` };
+  }
+
+  // Modo default: intentamos checkout normal. Si falla con "would be
+  // overwritten by checkout" devolvemos un código especial para que el frontend
+  // pueda preguntar qué hacer.
+  let r = git(baseArgs, workspace);
   if (!r.ok) {
     const stderr = (r.stderr || r.stdout) || '';
     // Caso típico: la rama está checked-out por OTRO worktree de Eco huérfano
@@ -151,16 +217,64 @@ export function checkoutBranch(workspace: string, branch: string, create = false
         console.log('[git-ops] auto-removiendo worktree huérfano de Eco:', conflictingPath);
         git(['worktree', 'remove', conflictingPath, '--force'], workspace);
         git(['worktree', 'prune'], workspace);
-        // Reintentamos el checkout.
-        r = git(args, workspace);
+        r = git(baseArgs, workspace);
       }
     }
     if (!r.ok) {
       const msg = (r.stderr || r.stdout).trim() || 'checkout falló';
+      // Detectamos el caso de "local changes would be overwritten" para que el
+      // frontend pida confirmación al user (llevar/descartar).
+      if (/would be overwritten by (checkout|merge)/i.test(msg) || /commit your changes or stash/i.test(msg)) {
+        return {
+          ok: false,
+          error: msg.slice(0, 600),
+          code: 'checkout.dirty_working_tree',
+          files: listDirtyFiles(workspace),
+        };
+      }
       return { ok: false, error: msg.slice(0, 600) };
     }
   }
   return { ok: true, message: r.stdout.trim() || `Cambiado a «${branch}»` };
+}
+
+/**
+ * Descarta los cambios sin commitear de UN archivo:
+ *  - Si está tracked (modificado): `git checkout HEAD -- <path>` lo restaura.
+ *  - Si está untracked (creado nuevo): `rm <path>` lo elimina.
+ * Acepta paths absolutos o relativos al workspace. Valida que el path final
+ * esté dentro del workspace (anti path-traversal).
+ */
+export function discardFile(workspace: string, inputPath: string): GitActionResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!inputPath) return { ok: false, error: 'Path vacío' };
+
+  // Normalizamos a absoluto y verificamos que esté dentro del workspace.
+  const abs = pathResolve(workspace, inputPath);
+  const wsNorm = pathResolve(workspace);
+  const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
+  if (!inside) {
+    return { ok: false, error: `Path fuera del workspace (${inputPath})` };
+  }
+  // Path relativo al workspace (lo que git espera).
+  const relPath = abs.slice(wsNorm.length + 1) || abs;
+
+  // Detectar si está tracked: `git ls-files --error-unmatch <path>` → 0 si tracked.
+  const ls = git(['ls-files', '--error-unmatch', '--', relPath], workspace);
+  if (ls.ok) {
+    const r = git(['checkout', 'HEAD', '--', relPath], workspace);
+    if (!r.ok) {
+      return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 600) || 'checkout falló' };
+    }
+    return { ok: true, message: `Cambios descartados en ${relPath}` };
+  }
+  // untracked → rm filesystem
+  try {
+    unlinkSync(abs);
+    return { ok: true, message: `Eliminado ${relPath}` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo eliminar' };
+  }
 }
 
 export function pull(workspace: string): GitActionResult {

@@ -527,6 +527,7 @@ const DICT = {
 
   // ─────────────────────────── State labels
   'state.idle': { es: 'Inactivo', en: 'Idle' },
+  'state.terminal_live': { es: 'Terminal activa', en: 'Terminal live' },
   'state.pending': { es: 'Pendiente', en: 'Pending' },
   'state.running': { es: 'Ejecutando', en: 'Running' },
   'state.waiting': { es: 'Esperando input', en: 'Waiting for input' },

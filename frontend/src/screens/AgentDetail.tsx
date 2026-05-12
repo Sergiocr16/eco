@@ -4,10 +4,12 @@ import { useTokens } from '@/design/theme';
 import { DiffViewer } from '@/components/DiffViewer';
 import { RealTerminal } from '@/components/RealTerminal';
 import { SkillsPicker } from '@/components/SkillsPicker';
-import type { SkillInfo } from '@/hooks/useSkills';
+import { useSkills, type SkillInfo } from '@/hooks/useSkills';
+import { useSkillFavorites, skillIdOf } from '@/hooks/useSkillFavorites';
 import { useProfile } from '@/hooks/useProfile';
 import { setVoiceTarget } from '@/lib/voice-router';
 import { ecoToken } from '@/lib/eco-config';
+import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { BranchPicker } from '@/components/BranchPicker';
 import { BrowserPanel } from '@/components/BrowserPanel';
@@ -30,7 +32,7 @@ import { stripWakePrefix } from '@/lib/meta-commands';
 import { useT } from '@/hooks/useI18n';
 import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
 import { translateBackendError } from '@/lib/backend-errors';
-import { on as ecoOn } from '@/lib/eco-bus';
+import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 
 function copyTranscriptToClipboard(bubble: Bubble) {
   const lines: string[] = [`# ${bubble.title}`, ''];
@@ -254,7 +256,11 @@ export function AgentDetail({
                   color: t.text0, letterSpacing: -0.3, cursor: 'text',
                 }}>{bubble.title}</h2>
             )}
-            <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>
+            <Pill color={state === 'idle' && bubble.ptyOpen ? t.ok : sColor}>
+              {state === 'idle' && bubble.ptyOpen
+                ? tr('state.terminal_live')
+                : (STATE_LABELS_I18N[state] || tr('state.idle'))}
+            </Pill>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('detail.header.bubble')}</span>
@@ -303,13 +309,9 @@ export function AgentDetail({
         <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')} label={tr('detail.tab.chat')} icon={IconCommand} badge={bubble.messages.length}/>
         <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
         <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label={tr('detail.tab.files')} icon={IconFile} badge={filesChanged.length}/>
-        <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
         <TabBtn active={tab === 'browser'} onClick={() => setTab('browser')} label={tr('detail.tab.browser')} icon={IconGlobe}/>
         <TabBtn active={tab === 'server'} onClick={() => setTab('server')} label={tr('detail.tab.server')} icon={IconCpu}/>
-        <SkillsPicker
-          workspace={bubble.workspace}
-          onRun={(skill) => onSend(buildSkillPrompt(skill))}
-        />
+        <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
         <div style={{ flex: 1 }}/>
         <RemoteControlNavButton bubble={bubble}/>
       </div>
@@ -1136,7 +1138,15 @@ function FilesPanel({ files, workspace, bubbleId }: { files: FileChange[]; works
                   <Pill color={f.change === 'created' ? t.ok : t.accent}>{f.change === 'created' ? tr('detail.files.created') : tr('detail.files.modified_one')}</Pill>
                 </div>
               </div>
-              <Btn kind="secondary" size="sm" icon={IconDiff} onClick={() => setDiffPath(f.path)}>{tr('files.diff_btn')}</Btn>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <Btn kind="secondary" size="sm" icon={IconDiff} onClick={() => setDiffPath(f.path)}>{tr('files.diff_btn')}</Btn>
+                <DiscardFileButton
+                  path={f.path}
+                  workspace={workspace}
+                  bubbleId={bubbleId}
+                  change={f.change}
+                />
+              </div>
             </Glass>
           ))}
         </div>
@@ -1149,6 +1159,236 @@ function FilesPanel({ files, workspace, bubbleId }: { files: FileChange[]; works
         onClose={() => setDiffPath(null)}
       />
     </>
+  );
+}
+
+// Helper: corre un skill mandando "/<skill>\r" directo al PTY del agente
+// (donde corre Claude CLI). Después switcheamos al tab Terminal para que
+// el user vea la salida en vivo.
+async function runSkillInTerminal(opts: {
+  bubbleId: string;
+  workspace: string;
+  skill: SkillInfo;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const r = await writeToBubblePty({
+    bubbleId: opts.bubbleId,
+    workspace: opts.workspace,
+    text: `/${opts.skill.name}\r`,
+    token: ecoToken(),
+  });
+  if (r.ok) {
+    ecoEmit('eco:switch_tab', { tab: 'terminal' });
+  }
+  return r;
+}
+
+function SkillsCard({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
+  const t = useTokens();
+  const { skills } = useSkills(workspace);
+  const { isFav, toggle: toggleFav } = useSkillFavorites();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Solo los favoritos que existen en el workspace actual.
+  const favSkills = useMemo(
+    () => skills.filter((s) => isFav(skillIdOf(s))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [skills, isFav],
+  );
+
+  async function run(skill: SkillInfo) {
+    setBusy(skill.name); setErr(null);
+    const r = await runSkillInTerminal({ bubbleId, workspace, skill });
+    setBusy(null);
+    if (!r.ok) setErr(r.error);
+  }
+
+  return (
+    <div>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 8,
+      }}>
+        <SectionLabel>Skills</SectionLabel>
+        <SkillsPicker
+          workspace={workspace}
+          onRun={(skill) => void run(skill)}
+        />
+      </div>
+      {favSkills.length === 0 ? (
+        <div style={{
+          padding: 10, borderRadius: 10,
+          background: t.bg2, border: `1px dashed ${t.glassBorder}`,
+          fontSize: 11, color: t.text2, lineHeight: 1.5,
+        }}>
+          Marcá tus skills favoritos con la <span style={{ color: t.warn }}>★</span> en el picker
+          para acceso rápido desde acá.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {favSkills.map((s) => {
+            const running = busy === s.name;
+            return (
+              <button
+                key={skillIdOf(s)}
+                type="button"
+                onClick={() => void run(s)}
+                disabled={!!busy}
+                title={`Ejecuta /${s.name} en la terminal`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 10px', borderRadius: 9,
+                  border: `1px solid ${running ? t.accent : t.glassBorder}`,
+                  background: running ? t.accentFaint : t.bg2,
+                  color: t.text0, cursor: busy ? 'wait' : 'pointer',
+                  textAlign: 'left',
+                  opacity: busy && !running ? 0.5 : 1,
+                  transition: 'background 120ms',
+                }}
+                onMouseEnter={(e) => { if (!busy) e.currentTarget.style.background = t.bg3; }}
+                onMouseLeave={(e) => { if (!busy) e.currentTarget.style.background = t.bg2; }}>
+                <span style={{ color: t.warn, fontSize: 11 }}>★</span>
+                <code style={{
+                  fontFamily: t.fontMono, fontSize: 12, color: running ? t.accent : t.text0,
+                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  fontWeight: 500,
+                }}>/{s.name}</code>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleFav(skillIdOf(s)); }}
+                  title="Quitar de favoritos"
+                  style={{
+                    width: 20, height: 20, padding: 0, border: 0, borderRadius: 4,
+                    background: 'transparent', color: t.text3, cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}>×</button>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {err && (
+        <div style={{
+          marginTop: 6, padding: '6px 10px', borderRadius: 6,
+          fontSize: 11, color: t.err, fontFamily: t.fontMono,
+          background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
+          border: `1px solid ${t.err}`,
+          cursor: 'pointer',
+        }} onClick={() => setErr(null)}>
+          {err}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiscardFileButton({
+  path, workspace, bubbleId, change,
+}: {
+  path: string;
+  workspace: string;
+  bubbleId: string;
+  change: string;
+}) {
+  const t = useTokens();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function discard() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await apiFetch('/file/discard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace, bubbleId, path }),
+      });
+      const data = await r.json().catch(() => ({} as { error?: string }));
+      if (!r.ok || data?.ok === false) {
+        setErr(data?.error || `HTTP ${r.status}`);
+        setBusy(false);
+        return;
+      }
+      // Éxito → el polling de /file/changes va a quitar el archivo de la lista
+      // automáticamente, así que no necesitamos hacer nada más.
+      setConfirming(false);
+      setBusy(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error');
+      setBusy(false);
+    }
+  }
+
+  if (err) {
+    return (
+      <button
+        type="button"
+        title="Click para reintentar"
+        onClick={() => setErr(null)}
+        style={{
+          maxWidth: 260,
+          fontSize: 11, color: t.err, fontFamily: t.fontMono,
+          padding: '4px 10px', borderRadius: 6,
+          background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
+          border: `1px solid ${t.err}`,
+          cursor: 'pointer', textAlign: 'left',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>{err}</button>
+    );
+  }
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        title={change === 'created'
+          ? `Eliminar el archivo nuevo ${path}`
+          : `Descartar los cambios en ${path}`}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '5px 10px', borderRadius: 7,
+          border: `1px solid ${t.glassBorder}`,
+          background: 'transparent', color: t.text2,
+          fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+          cursor: 'pointer',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = t.err; e.currentTarget.style.borderColor = t.err; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = t.text2; e.currentTarget.style.borderColor = t.glassBorder; }}>
+        <IconTrash size={11}/>
+        Descartar
+      </button>
+    );
+  }
+
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '4px 6px 4px 10px', borderRadius: 7,
+      background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
+      border: `1px solid ${t.err}`,
+    }}>
+      <span style={{ fontSize: 11, color: t.err, fontWeight: 500 }}>
+        {change === 'created' ? '¿Eliminar?' : '¿Descartar?'}
+      </span>
+      <button type="button"
+        onClick={() => void discard()}
+        disabled={busy}
+        style={{
+          padding: '3px 9px', borderRadius: 5, border: 0,
+          background: t.err, color: '#fff',
+          fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
+          opacity: busy ? 0.6 : 1,
+        }}>{busy ? '…' : 'Sí'}</button>
+      <button type="button"
+        onClick={() => setConfirming(false)}
+        disabled={busy}
+        style={{
+          padding: '3px 9px', borderRadius: 5, border: 0,
+          background: 'transparent', color: t.text2,
+          fontSize: 11, cursor: 'pointer',
+        }}>No</button>
+    </div>
   );
 }
 
@@ -1488,6 +1728,8 @@ function AgentSidebar({
           }}>›</button>
       </div>
 
+      <SkillsCard bubbleId={bubble.id} workspace={bubble.workspace}/>
+
       {bubble.workspace && (
         <div>
           <SectionLabel>Git</SectionLabel>
@@ -1572,62 +1814,11 @@ async function activateRemoteControlViaPty(opts: {
   slug: string;
   token: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  return new Promise((resolve) => {
-    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = new URL(`${wsProto}//${window.location.host}/ws/pty`);
-    if (opts.workspace) url.searchParams.set('workspace', opts.workspace);
-    url.searchParams.set('bubble', opts.bubbleId);
-    url.searchParams.set('cols', '120');
-    url.searchParams.set('rows', '30');
-
-    const protocols = opts.token ? [`eco.token.${opts.token}`] : undefined;
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url.toString(), protocols);
-    } catch (e) {
-      resolve({ ok: false, error: e instanceof Error ? e.message : 'no se pudo abrir el WS' });
-      return;
-    }
-
-    let settled = false;
-    const finish = (r: { ok: true } | { ok: false; error: string }) => {
-      if (settled) return;
-      settled = true;
-      try { ws.close(); } catch { /* noop */ }
-      resolve(r);
-    };
-
-    ws.onopen = () => { /* esperamos 'ready' */ };
-    ws.onerror = () => finish({ ok: false, error: 'ws error' });
-    ws.onclose = (ev) => {
-      if (settled) return;
-      finish({ ok: false, error: `ws cerrado (code=${ev.code})` });
-    };
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data as string) as { type?: string; reattached?: boolean };
-        if (msg?.type === 'ready') {
-          // Si el PTY ya existía (reattached=true), Claude probablemente ya
-          // está corriendo y al prompt — basta esperar un poquito. Si es
-          // recién creado, el backend autoinicia `claude` con 350ms delay;
-          // damos 2s para que muestre el prompt antes de mandar el comando.
-          const delay = msg.reattached ? 250 : 2000;
-          setTimeout(() => {
-            if (settled || ws.readyState !== WebSocket.OPEN) return;
-            try {
-              ws.send(JSON.stringify({ type: 'input', data: `/remote-control ${opts.slug}\r` }));
-              // Esperamos 300ms a que el PTY procese antes de cerrar.
-              setTimeout(() => finish({ ok: true }), 300);
-            } catch (e) {
-              finish({ ok: false, error: e instanceof Error ? e.message : 'send error' });
-            }
-          }, delay);
-        }
-      } catch { /* noop */ }
-    };
-
-    // Salvavidas: si nada pasa en 6s, abortamos.
-    setTimeout(() => finish({ ok: false, error: 'timeout esperando PTY' }), 6000);
+  return writeToBubblePty({
+    bubbleId: opts.bubbleId,
+    workspace: opts.workspace,
+    text: `/remote-control ${opts.slug}\r`,
+    token: opts.token,
   });
 }
 
@@ -2006,8 +2197,3 @@ function KeepAliveBrowser({ visible, bubbleId, workspace }: { visible: boolean; 
   );
 }
 
-function buildSkillPrompt(skill: SkillInfo): string {
-  // Todo se invoca como slash command: /dev-up, /code-review, etc.
-  // Claude Code resuelve el comando contra la SKILL.md / agente del workspace.
-  return `/${skill.name}`;
-}

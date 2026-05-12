@@ -330,6 +330,14 @@ app.get('/file/changes', async (req: Request, res: Response) => {
   proc.on('error', () => res.json({ workspace: effective, files: [], git: false }));
 });
 
+app.post('/file/discard', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const path = typeof req.body?.path === 'string' ? req.body.path : '';
+  if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
+  res.json(gitOps.discardFile(dir, path));
+});
+
 app.post('/file/diff', async (req: Request, res: Response) => {
   const parsed = DiffRequestSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
@@ -371,8 +379,10 @@ app.post('/git/checkout', (req: Request, res: Response) => {
   if (!dir) return;
   const branch = typeof req.body?.branch === 'string' ? req.body.branch : '';
   const create = req.body?.create === true;
+  const rawMode = typeof req.body?.mode === 'string' ? req.body.mode : 'plain';
+  const mode: gitOps.CheckoutMode = (rawMode === 'carry' || rawMode === 'discard') ? rawMode : 'plain';
   if (!branch) return errResponse(res, 400, 'http.invalid_body', 'branch requerido');
-  res.json(gitOps.checkoutBranch(dir, branch, create));
+  res.json(gitOps.checkoutBranch(dir, branch, create, mode));
 });
 
 app.post('/git/pull', (req: Request, res: Response) => {
@@ -423,37 +433,46 @@ app.post('/worktrees/prune', (_req: Request, res: Response) => {
 });
 
 // ─── Dev server por agente ────────────────────────────────────────────────
+function parseRole(raw: unknown): devServer.ServerRole {
+  return (raw === 'frontend' || raw === 'backend') ? raw : 'main';
+}
+
 app.post('/dev/start', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
   const command = typeof req.body?.command === 'string' ? req.body.command : undefined;
-  const result = await devServer.startDevServer(bubbleId, dir, command);
+  const role = parseRole(req.body?.role);
+  const result = await devServer.startDevServer(bubbleId, dir, command, role);
   res.json(result);
 });
 
 app.post('/dev/stop', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
-  res.json(await devServer.stopDevServer(bubbleId));
+  const role = parseRole(req.body?.role);
+  res.json(await devServer.stopDevServer(bubbleId, role));
 });
 
 app.post('/dev/restart', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
-  const result = await devServer.restartDevServer(bubbleId);
+  const role = parseRole(req.body?.role);
+  const result = await devServer.restartDevServer(bubbleId, role);
   res.json(result);
 });
 
 app.get('/dev/status', (req: Request, res: Response) => {
   const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
-  const s = devServer.devStatus(bubbleId);
-  if (!s) return res.json({ status: 'idle', port: 0, url: '', command: '', exitCode: null });
+  const role = parseRole(req.query.role);
+  const s = devServer.devStatus(bubbleId, role);
+  if (!s) return res.json({ status: 'idle', port: 0, url: '', command: '', exitCode: null, role });
   res.json({
     status: s.status, port: s.port, url: s.url, command: s.command,
     exitCode: s.exitCode, startedAt: s.startedAt, exitedAt: s.exitedAt,
+    role: s.role,
   });
 });
 
@@ -474,7 +493,8 @@ app.post('/dev/skill', async (req: Request, res: Response) => {
 app.get('/dev/logs', (req: Request, res: Response) => {
   const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
-  res.type('text/plain').send(devServer.devLogs(bubbleId));
+  const role = parseRole(req.query.role);
+  res.type('text/plain').send(devServer.devLogs(bubbleId, role));
 });
 
 // Proxy del navegador interno — strip de X-Frame-Options/CSP para permitir
@@ -532,9 +552,13 @@ app.post('/pty/kill', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
   const killed = killBubblePty(bubbleId);
-  // Matamos también el dev server del agente si existe (con cleanup completo
-  // de process group + verificación de puerto).
-  await devServer.stopDevServer(bubbleId);
+  // Matamos también el dev server del agente si existe (cleanup completo de
+  // process group + verificación de puerto) en los 3 roles posibles.
+  await Promise.all([
+    devServer.stopDevServer(bubbleId, 'main'),
+    devServer.stopDevServer(bubbleId, 'frontend'),
+    devServer.stopDevServer(bubbleId, 'backend'),
+  ]);
   // El worktree de la burbuja también se libera; la rama eco/<id> queda
   // viva en el repo padre para que el usuario pueda mergear si quiere.
   const worktreeRemoved = removeWorktree(bubbleId);

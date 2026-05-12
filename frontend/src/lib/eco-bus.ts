@@ -8,6 +8,7 @@ export type EcoBusEvents = {
   'eco:wake_detected': { ts: number };
   'eco:dev_status': {
     bubbleId: string;
+    role?: 'main' | 'frontend' | 'backend';
     status: 'idle' | 'starting' | 'running' | 'stopped' | 'error';
     url: string;
     command: string;
