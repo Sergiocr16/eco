@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { translateBackendError } from '@/lib/backend-errors';
 
 const SESSION_KEY = 'eco.session';
 
@@ -72,7 +73,7 @@ export function useAuth() {
         body: JSON.stringify(payload),
       });
       const data = await r.json();
-      if (!r.ok) return { ok: false, error: data.error ?? `HTTP ${r.status}` };
+      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
       writeSession(data.session);
       setState({ status: 'authenticated', username: data.username, error: null });
       return { ok: true, username: data.username, recoveryPhrase: data.recoveryPhrase };
@@ -89,7 +90,7 @@ export function useAuth() {
         body: JSON.stringify(payload),
       });
       const data = await r.json();
-      if (!r.ok) return { ok: false, error: data.error ?? `HTTP ${r.status}` };
+      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
       writeSession(data.session);
       setState({ status: 'authenticated', username: data.username, error: null });
       return { ok: true, username: data.username };
@@ -106,7 +107,7 @@ export function useAuth() {
         body: JSON.stringify(payload),
       });
       const data = await r.json();
-      if (!r.ok) return { ok: false, error: data.error ?? `HTTP ${r.status}` };
+      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
       writeSession(data.session);
       setState({ status: 'authenticated', username: data.username, error: null });
       return { ok: true, username: data.username, newRecoveryPhrase: data.newRecoveryPhrase };

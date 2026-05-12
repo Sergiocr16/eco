@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { translateBackendError } from '@/lib/backend-errors';
 
 export type WorkspaceList = {
   workspaces: string[];
@@ -50,7 +51,7 @@ export function useWorkspaces(): UseWorkspacesResult {
         body: JSON.stringify({ path }),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) return { ok: false, error: data.error ?? `HTTP ${r.status}` };
+      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
       await refresh();
       return { ok: true };
     } catch (e) {

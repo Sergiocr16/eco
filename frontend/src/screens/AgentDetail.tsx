@@ -18,6 +18,7 @@ import { stateColor, type AgentState } from '@/design/tokens';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { stripWakePrefix } from '@/lib/meta-commands';
 import { useT } from '@/hooks/useI18n';
+import { translateBackendError } from '@/lib/backend-errors';
 
 function copyTranscriptToClipboard(bubble: Bubble) {
   const lines: string[] = [`# ${bubble.title}`, ''];
@@ -692,7 +693,7 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        pushLines([{ kind: 'stderr', text: data.error ?? `HTTP ${res.status}` }]);
+        pushLines([{ kind: 'stderr', text: translateBackendError(data, `HTTP ${res.status}`) }]);
         return;
       }
       const result = data as { stdout: string; stderr: string; exitCode: number | null; truncated: boolean; durationMs: number };

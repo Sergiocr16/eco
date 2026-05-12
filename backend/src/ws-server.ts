@@ -40,10 +40,10 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
         extractBearer(info.req.headers['authorization'] as string | undefined) ??
         extractToken(info.req);
       if (!tokensMatch(authToken, token)) {
-        return callback(false, 401, 'No autorizado');
+        return callback(false, 401, 'http.unauthorized');
       }
       if (wss.clients.size >= config.maxOpenConnections) {
-        return callback(false, 503, 'Demasiadas conexiones simultáneas');
+        return callback(false, 503, 'ws.too_many_connections');
       }
       callback(true);
     },
@@ -133,9 +133,10 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
         send({ type: 'done' });
       } catch (err) {
         const internalMessage = err instanceof Error ? err.message : 'desconocido';
-        const safeMessage = sanitizeError(internalMessage);
+        const code = sanitizeErrorCode(internalMessage);
+        const safeMessage = sanitizeErrorMessage(code);
         console.error('[agent_failure]', internalMessage);
-        error('agent_failure', safeMessage);
+        error(code, safeMessage);
       } finally {
         if (activeTimeout) clearTimeout(activeTimeout);
         activeTimeout = null;
@@ -152,12 +153,23 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
   return wss;
 }
 
-function sanitizeError(internal: string): string {
-  if (/workspace/i.test(internal)) return 'Workspace no permitido o inválido.';
-  if (/aborted|abort/i.test(internal)) return 'Operación interrumpida o expiró.';
-  if (/permission|denied/i.test(internal)) return 'Acción denegada por política de seguridad.';
-  if (/rate/i.test(internal)) return 'Rate limit alcanzado.';
-  return 'El agente no pudo completar la operación.';
+// Devuelve un código estable de error para que el frontend lo traduzca.
+function sanitizeErrorCode(internal: string): string {
+  if (/workspace/i.test(internal)) return 'agent.workspace_denied';
+  if (/aborted|abort/i.test(internal)) return 'agent.aborted';
+  if (/permission|denied/i.test(internal)) return 'agent.permission_denied';
+  if (/rate/i.test(internal)) return 'agent.rate_limit';
+  return 'agent.unknown_failure';
+}
+
+function sanitizeErrorMessage(code: string): string {
+  switch (code) {
+    case 'agent.workspace_denied':  return 'Workspace no permitido o inválido.';
+    case 'agent.aborted':           return 'Operación interrumpida o expiró.';
+    case 'agent.permission_denied': return 'Acción denegada por política de seguridad.';
+    case 'agent.rate_limit':        return 'Rate limit alcanzado.';
+    default:                        return 'El agente no pudo completar la operación.';
+  }
 }
 
 function extractToken(req: IncomingMessage): string | null {

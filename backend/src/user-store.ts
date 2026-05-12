@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
 import { generateMnemonic, validateMnemonic } from 'bip39';
+import { AppError } from './app-error.js';
 
 const USER_PATH = `${homedir()}/.eco/user.json`;
 
@@ -68,10 +69,10 @@ export type RegisterResult = {
 };
 
 export async function registerUser(username: string, pin: string): Promise<RegisterResult> {
-  if (hasUser()) throw new Error('Ya existe un usuario registrado');
-  if (!/^\d{4,8}$/.test(pin)) throw new Error('El PIN debe tener entre 4 y 8 dígitos');
+  if (hasUser()) throw new AppError('auth.user_exists', 'Ya existe un usuario registrado', 409);
+  if (!/^\d{4,8}$/.test(pin)) throw new AppError('auth.pin_format', 'El PIN debe tener entre 4 y 8 dígitos');
   const cleanName = username.trim().slice(0, 80);
-  if (cleanName.length < 1) throw new Error('Nombre de usuario vacío');
+  if (cleanName.length < 1) throw new AppError('auth.name_empty', 'Nombre de usuario vacío');
 
   const recoveryPhrase = generateMnemonic(128); // 12 palabras
   const [pinHash, recoveryHash] = await Promise.all([
@@ -98,13 +99,13 @@ export async function verifyPin(pin: string): Promise<boolean> {
 
 export async function recoverWithPhrase(recoveryPhrase: string, newPin: string): Promise<{ ok: true; username: string }> {
   const u = readUser();
-  if (!u) throw new Error('No hay usuario registrado');
+  if (!u) throw new AppError('auth.no_user', 'No hay usuario registrado', 404);
   const phrase = recoveryPhrase.trim().toLowerCase().replace(/\s+/g, ' ');
-  if (!validateMnemonic(phrase)) throw new Error('Frase de recuperación inválida (debe tener 12 palabras BIP39)');
-  if (!/^\d{4,8}$/.test(newPin)) throw new Error('El PIN debe tener entre 4 y 8 dígitos');
+  if (!validateMnemonic(phrase)) throw new AppError('auth.phrase_invalid', 'Frase de recuperación inválida (debe tener 12 palabras BIP39)');
+  if (!/^\d{4,8}$/.test(newPin)) throw new AppError('auth.pin_format', 'El PIN debe tener entre 4 y 8 dígitos');
 
   const phraseMatch = await argonVerify(u.recoveryHash, phrase).catch(() => false);
-  if (!phraseMatch) throw new Error('Frase de recuperación incorrecta');
+  if (!phraseMatch) throw new AppError('auth.phrase_mismatch', 'Frase de recuperación incorrecta', 401);
 
   // Generar nueva frase de recuperación al resetear (la anterior queda invalidada)
   const newRecovery = generateMnemonic(128);
@@ -120,13 +121,13 @@ export async function recoverWithPhrase(recoveryPhrase: string, newPin: string):
 
 export async function recoverGetNewPhrase(recoveryPhrase: string, newPin: string): Promise<{ username: string; newRecoveryPhrase: string }> {
   const u = readUser();
-  if (!u) throw new Error('No hay usuario registrado');
+  if (!u) throw new AppError('auth.no_user', 'No hay usuario registrado', 404);
   const phrase = recoveryPhrase.trim().toLowerCase().replace(/\s+/g, ' ');
-  if (!validateMnemonic(phrase)) throw new Error('Frase de recuperación inválida');
-  if (!/^\d{4,8}$/.test(newPin)) throw new Error('El PIN debe tener entre 4 y 8 dígitos');
+  if (!validateMnemonic(phrase)) throw new AppError('auth.phrase_invalid', 'Frase de recuperación inválida');
+  if (!/^\d{4,8}$/.test(newPin)) throw new AppError('auth.pin_format', 'El PIN debe tener entre 4 y 8 dígitos');
 
   const phraseMatch = await argonVerify(u.recoveryHash, phrase).catch(() => false);
-  if (!phraseMatch) throw new Error('Frase de recuperación incorrecta');
+  if (!phraseMatch) throw new AppError('auth.phrase_mismatch', 'Frase de recuperación incorrecta', 401);
 
   const newRecovery = generateMnemonic(128);
   const [newPinHash, newRecoveryHash] = await Promise.all([

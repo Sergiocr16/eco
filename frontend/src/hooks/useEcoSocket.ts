@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SocketStatus, ToolCall } from '@/lib/types';
+import { translateBackendError } from '@/lib/backend-errors';
+import { translate, loadLang } from '@/lib/i18n';
 
 const RECONNECT_BACKOFF_MS = [500, 1500, 3000, 5000, 10_000];
 
@@ -215,13 +217,14 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
           currentAssistantIdRef.current = null;
           activeBubbleIdRef.current = null;
         } else if (msg.type === 'error') {
-          setError(msg.message);
+          const localized = translateBackendError({ error: msg.code, message: msg.message }, msg.message);
+          setError(localized);
           const bubbleId = activeBubbleIdRef.current;
           if (bubbleId) {
             handlersRef.current.onThinkingChange?.(bubbleId, false);
             handlersRef.current.onExecutingChange?.(bubbleId, false);
           }
-          handlersRef.current.onError?.(bubbleId, msg.message);
+          handlersRef.current.onError?.(bubbleId, localized);
           activeBubbleIdRef.current = null;
         }
       } catch (e) {
@@ -261,7 +264,7 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
   const send = useCallback((opts: { bubbleId: string; text: string; workspace?: string; resumeSessionId?: string | null }) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      handlersRef.current.onError?.(opts.bubbleId, 'No conectado al backend');
+      handlersRef.current.onError?.(opts.bubbleId, translate('berr.not_connected', loadLang()));
       return;
     }
     activeBubbleIdRef.current = opts.bubbleId;

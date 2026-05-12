@@ -3,6 +3,7 @@ import { useTokens } from '@/design/theme';
 import { IconX, IconDiff, IconExt } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { useT } from '@/hooks/useI18n';
+import { translateBackendError } from '@/lib/backend-errors';
 
 type DiffResult = {
   mode: 'git' | 'created' | 'plain' | 'not_found';
@@ -39,7 +40,7 @@ export function DiffViewer({ open, path, workspace, onClose }: Props) {
       .then(async (r) => {
         if (cancelled) return;
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) setError(data.error ?? `HTTP ${r.status}`);
+        if (!r.ok) setError(translateBackendError(data, `HTTP ${r.status}`));
         else setResult(data as DiffResult);
       })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Error'); })

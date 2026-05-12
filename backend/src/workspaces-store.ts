@@ -12,31 +12,35 @@ const BLOCKED_HOSTS = new Set([
 
 export type WorkspaceValidation =
   | { ok: true; path: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; errorCode: string };
+
+function fail(errorCode: string, error: string): WorkspaceValidation {
+  return { ok: false, error, errorCode };
+}
 
 export function validateWorkspacePath(input: string): WorkspaceValidation {
-  if (!input || typeof input !== 'string') return { ok: false, error: 'Ruta vacía' };
+  if (!input || typeof input !== 'string') return fail('wsp.path_empty', 'Ruta vacía');
   const trimmed = input.trim();
-  if (!trimmed) return { ok: false, error: 'Ruta vacía' };
-  if (!isAbsolute(trimmed)) return { ok: false, error: 'La ruta debe ser absoluta' };
-  if (trimmed.length > 4096) return { ok: false, error: 'Ruta demasiado larga' };
-  if (trimmed.includes('\0')) return { ok: false, error: 'Carácter inválido' };
+  if (!trimmed) return fail('wsp.path_empty', 'Ruta vacía');
+  if (!isAbsolute(trimmed)) return fail('wsp.path_not_absolute', 'La ruta debe ser absoluta');
+  if (trimmed.length > 4096) return fail('wsp.path_too_long', 'Ruta demasiado larga');
+  if (trimmed.includes('\0')) return fail('wsp.path_invalid_char', 'Carácter inválido');
 
   let real: string;
   try {
     real = realpathSync(resolve(trimmed));
   } catch {
-    return { ok: false, error: 'La carpeta no existe en el sistema' };
+    return fail('wsp.path_not_found', 'La carpeta no existe en el sistema');
   }
 
   let stat;
-  try { stat = statSync(real); } catch { return { ok: false, error: 'No se puede leer la carpeta' }; }
-  if (!stat.isDirectory()) return { ok: false, error: 'No es una carpeta' };
+  try { stat = statSync(real); } catch { return fail('wsp.path_not_readable', 'No se puede leer la carpeta'); }
+  if (!stat.isDirectory()) return fail('wsp.path_not_dir', 'No es una carpeta');
 
-  if (BLOCKED_HOSTS.has(real)) return { ok: false, error: 'Ruta del sistema no permitida' };
+  if (BLOCKED_HOSTS.has(real)) return fail('wsp.path_system', 'Ruta del sistema no permitida');
   for (const blocked of BLOCKED_HOSTS) {
     if (real === blocked || real.startsWith(blocked + sep)) {
-      return { ok: false, error: `Ruta dentro de ${blocked} no permitida` };
+      return fail('wsp.path_inside_system', `Ruta dentro de ${blocked} no permitida`);
     }
   }
   return { ok: true, path: real };

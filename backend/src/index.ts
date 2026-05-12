@@ -16,7 +16,18 @@ import {
   recoverGetNewPhrase, deleteUser,
 } from './user-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
+import { isAppError } from './app-error.js';
 import { z } from 'zod';
+
+function errResponse(res: Response, status: number, code: string, message: string) {
+  return res.status(status).json({ error: code, message });
+}
+
+function fromException(res: Response, e: unknown, fallbackCode: string, fallbackMsg: string) {
+  if (isAppError(e)) return res.status(e.status).json({ error: e.code, message: e.message });
+  const msg = e instanceof Error ? e.message : fallbackMsg;
+  return res.status(400).json({ error: fallbackCode, message: msg });
+}
 
 const authToken = getOrCreateToken();
 
@@ -36,10 +47,10 @@ app.use(express.json({ limit: '128kb' }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const host = req.headers.host;
-  if (!host) return res.status(403).json({ error: 'Host header requerido' });
+  if (!host) return errResponse(res, 403, 'http.host_required', 'Host header requerido');
   const hostname = host.split(':')[0]?.toLowerCase();
   if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '[::1]') {
-    return res.status(403).json({ error: 'Host no permitido' });
+    return errResponse(res, 403, 'http.host_forbidden', 'Host no permitido');
   }
   next();
 });
@@ -67,22 +78,22 @@ app.get('/auth/status', (_req: Request, res: Response) => {
 
 app.post('/auth/register', async (req: Request, res: Response) => {
   const parsed = RegisterSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0]?.message ?? 'Datos inválidos' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
   try {
     const result = await registerUser(parsed.data.username, parsed.data.pin);
     const session = createSession(result.username);
     res.json({ ok: true, username: result.username, recoveryPhrase: result.recoveryPhrase, session });
   } catch (e) {
-    res.status(400).json({ error: e instanceof Error ? e.message : 'Error al registrar' });
+    fromException(res, e, 'auth.register_failed', 'Error al registrar');
   }
 });
 
 app.post('/auth/login', async (req: Request, res: Response) => {
   const parsed = LoginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'PIN requerido' });
-  if (!hasUser()) return res.status(400).json({ error: 'No hay usuario registrado' });
+  if (!parsed.success) return errResponse(res, 400, 'auth.pin_required', 'PIN requerido');
+  if (!hasUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
   const ok = await verifyPin(parsed.data.pin);
-  if (!ok) return res.status(401).json({ error: 'PIN incorrecto' });
+  if (!ok) return errResponse(res, 401, 'auth.pin_wrong', 'PIN incorrecto');
   const info = statusInfo();
   const session = createSession(info.username ?? 'user');
   res.json({ ok: true, username: info.username, session });
@@ -90,7 +101,7 @@ app.post('/auth/login', async (req: Request, res: Response) => {
 
 app.post('/auth/recover', async (req: Request, res: Response) => {
   const parsed = RecoverSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0]?.message ?? 'Datos inválidos' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
   try {
     const result = await recoverGetNewPhrase(parsed.data.recoveryPhrase, parsed.data.newPin);
     const session = createSession(result.username);
@@ -101,7 +112,7 @@ app.post('/auth/recover', async (req: Request, res: Response) => {
       session,
     });
   } catch (e) {
-    res.status(400).json({ error: e instanceof Error ? e.message : 'No se pudo recuperar' });
+    fromException(res, e, 'auth.recover_failed', 'No se pudo recuperar');
   }
 });
 
@@ -114,16 +125,16 @@ app.post('/auth/logout', (req: Request, res: Response) => {
 app.delete('/auth/user', async (req: Request, res: Response) => {
   // Acción destructiva: requiere PIN para confirmar
   const parsed = LoginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'PIN requerido para borrar usuario' });
+  if (!parsed.success) return errResponse(res, 400, 'auth.pin_required_delete', 'PIN requerido para borrar usuario');
   const ok = await verifyPin(parsed.data.pin);
-  if (!ok) return res.status(401).json({ error: 'PIN incorrecto' });
+  if (!ok) return errResponse(res, 401, 'auth.pin_wrong', 'PIN incorrecto');
   deleteUser();
   res.json({ ok: true });
 });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.headers['x-eco-client'] !== '1') {
-    return res.status(400).json({ error: 'Header X-Eco-Client requerido' });
+    return errResponse(res, 400, 'http.client_header_required', 'Header X-Eco-Client requerido');
   }
   next();
 });
@@ -131,7 +142,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use((req: Request, res: Response, next: NextFunction) => {
   const token = extractBearer(req.headers.authorization);
   if (!tokensMatch(authToken, token)) {
-    return res.status(401).json({ error: 'No autorizado' });
+    return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
   }
   next();
 });
@@ -143,7 +154,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   if (!hasUser()) return next(); // sin user registrado, no se requiere sesión todavía
   const sessionId = req.headers[SESSION_HEADER] as string | undefined;
   const session = getSession(sessionId);
-  if (!session) return res.status(401).json({ error: 'Sesión inválida o expirada' });
+  if (!session) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
   next();
 });
 
@@ -159,7 +170,7 @@ app.get('/info', (_req, res) => {
 });
 
 app.get('/tts/voices', (_req, res) => {
-  if (!isPiperAvailable()) return res.status(503).json({ error: 'Piper no instalado' });
+  if (!isPiperAvailable()) return errResponse(res, 503, 'tts.piper_unavailable', 'Piper no instalado');
   res.json({ voices: listVoices() });
 });
 
@@ -180,15 +191,15 @@ app.get('/workspaces', (_req: Request, res: Response) => {
 
 app.post('/workspaces', (req: Request, res: Response) => {
   const parsed = AddWorkspaceSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const result = addWorkspace(parsed.data.path);
-  if (!result.ok) return res.status(400).json({ error: result.error });
+  if (!result.ok) return res.status(400).json({ error: result.errorCode ?? 'wsp.add_failed', message: result.error });
   res.json({ ok: true, path: result.path, workspaces: config.workspaces });
 });
 
 app.delete('/workspaces', (req: Request, res: Response) => {
   const parsed = AddWorkspaceSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   removeWorkspace(parsed.data.path);
   res.json({ ok: true, workspaces: config.workspaces });
 });
@@ -204,16 +215,16 @@ app.get('/config/api-key', (_req: Request, res: Response) => {
 
 app.post('/config/api-key', async (req: Request, res: Response) => {
   const parsed = ApiKeyRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   try {
     if (parsed.data.validate !== false) {
       const result = await validateApiKey(parsed.data.key);
-      if (!result.ok) return res.status(400).json({ error: result.error ?? 'Key inválida' });
+      if (!result.ok) return errResponse(res, 400, 'apikey.invalid', result.error ?? 'Key inválida');
     }
     writeApiKey(parsed.data.key);
     res.json({ ok: true, masked: maskedApiKey() });
   } catch (e) {
-    res.status(400).json({ error: e instanceof Error ? e.message : 'Error guardando key' });
+    fromException(res, e, 'apikey.save_failed', 'Error guardando key');
   }
 });
 
@@ -228,23 +239,23 @@ const VoiceTranscribedSchema = z.object({
 
 app.post('/voice/transcribed', (req: Request, res: Response) => {
   const parsed = VoiceTranscribedSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const text = parsed.data.text.trim();
-  if (!text) return res.status(400).json({ error: 'Texto vacío' });
+  if (!text) return errResponse(res, 400, 'voice.empty_text', 'Texto vacío');
   broadcastServerMessage({ type: 'voice_transcribed', text, ts: Date.now() });
   res.json({ ok: true });
 });
 
 app.post('/file/diff', async (req: Request, res: Response) => {
   const parsed = DiffRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   try {
     const result = await fileDiff(parsed.data);
     res.json(result);
   } catch (err) {
     const status = (err as { httpStatus?: number }).httpStatus ?? 500;
     const message = err instanceof Error ? err.message : 'Error';
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: 'file.diff_failed', message });
   }
 });
 
@@ -252,9 +263,9 @@ const shellConcurrency = { active: 0, max: 3 };
 
 app.post('/shell', async (req: Request, res: Response) => {
   const parsed = ShellRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   if (shellConcurrency.active >= shellConcurrency.max) {
-    return res.status(429).json({ error: 'Demasiados comandos concurrentes' });
+    return errResponse(res, 429, 'shell.too_concurrent', 'Demasiados comandos concurrentes');
   }
   shellConcurrency.active += 1;
   try {
@@ -263,7 +274,7 @@ app.post('/shell', async (req: Request, res: Response) => {
   } catch (err) {
     const status = (err as { httpStatus?: number }).httpStatus ?? 500;
     const message = err instanceof Error ? err.message : 'Error de shell';
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: 'shell.failed', message });
   } finally {
     shellConcurrency.active -= 1;
   }
@@ -272,11 +283,11 @@ app.post('/shell', async (req: Request, res: Response) => {
 const ttsConcurrency = { active: 0, max: 2 };
 
 app.post('/tts', async (req: Request, res: Response) => {
-  if (!isPiperAvailable()) return res.status(503).json({ error: 'Piper no instalado' });
+  if (!isPiperAvailable()) return errResponse(res, 503, 'tts.piper_unavailable', 'Piper no instalado');
   const parsed = TTSRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Cuerpo inválido' });
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   if (ttsConcurrency.active >= ttsConcurrency.max) {
-    return res.status(429).json({ error: 'Demasiadas síntesis concurrentes' });
+    return errResponse(res, 429, 'tts.too_concurrent', 'Demasiadas síntesis concurrentes');
   }
   ttsConcurrency.active += 1;
   const controller = new AbortController();
@@ -290,9 +301,11 @@ app.post('/tts', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.end(wav);
   } catch (err) {
-    const safe = err instanceof Error && /timeout/i.test(err.message) ? 'TTS timeout' : 'Error de síntesis';
+    const isTimeout = err instanceof Error && /timeout/i.test(err.message);
+    const code = isTimeout ? 'tts.timeout' : 'tts.synth_failed';
+    const message = isTimeout ? 'TTS timeout' : 'Error de síntesis';
     console.error('[tts] error:', err instanceof Error ? err.message : err);
-    if (!res.headersSent) res.status(500).json({ error: safe });
+    if (!res.headersSent) res.status(500).json({ error: code, message });
   } finally {
     ttsConcurrency.active -= 1;
   }
