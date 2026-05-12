@@ -77,9 +77,9 @@ function newTabId(): string {
 }
 
 const HOME_SHORTCUTS = [
-  { label: 'Anthropic Console', url: 'https://console.anthropic.com/' },
-  { label: 'GitHub', url: 'https://github.com/' },
   { label: 'localhost:5174', url: 'http://localhost:5174/' },
+  { label: 'localhost:7000/health', url: 'http://localhost:7000/health' },
+  { label: 'example.com', url: 'https://example.com/' },
   { label: 'MDN', url: 'https://developer.mozilla.org/' },
 ];
 
@@ -158,8 +158,10 @@ export function BrowserScreen() {
   }
 
   function goActive(raw: string) {
-    if (!activeId) {
-      // No hay tab — creamos uno con esa URL.
+    // Si no hay tab activo (o el activeId está stale y no apunta a una tab
+    // real), creamos uno con esa URL.
+    const exists = activeId && tabs.some((tb) => tb.id === activeId);
+    if (!exists) {
       const id = newTabId();
       const url = normalizeUrl(raw);
       if (!url) return;
@@ -168,7 +170,7 @@ export function BrowserScreen() {
       setLoadFailed((prev) => ({ ...prev, [id]: false }));
       return;
     }
-    navigate(activeId, raw);
+    navigate(activeId!, raw);
   }
 
   function reloadActive() {
@@ -429,39 +431,50 @@ export function BrowserScreen() {
         </div>
       )}
 
-      {/* Contenido — renderizamos SOLO la tab activa. Trade-off: al cambiar
-          de tab se recrea el webview (pierde scroll), pero garantiza que
-          el <webview> de Electron se monte en un contenedor con layout
-          real (no en position:absolute oculto donde a veces no se inicia). */}
-      <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex' }}>
+      {/* Contenido — solo la tab activa se renderiza, mismo patrón que el
+          BrowserPanel por agente (que sí funciona). Cambiar de tab fuerza
+          remount del SmartBrowserView vía key con tab.id; está bien que se
+          recargue, igual que un browser real con tabs descartables. */}
+      <div style={{ flex: 1, position: 'relative', minHeight: 0, background: 'white' }}>
         {!activeTab?.url ? (
-          <Home onPick={(url) => activeId ? navigate(activeId, url) : addTab(url)}/>
-        ) : (
-          <div
-            key={`${activeTab.id}-${refreshTick[activeTab.id] ?? 0}-${activeTab.proxied ? 'p' : 'd'}`}
-            style={{ flex: 1, position: 'relative', background: 'white' }}>
-            <SmartBrowserView
-              ref={(h) => { if (activeId) browserRefs.current[activeId] = h; }}
-              src={activeTab.proxied ? proxyUrlFor(activeTab.url) : activeTab.url}
-              onTitleChange={(title) => {
-                setTabs((prev) => prev.map((tb) => tb.id === activeTab.id ? { ...tb, title: title.slice(0, 60) } : tb));
-              }}
-              onNavigate={(url) => {
-                if (fullBrowser && url && url !== activeTab.url) {
-                  setTabs((prev) => prev.map((tb) => tb.id === activeTab.id ? { ...tb, url } : tb));
-                }
-              }}
-              onLoadFail={(code, desc) => {
-                setLoadFailed((p) => ({ ...p, [activeTab.id]: true }));
-                setLoadFailMsg((p) => ({ ...p, [activeTab.id]: `code=${code} ${desc}` }));
-              }}
-              onLoadSuccess={() => {
-                setLoadFailed((p) => ({ ...p, [activeTab.id]: false }));
-                setLoadFailMsg((p) => ({ ...p, [activeTab.id]: '' }));
-              }}
-            />
-          </div>
-        )}
+          <Home onPick={(url) => {
+            // Si hay un tab activo válido, navegá ese tab; si no, creá uno
+            // nuevo. activeId puede estar stale (id en localStorage que ya
+            // no apunta a ninguna tab) — en ese caso addTab.
+            if (activeTab) navigate(activeTab.id, url);
+            else addTab(url);
+          }}/>
+        ) : (() => {
+          const src = activeTab.proxied ? proxyUrlFor(activeTab.url) : activeTab.url;
+          return (
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'white',
+            }}>
+              <SmartBrowserView
+                key={`${activeTab.id}-${refreshTick[activeTab.id] ?? 0}-${activeTab.proxied ? 'p' : 'd'}`}
+                ref={(h) => { if (activeId) browserRefs.current[activeId] = h; }}
+                src={src}
+                onTitleChange={(title) => {
+                  setTabs((prev) => prev.map((tb) => tb.id === activeTab.id ? { ...tb, title: title.slice(0, 60) } : tb));
+                }}
+                onNavigate={(url) => {
+                  if (fullBrowser && url && url !== activeTab.url) {
+                    setTabs((prev) => prev.map((tb) => tb.id === activeTab.id ? { ...tb, url } : tb));
+                  }
+                }}
+                onLoadFail={(code, desc) => {
+                  setLoadFailed((p) => ({ ...p, [activeTab.id]: true }));
+                  setLoadFailMsg((p) => ({ ...p, [activeTab.id]: `code=${code} ${desc}` }));
+                }}
+                onLoadSuccess={() => {
+                  setLoadFailed((p) => ({ ...p, [activeTab.id]: false }));
+                  setLoadFailMsg((p) => ({ ...p, [activeTab.id]: '' }));
+                }}
+              />
+            </div>
+          );
+        })()}
         {activeTab?.url && activeFailed && (
           <div style={{
             position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',

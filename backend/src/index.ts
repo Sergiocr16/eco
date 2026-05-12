@@ -52,6 +52,13 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   crossOriginOpenerPolicy: false,
   crossOriginEmbedderPolicy: false,
+  // helmet pone X-Frame-Options: SAMEORIGIN por default, lo cual bloquea
+  // que el iframe del navegador interno (origen frontend) embeba respuestas
+  // del backend (origen backend). El navegador necesita /proxy/site
+  // específicamente para evadir bloqueos de embedding — apagar el header
+  // global. El handler de /proxy/site además sobreescribe el header del
+  // upstream para que el iframe pueda cargar.
+  frameguard: false,
 }));
 app.use(
   cors({
@@ -401,6 +408,18 @@ app.post('/git/commit', (req: Request, res: Response) => {
   const message = typeof req.body?.message === 'string' ? req.body.message : '';
   if (!message) return errResponse(res, 400, 'http.invalid_body', 'message requerido');
   res.json(gitOps.commitWithMessage(dir, message));
+});
+
+// ─── Worktrees mantenimiento ──────────────────────────────────────────────
+// Llama pruneCleanWorktrees() bajo demanda — devuelve qué se removió/conservó.
+// Para usar desde la UI cuando el usuario pide "limpiar worktrees".
+app.post('/worktrees/prune', (_req: Request, res: Response) => {
+  try {
+    const r = pruneCleanWorktrees();
+    res.json({ removed: r.removed, kept: r.kept });
+  } catch (e) {
+    errResponse(res, 500, 'worktree.prune_failed', e instanceof Error ? e.message : 'prune failed');
+  }
 });
 
 // ─── Dev server por agente ────────────────────────────────────────────────

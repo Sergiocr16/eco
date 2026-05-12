@@ -88,16 +88,16 @@ export function Dashboard(props: Props) {
 
       <div ref={mainScrollRef} style={{
         flex: 1, display: 'flex', flexDirection: 'column',
-        padding: '28px 32px 110px', overflow: 'auto', position: 'relative',
+        padding: '28px 32px 110px', overflowY: 'auto', overflowX: 'hidden', position: 'relative',
       }}>
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 280, damping: 28 }}
-          style={{ display: 'flex', alignItems: 'center', gap: 32, padding: '12px 8px 32px' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '12px 8px 32px', flexWrap: 'wrap' }}>
           <VoiceOrb state={voiceState} onClick={onMicToggle}/>
 
-          <div style={{ width: 380, flexShrink: 0 }}>
+          <div style={{ flex: '1 1 280px', maxWidth: 380, minWidth: 240 }}>
             <div style={{
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
               color: t.accent, letterSpacing: 1.5, textTransform: 'uppercase',
@@ -227,12 +227,14 @@ function DashboardCards({
       // Las cards viven en el lado DERECHO del header — usamos marginLeft
       // auto para empujarlas al borde derecho dentro del flex padre.
       marginLeft: 'auto',
-      // Width generoso para que se vean prominentes, no apretadas.
-      flex: '0 0 auto',
+      // Cards encogibles: cada una mínimo 180px, crecen equitativamente.
+      // Si no entran en una fila, el flex-wrap del padre las envía abajo.
+      flex: '1 1 auto',
+      maxWidth: 760, // 3 × 240 + 2 × gap; tope para no estirarse demás
     }}>
-      <div style={{ width: 240, display: 'flex' }}><LiveAgentsCard bubbles={bubbles}/></div>
-      <div style={{ width: 240, display: 'flex' }}><ResourcesCard bubbles={bubbles}/></div>
-      <div style={{ width: 240, display: 'flex' }}><SystemStatusCard/></div>
+      <div style={{ flex: '1 1 180px', minWidth: 180, display: 'flex' }}><LiveAgentsCard bubbles={bubbles}/></div>
+      <div style={{ flex: '1 1 180px', minWidth: 180, display: 'flex' }}><ResourcesCard bubbles={bubbles}/></div>
+      <div style={{ flex: '1 1 180px', minWidth: 180, display: 'flex' }}><SystemStatusCard/></div>
     </div>
   );
 }
@@ -1203,15 +1205,24 @@ const SAT_ICONS = {
       <path d="M2 12h20M12 2a15 15 0 010 20 15 15 0 010-20z"/>
     </>
   ),
+  // Claude remote control — antena con ondas, da idea de "control remoto activo"
+  remote: (
+    <>
+      <path d="M12 13v8"/>
+      <circle cx="12" cy="11" r="2"/>
+      <path d="M7 7a7 7 0 0110 0M4.5 4.5a11 11 0 0115 0"/>
+    </>
+  ),
 } as const;
 
 // Mapeo de cada satélite a la tab que se abre en AgentDetail.
-type SatKey = 'chat' | 'pty' | 'server' | 'browser';
+type SatKey = 'chat' | 'pty' | 'server' | 'browser' | 'remote';
 const SAT_TO_TAB: Record<SatKey, 'chat' | 'terminal' | 'server' | 'browser'> = {
   chat: 'chat',
   pty: 'terminal',
   server: 'server',
   browser: 'browser',
+  remote: 'terminal', // click en el satélite remote te lleva a la terminal
 };
 
 // Satélites alrededor de un electrón — íconos de cada subsistema (chat,
@@ -1223,17 +1234,18 @@ function SatellitesLocal({
 }: {
   n: {
     id: string; size: number;
-    hasChat: boolean; hasPty: boolean; hasServer: boolean; hasBrowser: boolean;
+    hasChat: boolean; hasPty: boolean; hasServer: boolean; hasBrowser: boolean; hasRemote: boolean;
   };
   t: ReturnType<typeof useTokens>;
   onItemClick?: (subsystem: SatKey) => void;
 }) {
   const [hoverKey, setHoverKey] = useState<SatKey | null>(null);
-  const items: { key: SatKey; on: boolean; color: string; label: string; icon: JSX.Element }[] = [
-    { key: 'chat',    on: n.hasChat,    color: t.text2,  label: 'Conversación', icon: SAT_ICONS.chat },
-    { key: 'pty',     on: n.hasPty,     color: t.warn,   label: 'Terminal',     icon: SAT_ICONS.pty },
-    { key: 'server',  on: n.hasServer,  color: t.busy,   label: 'Server',       icon: SAT_ICONS.server },
-    { key: 'browser', on: n.hasBrowser, color: t.accent, label: 'Navegador',    icon: SAT_ICONS.browser },
+  const items: { key: SatKey; on: boolean; color: string; label: string; icon: JSX.Element; pulse?: boolean }[] = [
+    { key: 'chat',    on: n.hasChat,    color: t.text2,  label: 'Conversación',          icon: SAT_ICONS.chat },
+    { key: 'pty',     on: n.hasPty,     color: t.warn,   label: 'Terminal',              icon: SAT_ICONS.pty },
+    { key: 'server',  on: n.hasServer,  color: t.busy,   label: 'Server',                icon: SAT_ICONS.server },
+    { key: 'browser', on: n.hasBrowser, color: t.accent, label: 'Navegador',             icon: SAT_ICONS.browser },
+    { key: 'remote',  on: n.hasRemote,  color: t.accent, label: 'Claude remote control', icon: SAT_ICONS.remote, pulse: true },
   ];
   const visible = items.filter((it) => it.on);
   if (visible.length === 0) return null;
@@ -1415,6 +1427,30 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
       setServerRunning((prev) => ({ ...prev, [d.bubbleId]: d.status === 'running' || d.status === 'starting' }));
     });
   }, []);
+  // Estado live del Claude remote control por bubbleId — leemos del localStorage
+  // al inicio y escuchamos un CustomEvent que dispara el botón al cambiar.
+  const [remoteByBubble, setRemoteByBubble] = useState<Record<string, boolean>>(() => {
+    const out: Record<string, boolean> = {};
+    try {
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith('eco.remote.')) {
+          const id = k.slice('eco.remote.'.length);
+          if (window.localStorage.getItem(k)) out[id] = true;
+        }
+      }
+    } catch { /* noop */ }
+    return out;
+  });
+  useEffect(() => {
+    function onChange(e: Event) {
+      const detail = (e as CustomEvent<{ bubbleId: string; slug: string | null }>).detail;
+      if (!detail?.bubbleId) return;
+      setRemoteByBubble((prev) => ({ ...prev, [detail.bubbleId]: !!detail.slug }));
+    }
+    window.addEventListener('eco:remote-changed', onChange);
+    return () => window.removeEventListener('eco:remote-changed', onChange);
+  }, []);
 
   // Dimensiones del canvas — se miden del container real con ResizeObserver.
   // Así el viewBox siempre coincide con los píxeles reales y el contenido
@@ -1439,10 +1475,20 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   // TILT del plano orbital. 1 = sin tilt (círculos). <1 = elipse achatada
   // verticalmente = vista en perspectiva 3D (sistema solar visto de costado).
   const tilt = 0.45;
-  // Anillos orbitales: cada agente vive en SU PROPIO anillo, los más lejos
-  // son más grandes y más lentos (Kepler-like).
-  const orbitBaseR = 80;
-  const orbitSpacing = 32;
+  // Anillos orbitales: cada agente vive en SU PROPIO anillo. Cuando hay
+  // pocos agentes, expandimos los anillos para que ocupen mejor el canvas
+  // y no se vean apretados contra el hub Eco. A más agentes, más juntos.
+  const n = Math.max(1, bubbles.length);
+  const orbitBaseR =
+    n <= 2 ? 160 :
+    n <= 4 ? 120 :
+    n <= 6 ? 100 :
+    80;
+  const orbitSpacing =
+    n <= 2 ? 60 :
+    n <= 4 ? 44 :
+    n <= 6 ? 36 :
+    32;
   const nodes = bubbles.map((b, i) => {
     const orbitIdx = i;
     const orbitR = orbitBaseR + orbitIdx * orbitSpacing;
@@ -1457,6 +1503,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     const hasServer = !!serverRunning[b.id];
     let hasBrowser = false;
     try { hasBrowser = !!window.localStorage.getItem(`eco.browser.url.${b.id}`); } catch { /* noop */ }
+    const hasRemote = !!remoteByBubble[b.id];
     return {
       ...b, state,
       orbitR, period, phaseDeg,
@@ -1465,7 +1512,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
       x: cx + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
       y: cy + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
       size: 22 + (state === 'running' ? 8 : 0),
-      hasChat, hasPty, hasServer, hasBrowser,
+      hasChat, hasPty, hasServer, hasBrowser, hasRemote,
     };
   });
 

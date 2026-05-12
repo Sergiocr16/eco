@@ -19,6 +19,7 @@ import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedb
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
 import { AuthScreen } from './screens/AuthScreen';
+import { OnboardingWizard, hasOnboarded } from './screens/OnboardingWizard';
 import { useAuth } from './hooks/useAuth';
 import { useTheme } from './design/theme';
 import { I18nProvider, useI18n, useT } from './hooks/useI18n';
@@ -62,6 +63,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const [overlay, setOverlay] = useState<'status' | 'help' | null>(null);
   const [wsPickerForBubble, setWsPickerForBubble] = useState<string | null>(null);
   const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => !hasOnboarded());
 
   const workspacesHook = useWorkspaces();
   const defaultWs = workspacesHook.list.workspaces[0] ?? '';
@@ -566,6 +568,12 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         activeBubbleId={detailBubbleId ?? bubbles.activeBubbleId}
         onOpenAgent={handleOpenAgent}
       />
+      {showOnboarding && (
+        <OnboardingWizard
+          username={auth.state.username}
+          onClose={() => setShowOnboarding(false)}
+        />
+      )}
     </>
   );
 }

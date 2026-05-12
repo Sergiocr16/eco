@@ -7,6 +7,7 @@ import { SkillsPicker } from '@/components/SkillsPicker';
 import type { SkillInfo } from '@/hooks/useSkills';
 import { useProfile } from '@/hooks/useProfile';
 import { setVoiceTarget } from '@/lib/voice-router';
+import { ecoToken } from '@/lib/eco-config';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { BranchPicker } from '@/components/BranchPicker';
 import { BrowserPanel } from '@/components/BrowserPanel';
@@ -16,7 +17,7 @@ import {
 } from '@/design/primitives';
 import { EcoMark } from '@/design/EcoMark';
 import {
-  IconArrowL, IconStop, IconMore,
+  IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
   IconCheck, IconX, IconBolt, IconDiff,
   IconEdit, IconFolder, IconTrash, IconCopy,
@@ -167,7 +168,24 @@ export function AgentDetail({
     thinking: tr('state.thinking'),
     executing: tr('state.executing'),
   };
-  const [tab, setTab] = useState<Tab>('chat');
+  // Tab activo persistido por agente — al volver a entrar al detalle de
+  // la misma conversación, recuperamos el último tab que vimos en lugar
+  // de saltar siempre a 'chat'.
+  const tabStorageKey = `eco.detail.tab.${bubble.id}`;
+  const [tab, setTabState] = useState<Tab>(() => {
+    try {
+      const saved = window.localStorage.getItem(tabStorageKey);
+      if (saved === 'chat' || saved === 'terminal' || saved === 'files'
+        || saved === 'plan' || saved === 'browser' || saved === 'server') {
+        return saved as Tab;
+      }
+    } catch { /* noop */ }
+    return 'chat';
+  });
+  const setTab = (next: Tab) => {
+    setTabState(next);
+    try { window.localStorage.setItem(tabStorageKey, next); } catch { /* noop */ }
+  };
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -280,6 +298,7 @@ export function AgentDetail({
         position: 'relative',
         display: 'flex', gap: 2, padding: '0 24px',
         borderBottom: `1px solid ${t.glassBorder}`,
+        alignItems: 'center',
       }}>
         <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')} label={tr('detail.tab.chat')} icon={IconCommand} badge={bubble.messages.length}/>
         <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
@@ -291,6 +310,8 @@ export function AgentDetail({
           workspace={bubble.workspace}
           onRun={(skill) => onSend(buildSkillPrompt(skill))}
         />
+        <div style={{ flex: 1 }}/>
+        <RemoteControlNavButton bubble={bubble}/>
       </div>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -314,7 +335,13 @@ export function AgentDetail({
           <KeepAliveBrowser visible={tab === 'browser'} bubbleId={bubble.id} workspace={bubble.workspace}/>
           {tab === 'server' && <ServerPanel bubbleId={bubble.id} workspace={bubble.workspace}/>}
         </div>
-        <AgentSidebar bubble={bubble} onSend={onSend}/>
+        <AgentSidebar
+          bubble={bubble}
+          filesChangedCount={filesChanged.length}
+          onSend={onSend}
+          onInterrupt={onInterrupt}
+          onGoTab={(target) => setTab(target)}
+        />
       </div>
     </div>
   );
@@ -1393,7 +1420,15 @@ function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: st
 
 const SIDEBAR_COLLAPSE_KEY = 'eco.detail.sidebar.collapsed';
 
-function AgentSidebar({ bubble }: { bubble: Bubble; onSend: (text: string) => void }) {
+function AgentSidebar({
+  bubble, filesChangedCount, onSend, onInterrupt, onGoTab,
+}: {
+  bubble: Bubble;
+  filesChangedCount: number;
+  onSend: (text: string) => void;
+  onInterrupt: () => void;
+  onGoTab: (tab: Tab) => void;
+}) {
   const t = useTokens();
   const tr = useT();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -1406,17 +1441,6 @@ function AgentSidebar({ bubble }: { bubble: Bubble; onSend: (text: string) => vo
       return next;
     });
   }
-  const STATE_LABELS_I18N: Record<AgentState, string> = {
-    idle: tr('state.idle'),
-    pending: tr('state.pending'),
-    running: tr('state.running'),
-    waiting: tr('state.waiting'),
-    paused: tr('state.paused'),
-    done: tr('state.done'),
-    error: tr('state.error'),
-    thinking: tr('state.thinking'),
-    executing: tr('state.executing'),
-  };
   const min = Math.max(1, Math.round((Date.now() - bubble.createdAt) / 60000));
   const toolCallCount = bubble.messages.reduce((acc, m) => acc + (m.toolCalls?.length ?? 0), 0);
 
@@ -1477,37 +1501,232 @@ function AgentSidebar({ bubble }: { bubble: Bubble; onSend: (text: string) => vo
         </div>
       )}
 
-      <div>
-        <SectionLabel>{tr('detail.sidebar.next')}</SectionLabel>
-        <Glass radius={12} style={{ padding: 12 }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
-            color: t.accent, fontSize: 11, fontWeight: 500,
-          }}>
-            <IconBolt size={12}/> {tr('detail.sidebar.suggestion')}
-          </div>
-          <div style={{ fontSize: 12.5, color: t.text0, lineHeight: 1.5 }}>
-            {bubble.status === 'idle' ? tr('detail.suggestion.idle') :
-              bubble.status === 'thinking' ? tr('detail.suggestion.thinking') :
-                bubble.status === 'executing' ? tr('detail.suggestion.executing') :
-                  tr('detail.suggestion.review')}
-          </div>
-        </Glass>
-      </div>
+      <NextActionsPanel
+        bubble={bubble}
+        filesChangedCount={filesChangedCount}
+        onSend={onSend}
+        onInterrupt={onInterrupt}
+        onGoTab={onGoTab}
+      />
 
       <div>
         <SectionLabel>{tr('detail.sidebar.stats')}</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <StatBox label={tr('detail.stat.time_active')} value={`${min}m`}/>
-          <StatBox label={tr('detail.stat.messages')} value={String(bubble.messages.length)}/>
-          <StatBox label={tr('detail.stat.tool_calls')} value={String(toolCallCount)}/>
-          <StatBox label={tr('detail.stat.state')} value={STATE_LABELS_I18N[(bubble.status as AgentState) || 'idle']}/>
+          <StatBox
+            label={tr('detail.stat.last_activity')}
+            value={fmtAgo(bubble.updatedAt)}
+            sub={`activo ${min}m`}/>
+          <StatBox
+            label={tr('detail.stat.messages')}
+            value={String(bubble.messages.length)}
+            onClick={() => onGoTab('chat')}/>
+          <StatBox
+            label={tr('detail.stat.files_changed')}
+            value={String(filesChangedCount)}
+            onClick={filesChangedCount > 0 ? () => onGoTab('files') : undefined}/>
+          <StatBox
+            label={tr('detail.stat.tool_calls')}
+            value={String(toolCallCount)}/>
         </div>
       </div>
 
       <SaveToObsidianButton bubble={bubble}/>
 
     </div>
+  );
+}
+
+function remoteSlugOf(title: string): string {
+  return (title || 'eco')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32) || 'eco';
+}
+
+function remoteStorageKey(bubbleId: string): string {
+  return `eco.remote.${bubbleId}`;
+}
+
+function readRemoteSlug(bubbleId: string): string | null {
+  try { return window.localStorage.getItem(remoteStorageKey(bubbleId)); } catch { return null; }
+}
+
+function writeRemoteSlug(bubbleId: string, slug: string | null) {
+  try {
+    if (slug) window.localStorage.setItem(remoteStorageKey(bubbleId), slug);
+    else window.localStorage.removeItem(remoteStorageKey(bubbleId));
+  } catch { /* noop */ }
+}
+
+// Manda `/remote-control <slug>` directo al PTY del agente (donde corre
+// Claude Code CLI, que sí soporta el comando). El SDK del chat NO lo soporta
+// — por eso enviar el slash al chat devolvía "no disponible en este
+// environment". Esta función abre un WS efímero al /ws/pty, espera a que
+// el shell + Claude CLI estén listos, escribe el comando y cierra el WS.
+// El PTY persiste en el backend, así que el remote control queda activo.
+async function activateRemoteControlViaPty(opts: {
+  bubbleId: string;
+  workspace: string;
+  slug: string;
+  token: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return new Promise((resolve) => {
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = new URL(`${wsProto}//${window.location.host}/ws/pty`);
+    if (opts.workspace) url.searchParams.set('workspace', opts.workspace);
+    url.searchParams.set('bubble', opts.bubbleId);
+    url.searchParams.set('cols', '120');
+    url.searchParams.set('rows', '30');
+
+    const protocols = opts.token ? [`eco.token.${opts.token}`] : undefined;
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url.toString(), protocols);
+    } catch (e) {
+      resolve({ ok: false, error: e instanceof Error ? e.message : 'no se pudo abrir el WS' });
+      return;
+    }
+
+    let settled = false;
+    const finish = (r: { ok: true } | { ok: false; error: string }) => {
+      if (settled) return;
+      settled = true;
+      try { ws.close(); } catch { /* noop */ }
+      resolve(r);
+    };
+
+    ws.onopen = () => { /* esperamos 'ready' */ };
+    ws.onerror = () => finish({ ok: false, error: 'ws error' });
+    ws.onclose = (ev) => {
+      if (settled) return;
+      finish({ ok: false, error: `ws cerrado (code=${ev.code})` });
+    };
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data as string) as { type?: string; reattached?: boolean };
+        if (msg?.type === 'ready') {
+          // Si el PTY ya existía (reattached=true), Claude probablemente ya
+          // está corriendo y al prompt — basta esperar un poquito. Si es
+          // recién creado, el backend autoinicia `claude` con 350ms delay;
+          // damos 2s para que muestre el prompt antes de mandar el comando.
+          const delay = msg.reattached ? 250 : 2000;
+          setTimeout(() => {
+            if (settled || ws.readyState !== WebSocket.OPEN) return;
+            try {
+              ws.send(JSON.stringify({ type: 'input', data: `/remote-control ${opts.slug}\r` }));
+              // Esperamos 300ms a que el PTY procese antes de cerrar.
+              setTimeout(() => finish({ ok: true }), 300);
+            } catch (e) {
+              finish({ ok: false, error: e instanceof Error ? e.message : 'send error' });
+            }
+          }, delay);
+        }
+      } catch { /* noop */ }
+    };
+
+    // Salvavidas: si nada pasa en 6s, abortamos.
+    setTimeout(() => finish({ ok: false, error: 'timeout esperando PTY' }), 6000);
+  });
+}
+
+// ─── Helper: emite un evento global para que otras vistas (Dashboard graph)
+//     reaccionen al cambio de estado del remote control sin tener que re-fetch.
+function emitRemoteChange(bubbleId: string, slug: string | null) {
+  try {
+    window.dispatchEvent(new CustomEvent('eco:remote-changed', { detail: { bubbleId, slug } }));
+  } catch { /* noop */ }
+}
+
+function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
+  const t = useTokens();
+  const [active, setActive] = useState<string | null>(() => readRemoteSlug(bubble.id));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const slug = remoteSlugOf(bubble.title);
+  const isOn = active !== null;
+
+  async function activate() {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    const r = await activateRemoteControlViaPty({
+      bubbleId: bubble.id,
+      workspace: bubble.workspace ?? '',
+      slug,
+      token: ecoToken(),
+    });
+    setBusy(false);
+    if (r.ok) {
+      writeRemoteSlug(bubble.id, slug);
+      setActive(slug);
+      emitRemoteChange(bubble.id, slug);
+    } else {
+      setErr(r.error);
+    }
+  }
+  function deactivate() {
+    writeRemoteSlug(bubble.id, null);
+    setActive(null);
+    emitRemoteChange(bubble.id, null);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={isOn ? deactivate : (() => void activate())}
+      disabled={busy}
+      title={busy
+        ? 'Activando Claude remote control…'
+        : isOn
+          ? `Claude remote control corriendo como "${active}". Click para detener.`
+          : err
+            ? `Error: ${err}. Click para reintentar.`
+            : `Iniciar Claude remote control (corre /remote-control ${slug} en la terminal por debajo)`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        height: 26, padding: '0 10px',
+        marginBottom: 4,
+        borderRadius: 13,
+        border: `1px solid ${err ? t.err : t.glassBorder}`,
+        background: 'transparent',
+        color: t.text1,
+        fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
+        cursor: busy ? 'wait' : 'pointer',
+        transition: 'background 140ms, border-color 140ms',
+      }}
+      onMouseEnter={(e) => {
+        if (!busy) (e.currentTarget as HTMLButtonElement).style.background = t.bg2;
+      }}
+      onMouseLeave={(e) => {
+        if (!busy) (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+      }}
+    >
+      {/* Indicador: dot verde si corriendo, spinner sutil si activando, play si apagado */}
+      <span style={{
+        width: 10, height: 10,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {busy ? (
+          <svg width="10" height="10" viewBox="0 0 24 24" style={{ animation: 'eco-spin 1s linear infinite' }}>
+            <circle cx="12" cy="12" r="9" fill="none" stroke={t.text3} strokeWidth="2.5" strokeDasharray="14 50" strokeLinecap="round"/>
+          </svg>
+        ) : isOn ? (
+          <span style={{
+            width: 7, height: 7, borderRadius: '50%', background: t.ok,
+          }}/>
+        ) : (
+          <svg width="8" height="8" viewBox="0 0 24 24" fill={t.text2}>
+            <polygon points="7,5 19,12 7,19"/>
+          </svg>
+        )}
+      </span>
+      <span>
+        {busy
+          ? 'Activando…'
+          : isOn ? 'Desactivar Claude remote control' : 'Activar Claude remote control'}
+      </span>
+    </button>
   );
 }
 
@@ -1578,13 +1797,29 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
   );
 }
 
-function StatBox({ label, value }: { label: string; value: string }) {
+function StatBox({ label, value, sub, onClick }: {
+  label: string;
+  value: string;
+  sub?: string;
+  onClick?: () => void;
+}) {
   const t = useTokens();
+  const clickable = !!onClick;
   return (
-    <div style={{
-      padding: 10, background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      borderRadius: 10,
-    }}>
+    <div
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } } : undefined}
+      style={{
+        padding: 10, background: t.bg2, border: `1px solid ${t.glassBorder}`,
+        borderRadius: 10,
+        cursor: clickable ? 'pointer' : 'default',
+        transition: 'background 140ms, border-color 140ms',
+      }}
+      onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = t.bg3; }}
+      onMouseLeave={(e) => { if (clickable) e.currentTarget.style.background = t.bg2; }}
+    >
       <div style={{
         fontSize: 10, color: t.text2, letterSpacing: 0.3,
         textTransform: 'uppercase', fontWeight: 500,
@@ -1593,6 +1828,161 @@ function StatBox({ label, value }: { label: string; value: string }) {
         marginTop: 4, fontFamily: t.fontSans, fontSize: 17, fontWeight: 600,
         color: t.text0, letterSpacing: -0.3,
       }}>{value}</div>
+      {sub && (
+        <div style={{
+          marginTop: 2, fontFamily: t.fontMono, fontSize: 10, color: t.text3,
+        }}>{sub}</div>
+      )}
+    </div>
+  );
+}
+
+function fmtAgo(ts: number): string {
+  if (!ts) return '—';
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 5) return 'ahora';
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
+}
+
+function NextActionsPanel({
+  bubble, filesChangedCount, onSend, onInterrupt, onGoTab,
+}: {
+  bubble: Bubble;
+  filesChangedCount: number;
+  onSend: (text: string) => void;
+  onInterrupt: () => void;
+  onGoTab: (tab: Tab) => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const status = bubble.status;
+  const lastMsg = bubble.messages[bubble.messages.length - 1] ?? null;
+  const lastIsUser = lastMsg?.role === 'user';
+  const lastIsError = !!lastMsg && lastMsg.role === 'assistant' && /error|fail|no pude|sorry|disculpá/i.test(lastMsg.text);
+  const noMessages = bubble.messages.length === 0;
+  const running = status === 'thinking' || status === 'executing' || status === 'running' || status === 'pending';
+
+  type Action = {
+    label: string;
+    sub?: string;
+    icon: React.ReactNode;
+    tone: 'primary' | 'normal' | 'danger';
+    onClick: () => void;
+  };
+
+  const actions: Action[] = [];
+
+  if (running) {
+    actions.push({
+      label: 'Detener',
+      sub: 'interrumpe lo que está corriendo',
+      icon: <IconStop size={12}/>,
+      tone: 'danger',
+      onClick: () => onInterrupt(),
+    });
+  } else if (noMessages) {
+    actions.push({
+      label: 'Saludar',
+      sub: 'rompe el hielo',
+      icon: <IconCommand size={12}/>,
+      tone: 'primary',
+      onClick: () => onSend('Hola — ¿qué podés hacer en este proyecto?'),
+    });
+  } else {
+    if (filesChangedCount > 0) {
+      actions.push({
+        label: `Revisar ${filesChangedCount} ${filesChangedCount === 1 ? 'archivo' : 'archivos'}`,
+        sub: 'ver diffs antes de commitear',
+        icon: <IconFile size={12}/>,
+        tone: 'primary',
+        onClick: () => onGoTab('files'),
+      });
+    }
+    if (lastIsError) {
+      actions.push({
+        label: 'Reintentar',
+        sub: 'el último intento falló',
+        icon: <IconResume size={12}/>,
+        tone: 'primary',
+        onClick: () => onSend('Reintentá lo último, por favor.'),
+      });
+    }
+    if (lastIsUser) {
+      actions.push({
+        label: 'Continuar',
+        sub: 'sigue tu último mensaje',
+        icon: <IconResume size={12}/>,
+        tone: 'normal',
+        onClick: () => onSend('continuá'),
+      });
+    } else {
+      actions.push({
+        label: 'Pedir resumen',
+        sub: 'qué hiciste hasta ahora',
+        icon: <IconLayers size={12}/>,
+        tone: 'normal',
+        onClick: () => onSend('Hacé un resumen de los cambios y decisiones de esta sesión.'),
+      });
+      actions.push({
+        label: 'Plan próximos pasos',
+        sub: 'qué falta para terminar',
+        icon: <IconBolt size={12}/>,
+        tone: 'normal',
+        onClick: () => onSend('Listame los próximos pasos que recomendás para avanzar.'),
+      });
+    }
+  }
+
+  // Tomamos hasta 3 acciones para no saturar.
+  const visible = actions.slice(0, 3);
+
+  return (
+    <div>
+      <SectionLabel>{tr('detail.sidebar.next')}</SectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {visible.map((a, i) => {
+          const color = a.tone === 'danger' ? t.err : a.tone === 'primary' ? t.accent : t.text1;
+          const bg = a.tone === 'primary' ? `color-mix(in oklch, ${t.accent} 10%, transparent)` : t.bg2;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={a.onClick}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                width: '100%', padding: '10px 12px',
+                borderRadius: 10, border: `1px solid ${a.tone === 'primary' ? t.accent : t.glassBorder}`,
+                background: bg,
+                cursor: 'pointer', textAlign: 'left',
+                fontFamily: t.fontSans,
+                transition: 'background 140ms, border-color 140ms',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}>
+              <span style={{
+                width: 24, height: 24, flexShrink: 0,
+                borderRadius: 7,
+                background: a.tone === 'primary' ? t.accent : t.bg3,
+                color: a.tone === 'primary' ? t.accentOn : color,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                marginTop: 1,
+              }}>{a.icon}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{a.label}</div>
+                {a.sub && (
+                  <div style={{ fontSize: 10.5, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>{a.sub}</div>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
 } from '@/design/primitives';
 import {
   IconSettings, IconKey, IconMic, IconFolder, IconShield, IconLayers,
-  IconInfo, IconCheck, IconCpu, IconTerminal, IconWave, IconGlobe,
+  IconInfo, IconCheck, IconCpu, IconTerminal, IconWave, IconGlobe, IconAlert,
   IconCommand, IconBolt, IconLock, IconTrash, IconPlus, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
@@ -148,11 +148,66 @@ function SectionGeneral() {
       <Row icon={IconCommand} title={tr('settings.general.shortcut')} desc={tr('settings.general.shortcut_desc')}
         control={<KbdRow keys={['⌥', '⇧', 'E']}/>}/>
       <LanguageRow/>
+      <WorktreesCleanRow/>
 
       <div style={{ marginTop: 24 }}>
         <SuggestionsEditor/>
       </div>
     </div>
+  );
+}
+
+function WorktreesCleanRow() {
+  const t = useTokens();
+  const tr = useT();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ removed: number; kept: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function prune() {
+    setBusy(true); setErr(null); setResult(null);
+    try {
+      const r = await apiFetch('/worktrees/prune', { method: 'POST' });
+      const data = await r.json().catch(() => ({} as { removed?: string[]; kept?: string[] }));
+      if (!r.ok) {
+        setErr(typeof data?.message === 'string' ? data.message : `HTTP ${r.status}`);
+      } else {
+        setResult({
+          removed: Array.isArray(data?.removed) ? data.removed.length : 0,
+          kept: Array.isArray(data?.kept) ? data.kept.length : 0,
+        });
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Row
+      icon={IconTrash}
+      title={tr('settings.general.worktrees_clean')}
+      desc={result
+        ? tr('settings.general.worktrees_result')
+          .replace('{removed}', String(result.removed))
+          .replace('{kept}', String(result.kept))
+        : err
+          ? err
+          : tr('settings.general.worktrees_clean_desc')}
+      control={
+        <button type="button" onClick={() => void prune()} disabled={busy}
+          style={{
+            padding: '6px 14px', borderRadius: 8,
+            border: `1px solid ${t.glassBorder}`,
+            background: t.bg2, color: t.text0,
+            fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+            cursor: busy ? 'wait' : 'pointer',
+            opacity: busy ? 0.6 : 1,
+          }}>
+          {busy ? tr('settings.general.worktrees_cleaning') : tr('settings.general.worktrees_run')}
+        </button>
+      }/>
   );
 }
 
@@ -1217,18 +1272,897 @@ function SectionIntegrations() {
   );
 }
 
+type AboutSectionDef = {
+  id: string;
+  title: string;
+  group: 'start' | 'reference' | 'help' | 'tech';
+  icon: (p: IconProps) => JSX.Element;
+  keywords: string;
+  render: () => ReactNode;
+};
+
 function SectionAbout() {
   const t = useTokens();
   const tr = useT();
+  const [version, setVersion] = useState<string>('0.1.0');
+  const [platform, setPlatform] = useState<string>('');
+  const [isPackaged, setIsPackaged] = useState<boolean>(false);
+  const [activeId, setActiveId] = useState<string>(() => {
+    try { return localStorage.getItem('eco.about.active') || 'what'; } catch { return 'what'; }
+  });
+  const [q, setQ] = useState<string>('');
+
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (api?.getConfig) {
+      void api.getConfig().then((cfg) => {
+        setVersion(cfg.appVersion ?? '0.1.0');
+        setPlatform(cfg.platform ?? '');
+        setIsPackaged(cfg.isPackaged ?? false);
+      }).catch(() => { /* noop */ });
+    }
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('eco.about.active', activeId); } catch { /* noop */ }
+  }, [activeId]);
+
+  const sections: AboutSectionDef[] = [
+    { id: 'what',       group: 'start',     icon: IconInfo,     title: tr('settings.about.what.title'),
+      keywords: 'overview qué hace eco descripción introducción',
+      render: () => <p style={{ margin: 0, lineHeight: 1.7, fontSize: 13.5, color: t.text1 }}>{tr('settings.about.what.body')}</p> },
+    { id: 'quickstart', group: 'start',     icon: IconBolt,     title: tr('settings.about.quickstart.title'),
+      keywords: 'inicio rápido empezar primer paso instalar setup claude cli api key wake word listener',
+      render: () => <QuickStartList/> },
+    { id: 'tutorials',  group: 'start',     icon: IconCommand,  title: tr('settings.about.tutorials.title'),
+      keywords: 'tutorial guía paso a paso agente dev server commit voz',
+      render: () => <TutorialsList/> },
+    { id: 'features',   group: 'reference', icon: IconLayers,   title: tr('settings.about.features.title'),
+      keywords: 'características features qué incluye agentes terminal navegador obsidian',
+      render: () => <FeatureGrid/> },
+    { id: 'voice',      group: 'reference', icon: IconMic,      title: tr('settings.about.voice.title'),
+      keywords: 'voz comandos hey eco wake word listener micrófono whisper piper',
+      render: () => <VoiceCommandsList/> },
+    { id: 'shortcuts',  group: 'reference', icon: IconKey,      title: tr('settings.about.shortcuts.title'),
+      keywords: 'atajos keyboard shortcuts teclado cmd shift ctrl',
+      render: () => <ShortcutsList/> },
+    { id: 'slash',      group: 'reference', icon: IconTerminal, title: tr('settings.about.slash.title'),
+      keywords: 'slash commands /dev-up /remote-control /kb skills',
+      render: () => <SlashCommandsList/> },
+    { id: 'faq',        group: 'help',      icon: IconInfo,     title: tr('settings.about.faq.title'),
+      keywords: 'faq preguntas frecuentes costo precio offline windows linux commit push worktree datos micrófono',
+      render: () => <FaqList/> },
+    { id: 'trouble',    group: 'help',      icon: IconAlert,    title: tr('settings.about.trouble.title'),
+      keywords: 'troubleshooting solución problemas error terminal puerto servidor navegador 401 voz reset',
+      render: () => <TroubleshootingList/> },
+    { id: 'support',    group: 'help',      icon: IconShield,   title: tr('settings.about.support.title'),
+      keywords: 'soporte support bug reporte logs reset diagnóstico contacto',
+      render: () => <SupportList/> },
+    { id: 'privacy',    group: 'tech',      icon: IconShield,   title: tr('settings.about.privacy.title'),
+      keywords: 'privacidad datos local cloud anthropic audio whisper piper auth pin frase',
+      render: () => <PrivacyList/> },
+    { id: 'network',    group: 'tech',      icon: IconGlobe,    title: tr('settings.about.network.title'),
+      keywords: 'red network conexiones backend webview anthropic obsidian whisper piper loopback',
+      render: () => <NetworkList/> },
+    { id: 'files',      group: 'tech',      icon: IconFolder,   title: tr('settings.about.files.title'),
+      keywords: 'archivos rutas paths .eco api-key obsidian worktrees localstorage user.json token',
+      render: () => <FilesList/> },
+    { id: 'dev',        group: 'tech',      icon: IconTerminal, title: tr('settings.about.dev.title'),
+      keywords: 'developer dev mode env variables ECO_HOST ECO_PORT scripts npm typecheck',
+      render: () => <DevList/> },
+    { id: 'stack',      group: 'tech',      icon: IconCpu,      title: tr('settings.about.stack.title'),
+      keywords: 'stack técnico tecnologías electron vite react xterm whisper piper node',
+      render: () => <StackList/> },
+    { id: 'credits',    group: 'tech',      icon: IconInfo,     title: tr('settings.about.credits.title'),
+      keywords: 'créditos credits autor sergio aditum',
+      render: () => <CreditsBody/> },
+  ];
+
+  const query = q.trim().toLowerCase();
+  const isSearching = query.length > 0;
+  const filtered = !isSearching ? sections : sections.filter((s) =>
+    s.title.toLowerCase().includes(query) || s.keywords.toLowerCase().includes(query)
+  );
+
+  const activeSection = !isSearching
+    ? (sections.find((s) => s.id === activeId) ?? sections[0])
+    : (filtered.find((s) => s.id === activeId) ?? filtered[0]);
+
+  const groups: { id: AboutSectionDef['group']; label: string }[] = [
+    { id: 'start',     label: tr('settings.about.group.start') },
+    { id: 'reference', label: tr('settings.about.group.reference') },
+    { id: 'help',      label: tr('settings.about.group.help') },
+    { id: 'tech',      label: tr('settings.about.group.tech') },
+  ];
+
   return (
-    <div style={{ maxWidth: 720, textAlign: 'center', padding: 40 }}>
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
-        <EcoMark size={80}/>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Hero */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 18,
+        padding: '6px 4px 20px',
+        borderBottom: `1px solid ${t.glassBorder}`,
+      }}>
+        <EcoMark size={56}/>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600, color: t.text0, letterSpacing: -0.5 }}>Eco</h2>
+          <p style={{ margin: '3px 0 0', fontSize: 12.5, color: t.text2, lineHeight: 1.5 }}>
+            {tr('settings.about.tagline')}
+          </p>
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+            <Chip mono>v{version}</Chip>
+            <Chip mono>{platform || 'web'}</Chip>
+            <Chip color={isPackaged ? t.ok : t.warn}>
+              {isPackaged ? tr('settings.about.packaged') : tr('settings.about.dev')}
+            </Chip>
+          </div>
+        </div>
+        {/* Search */}
+        <div style={{
+          position: 'relative', width: 280, flexShrink: 0,
+        }}>
+          <span style={{
+            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+            color: t.text3, display: 'inline-flex',
+          }}>
+            <IconCommand size={14}/>
+          </span>
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={tr('settings.about.search.placeholder')}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: '9px 12px 9px 34px',
+              borderRadius: 9, border: `1px solid ${t.glassBorder}`,
+              background: t.bg2, color: t.text0,
+              fontFamily: t.fontSans, fontSize: 12.5,
+              outline: 'none',
+            }}
+          />
+          {q && (
+            <button
+              type="button"
+              onClick={() => setQ('')}
+              aria-label="Clear"
+              style={{
+                position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                width: 22, height: 22, borderRadius: 6, border: 0,
+                background: 'transparent', color: t.text3,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >×</button>
+          )}
+        </div>
       </div>
-      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>Eco</h2>
-      <p style={{ margin: '6px 0 0', fontSize: 13, color: t.text2 }}>
-        {tr('settings.about.tagline')}
-      </p>
+
+      {/* Body */}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+        {/* Inner sidebar */}
+        <aside style={{
+          width: 240, flexShrink: 0,
+          display: 'flex', flexDirection: 'column', gap: 2,
+          position: 'sticky', top: 0,
+        }}>
+          {isSearching && (
+            <div style={{
+              padding: '6px 12px 10px',
+              fontSize: 11, color: t.text2,
+              fontFamily: t.fontMono,
+            }}>
+              {filtered.length === 0
+                ? tr('settings.about.search.empty')
+                : `${filtered.length} ${filtered.length === 1 ? tr('settings.about.search.one') : tr('settings.about.search.many')}`}
+            </div>
+          )}
+          {groups.map((g) => {
+            const items = filtered.filter((s) => s.group === g.id);
+            if (items.length === 0) return null;
+            return (
+              <div key={g.id} style={{ marginBottom: 8 }}>
+                <div style={{
+                  fontSize: 10, color: t.text3, textTransform: 'uppercase',
+                  letterSpacing: 0.6, fontWeight: 600,
+                  padding: '6px 12px',
+                }}>{g.label}</div>
+                {items.map((s) => {
+                  const isActive = activeSection && s.id === activeSection.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setActiveId(s.id)}
+                      style={{
+                        width: '100%',
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 12px', borderRadius: 8, border: 0,
+                        background: isActive ? t.bg3 : 'transparent',
+                        color: isActive ? t.text0 : t.text1,
+                        fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+                        cursor: 'pointer', textAlign: 'left',
+                        transition: 'background 120ms ease',
+                      }}
+                      onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = t.bg2; }}
+                      onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                    >
+                      <s.icon size={14}/>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.title}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </aside>
+
+        {/* Content */}
+        <main style={{
+          flex: 1, minWidth: 0,
+          background: t.bg2,
+          border: `1px solid ${t.glassBorder}`,
+          borderRadius: 14,
+          padding: '22px 26px',
+        }}>
+          {activeSection ? (
+            <>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                marginBottom: 14, paddingBottom: 12,
+                borderBottom: `1px solid ${t.glassBorder}`,
+              }}>
+                <span style={{
+                  width: 32, height: 32, borderRadius: 9,
+                  background: t.accentFaint, color: t.accent,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <activeSection.icon size={16}/>
+                </span>
+                <h3 style={{
+                  margin: 0, fontSize: 17, fontWeight: 600, color: t.text0,
+                  letterSpacing: -0.3,
+                }}>{activeSection.title}</h3>
+              </div>
+              <div style={{ color: t.text1, fontSize: 12.5, lineHeight: 1.55 }}>
+                {activeSection.render()}
+              </div>
+            </>
+          ) : (
+            <div style={{
+              padding: 40, textAlign: 'center',
+              color: t.text2, fontSize: 13,
+            }}>
+              {tr('settings.about.search.empty')}
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function Chip({ children, mono, color }: { children: ReactNode; mono?: boolean; color?: string }) {
+  const t = useTokens();
+  return (
+    <span style={{
+      padding: '3px 9px', borderRadius: 999,
+      background: color ? `color-mix(in oklch, ${color} 14%, transparent)` : t.bg3,
+      color: color ?? t.text1,
+      border: `1px solid ${color ? `color-mix(in oklch, ${color} 32%, transparent)` : t.glassBorder}`,
+      fontFamily: mono ? t.fontMono : t.fontSans,
+      fontSize: 10.5, fontWeight: 500,
+    }}>{children}</span>
+  );
+}
+
+function FeatureGrid() {
+  const t = useTokens();
+  const tr = useT();
+  const features = [
+    { icon: IconCommand,  title: tr('settings.about.feat.agents.title'),  body: tr('settings.about.feat.agents.body') },
+    { icon: IconTerminal, title: tr('settings.about.feat.terminal.title'), body: tr('settings.about.feat.terminal.body') },
+    { icon: IconGlobe,    title: tr('settings.about.feat.browser.title'),  body: tr('settings.about.feat.browser.body') },
+    { icon: IconCpu,      title: tr('settings.about.feat.server.title'),   body: tr('settings.about.feat.server.body') },
+    { icon: IconFolder,   title: tr('settings.about.feat.git.title'),      body: tr('settings.about.feat.git.body') },
+    { icon: IconMic,      title: tr('settings.about.feat.voice.title'),    body: tr('settings.about.feat.voice.body') },
+    { icon: IconLayers,   title: tr('settings.about.feat.obsidian.title'), body: tr('settings.about.feat.obsidian.body') },
+    { icon: IconBolt,     title: tr('settings.about.feat.skills.title'),   body: tr('settings.about.feat.skills.body') },
+  ];
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+      gap: 10, marginTop: 6,
+    }}>
+      {features.map((f, i) => (
+        <div key={i} style={{
+          padding: 12, borderRadius: 10,
+          background: t.bg1, border: `1px solid ${t.glassBorder}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{
+              width: 26, height: 26, borderRadius: 7,
+              background: t.accentFaint, color: t.accent,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}><f.icon size={13}/></span>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{f.title}</span>
+          </div>
+          <p style={{ margin: 0, fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{f.body}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TutorialsList() {
+  const tr = useT();
+  const tutorials = [
+    {
+      title: tr('settings.about.tut.first_agent.title'),
+      steps: [
+        tr('settings.about.tut.first_agent.s1'),
+        tr('settings.about.tut.first_agent.s2'),
+        tr('settings.about.tut.first_agent.s3'),
+        tr('settings.about.tut.first_agent.s4'),
+      ],
+    },
+    {
+      title: tr('settings.about.tut.dev_server.title'),
+      steps: [
+        tr('settings.about.tut.dev_server.s1'),
+        tr('settings.about.tut.dev_server.s2'),
+        tr('settings.about.tut.dev_server.s3'),
+      ],
+    },
+    {
+      title: tr('settings.about.tut.commit.title'),
+      steps: [
+        tr('settings.about.tut.commit.s1'),
+        tr('settings.about.tut.commit.s2'),
+        tr('settings.about.tut.commit.s3'),
+      ],
+    },
+    {
+      title: tr('settings.about.tut.voice.title'),
+      steps: [
+        tr('settings.about.tut.voice.s1'),
+        tr('settings.about.tut.voice.s2'),
+      ],
+    },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
+      {tutorials.map((t, i) => (
+        <Tutorial key={i} title={t.title} steps={t.steps}/>
+      ))}
+    </div>
+  );
+}
+
+function Tutorial({ title, steps }: { title: string; steps: string[] }) {
+  const t = useTokens();
+  return (
+    <div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0, marginBottom: 6 }}>{title}</div>
+      <ol style={{
+        margin: 0, paddingLeft: 24,
+        display: 'flex', flexDirection: 'column', gap: 4,
+        fontSize: 12, color: t.text1, lineHeight: 1.55,
+      }}>
+        {steps.map((s, i) => <li key={i}>{s}</li>)}
+      </ol>
+    </div>
+  );
+}
+
+function ShortcutsList() {
+  const t = useTokens();
+  const tr = useT();
+  const rows = [
+    { keys: ['⌘', 'R'],   action: tr('settings.about.sc.reload') },
+    { keys: ['⌘', '⌥', 'I'], action: tr('settings.about.sc.devtools') },
+    { keys: ['⌘', ','],   action: tr('settings.about.sc.settings') },
+    { keys: ['Esc'],      action: tr('settings.about.sc.close_modal') },
+    { keys: ['Eco', '+ comando'], action: tr('settings.about.sc.voice_command') },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {r.keys.map((k) => (
+              <span key={k} style={{
+                minWidth: 26, height: 24, padding: '0 6px', borderRadius: 6,
+                background: t.bg3, border: `1px solid ${t.glassBorder}`,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: t.fontMono, fontSize: 11, color: t.text1,
+              }}>{k}</span>
+            ))}
+          </div>
+          <span style={{ fontSize: 12, color: t.text2 }}>{r.action}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PrivacyList() {
+  const t = useTokens();
+  const tr = useT();
+  const rows = [
+    { label: tr('settings.about.priv.audio.label'),    desc: tr('settings.about.priv.audio.desc'),    local: true },
+    { label: tr('settings.about.priv.tts.label'),      desc: tr('settings.about.priv.tts.desc'),      local: true },
+    { label: tr('settings.about.priv.auth.label'),     desc: tr('settings.about.priv.auth.desc'),     local: true },
+    { label: tr('settings.about.priv.workspace.label'), desc: tr('settings.about.priv.workspace.desc'), local: true },
+    { label: tr('settings.about.priv.history.label'),  desc: tr('settings.about.priv.history.desc'),  local: true },
+    { label: tr('settings.about.priv.claude.label'),   desc: tr('settings.about.priv.claude.desc'),   local: false },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <span style={{
+            width: 10, height: 10, borderRadius: '50%', marginTop: 4, flexShrink: 0,
+            background: r.local ? t.ok : t.warn,
+            boxShadow: `0 0 6px ${r.local ? t.ok : t.warn}`,
+          }}/>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: t.text0 }}>{r.label}</div>
+            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>{r.desc}</div>
+          </div>
+          <Chip color={r.local ? t.ok : t.warn} mono>
+            {r.local ? tr('settings.about.priv.local') : tr('settings.about.priv.cloud')}
+          </Chip>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StackList() {
+  const t = useTokens();
+  const rows = [
+    { layer: 'Empaquetado', tech: 'Electron 33 + electron-builder 25' },
+    { layer: 'Frontend',    tech: 'Vite 6 · React 18 · TS 5 · Tailwind v4 · Motion 11' },
+    { layer: 'Navegador',   tech: '<webview> Chromium (UA Chrome 131)' },
+    { layer: 'Terminal',    tech: 'xterm.js + node-pty (PTY real)' },
+    { layer: 'Voz STT',     tech: 'openwakeword (ONNX) + faster-whisper' },
+    { layer: 'Voz TTS',     tech: 'Piper TTS (ONNX local)' },
+    { layer: 'Backend',     tech: 'Node 20 · Express · ws · Zod · argon2id · Claude Agent SDK' },
+    { layer: 'Auth local',  tech: 'PIN argon2id + frase BIP39 (~/.eco/user.json)' },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+      {rows.map((r) => (
+        <div key={r.layer} style={{
+          display: 'flex', gap: 14, padding: '6px 0',
+          borderBottom: `1px solid ${t.glassBorder}`,
+        }}>
+          <span style={{ width: 110, fontSize: 11.5, color: t.text2, fontWeight: 500, flexShrink: 0 }}>{r.layer}</span>
+          <span style={{ flex: 1, fontFamily: t.fontMono, fontSize: 11, color: t.text1 }}>{r.tech}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function QuickStartList() {
+  const t = useTokens();
+  const tr = useT();
+  const steps = [
+    { num: 1, title: tr('settings.about.qs.s1.t'), body: tr('settings.about.qs.s1.b') },
+    { num: 2, title: tr('settings.about.qs.s2.t'), body: tr('settings.about.qs.s2.b') },
+    { num: 3, title: tr('settings.about.qs.s3.t'), body: tr('settings.about.qs.s3.b') },
+    { num: 4, title: tr('settings.about.qs.s4.t'), body: tr('settings.about.qs.s4.b') },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+      {steps.map((s) => (
+        <div key={s.num} style={{ display: 'flex', gap: 10 }}>
+          <span style={{
+            width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+            background: t.accent, color: t.accentOn,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
+          }}>{s.num}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{s.title}</div>
+            <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55, marginTop: 2 }}>{s.body}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VoiceCommandsList() {
+  const t = useTokens();
+  const tr = useT();
+  const groups = [
+    {
+      label: tr('settings.about.voice.nav'),
+      items: [
+        { cmd: 'Eco inicio / dashboard', desc: tr('settings.about.voice.nav.home') },
+        { cmd: 'Eco ajustes', desc: tr('settings.about.voice.nav.settings') },
+        { cmd: 'Eco archivos / historial / navegador', desc: tr('settings.about.voice.nav.tabs') },
+        { cmd: 'Eco estado', desc: tr('settings.about.voice.nav.status') },
+        { cmd: 'Eco ayuda', desc: tr('settings.about.voice.nav.help') },
+      ],
+    },
+    {
+      label: tr('settings.about.voice.agents'),
+      items: [
+        { cmd: 'Eco abrir <nombre>', desc: tr('settings.about.voice.agents.open') },
+        { cmd: 'Eco renombrar <nombre>', desc: tr('settings.about.voice.agents.rename') },
+        { cmd: 'Eco cerrar', desc: tr('settings.about.voice.agents.close') },
+        { cmd: 'Eco siguiente / anterior', desc: tr('settings.about.voice.agents.nav') },
+        { cmd: 'Eco pausar / continuar', desc: tr('settings.about.voice.agents.pause') },
+      ],
+    },
+    {
+      label: tr('settings.about.voice.inside'),
+      items: [
+        { cmd: 'Eco chat / terminal / archivos / plan / servidor', desc: tr('settings.about.voice.inside.tabs') },
+        { cmd: 'Eco arriba / abajo / al final', desc: tr('settings.about.voice.inside.scroll') },
+        { cmd: 'Eco repetir / releer', desc: tr('settings.about.voice.inside.repeat') },
+        { cmd: 'Eco sí / no / acepta / cancela', desc: tr('settings.about.voice.inside.confirm') },
+      ],
+    },
+    {
+      label: tr('settings.about.voice.appearance'),
+      items: [
+        { cmd: 'Eco silencio / hablar', desc: tr('settings.about.voice.appearance.tts') },
+        { cmd: 'Eco rápido / lento / normal', desc: tr('settings.about.voice.appearance.rate') },
+        { cmd: 'Eco oscuro / claro / sistema', desc: tr('settings.about.voice.appearance.theme') },
+      ],
+    },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 6 }}>
+      {groups.map((g) => (
+        <div key={g.label}>
+          <div style={{ fontSize: 10.5, color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>{g.label}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {g.items.map((it) => (
+              <div key={it.cmd} style={{ display: 'flex', gap: 10, padding: '5px 0' }}>
+                <code style={{
+                  flexShrink: 0, fontFamily: t.fontMono, fontSize: 11, color: t.accent,
+                  padding: '2px 8px', borderRadius: 5, background: t.bg3,
+                  alignSelf: 'flex-start', whiteSpace: 'nowrap',
+                }}>{it.cmd}</code>
+                <span style={{ flex: 1, fontSize: 11.5, color: t.text2, lineHeight: 1.45 }}>{it.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SlashCommandsList() {
+  const t = useTokens();
+  const tr = useT();
+  const cmds = [
+    { cmd: '/dev-up up | down | restart', desc: tr('settings.about.slash.devup') },
+    { cmd: '/remote-control <nombre>', desc: tr('settings.about.slash.remote') },
+    { cmd: '/<skill-personal>', desc: tr('settings.about.slash.custom') },
+    { cmd: '/<kb>', desc: tr('settings.about.slash.kb') },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+      <div style={{ fontSize: 11.5, color: t.text2, marginBottom: 6 }}>
+        {tr('settings.about.slash.intro')}
+      </div>
+      {cmds.map((it) => (
+        <div key={it.cmd} style={{ display: 'flex', gap: 10 }}>
+          <code style={{
+            flexShrink: 0, fontFamily: t.fontMono, fontSize: 11, color: t.accent,
+            padding: '2px 8px', borderRadius: 5, background: t.bg3,
+            alignSelf: 'flex-start', whiteSpace: 'nowrap',
+          }}>{it.cmd}</code>
+          <span style={{ flex: 1, fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{it.desc}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FaqList() {
+  const t = useTokens();
+  const tr = useT();
+  const items = [
+    { q: tr('settings.about.faq.cost.q'),    a: tr('settings.about.faq.cost.a') },
+    { q: tr('settings.about.faq.cli.q'),     a: tr('settings.about.faq.cli.a') },
+    { q: tr('settings.about.faq.offline.q'), a: tr('settings.about.faq.offline.a') },
+    { q: tr('settings.about.faq.windows.q'), a: tr('settings.about.faq.windows.a') },
+    { q: tr('settings.about.faq.commit.q'),  a: tr('settings.about.faq.commit.a') },
+    { q: tr('settings.about.faq.worktree.q'),a: tr('settings.about.faq.worktree.a') },
+    { q: tr('settings.about.faq.data.q'),    a: tr('settings.about.faq.data.a') },
+    { q: tr('settings.about.faq.voice.q'),   a: tr('settings.about.faq.voice.a') },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
+      {items.map((it, i) => (
+        <div key={i}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0, marginBottom: 4 }}>{it.q}</div>
+          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>{it.a}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TroubleshootingList() {
+  const t = useTokens();
+  const tr = useT();
+  const items = [
+    { p: tr('settings.about.tr.term.p'),    s: tr('settings.about.tr.term.s') },
+    { p: tr('settings.about.tr.server.p'),  s: tr('settings.about.tr.server.s') },
+    { p: tr('settings.about.tr.browser.p'), s: tr('settings.about.tr.browser.s') },
+    { p: tr('settings.about.tr.claude.p'),  s: tr('settings.about.tr.claude.s') },
+    { p: tr('settings.about.tr.worktree.p'),s: tr('settings.about.tr.worktree.s') },
+    { p: tr('settings.about.tr.port.p'),    s: tr('settings.about.tr.port.s') },
+    { p: tr('settings.about.tr.voice.p'),   s: tr('settings.about.tr.voice.s') },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
+      {items.map((it, i) => (
+        <div key={i} style={{
+          padding: 10, borderRadius: 8,
+          background: t.bg1, border: `1px solid ${t.glassBorder}`,
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: t.warn, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <IconAlert size={11}/> {it.p}
+          </div>
+          <div style={{ fontSize: 11.5, color: t.text1, lineHeight: 1.5 }}>{it.s}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NetworkList() {
+  const t = useTokens();
+  const tr = useT();
+  const rows = [
+    { src: 'Eco',         dst: 'api.anthropic.com', kind: 'cloud', desc: tr('settings.about.net.anthropic') },
+    { src: 'Eco backend', dst: '127.0.0.1:7100',    kind: 'local', desc: tr('settings.about.net.backend') },
+    { src: 'Frontend',    dst: 'backend (mismo proceso)', kind: 'local', desc: tr('settings.about.net.frontend') },
+    { src: 'Webview',     dst: 'cualquier URL que abras', kind: 'cloud', desc: tr('settings.about.net.webview') },
+    { src: 'Whisper STT', dst: 'modelo local (ONNX)', kind: 'local', desc: tr('settings.about.net.whisper') },
+    { src: 'Piper TTS',   dst: 'modelo local (ONNX)', kind: 'local', desc: tr('settings.about.net.piper') },
+    { src: 'Obsidian',    dst: 'filesystem local', kind: 'local', desc: tr('settings.about.net.obsidian') },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 10px', borderRadius: 6,
+          background: t.bg1, border: `1px solid ${t.glassBorder}`,
+        }}>
+          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text1, width: 90, flexShrink: 0 }}>{r.src}</span>
+          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>→</span>
+          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.accent, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.dst}</span>
+          <span style={{
+            fontSize: 9.5, padding: '2px 7px', borderRadius: 999,
+            background: r.kind === 'local' ? `color-mix(in oklch, ${t.ok} 14%, transparent)` : `color-mix(in oklch, ${t.warn} 14%, transparent)`,
+            color: r.kind === 'local' ? t.ok : t.warn,
+            fontFamily: t.fontMono, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4,
+          }}>{r.kind}</span>
+          <span style={{ fontSize: 11, color: t.text2, flex: 2, minWidth: 0 }}>{r.desc}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FilesList() {
+  const t = useTokens();
+  const tr = useT();
+  const rows = [
+    { path: '~/.eco/user.json',   desc: tr('settings.about.files.user') },
+    { path: '~/.eco/token',       desc: tr('settings.about.files.token') },
+    { path: '~/.eco/api-key',     desc: tr('settings.about.files.apikey') },
+    { path: '~/.eco/obsidian.json', desc: tr('settings.about.files.obsidian') },
+    { path: '~/.eco/worktrees/<bubble-id>', desc: tr('settings.about.files.worktrees') },
+    { path: 'localStorage (browser)', desc: tr('settings.about.files.localstorage') },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{
+          display: 'flex', gap: 12, padding: '7px 10px', borderRadius: 6,
+          background: t.bg1, border: `1px solid ${t.glassBorder}`,
+        }}>
+          <code style={{
+            fontFamily: t.fontMono, fontSize: 11, color: t.text1,
+            width: 200, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{r.path}</code>
+          <span style={{ flex: 1, fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{r.desc}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DevList() {
+  const t = useTokens();
+  const tr = useT();
+  const envs = [
+    { k: 'ECO_HOST',       d: tr('settings.about.dev.env.host') },
+    { k: 'ECO_PORT',       d: tr('settings.about.dev.env.port') },
+    { k: 'ECO_WORKSPACES', d: tr('settings.about.dev.env.workspaces') },
+    { k: 'ECO_MODEL',      d: tr('settings.about.dev.env.model') },
+    { k: 'ECO_PTY_AUTOCLAUDE', d: tr('settings.about.dev.env.autoclaude') },
+    { k: 'CLAUDE_CLI_PATH', d: tr('settings.about.dev.env.clipath') },
+  ];
+  const scripts = [
+    { k: 'npm run dev',       d: tr('settings.about.dev.scripts.dev') },
+    { k: 'npm run dev:app',   d: tr('settings.about.dev.scripts.devapp') },
+    { k: 'npm run dist:mac',  d: tr('settings.about.dev.scripts.distmac') },
+    { k: 'npm run typecheck', d: tr('settings.about.dev.scripts.typecheck') },
+    { k: 'npm run listener',  d: tr('settings.about.dev.scripts.listener') },
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 6 }}>
+      <div>
+        <div style={{ fontSize: 10.5, color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>{tr('settings.about.dev.env.title')}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {envs.map((e) => (
+            <div key={e.k} style={{ display: 'flex', gap: 10, padding: '4px 0' }}>
+              <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, width: 170, flexShrink: 0 }}>{e.k}</code>
+              <span style={{ flex: 1, fontSize: 11.5, color: t.text2 }}>{e.d}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10.5, color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>{tr('settings.about.dev.scripts.title')}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {scripts.map((s) => (
+            <div key={s.k} style={{ display: 'flex', gap: 10, padding: '4px 0' }}>
+              <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, width: 170, flexShrink: 0 }}>{s.k}</code>
+              <span style={{ flex: 1, fontSize: 11.5, color: t.text2 }}>{s.d}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SupportList() {
+  const t = useTokens();
+  const tr = useT();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
+      <p style={{ margin: 0, fontSize: 12, color: t.text2, lineHeight: 1.6 }}>{tr('settings.about.support.intro')}</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.bug.t')}</div>
+          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>{tr('settings.about.support.bug.b')}</div>
+        </div>
+        <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.logs.t')}</div>
+          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>
+            {tr('settings.about.support.logs.b')}{' '}
+            <code style={{ fontFamily: t.fontMono, fontSize: 10.5, padding: '1px 5px', borderRadius: 4, background: t.bg3 }}>
+              /Applications/Eco.app/Contents/MacOS/Eco
+            </code>
+          </div>
+        </div>
+        <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.reset.t')}</div>
+          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>{tr('settings.about.support.reset.b')}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreditsBody() {
+  const t = useTokens();
+  const tr = useT();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginTop: 4 }}>
+      {/* Card principal — autor */}
+      <div style={{
+        display: 'flex', gap: 14, alignItems: 'center',
+        padding: 16, borderRadius: 14,
+        background: t.bg1, border: `1px solid ${t.glassBorder}`,
+      }}>
+        <div style={{
+          width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
+          background: t.accentFaint, color: t.accent,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 22, fontWeight: 600, fontFamily: t.fontSans,
+          border: `1px solid ${t.accent}`,
+        }}>S</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: t.text0, letterSpacing: -0.2 }}>
+            Sergio Castro
+          </div>
+          <div style={{ fontSize: 12, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
+            {tr('settings.about.credits.role')}
+          </div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap',
+          }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '3px 9px', borderRadius: 999,
+              background: t.bg2, border: `1px solid ${t.glassBorder}`,
+              fontFamily: t.fontMono, fontSize: 10.5, color: t.text1,
+            }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.ok }}/>
+              Aditum
+            </span>
+            <span style={{
+              padding: '3px 9px', borderRadius: 999,
+              background: t.bg2, border: `1px solid ${t.glassBorder}`,
+              fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
+            }}>San José, Costa Rica</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Meta del proyecto */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10,
+      }}>
+        <MetaCell label={tr('settings.about.credits.year')} value="2026"/>
+        <MetaCell label={tr('settings.about.credits.license')} value="Privado"/>
+        <MetaCell label={tr('settings.about.credits.platform')} value="macOS · arm64"/>
+        <MetaCell label={tr('settings.about.credits.lang')} value="TypeScript"/>
+      </div>
+
+      {/* Agradecimientos */}
+      <div>
+        <div style={{
+          fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
+          letterSpacing: 0.6, fontWeight: 600, marginBottom: 8,
+        }}>{tr('settings.about.credits.thanks_to')}</div>
+        <p style={{
+          margin: 0, fontSize: 12, color: t.text2, lineHeight: 1.6,
+        }}>
+          {tr('settings.about.credits.thanks_body')}
+        </p>
+      </div>
+
+      {/* Línea final */}
+      <div style={{
+        paddingTop: 12, borderTop: `1px solid ${t.glassBorder}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, flexWrap: 'wrap',
+      }}>
+        <span style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>
+          © 2026 Sergio Castro · Eco
+        </span>
+        <span style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>
+          {tr('settings.about.credits.made_with')}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MetaCell({ label, value }: { label: string; value: string }) {
+  const t = useTokens();
+  return (
+    <div style={{
+      padding: '10px 12px', borderRadius: 10,
+      background: t.bg2, border: `1px solid ${t.glassBorder}`,
+    }}>
+      <div style={{
+        fontSize: 9.5, color: t.text3, textTransform: 'uppercase',
+        letterSpacing: 0.5, fontWeight: 600, marginBottom: 4,
+      }}>{label}</div>
+      <div style={{
+        fontFamily: t.fontMono, fontSize: 12, color: t.text0, fontWeight: 500,
+      }}>{value}</div>
     </div>
   );
 }
