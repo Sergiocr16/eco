@@ -259,16 +259,33 @@ export function discardFile(workspace: string, inputPath: string): GitActionResu
   // Path relativo al workspace (lo que git espera).
   const relPath = abs.slice(wsNorm.length + 1) || abs;
 
-  // Detectar si está tracked: `git ls-files --error-unmatch <path>` → 0 si tracked.
-  const ls = git(['ls-files', '--error-unmatch', '--', relPath], workspace);
-  if (ls.ok) {
+  // Detectar el estado del archivo:
+  //  - en HEAD       → modified tracked, restauramos con checkout HEAD.
+  //  - en index pero NO en HEAD → archivo nuevo staged (vía "Aceptar"),
+  //    hay que sacarlo del index Y del filesystem con `git rm -f`.
+  //  - sin index ni HEAD → untracked, rm del filesystem.
+  const inIndex = git(['ls-files', '--error-unmatch', '--', relPath], workspace).ok;
+  const inHead = git(['cat-file', '-e', `HEAD:${relPath}`], workspace).ok;
+
+  if (inHead) {
     const r = git(['checkout', 'HEAD', '--', relPath], workspace);
     if (!r.ok) {
       return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 600) || 'checkout falló' };
     }
     return { ok: true, message: `Cambios descartados en ${relPath}` };
   }
-  // untracked → rm filesystem
+
+  if (inIndex) {
+    // Está staged como nuevo pero no commiteado — `git rm -f` lo saca del
+    // index y borra el archivo del worktree en una sola operación.
+    const r = git(['rm', '-f', '--', relPath], workspace);
+    if (!r.ok) {
+      return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 600) || 'git rm falló' };
+    }
+    return { ok: true, message: `Eliminado ${relPath}` };
+  }
+
+  // Untracked puro → rm filesystem.
   try {
     unlinkSync(abs);
     return { ok: true, message: `Eliminado ${relPath}` };

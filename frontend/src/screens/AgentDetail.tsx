@@ -1497,8 +1497,9 @@ function DiscardFileButton({
         setBusy(false);
         return;
       }
-      // Éxito → el polling de /file/changes va a quitar el archivo de la lista
-      // automáticamente, así que no necesitamos hacer nada más.
+      // Éxito → forzamos refetch inmediato del estado git en vez de esperar
+      // el próximo polling, así el archivo desaparece de la lista al instante.
+      ecoEmit('eco:git_refresh', { bubbleId });
       setConfirming(false);
       setBusy(false);
     } catch (e) {

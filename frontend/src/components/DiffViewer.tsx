@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/api';
 import { useT } from '@/hooks/useI18n';
 import { translateBackendError } from '@/lib/backend-errors';
 import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
+import { emit as ecoEmit } from '@/lib/eco-bus';
 
 type DiffResult = {
   mode: 'git' | 'created' | 'plain' | 'not_found';
@@ -111,6 +112,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
         // de los demás hunks pueden haber cambiado: limpiamos accepted local.
         setAcceptedHunks(new Set());
         setReloadBust((n) => n + 1);
+        if (bubbleId) ecoEmit('eco:git_refresh', { bubbleId });
       } else {
         setActionMsg({ kind: 'err', text: data.error || `Error HTTP ${r.status}` });
       }
@@ -148,6 +150,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
         if (totalHunks > 0 && acceptedHunks.size + 1 >= totalHunks) {
           review.accept(path);
         }
+        if (bubbleId) ecoEmit('eco:git_refresh', { bubbleId });
       } else {
         setActionMsg({ kind: 'err', text: data.error || `Error HTTP ${r.status}` });
       }
@@ -172,6 +175,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
         // como aceptado. Si estamos en modal, lo cerramos; si estamos
         // inline (FilesPanel split), avanzamos al siguiente del pathList.
         review.unaccept(path);
+        if (bubbleId) ecoEmit('eco:git_refresh', { bubbleId });
         if (onClose) {
           onClose();
         } else if (pathList && onChangePath) {
@@ -208,6 +212,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
       setAcceptedHunks(new Set());
       setReloadBust((n) => n + 1);
       setActionMsg({ kind: 'ok', text: 'Archivo aceptado — staged en el index' });
+      if (bubbleId) ecoEmit('eco:git_refresh', { bubbleId });
     } catch (e) {
       setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
       return;
