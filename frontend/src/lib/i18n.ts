@@ -1231,6 +1231,12 @@ const DICT = {
   'cmd.tts.normal': { es: 'Voz normal', en: 'Voice normal' },
   'cmd.tts.louder': { es: 'Voz más fuerte', en: 'Voice louder' },
   'cmd.tts.quieter': { es: 'Voz más baja', en: 'Voice quieter' },
+  'cmd.server.start': { es: 'Iniciando servidor', en: 'Starting server' },
+  'cmd.server.stop': { es: 'Deteniendo servidor', en: 'Stopping server' },
+  'cmd.server.restart': { es: 'Reiniciando servidor', en: 'Restarting server' },
+  'cmd.remote.on': { es: 'Activando remote control', en: 'Enabling remote control' },
+  'cmd.remote.off': { es: 'Desactivando remote control', en: 'Disabling remote control' },
+  'cmd.obsidian.save': { es: 'Guardando en Obsidian', en: 'Saving to Obsidian' },
 
   // Wake indicator
   'wake.listening': { es: 'Eco · escuchando comando…', en: 'Eco · listening for command…' },

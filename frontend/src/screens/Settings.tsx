@@ -10,7 +10,7 @@ import {
   IconCommand, IconBolt, IconLock, IconTrash, IconPlus, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
-import { useTTS } from '@/hooks/useTTS';
+import { useTTS, type UnifiedVoice } from '@/hooks/useTTS';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
@@ -633,13 +633,17 @@ function SectionVoice() {
   const tr = useT();
   const tts = useTTS();
 
-  // Auto-seleccionar la mejor voz masculina española al cargar si no hay
-  // una elegida. Priorizamos voces Piper (locales, neurales) sobre las del
-  // sistema. Orden: claude (MX, alta calidad) > davefx (ES) > cualquier Piper es.
+  // Auto-seleccionar la mejor voz española al cargar si no hay una elegida.
+  // Orden de preferencia: macsay Premium (Apple neural, suena casi humano) >
+  // macsay normal > Piper claude (MX alta) > Piper davefx (ES) > cualquier
+  // Piper español > cualquier voz en español del sistema.
   useEffect(() => {
     if (tts.selectedVoiceURI) return;
     if (tts.voices.length === 0) return;
+    const isEs = (id: string, lang: string) => /^es/i.test(lang) || /^es/i.test(id.split(':')[1] ?? '');
     const candidates = [
+      tts.voices.find((v) => v.kind === 'macsay' && v.premium && isEs(v.id, v.language)),
+      tts.voices.find((v) => v.kind === 'macsay' && isEs(v.id, v.language)),
       tts.voices.find((v) => /es_MX-claude/i.test(v.id) && v.kind === 'piper'),
       tts.voices.find((v) => /es_ES-davefx/i.test(v.id) && v.kind === 'piper'),
       tts.voices.find((v) => v.kind === 'piper' && /^es/i.test(v.language)),
@@ -668,7 +672,7 @@ function SectionVoice() {
         desc={tr('settings.voice.speak_replies_desc')}
         control={<Toggle on={tts.enabled} onChange={tts.setEnabled}/>}/>
 
-      {/* Voz actual (auto-elegida, masculina natural) */}
+      {/* Selector de voz */}
       <Glass radius={12} style={{ padding: 14, marginTop: 14, marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
@@ -684,7 +688,7 @@ function SectionVoice() {
             </div>
             <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>
               {currentVoice
-                ? `${currentVoice.name} · ${currentVoice.language}${currentVoice.kind === 'piper' ? ' · neural local' : ''}`
+                ? voiceMetaLine(currentVoice)
                 : tr('settings.voice.loading')}
             </div>
           </div>
@@ -692,6 +696,15 @@ function SectionVoice() {
             {tr('settings.voice.test_btn')}
           </Btn>
         </div>
+
+        {tts.voices.length > 0 && (
+          <VoiceSelect
+            voices={tts.voices}
+            selected={tts.selectedVoiceURI}
+            onSelect={tts.selectVoice}
+          />
+        )}
+
         <div style={{ marginTop: 10, padding: 8, borderRadius: 6, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
           {tr('settings.voice.intent_hint')}
         </div>
@@ -727,6 +740,76 @@ function SectionVoice() {
           </div>
         }/>
     </div>
+  );
+}
+
+// Etiqueta de meta para mostrar bajo el nombre de la voz: idioma + tipo +
+// flag Premium si aplica.
+function voiceMetaLine(v: UnifiedVoice): string {
+  const parts: string[] = [v.language];
+  if (v.kind === 'macsay') parts.push(v.premium ? 'Apple · Premium' : 'Apple');
+  else if (v.kind === 'piper') parts.push('neural local');
+  else parts.push('sistema');
+  return parts.filter(Boolean).join(' · ');
+}
+
+// Selector de voz. Agrupamos por backend para que el usuario entienda qué
+// está eligiendo. macsay arriba (es lo que recomendamos), luego Piper, luego
+// las del navegador como fallback.
+function VoiceSelect({
+  voices, selected, onSelect,
+}: {
+  voices: UnifiedVoice[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const t = useTokens();
+  const macsay = voices.filter((v) => v.kind === 'macsay');
+  const piper = voices.filter((v) => v.kind === 'piper');
+  const browser = voices.filter((v) => v.kind === 'browser');
+
+  const labelStyle = { color: t.text2, fontWeight: 600 } as const;
+
+  return (
+    <select
+      value={selected ?? ''}
+      onChange={(e) => onSelect(e.target.value)}
+      style={{
+        marginTop: 12, width: '100%',
+        padding: '8px 32px 8px 12px',
+        borderRadius: 8,
+        border: `1px solid ${t.glassBorder}`,
+        background: t.bg2,
+        color: t.text0,
+        fontSize: 13,
+        fontFamily: t.fontSans,
+        cursor: 'pointer',
+      }}
+    >
+      {macsay.length > 0 && (
+        <optgroup label="Apple (macOS) — recomendado" style={labelStyle}>
+          {macsay.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name} · {v.language}{v.premium ? ' ✦' : ''}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {piper.length > 0 && (
+        <optgroup label="Piper (neural local)" style={labelStyle}>
+          {piper.map((v) => (
+            <option key={v.id} value={v.id}>{v.name} · {v.language}</option>
+          ))}
+        </optgroup>
+      )}
+      {browser.length > 0 && (
+        <optgroup label="Sistema / navegador" style={labelStyle}>
+          {browser.map((v) => (
+            <option key={v.id} value={v.id}>{v.name} · {v.language}</option>
+          ))}
+        </optgroup>
+      )}
+    </select>
   );
 }
 

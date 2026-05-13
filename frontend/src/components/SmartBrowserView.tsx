@@ -18,6 +18,7 @@ export type SmartBrowserHandle = {
   forward: () => void;
   openDevTools: () => void;
   getURL: () => string;
+  setZoom: (factor: number) => void;
 };
 
 export type SmartBrowserProps = {
@@ -39,6 +40,7 @@ type ElectronWebview = HTMLElement & {
   getURL: () => string;
   openDevTools: () => void;
   closeDevTools: () => void;
+  setZoomFactor: (factor: number) => void;
   addEventListener: (event: string, cb: (e: Event & Record<string, unknown>) => void) => void;
   removeEventListener: (event: string, cb: (e: Event & Record<string, unknown>) => void) => void;
 };
@@ -52,6 +54,15 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const webviewRef = useRef<ElectronWebview | null>(null);
+
+    // Guardamos los callbacks en refs para que cambios de identidad de las
+    // funciones (típico cuando el caller las pasa inline) NO recreen el
+    // webview. Sin esto, cualquier re-render del padre destruye y vuelve a
+    // crear el webview, causando reloads constantes.
+    const cbRef = useRef({ onTitleChange, onNavigate, onLoadFail, onLoadSuccess });
+    useEffect(() => {
+      cbRef.current = { onTitleChange, onNavigate, onLoadFail, onLoadSuccess };
+    }, [onTitleChange, onNavigate, onLoadFail, onLoadSuccess]);
 
     useImperativeHandle(handleRef, () => ({
       reload: () => {
@@ -73,37 +84,47 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
         if (useWebview) return webviewRef.current?.getURL() ?? src;
         return iframeRef.current?.src ?? src;
       },
+      setZoom: (factor: number) => {
+        if (useWebview) {
+          try { webviewRef.current?.setZoomFactor(factor); } catch { /* webview no listo todavía */ }
+        }
+        // En modo iframe el "zoom" lo aplica el wrapper CSS del caller —
+        // no hay API estándar para iframe.contentWindow.setZoom.
+      },
     }), [useWebview, src]);
 
-    // Crear <webview> imperativamente. Electron monta el WebContents cuando
-    // detecta el elemento en el DOM con `src` ya presente — por eso es CLAVE
-    // setear todos los atributos ANTES de hacer appendChild.
+    // Crear <webview> imperativamente UNA SOLA VEZ. Cuando cambia src, en
+    // lugar de destruir y recrear el webview (que causa reload visible), le
+    // pedimos al webview existente que navegue. Así el webview persiste
+    // mientras el componente esté montado, sin importar cuántas veces el
+    // padre re-renderice o cambie la URL.
     useEffect(() => {
       if (!useWebview) return;
       const container = containerRef.current;
       if (!container) return;
-      if (!src) return;
+      // Si ya existe, no creamos otro. El effect de navegación abajo se
+      // encarga de actualizar la src.
+      if (webviewRef.current) return;
 
       const wv = document.createElement('webview') as ElectronWebview;
       wv.setAttribute('allowpopups', '');
       wv.setAttribute('partition', 'persist:eco-browser');
-      // User-Agent de Chrome estándar — sin "Electron" en el string, así
-      // sitios como Google no nos redirigen a /sorry/index detectando
-      // automatización. Mantenemos versión Chrome alta y reciente.
       wv.setAttribute('useragent',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
         '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       );
       wv.style.cssText = 'display:inline-flex;width:100%;height:100%;border:0;background:white;';
-      wv.setAttribute('src', src);
+      // Si tenemos src inicial, lo seteamos ANTES de appendChild — Electron
+      // monta el WebContents cuando detecta el elemento con src ya presente.
+      if (src) wv.setAttribute('src', src);
 
       const onTitle = (e: Event & Record<string, unknown>) => {
         const title = (e as unknown as { title?: string }).title;
-        if (title) onTitleChange?.(title);
+        if (title) cbRef.current.onTitleChange?.(title);
       };
       const onNav = (e: Event & Record<string, unknown>) => {
         const url = (e as unknown as { url?: string }).url;
-        if (url) onNavigate?.(url);
+        if (url) cbRef.current.onNavigate?.(url);
       };
       const onFail = (e: Event & Record<string, unknown>) => {
         const code = Number((e as { errorCode?: unknown }).errorCode ?? -1);
@@ -111,11 +132,10 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
         const url = String((e as { validatedURL?: unknown }).validatedURL ?? '');
         elog('[webview] did-fail-load', { code, desc, url });
         if (code === -3) return; // ERR_ABORTED — navegación cancelada por nueva nav
-        onLoadFail?.(code, desc);
+        cbRef.current.onLoadFail?.(code, desc);
       };
       const onFinish = () => {
-        elog('[webview] did-finish-load', src);
-        onLoadSuccess?.();
+        cbRef.current.onLoadSuccess?.();
       };
       wv.addEventListener('page-title-updated', onTitle);
       wv.addEventListener('did-navigate', onNav);
@@ -135,7 +155,23 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
         try { container.removeChild(wv); } catch { /* noop */ }
         webviewRef.current = null;
       };
-    }, [useWebview, src, onTitleChange, onNavigate, onLoadFail, onLoadSuccess]);
+    }, [useWebview]);
+
+    // Navegación: cuando cambia src, actualizamos el webview existente sin
+    // recrearlo. loadURL respeta history; setAttribute('src', ...) también
+    // funciona pero loadURL es más explícito.
+    useEffect(() => {
+      if (!useWebview) return;
+      const wv = webviewRef.current;
+      if (!wv) return;
+      if (!src) return;
+      try {
+        if (wv.getURL() !== src) wv.setAttribute('src', src);
+      } catch {
+        // Si el webview todavía no terminó de montar, simplemente seteamos src.
+        wv.setAttribute('src', src);
+      }
+    }, [useWebview, src]);
 
     // Wire eventos del <iframe> (fallback web puro).
     useEffect(() => {
@@ -143,15 +179,15 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       const ifr = iframeRef.current;
       if (!ifr) return;
       const onLoad = () => {
-        onLoadSuccess?.();
+        cbRef.current.onLoadSuccess?.();
         try {
           const t = ifr.contentDocument?.title;
-          if (t) onTitleChange?.(t);
+          if (t) cbRef.current.onTitleChange?.(t);
         } catch { /* cross-origin */ }
       };
       ifr.addEventListener('load', onLoad);
       return () => ifr.removeEventListener('load', onLoad);
-    }, [useWebview, onTitleChange, onLoadSuccess]);
+    }, [useWebview]);
 
     if (useWebview) {
       return (

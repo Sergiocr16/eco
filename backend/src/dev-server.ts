@@ -17,8 +17,9 @@
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer, type AddressInfo } from 'node:net';
-import { existsSync, symlinkSync, lstatSync } from 'node:fs';
+import { existsSync, symlinkSync, lstatSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
 import { config } from './config.js';
 import { buildSafeEnv } from './security.js';
 import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
@@ -62,6 +63,87 @@ function sessionKey(bubbleId: string, role: ServerRole = 'main'): string {
   return `${bubbleId}|${role}`;
 }
 
+// ─── Persistencia a disco de sessions ──────────────────────────────────────
+// Los procesos spawneados son `detached: true` — si el backend muere (tsx
+// watch recompila, cerrás el .app), sobreviven con su pgid. Sin persistir,
+// quedaríamos sin handle para stop/restart. Guardamos lo serializable; en
+// boot probamos liveness por pgid y restauramos lo que sigue vivo.
+
+const STATE_DIR = join(homedir(), '.eco');
+const STATE_FILE = join(STATE_DIR, 'dev-sessions.json');
+
+type PersistedSession = {
+  bubbleId: string;
+  role: ServerRole;
+  workspace: string;
+  command: string;
+  port: number;
+  url: string;
+  pgid: number | null;
+  status: DevStatus;
+  startedAt: number | null;
+  exitCode: number | null;
+  exitedAt: number | null;
+};
+
+function isProcessAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+function persistSessions(): void {
+  try {
+    mkdirSync(STATE_DIR, { recursive: true });
+    const out: PersistedSession[] = [];
+    for (const s of sessions.values()) {
+      // Solo persistimos sessions con un pgid vivo o status terminal —
+      // descartamos las que ya no sirven para nada.
+      if (s.status === 'idle') continue;
+      out.push({
+        bubbleId: s.bubbleId, role: s.role,
+        workspace: s.workspace, command: s.command,
+        port: s.port, url: s.url, pgid: s.pgid,
+        status: s.status, startedAt: s.startedAt,
+        exitCode: s.exitCode, exitedAt: s.exitedAt,
+      });
+    }
+    writeFileSync(STATE_FILE, JSON.stringify(out, null, 2), { mode: 0o600 });
+  } catch { /* noop */ }
+}
+
+function restoreSessions(): void {
+  try {
+    if (!existsSync(STATE_FILE)) return;
+    const raw = readFileSync(STATE_FILE, 'utf-8');
+    const parsed: PersistedSession[] = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    for (const p of parsed) {
+      // Si el pgid está vivo → el server sigue corriendo huérfano. Lo
+      // re-adoptamos. Status='running' (asumimos que estaba arriba; si no,
+      // el ring buffer está vacío y el user puede restart). Si pgid muerto
+      // o ausente → descartamos.
+      const alive = p.pgid && isProcessAlive(p.pgid);
+      if (!alive) continue;
+      const s: Session = {
+        bubbleId: p.bubbleId, role: p.role,
+        workspace: p.workspace, command: p.command,
+        port: p.port, url: p.url,
+        proc: null,            // no podemos re-attachar stdout
+        pgid: p.pgid,
+        status: 'running',     // está vivo según el pgid
+        output: `[server re-adoptado de sesión previa — logs viejos no disponibles]\n`,
+        startedAt: p.startedAt,
+        exitCode: null,
+        exitedAt: null,
+        retries: 0,
+      };
+      sessions.set(sessionKey(s.bubbleId, s.role), s);
+    }
+  } catch { /* noop */ }
+}
+
+// Restauramos al cargar el módulo — antes de que llegue el primer request.
+restoreSessions();
+
 function broadcastStatus(s: Session) {
   try {
     broadcastServerMessage({
@@ -76,6 +158,10 @@ function broadcastStatus(s: Session) {
       ...(s.skill ? { skill: s.skill } : {}),
     });
   } catch { /* noop */ }
+  // Persistir el estado a disco para que sobreviva reinicios del backend
+  // (tsx watch recompila, .app se cierra). Los pgid en disco se usan para
+  // re-adoptar los procesos huérfanos al boot siguiente.
+  persistSessions();
 }
 
 function appendOutput(s: Session, chunk: string) {
@@ -241,7 +327,7 @@ function extractCommand(raw: string): string {
   return lines[lines.length - 1] ?? '';
 }
 
-const READY_RE = /(?:Local:\s+https?:\/\/[^\s]+|listening on|server (?:running|started|on)|ready in \d+|started server on|now available on|webpack compiled successfully|compiled successfully|Server is running|\bnext-server\b|\bvite\s+v.+ready\b|Started \w+ in [\d.]+\s*(seconds|s)|tomcat started on port|\[Browsersync\]|browser-sync.+access urls|external:\s+https?:\/\/[^\s]+)/i;
+const READY_RE = /(?:Local:\s+https?:\/\/[^\s]+|listening on|server (?:running|started|on)|ready in \d+|started server on|now available on|webpack compiled successfully|compiled successfully|Server is running|\bnext-server\b|\bvite\s+v.+ready\b|Started \w+ in [\d.]+\s*(seconds|s)|tomcat started on port|\[Browsersync\]\s+(?:Access URLs|Running|Serving files|Watching files|Local|External)|\[BS\]|browser-sync.+access urls|external:\s+https?:\/\/[^\s]+|Finished\s+'(?:serve|default|watch)'|Starting\s+'(?:serve|default|watch)'|access URLs:|\bgulp-inject\b\s+\d+ files|injected \d+ files)/i;
 
 // Patrones que indican que el spawn intentó bindear un puerto ya en uso.
 // Cubrimos Node EADDRINUSE, Browser-sync, Spring Boot, Webpack, gulp, Python, etc.
@@ -382,6 +468,17 @@ function spawnSession(s: Session) {
   const basePath = process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin';
   const augmentedPath = [...extraBins, basePath].join(':');
 
+  // En dual mode, si soy el frontend, busco la session del backend para el
+  // mismo bubble y expongo su puerto como API_PORT/BACKEND_PORT. Esto permite
+  // que proxies de dev (gulp browser-sync con API_PORT, etc.) apunten al
+  // backend sin que el user lo hardcodee.
+  const linkedPort = (() => {
+    if (s.role !== 'frontend') return 0;
+    const peer = sessions.get(sessionKey(s.bubbleId, 'backend'));
+    if (!peer || peer.port <= 0) return 0;
+    return peer.port;
+  })();
+
   const env = buildSafeEnv({
     PATH: augmentedPath,
     PORT: String(s.port),
@@ -397,6 +494,14 @@ function spawnSession(s: Session) {
     HOST: '127.0.0.1',
     // Java/Spring (también respeta -Dserver.port en CLI):
     JAVA_TOOL_OPTIONS: `-Dserver.port=${s.port}`,
+    // Si soy frontend en dual: dónde está el backend.
+    ...(linkedPort > 0 ? {
+      API_PORT: String(linkedPort),
+      BACKEND_PORT: String(linkedPort),
+      BACKEND_URL: `http://127.0.0.1:${linkedPort}`,
+      VITE_API_PORT: String(linkedPort),
+      NEXT_PUBLIC_API_PORT: String(linkedPort),
+    } : {}),
     // Forzar colores ANSI aunque stdout no sea TTY — el viewer del frontend
     // los renderiza con xterm.js para que se vean como en la terminal real.
     FORCE_COLOR: '1',
@@ -561,6 +666,25 @@ export function devStatus(bubbleId: string, role: ServerRole = 'main'): Session 
   const s = sessions.get(sessionKey(bubbleId, role));
   if (!s) return null;
   return s;
+}
+
+// Lista de TODAS las sessions activas (running/starting). El Dashboard usa
+// esto al montar para conocer qué agentes tienen un server vivo, ya que
+// los eventos dev_status del WS sólo cubren cambios — si la session ya
+// estaba arriba antes de montar el listener, se la perdería.
+export function devListActive(): Array<{
+  bubbleId: string; role: ServerRole; status: DevStatus;
+  port: number; url: string; command: string;
+}> {
+  const out: ReturnType<typeof devListActive> = [];
+  for (const s of sessions.values()) {
+    if (s.status === 'idle' || s.status === 'stopped') continue;
+    out.push({
+      bubbleId: s.bubbleId, role: s.role, status: s.status,
+      port: s.port, url: s.url, command: s.command,
+    });
+  }
+  return out;
 }
 
 export function devLogs(bubbleId: string, role: ServerRole = 'main'): string {

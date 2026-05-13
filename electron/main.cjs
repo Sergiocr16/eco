@@ -14,9 +14,10 @@ const os = require('node:os');
 
 const isDev = !app.isPackaged;
 const BACKEND_HOST = '127.0.0.1';
-// En empaquetado usamos un puerto distinto del dev (7000) para que la .app
-// coexista con `npm run dev` corriendo en paralelo en la misma máquina.
-const BACKEND_PORT = process.env.ECO_PORT || (app.isPackaged ? '7100' : '7000');
+// Default dev port: 7050 (en macOS AirPlay Receiver usa :7000). Default
+// empaquetado: 7100 para que la .app coexista con `npm run dev` corriendo
+// en paralelo en la misma máquina.
+const BACKEND_PORT = process.env.ECO_PORT || (app.isPackaged ? '7100' : '7050');
 const BACKEND_URL = `http://${BACKEND_HOST}:${BACKEND_PORT}`;
 const DEV_FRONTEND_URL = 'http://127.0.0.1:5173';
 

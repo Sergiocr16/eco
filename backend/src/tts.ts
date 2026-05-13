@@ -11,9 +11,13 @@ const PIPER_ROOT = join(__dirname, '..', 'piper');
 const PIPER_BIN = process.env.ECO_PIPER_BIN ?? join(PIPER_ROOT, 'piper', 'piper');
 const VOICES_DIR = process.env.ECO_PIPER_VOICES ?? join(PIPER_ROOT, 'voices');
 
+// Schema unificado para ambos backends (piper y macsay). El voice id de
+// macsay puede contener espacios y paréntesis ("Mónica (Premium)"), por eso
+// no aplicamos la regex estricta acá — cada backend valida lo suyo.
 export const TTSRequestSchema = z.object({
   text: z.string().min(1).max(5000),
-  voice: z.string().regex(/^[A-Za-z0-9_.-]+$/).max(80).optional(),
+  voice: z.string().min(1).max(120).optional(),
+  backend: z.enum(['piper', 'macsay']).optional(),
 });
 
 export type TTSRequest = z.infer<typeof TTSRequestSchema>;
@@ -60,9 +64,14 @@ export function defaultVoiceId(): string | null {
   return voices[0]?.id ?? null;
 }
 
+const PIPER_VOICE_RE = /^[A-Za-z0-9_.-]+$/;
+
 export async function synthesize(req: TTSRequest, signal?: AbortSignal): Promise<Buffer> {
   const voiceId = req.voice ?? defaultVoiceId();
   if (!voiceId) throw new Error('No hay voces Piper instaladas');
+  // Validamos el voice id contra una whitelist estricta — el id se usa como
+  // componente de path; cualquier intento de traversal acá se bloquea.
+  if (!PIPER_VOICE_RE.test(voiceId)) throw new Error(`Voz inválida: ${voiceId}`);
 
   const modelPath = join(VOICES_DIR, `${voiceId}.onnx`);
   if (!existsSync(modelPath)) throw new Error(`Voz no encontrada: ${voiceId}`);

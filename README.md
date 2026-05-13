@@ -71,7 +71,8 @@ restricciones de `X-Frame-Options`/CSP, con DevTools propios.
 │  · webPreferences.webviewTag: true → <webview> Chromium real            │
 │  · IPC eco:get-config (backend URL + token leído de ~/.eco/token)       │
 │  · IPC eco:renderer-log → stdout (debug del renderer)                   │
-│  · Backend en port 7100 (vs 7000 dev) para coexistir con `npm run dev`  │
+│  · Backend en port 7100 empaquetado · 7050 en dev (7000 lo ocupa el    │
+│    AirPlay Receiver de macOS, por eso lo movimos)                       │
 └──────────────┬───────────────────────────────────────────────────────────┘
                │   carga frontend desde http://127.0.0.1:7100/
                ▼
@@ -84,10 +85,11 @@ restricciones de `X-Frame-Options`/CSP, con DevTools propios.
 │  · Picker de Skills + Picker de Branches en cada agente                 │
 │  · xterm.js en la pestaña Shell — PTY real con reattach                 │
 │  · Commit con AI con preview editable                                   │
-│  · Dashboard: grid · kanban · graph view con partículas hacia Eco       │
-│  · Navegador interno con <webview> Chromium (SmartBrowserView)          │
-│    global (BrowserScreen) + por-agente (BrowserPanel)                   │
-│  · Dev server por agente vía skill `/dev-up` (puerto único, auto-retry) │
+│  · Dashboard: grid · kanban · graph view con partículas hacia Eco +     │
+│    pulso pequeño desde cada nodo a sus satélites activos                │
+│  · Navegador por-agente (BrowserPanel + SmartBrowserView <webview>)     │
+│  · Dev server por agente, dual mode (frontend + backend), auto-puerto,  │
+│    presets por workspace, persistencia a disco para sobrevivir reload   │
 │  · Safe area top=36 para traffic lights · drag region invisible         │
 └──────────────┬───────────────────────────────────────────────────────────┘
                │  WebSocket /ws       (Claude SDK streaming)
@@ -111,8 +113,10 @@ restricciones de `X-Frame-Options`/CSP, con DevTools propios.
 │  · PTY: spawn por agente, ring buffer 128KB, broadcast pty_status       │
 │  · PTY cwd fallback: si workspace no existe → $HOME (no crash)          │
 │  · Snapshot WS al conectar (PTYs corriendo, status, etc.)               │
-│  · Dev server por agente (`dev-server.ts`) — `/dev/up|down|restart`     │
-│  · Browser proxy (`/proxy/site`) — strip de X-Frame-Options/CSP         │
+│  · Dev server por agente (`dev-server.ts`) — `/dev/start|stop|restart`  │
+│    con roles 'main'/'frontend'/'backend', persistencia en               │
+│    `~/.eco/dev-sessions.json` (re-adopt al boot por pgid)               │
+│  · TTS: Piper + macOS `say` con voces Premium/Enhanced del sistema      │
 └──────────────┬───────────────────────────────────────────────────────────┘
                │  spawn claude · spawn zsh PTY    ┌─────────────────────────┐
                ▼                                  │ Piper TTS local (ONNX)  │
@@ -147,14 +151,18 @@ chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper
 cp backend/.env.example backend/.env
 # Editar backend/.env: ECO_WORKSPACES=/Users/sergio/projects/aditum-jh
 
-# 3) Token del backend al frontend (se genera al primer arranque)
-cp frontend/.env.example frontend/.env.local
-# Después de arrancar el backend, copiar el token de ~/.eco/token a VITE_ECO_TOKEN
+# 3) `.env.local` del frontend — dejá VITE_ECO_BACKEND vacío para que use el
+#    proxy de Vite. URL absoluta ahí fuerza cross-origin y depende de CORS.
+echo 'VITE_ECO_BACKEND=' > frontend/.env.local
+echo "VITE_ECO_TOKEN=$(cat ~/.eco/token 2>/dev/null || echo placeholder)" >> frontend/.env.local
 
-# 4) Levantar todo
-npm run dev
-# Backend: http://127.0.0.1:7000
-# Frontend: http://127.0.0.1:5174 (cae a 5174 si 5173 está ocupado)
+# 4a) Modo web (backend + Vite, abrís http://localhost:5173 en navegador)
+npm run web
+# Backend: http://127.0.0.1:7050
+# Frontend: http://127.0.0.1:5173
+
+# 4b) Modo app (todo lo anterior + ventana Electron con hot-reload)
+npm run dev:app
 
 # 5) Primera vez: crear cuenta local (PIN + frase de recuperación + foto opcional)
 # La AuthScreen te muestra la frase ANTES de entrar a la app.
@@ -171,6 +179,10 @@ python training/train_wake.py --negatives-dir ~/Music/ -v
 # → genera listener/models/hey_eco.onnx
 # El listener lo detecta y usa automático en el próximo arranque
 ```
+
+> macOS: AirPlay Receiver ocupa el puerto 7000. Por eso el dev backend de Eco
+> corre en **7050** (override vía `ECO_PORT`). Si querés volver a 7000,
+> apagá AirPlay Receiver en *Ajustes → General → AirDrop y Handoff*.
 
 ---
 
@@ -251,8 +263,10 @@ eco/
 │   │   ├── tts.ts             ← /tts con Piper local
 │   │   ├── skills.ts          ← scan ~/.claude + workspace + plugins/cache/<m>/<p>/<v>/…
 │   │   ├── file-diff.ts       ← /file/diff (resuelve worktree por bubbleId)
-│   │   ├── dev-server.ts      ← skill-driven dev server por agente (claude -p)
-│   │   ├── browser-proxy.ts   ← /proxy/site — strip XFO/CSP + inject base + click bridge
+│   │   ├── dev-server.ts      ← dev server por agente (start/stop/restart, dual,
+│   │   │                          auto-port, env-link FE↔BE, persistencia disco)
+│   │   ├── tts-macsay.ts      ← TTS via macOS `say` (voces Premium/Enhanced)
+│   │   ├── obsidian.ts        ← /integrations/obsidian/save-session
 │   │   └── workspaces-store.ts
 │   ├── tests/                 ← suite de seguridad
 │   ├── piper/                 ← Piper TTS bin + voces neurales (gitignored)
@@ -271,13 +285,14 @@ eco/
 │   │   │   ├── BranchPicker.tsx     ← branches + pull/fetch + rename
 │   │   │   ├── SkillsPicker.tsx     ← lista SKILL.md/agents/commands del workspace
 │   │   │   ├── DiffViewer.tsx       ← side-by-side estilo GitHub + buscador
-│   │   │   ├── BrowserPanel.tsx     ← iframe por-agente + dev server + DevTools
+│   │   │   ├── BrowserPanel.tsx     ← webview por-agente + DevTools + zoom persistido
+│   │   │   ├── ServerPanel.tsx      ← dev server control + dual mode + presets workspace
+│   │   │   ├── SmartBrowserView.tsx ← wrapper <webview>/<iframe> persistente
 │   │   │   ├── CommitWithAI.tsx     ← suggest → preview editable → commit (no push)
 │   │   │   ├── CommandFeedback.tsx, StatusOverlay.tsx, WorkspacePicker.tsx
 │   │   ├── screens/
 │   │   │   ├── Dashboard.tsx        ← grid + graph + kanban view + DashboardRail
-│   │   │   ├── AgentDetail.tsx      ← chat + terminal + files + plan + browser + sidebar (Git)
-│   │   │   ├── BrowserScreen.tsx    ← navegador global multi-pestaña con persistencia
+│   │   │   ├── AgentDetail.tsx      ← chat + terminal + files + plan + browser + server + sidebar
 │   │   │   ├── Settings.tsx         ← General · Apariencia (12 acentos + AMOLED) · Dock
 │   │   │   ├── AuthScreen.tsx       ← register / login / recover con frase pre-auth
 │   │   │   └── FileExplorer.tsx
@@ -288,7 +303,8 @@ eco/
 │   │   │   ├── useProfile.ts        ← foto + username en localStorage
 │   │   │   ├── useSkills.ts, useVoice.ts, useTTS.ts, useAuth.ts, useI18n.ts,
 │   │   │   │  useApiKey.ts, useWorkspaces.ts, useDefaultWorkspace.ts,
-│   │   │   │  useQuickSuggestions.ts
+│   │   │   │  useQuickSuggestions.ts, useDevPresets.ts, useBubbleActive.ts,
+│   │   │   │  useWorkspaceServerDefaults.ts
 │   │   └── lib/
 │   │       ├── voice-router.ts      ← target='pty'|'chat' + writer registrado por RealTerminal
 │   │       ├── meta-commands.ts     ← parser tolerante (LEADING_FILLERS + scan)
@@ -329,10 +345,12 @@ eco/
 
 | Comando | Descripción |
 |---|---|
-| `npm run dev` | Backend + frontend en paralelo (dev en navegador) |
-| `npm run dev:app` | Backend + Vite + Electron (dev en app nativa) |
-| `npm run dev:backend` | Solo backend (puerto 7000) |
-| `npm run dev:frontend` | Solo Vite (puerto 5173 / 5174 fallback) |
+| `npm run web` | Backend + Vite (abrís en navegador `http://localhost:5173`) |
+| `npm run dev:app` | Backend + Vite + Electron (ventana nativa con DevTools + hot-reload) |
+| `npm run dmg` | Empaqueta `.dmg` para macOS (alias de `dist:mac`) |
+| `npm run dev` | Igual que `web` — backend + Vite en paralelo |
+| `npm run dev:backend` | Solo backend (puerto 7050) |
+| `npm run dev:frontend` | Solo Vite (puerto 5173) |
 | `npm run dev:electron` | Solo Electron (espera Vite up) |
 | `npm run typecheck` | TS de ambos workspaces |
 | `npm run test:security` | Suite de tests de seguridad del backend |
@@ -374,7 +392,6 @@ de cada frase:
 |---|---|
 | `Eco dashboard` / `Eco inicio` / `Eco atrás` | Volver al inicio |
 | `Eco ajustes` / `Eco archivos` / `Eco historial` | Cambiar de sección |
-| `Eco navegador` / `Eco internet` / `Eco web` | Abre la pantalla de navegador global |
 | `Eco estado` | Overlay con todas las agentes + actividad |
 | `Eco ayuda` | Lista todos los comandos |
 
@@ -397,6 +414,12 @@ de cada frase:
 | `Eco scroll abajo` / `Eco arriba` / `Eco al final` | Scroll del panel activo |
 | `Eco repetir` / `Eco releer` | Re-lee el último mensaje del agente |
 | `Eco sí` / `Eco no` / `Eco acepta` / `Eco cancela` | Responde a diálogos de confirmación |
+| `Eco iniciar servidor` / `Eco levantar servidor` | Arranca dev server (respeta dual mode) |
+| `Eco detener servidor` / `Eco parar servidor` | Para dev server |
+| `Eco reiniciar servidor` / `Eco reiniciar` | Reinicia dev server |
+| `Eco activar remote control` / `Eco activar remote` | Activa Claude remote control en el agente |
+| `Eco desactivar remote` | Desactiva Claude remote control |
+| `Eco guardar en obsidian` / `Eco guardar nota` | POST a Obsidian con la conversación actual |
 
 **Voz y apariencia**
 
@@ -512,11 +535,10 @@ spread en cualquier card de la app.
 
 ---
 
-## Navegador interno
+## Navegador interno (por-agente)
 
-Eco tiene **dos** navegadores: uno global (multi-pestaña en el nav
-principal) y uno por-agente (dentro de cada conversación). Ambos usan
-el mismo wrapper `SmartBrowserView` que renderiza:
+Cada conversación tiene su propia pestaña **Navegador** con
+`SmartBrowserView` que renderiza:
 
 - **`<webview>` real Chromium** en la app empaquetada Electron — sin
   restricciones de `X-Frame-Options` / CSP frame-ancestors, con DevTools
@@ -524,7 +546,7 @@ el mismo wrapper `SmartBrowserView` que renderiza:
   `persist:eco-browser`, y user-agent Chrome 131 puro (sin "Electron"
   en el string → Google deja de marcarte como bot).
 - **`<iframe>` fallback** en web puro (dev). Sujeto a SOP — sitios con
-  XFO/CSP no cargan. Para esos, modo proxy abajo.
+  XFO/CSP no cargan; abrilos en el sistema con el botón ↗.
 
 `SmartBrowserView` crea el `<webview>` **imperativamente** con
 `document.createElement` porque React no aplica atributos al elemento
@@ -532,50 +554,15 @@ custom de manera fiable. Setea `allowpopups`, `partition`, `useragent`
 y `src` ANTES del `appendChild` — Electron monta el WebContents cuando
 ve el elemento en el DOM con `src` presente.
 
-### Navegador global (nav principal · `BrowserScreen.tsx`)
+**Webview persistente**: el webview se crea UNA SOLA VEZ al montar el
+panel. Cuando cambia la URL se navega vía `setAttribute('src', …)`
+en el webview existente — sin destruir y recrear (eso causaba reloads
+constantes con re-renders del padre).
 
-Pestañas múltiples con persistencia. Click en el ícono globo del
-sidebar izquierdo:
-
-- Cada tab guarda `{id, url, title, proxied}` en `localStorage`
-  (`eco.browser.tabs` + `eco.browser.active`). Al cerrar y reabrir Eco
-  recuperás todo.
-- **URL bar** con back / reload / abrir-en-sistema. Acepta URL o
-  búsqueda libre (cae a Google si no parece URL).
-- **Render solo de la tab activa** (no overlay) — el `<webview>` se
-  monta en un contenedor con layout real. Cambiar de tab recrea el
-  webview pero garantiza que carga (sin trucos de visibility:hidden).
-- **Banner de error** con `code` y descripción del fallo (`-105
-  ERR_NAME_NOT_RESOLVED`, `-104 ERR_CONNECTION_FAILED`, etc.) +
-  opciones "Probar modo proxy" / "Abrir en sistema".
-- **Pill de runtime** (`◆ full` vs `○ web`) muestra si estamos en
-  Electron (webview) o web puro (iframe).
-
-### Modo proxy (`/proxy/site?url=…` · `browser-proxy.ts`)
-
-Fallback para web puro cuando el iframe falla. Botón "Probar modo
-proxy" aparece en el banner de error. El backend:
-
-1. Hace `fetch` del HTML con user-agent realista.
-2. Strip de headers `X-Frame-Options`, `Content-Security-Policy`,
-   `Content-Security-Policy-Report-Only`, `Permissions-Policy`.
-3. Inyecta `<base href="…">` para que recursos relativos vayan al
-   sitio original.
-4. Inyecta un **script puente** que intercepta `click` en `<a>` y
-   `submit` en `<form method=GET>` y los envía como `postMessage` al
-   padre — `BrowserScreen` escucha y sigue navegando dentro del proxy.
-
-En la `.app` empaquetada con `<webview>` Chromium real, el modo proxy
-casi nunca se necesita — webview ignora XFO/CSP frame-ancestors.
-
-### Por-agente (`BrowserPanel.tsx`)
-
-Pestaña adicional dentro de `AgentDetail` con `SmartBrowserView` + dev
-server controls (start/stop/restart) + DevTools panel (consola,
-elementos, logs del server) + skill picker para elegir cómo levantar el
-dev server. URL persistida en `localStorage`
-(`eco.browser.url.<bubbleId>`). `KeepAliveBrowser` wrapper preserva el
-state al salir y volver.
+URL y zoom persistidos por-bubble en localStorage
+(`eco.browser.url.<bubbleId>` + `eco.browser.zoom.<bubbleId>`).
+`KeepAliveBrowser` wrapper preserva el state al cambiar de tab dentro
+de la conversación.
 
 ### Plataforma
 
@@ -591,24 +578,65 @@ state al salir y volver.
 
 ## Dev server por agente
 
-Cuando un agente quiere previsualizar su trabajo en el navegador, usa
-la skill `/dev-up up|down|restart|status`:
+Pestaña **Server** dentro de cada conversación con control completo:
+start / stop / restart, logs en xterm.js (ANSI fiel), preset por
+workspace, dual mode (frontend + backend en paralelo) con auto-port.
 
-- `dev-server.ts` invoca `claude -p` con el prompt de la skill (filename
-  matching: `~/.claude/skills/dev-up/SKILL.md` o equivalente del repo).
-- La skill responde con `<cmd>...</cmd>` que el backend extrae y
-  ejecuta dentro del worktree del agente.
-- **Auto-port**: si el puerto está ocupado, el backend reintenta hasta
-  2 veces pidiendo a Claude que parche la config para leer
-  `process.env.PORT`.
-- **URL scoring**: el output del comando se escanea por URLs con
-  keywords (`gulp`, `browser-sync`, `vite`, `frontend`) y puertos
-  típicos (9000, 5173, 3000) para detectar cuál es la URL frontend.
-- **Symlinks de install**: el worktree comparte `node_modules`,
-  `vendor`, `.venv` del repo padre vía symlinks para que `gulp`/`vite`
-  ejecuten sin reinstalar.
-- Endpoints: `POST /dev/up` · `POST /dev/down` · `POST /dev/restart` ·
-  `GET /dev/status` · `GET /dev/logs?bubbleId=<id>`.
+**Single vs dual mode**: por default cada conversación tiene UN slot
+('main'). Activando "Frontend + Backend en paralelo" (persistido en
+`eco.dev.dual.<bubbleId>`) abrís un segundo slot — Eco asigna puerto
+distinto a cada uno, los logs viven separados, podés minimizar uno
+para dar espacio al otro.
+
+**Auto-port**: cada slot recibe un puerto libre random vía
+`net.createServer().listen(0)`. Inyectado como env vars cubriendo casi
+todos los frameworks:
+
+- Backend slot: `PORT`, `SERVER_PORT`, `HTTP_PORT`,
+  `JAVA_TOOL_OPTIONS=-Dserver.port=<port>`, `VITE_PORT`,
+  `NEXT_PUBLIC_PORT`, `BROWSER_SYNC_PORT`, `GULP_PORT`,
+  `WEBPACK_DEV_SERVER_PORT`.
+- Frontend slot (en dual): todo lo anterior para su propio puerto, +
+  `API_PORT`, `BACKEND_PORT`, `BACKEND_URL`, `VITE_API_PORT`,
+  `NEXT_PUBLIC_API_PORT` apuntando al puerto del backend.
+
+Implicancia: los comandos NO deben hardcodear puertos. `./mvnw
+spring-boot:run` (no `-Dserver.port=8081`), `gulp serve` (no
+`API_PORT=8080 gulp serve`).
+
+**Orden de arranque en dual**: al darle "Iniciar servidor" Eco lanza
+el backend, espera `status: running` (hasta 90s), recién después
+larga el frontend — eso evita ECONNREFUSED del proxy frontend cuando
+el backend tarda en bindear.
+
+**Preset por workspace** (`eco.dev.workspace_defaults.<path>`): botón
+"Guardar como default del proyecto" en la sección Configuración del
+panel. Conversaciones nuevas en ese workspace heredan
+automáticamente `{dual, main, frontend, backend}`.
+
+**Persistencia a disco** (`~/.eco/dev-sessions.json`, chmod 600): cada
+cambio de estado serializa la session. Al boot Eco probe `process.kill
+(pgid, 0)` para cada session; si el process group sigue vivo, lo
+**re-adopta** con status `running`. Eso significa que reload del
+backend (tsx watch en dev, .app reabierta en prod) NO mata tus
+servers ni te deja sin handle para stop/restart. Limitación: el log
+buffer viejo se pierde — no podemos re-attachar stdout de un proceso
+detached ya corriendo.
+
+**Symlinks de install**: el worktree comparte `node_modules`,
+`vendor`, `.venv` del repo padre vía symlinks para que `gulp`/`vite`/
+etc. ejecuten sin reinstalar.
+
+**Endpoints**:
+
+- `POST /dev/start` `{workspace, bubbleId, command, role}` — arranca
+- `POST /dev/stop` `{bubbleId, role}` — stop por process group
+- `POST /dev/restart` `{bubbleId, role}` — kill + relaunch
+- `GET /dev/status?bubbleId=<id>&role=<role>` — snapshot de una session
+- `GET /dev/logs?bubbleId=<id>&role=<role>` — ring buffer 64KB
+- `GET /dev/active` — lista todas las sessions vivas (cualquier bubble,
+  cualquier role). El Dashboard la usa para sembrar el indicador del
+  nodo al montar.
 
 ---
 
@@ -697,7 +725,7 @@ slash command).
 |---|---|---|
 | `ECO_WORKSPACES` | `~/projects/eco-test` | Workspaces autorizados (CSV). Editables desde Ajustes |
 | `ECO_HOST` | `127.0.0.1` | Bind interface (no cambiar) |
-| `ECO_PORT` | `7000` | Puerto HTTP/WS |
+| `ECO_PORT` | `7000` (override en scripts: `7050` dev, `7100` empaquetado) | Puerto HTTP/WS |
 | `ECO_ALLOWED_ORIGINS` | `tauri://localhost,…` | Orígenes WS permitidos |
 | `ECO_MODEL` | `claude-sonnet-4-5-20250929` | Modelo de Claude |
 | `ECO_SKILL_SOURCES` | `user,project` | Skills de Claude a cargar |
@@ -757,13 +785,17 @@ POST  /git/commit               ← git add -A && git commit -F -
 
 POST  /pty/kill                 ← mata PTY + worktree de la agente
 
-POST  /dev/up                   ← skill-driven dev server up por bubbleId
-POST  /dev/down                 ← detiene dev server + mata procesos hijos
-POST  /dev/restart              ← reinicia (puerto distinto si era conflicto)
-GET   /dev/status               ← {running, url, port, lastError?}
-GET   /dev/logs                 ← stdout + stderr del último run
+POST  /dev/start                ← arranca dev server {workspace, bubbleId, command, role}
+POST  /dev/stop                 ← detiene server por process group {bubbleId, role}
+POST  /dev/restart              ← kill + relaunch {bubbleId, role}
+GET   /dev/status               ← snapshot {status, url, port, command, ...}
+GET   /dev/logs                 ← stdout + stderr (ring buffer 64KB)
+GET   /dev/active               ← lista de sessions vivas para todos los bubbles
 
-GET   /proxy/site?url=...       ← fetch + strip XFO/CSP + inject base + bridge
+POST  /integrations/obsidian/save-session  ← guarda conversación como nota .md
+
+POST  /tts                      ← síntesis TTS (Piper o macOS say)
+GET   /tts/voices               ← {piper, macsay} disponibles
 
 WS    /ws                       ← Claude SDK stream (Bearer via subprotocol)
 WS    /ws/pty                   ← PTY interactivo (Bearer via subprotocol)
@@ -811,7 +843,7 @@ npm run test:security
 | Navegador interno | `<webview>` Chromium real con UA Chrome 131 + partition persistida |
 | Terminal | xterm.js + addon-fit + addon-web-links + node-pty (PTY real) |
 | Voz STT | openwakeword (ONNX local) + faster-whisper (CTranslate2, `medium`) |
-| Voz TTS | Piper TTS (ONNX local) — voces `es_ES-davefx-medium`, `es_MX-claude-high`, etc. |
+| Voz TTS | Piper TTS (ONNX local) · macOS `say` con voces Premium/Enhanced (descargables desde Ajustes) |
 | Backend | Node 20, Express 4, ws, node-pty, Zod, @node-rs/argon2, bip39, Claude Agent SDK |
 | Tema | Light / dark / system / **AMOLED** con `oklch()` + **12 acentos** + glassEffect helper |
 | i18n | Diccionario custom (TS), bilingüe ES/EN, sin lib externa |
@@ -854,11 +886,15 @@ npm run test:security
 - **Dock estilo macOS** opt-in en el sidebar izq con magnificación single-target + label corto + barra accent
 - **Animaciones en Dashboard**: grid stagger, graph view con nodos flotando + partículas de datos
 - **Kanban view** en el Dashboard (Activos / En espera / Inactivos / Con shell / Terminados / Con error)
-- **Navegador global** en el nav principal con multi-tab persistido en `localStorage`
-- **Browser proxy** (`/proxy/site`) con strip de XFO/CSP + click bridge para navegación encadenada
 - **Detección de runtime** (`lib/platform.ts`) — `web`/`electron`/`tauri`/`capacitor`
-- **Navegador por-agente** (`BrowserPanel`) con DevTools, zoom y skill picker
-- **Dev server por agente** vía skill `/dev-up` con auto-puerto, symlinks de install, URL scoring
+- **Navegador por-agente** (`BrowserPanel` + `SmartBrowserView`) con DevTools, zoom persistido y webview persistente
+- **Dev server por agente** con `ServerPanel` — start/stop/restart, dual mode (FE+BE),
+  auto-port via env (`SERVER_PORT`, `API_PORT`, `BACKEND_PORT`, etc.) que linkea FE↔BE,
+  preset por workspace, persistencia `~/.eco/dev-sessions.json` con re-adopt por pgid al boot
+- **Comandos de voz para server**: iniciar/detener/reiniciar servidor, activar remote, guardar en obsidian
+- **Pulso animado** del nodo a cada satélite en la vista grafo del Dashboard
+- **TTS dual backend**: Piper (offline) + macOS `say` con voces Apple Premium/Enhanced (Mónica, Paulina, etc.)
+- **Puerto dev 7050** por defecto (evita conflicto con AirPlay Receiver macOS en 7000)
 - Whisper `medium` por default + `initial_prompt` con vocabulario del producto
 - **Empaquetado Electron 33** — `.dmg` mac, `.exe` NSIS Windows, `.AppImage` Linux
 - **`<webview>` real Chromium** en el navegador interno (sin XFO/CSP, DevTools nativos)

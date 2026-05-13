@@ -15,6 +15,7 @@ type Props = {
 type DevStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 
 const storageKey = (id: string) => `eco.browser.url.${id}`;
+const zoomStorageKey = (id: string) => `eco.browser.zoom.${id}`;
 // Una pequeña home con shortcuts. Útil cuando todavía no se cargó nada.
 const SHORTCUTS = [
   { label: 'localhost:5174', url: 'http://localhost:5174/' },
@@ -46,9 +47,23 @@ export function BrowserPanel({ bubbleId }: Props) {
     try { return window.localStorage.getItem(storageKey(bubbleId)) ?? ''; } catch { return ''; }
   });
   const [draft, setDraft] = useState<string>(url);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoomState] = useState<number>(() => {
+    try {
+      const raw = window.localStorage.getItem(zoomStorageKey(bubbleId));
+      if (!raw) return 1;
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 0.25 && n <= 3 ? n : 1;
+    } catch { return 1; }
+  });
+  // Wrap setZoom para que CADA cambio escriba a LS inmediatamente — más
+  // robusto que un useEffect aparte, que puede no dispararse en HMR /
+  // unmount rápido y deja el valor sin persistir.
+  const setZoom = (next: number) => {
+    setZoomState(next);
+    try { window.localStorage.setItem(zoomStorageKey(bubbleId), String(next)); }
+    catch { /* noop */ }
+  };
   const [devOpen, setDevOpen] = useState(false);
   // Estado del dev server por agente — solo para mostrar logs/URL en el panel
   // DevTools, ya NO se controla desde acá (eso vive en el ServerPanel).
@@ -75,12 +90,12 @@ export function BrowserPanel({ bubbleId }: Props) {
     if (!n) return;
     setLoadFailed(false);
     setUrl(n);
-    setRefreshKey((k) => k + 1);
   }
 
   function reload() {
     setLoadFailed(false);
-    setRefreshKey((k) => k + 1);
+    // Reload imperativo del webview existente — sin recrearlo.
+    smartRef.current?.reload();
   }
 
   function openInOs() {
@@ -105,16 +120,19 @@ export function BrowserPanel({ bubbleId }: Props) {
     return () => { cancelled = true; };
   }, [bubbleId]);
 
-  // Auto-navigate desde el ServerPanel: cuando el user clickea la URL del
-  // server o el server arranca, emitimos 'eco:browser_navigate' para que
-  // este BrowserPanel se cargue a esa URL automático.
+  // Auto-navigate desde el ServerPanel cuando el user clickea la URL del
+  // server. Guardamos contra mismo-URL para evitar recrear el webview si
+  // alguien emite el evento repetido (defensa en profundidad).
+  const lastNavUrlRef = useRef<string>('');
+  useEffect(() => { lastNavUrlRef.current = url; }, [url]);
   useEffect(() => {
     return ecoOn('eco:browser_navigate', (d) => {
       if (d.bubbleId !== bubbleId) return;
       if (!d.url) return;
+      if (d.url === lastNavUrlRef.current) return;
+      lastNavUrlRef.current = d.url;
       setLoadFailed(false);
       setUrl(d.url);
-      setRefreshKey((k) => k + 1);
     });
   }, [bubbleId]);
 
@@ -129,7 +147,6 @@ export function BrowserPanel({ bubbleId }: Props) {
         lastAutoNavRef.current = d.url;
         setLoadFailed(false);
         setUrl(d.url);
-        setRefreshKey((k) => k + 1);
       }
       if (d.status === 'stopped' || d.status === 'error') {
         lastAutoNavRef.current = '';
@@ -214,16 +231,8 @@ export function BrowserPanel({ bubbleId }: Props) {
     }
   }
 
-  // Watchdog: si pasaron 6s y nunca disparó onLoad, asumimos que el sitio bloqueó embedding.
-  useEffect(() => {
-    if (!url) return;
-    let loaded = false;
-    const iv = setTimeout(() => { if (!loaded) setLoadFailed(true); }, 6000);
-    const ifr = iframeRef.current;
-    const onLoad = () => { loaded = true; clearTimeout(iv); setLoadFailed(false); };
-    ifr?.addEventListener('load', onLoad);
-    return () => { clearTimeout(iv); ifr?.removeEventListener('load', onLoad); };
-  }, [url, refreshKey]);
+  // El SmartBrowserView ya emite onLoadFail/onLoadSuccess vía did-fail-load
+  // / did-finish-load del webview, así que no necesitamos watchdog acá.
 
   const statusLabel = serverStatus === 'idle' ? 'sin server'
     : serverStatus === 'starting' ? 'iniciando…'
@@ -377,7 +386,6 @@ export function BrowserPanel({ bubbleId }: Props) {
         ) : (
           <>
             <div
-              key={refreshKey}
               style={{
                 // Zoom emulado: escalamos y expandimos el tamaño para que la "ventana
                 // virtual" del sitio sea más grande que el contenedor, dando la sensación

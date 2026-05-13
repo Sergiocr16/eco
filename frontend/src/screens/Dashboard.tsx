@@ -1194,10 +1194,14 @@ function KanbanView({
 const SAT_ICONS = {
   chat: <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>,
   pty: <path d="M4 17l5-5-5-5M12 19h8"/>,
+  // Icono tipo base de datos — cilindro con dos elipses (tapa + base parcial)
+  // que da idea de "almacenamiento corriendo". Coincide más con el modelo
+  // mental del user para dev servers (frontend + backend + db).
   server: (
     <>
-      <rect x="2" y="3" width="20" height="18" rx="2"/>
-      <path d="M8 21V11M16 21V11M2 11h20"/>
+      <ellipse cx="12" cy="5" rx="9" ry="3"/>
+      <path d="M3 5v6c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
+      <path d="M3 11v6c0 1.66 4.03 3 9 3s9-1.34 9-3v-6"/>
     </>
   ),
   browser: (
@@ -1284,6 +1288,23 @@ function SatellitesLocal({
               stroke={it.color} strokeOpacity={isHovered ? 0.9 : 0.5} strokeWidth={isHovered ? 1.5 : 1}
               pointerEvents="none"
             />
+            {/* Pulso pequeño que viaja del nodo al satélite, da idea de
+                "datos fluyendo". Más pequeño que el pulso Eco→nodo. */}
+            <circle r={1.8} fill={it.color} pointerEvents="none"
+              style={{ filter: `drop-shadow(0 0 3px ${it.color})` }}>
+              <animateMotion
+                path={`M${lx},${ly} L${sx},${sy}`}
+                dur="1.4s"
+                repeatCount="indefinite"
+              />
+              <animate
+                attributeName="opacity"
+                values="0;0.85;0.85;0"
+                keyTimes="0;0.15;0.85;1"
+                dur="1.4s"
+                repeatCount="indefinite"
+              />
+            </circle>
             {/* Hit area invisible más grande para que sea fácil hover/click */}
             <circle cx={sx} cy={sy} r={chipR + 6} fill="transparent"/>
             {/* Halo cuando hovereado */}
@@ -1427,6 +1448,28 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   // frontend y backend corriendo a la vez; cada role se trackea por separado
   // para que parar uno no apague el indicador del otro.
   const [serverRoles, setServerRoles] = useState<Record<string, Record<string, boolean>>>({});
+  // Seed inicial: el Dashboard puede montarse después de que el WS ya replicó
+  // el snapshot, así que querríamos perder los eventos. Bajamos un listado de
+  // sessions activas al backend para sembrar el estado.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch('/dev/active');
+        if (!r.ok || cancelled) return;
+        const data = await r.json() as { sessions: Array<{ bubbleId: string; role: string; status: string }> };
+        if (!Array.isArray(data.sessions)) return;
+        const seed: Record<string, Record<string, boolean>> = {};
+        for (const s of data.sessions) {
+          const running = s.status === 'running' || s.status === 'starting';
+          if (!seed[s.bubbleId]) seed[s.bubbleId] = {};
+          seed[s.bubbleId][s.role] = running;
+        }
+        setServerRoles((prev) => ({ ...prev, ...seed }));
+      } catch { /* noop */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     return ecoOn('eco:dev_status', (d) => {
       const role = d.role ?? 'main';

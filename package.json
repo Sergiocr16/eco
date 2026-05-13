@@ -9,11 +9,13 @@
     "electron"
   ],
   "scripts": {
-    "dev:backend": "npm --workspace backend run dev",
-    "dev:frontend": "npm --workspace frontend run dev",
+    "dev:backend": "ECO_PORT=7050 npm --workspace backend run dev",
+    "dev:frontend": "ECO_BACKEND_PORT=7050 npm --workspace frontend run dev",
     "dev": "npm-run-all --parallel dev:backend dev:frontend",
-    "dev:electron": "wait-on http://127.0.0.1:5173 && npm --workspace electron run start",
+    "dev:electron": "wait-on http://127.0.0.1:5173 && ECO_PORT=7050 npm --workspace electron run start",
     "dev:app": "npm-run-all --parallel dev:backend dev:frontend dev:electron",
+    "web": "npm-run-all --parallel dev:backend dev:frontend",
+    "dmg": "npm run dist:mac",
     "typecheck": "npm-run-all --parallel typecheck:*",
     "typecheck:backend": "npm --workspace backend run typecheck",
     "typecheck:frontend": "npm --workspace frontend run typecheck",

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider, useTokens } from './design/theme';
+import { apiFetch } from './lib/api';
 import { AppSidebar, type Screen } from './components/AppSidebar';
 import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
@@ -294,6 +295,84 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         const cur = tts.volume ?? 1;
         const next = action.dir === 'up' ? Math.min(1, cur + 0.15) : Math.max(0, cur - 0.15);
         tts.setVolume?.(next);
+        return;
+      }
+      case 'server_action': {
+        const target = detailBubbleId || bubbles.activeBubbleId;
+        if (!target) return;
+        const targetBubble = bubbles.bubbles.find((b) => b.id === target);
+        if (!targetBubble) return;
+        const ws = targetBubble.workspace;
+        const dual = window.localStorage.getItem(`eco.dev.dual.${target}`) === '1';
+        const roles: Array<'main' | 'frontend' | 'backend'> = dual ? ['backend', 'frontend'] : ['main'];
+        const subAction = action.action;
+        const endpoint = subAction === 'start' ? '/dev/start'
+          : subAction === 'stop' ? '/dev/stop'
+          : '/dev/restart';
+        void (async () => {
+          for (const role of roles) {
+            const cmd = window.localStorage.getItem(`eco.dev.cmd.${target}.${role}`) ?? '';
+            try {
+              await apiFetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  workspace: ws, bubbleId: target, role,
+                  ...(subAction === 'start' && cmd ? { command: cmd } : {}),
+                }),
+              });
+            } catch { /* el error visible va al ServerPanel; acá solo disparamos */ }
+          }
+        })();
+        return;
+      }
+      case 'toggle_remote_control': {
+        const target = detailBubbleId || bubbles.activeBubbleId;
+        if (!target) return;
+        const targetBubble = bubbles.bubbles.find((b) => b.id === target);
+        if (!targetBubble) return;
+        // El toggle del remote control vive en localStorage (lo lee/escribe
+        // el botón del navbar). Disparamos el mismo CustomEvent que usa el
+        // botón para que se reconcilie el indicador del nodo en el dashboard.
+        const key = `eco.remote.${target}`;
+        if (action.on) {
+          // Slug por default = primera palabra del título — el botón lo computa
+          // mejor; acá ponemos un valor truthy y dejamos que el botón ajuste.
+          const slug = targetBubble.title.split(/\s+/)[0]?.toLowerCase() || 'agent';
+          window.localStorage.setItem(key, slug);
+          window.dispatchEvent(new CustomEvent('eco:remote-changed', { detail: { bubbleId: target, slug } }));
+        } else {
+          window.localStorage.removeItem(key);
+          window.dispatchEvent(new CustomEvent('eco:remote-changed', { detail: { bubbleId: target, slug: null } }));
+        }
+        return;
+      }
+      case 'save_to_obsidian': {
+        const target = detailBubbleId || bubbles.activeBubbleId;
+        if (!target) return;
+        const targetBubble = bubbles.bubbles.find((b) => b.id === target);
+        if (!targetBubble) return;
+        async function saveSession() {
+          try {
+            await apiFetch('/integrations/obsidian/save-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                bubbleId: targetBubble!.id,
+                title: targetBubble!.title,
+                workspace: targetBubble!.workspace,
+                createdAt: targetBubble!.createdAt,
+                updatedAt: targetBubble!.updatedAt,
+                messages: targetBubble!.messages.map((m) => ({
+                  role: m.role,
+                  text: m.text,
+                  createdAt: m.createdAt ?? Date.now(),
+                })),
+              }),
+            });
+          } catch { /* la UI muestra el flash de "guardando"; errores no críticos */ }
+        }
+        void saveSession();
         return;
       }
       case 'help':

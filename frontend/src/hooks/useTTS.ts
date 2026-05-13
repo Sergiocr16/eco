@@ -10,7 +10,7 @@ export type UnifiedVoice = {
   id: string;
   name: string;
   language: string;
-  kind: 'piper' | 'browser';
+  kind: 'piper' | 'browser' | 'macsay';
   premium: boolean;
 };
 
@@ -39,6 +39,13 @@ type PiperVoice = {
   bytes: number;
 };
 
+type MacSayVoice = {
+  id: string;
+  name: string;
+  language: string;
+  premium: boolean;
+};
+
 const PREMIUM_HINT = /\(?(premium|enhanced|neural|siri)\)?/i;
 
 function loadEnabled(): boolean {
@@ -60,23 +67,26 @@ function loadVolume(): number {
   } catch { return 1; }
 }
 
-async function fetchPiperVoices(): Promise<PiperVoice[]> {
+async function fetchVoices(): Promise<{ piper: PiperVoice[]; macsay: MacSayVoice[] }> {
   try {
     const res = await apiFetch('/tts/voices');
-    if (!res.ok) return [];
+    if (!res.ok) return { piper: [], macsay: [] };
     const data = await res.json();
-    return Array.isArray(data.voices) ? data.voices : [];
+    return {
+      piper: Array.isArray(data.piper) ? data.piper : (Array.isArray(data.voices) ? data.voices : []),
+      macsay: Array.isArray(data.macsay) ? data.macsay : [],
+    };
   } catch {
-    return [];
+    return { piper: [], macsay: [] };
   }
 }
 
-async function fetchTTS(text: string, voice: string): Promise<Blob | null> {
+async function fetchTTS(text: string, voice: string, backend: 'piper' | 'macsay'): Promise<Blob | null> {
   try {
     const res = await apiFetch('/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice }),
+      body: JSON.stringify({ text, voice, backend }),
     });
     if (!res.ok) return null;
     return await res.blob();
@@ -91,6 +101,7 @@ export function useTTS(): TTSHook {
   const [enabled, setEnabledState] = useState<boolean>(loadEnabled);
   const [speaking, setSpeaking] = useState(false);
   const [piperVoices, setPiperVoices] = useState<PiperVoice[]>([]);
+  const [macSayVoices, setMacSayVoices] = useState<MacSayVoice[]>([]);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | null>(loadVoice);
   const [rate, setRateState] = useState<number>(loadRate);
@@ -99,9 +110,12 @@ export function useTTS(): TTSHook {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const reqIdRef = useRef(0);
 
-  // Load Piper voices once
+  // Carga voces de Piper + macOS say desde el backend
   useEffect(() => {
-    fetchPiperVoices().then(setPiperVoices);
+    fetchVoices().then((v) => {
+      setPiperVoices(v.piper);
+      setMacSayVoices(v.macsay);
+    });
   }, []);
 
   // Subscribe to browser voices
@@ -114,6 +128,13 @@ export function useTTS(): TTSHook {
   }, [browserSupported]);
 
   const voices: UnifiedVoice[] = [
+    ...macSayVoices.map((v) => ({
+      id: `macsay:${v.id}`,
+      name: v.name,
+      language: v.language,
+      kind: 'macsay' as const,
+      premium: v.premium,
+    })),
     ...piperVoices.map((v) => ({
       id: `piper:${v.id}`,
       name: v.name,
@@ -130,7 +151,8 @@ export function useTTS(): TTSHook {
     })),
   ];
 
-  // Pick a default if none selected
+  // Default: priorizamos macsay Premium en español (suena mucho mejor),
+  // luego macsay normal, después piper, después browser.
   useEffect(() => {
     if (selectedVoiceURI) {
       const stillExists = voices.some((v) => v.id === selectedVoiceURI);
@@ -139,6 +161,8 @@ export function useTTS(): TTSHook {
     const isEs = (v: UnifiedVoice) => v.language?.toLowerCase().startsWith('es');
     const sortByScore = (a: UnifiedVoice, b: UnifiedVoice) => {
       let sA = 0, sB = 0;
+      if (a.kind === 'macsay') sA += 300;
+      if (b.kind === 'macsay') sB += 300;
       if (a.kind === 'piper') sA += 200;
       if (b.kind === 'piper') sB += 200;
       if (isEs(a)) sA += 100;
@@ -200,9 +224,9 @@ export function useTTS(): TTSHook {
     cancel();
 
     const [kind, raw] = selectedVoiceURI.split(/:(.+)/, 2);
-    if (kind === 'piper' && raw) {
+    if ((kind === 'piper' || kind === 'macsay') && raw) {
       setSpeaking(true);
-      const blob = await fetchTTS(text, raw);
+      const blob = await fetchTTS(text, raw, kind);
       if (myReq !== reqIdRef.current) return; // user cambió mientras esperaba
       if (!blob) {
         setSpeaking(false);

@@ -14,6 +14,7 @@ import * as obsidian from './obsidian.js';
 import { getClaudeAuthStatus } from './claude-auth.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
+import { isMacSayAvailable, listMacSayVoices, synthesizeMacSay } from './tts-macsay.js';
 import { listSkills } from './skills.js';
 import { addWorkspace, readStore as readWorkspaceStore, removeWorkspace } from './workspaces-store.js';
 import { runShell, ShellRequestSchema } from './shell.js';
@@ -194,20 +195,25 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-app.get('/info', (_req, res) => {
+app.get('/info', async (_req, res) => {
+  const macSayVoices = isMacSayAvailable() ? await listMacSayVoices() : [];
   res.json({
     workspaces: config.workspaces,
     model: config.model,
     tts: {
       piperAvailable: isPiperAvailable(),
       voices: isPiperAvailable() ? listVoices() : [],
+      macSayAvailable: isMacSayAvailable(),
+      macSayVoices,
     },
   });
 });
 
-app.get('/tts/voices', (_req, res) => {
-  if (!isPiperAvailable()) return errResponse(res, 503, 'tts.piper_unavailable', 'Piper no instalado');
-  res.json({ voices: listVoices() });
+app.get('/tts/voices', async (_req, res) => {
+  const piper = isPiperAvailable() ? listVoices() : [];
+  const macsay = isMacSayAvailable() ? await listMacSayVoices() : [];
+  // Mantenemos `voices` por compat con clientes viejos (era el array de Piper).
+  res.json({ voices: piper, piper, macsay });
 });
 
 app.get('/skills', (req: Request, res: Response) => {
@@ -460,6 +466,12 @@ app.post('/dev/restart', async (req: Request, res: Response) => {
   res.json(result);
 });
 
+// Lista TODAS las sessions activas (cualquier bubble, cualquier role). Pensado
+// para que el Dashboard pinte los nodos correctamente al montar.
+app.get('/dev/active', (_req: Request, res: Response) => {
+  res.json({ sessions: devServer.devListActive() });
+});
+
 app.get('/dev/status', (req: Request, res: Response) => {
   const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
@@ -581,9 +593,15 @@ app.post('/shell', async (req: Request, res: Response) => {
 const ttsConcurrency = { active: 0, max: 2 };
 
 app.post('/tts', async (req: Request, res: Response) => {
-  if (!isPiperAvailable()) return errResponse(res, 503, 'tts.piper_unavailable', 'Piper no instalado');
   const parsed = TTSRequestSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const backend = parsed.data.backend ?? 'piper';
+  if (backend === 'piper' && !isPiperAvailable()) {
+    return errResponse(res, 503, 'tts.piper_unavailable', 'Piper no instalado');
+  }
+  if (backend === 'macsay' && !isMacSayAvailable()) {
+    return errResponse(res, 503, 'tts.macsay_unavailable', 'macOS say no disponible');
+  }
   if (ttsConcurrency.active >= ttsConcurrency.max) {
     return errResponse(res, 429, 'tts.too_concurrent', 'Demasiadas síntesis concurrentes');
   }
@@ -593,7 +611,9 @@ app.post('/tts', async (req: Request, res: Response) => {
     if (!res.writableEnded) controller.abort();
   });
   try {
-    const wav = await synthesize(parsed.data, controller.signal);
+    const wav = backend === 'macsay'
+      ? await synthesizeMacSay(parsed.data.text, parsed.data.voice ?? '', controller.signal)
+      : await synthesize(parsed.data, controller.signal);
     res.setHeader('Content-Type', 'audio/wav');
     res.setHeader('Content-Length', wav.length.toString());
     res.setHeader('Cache-Control', 'no-store');

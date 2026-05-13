@@ -15,12 +15,13 @@ import '@xterm/xterm/css/xterm.css';
 import { useTokens } from '@/design/theme';
 import {
   IconPlay, IconStop, IconResume, IconCpu, IconAlert,
-  IconPlus, IconTrash, IconSettings, IconChevD, IconChevR,
+  IconPlus, IconTrash, IconSettings, IconChevD, IconChevR, IconExt, IconGlobe,
 } from '@/design/icons';
 import { Glass, Btn } from '@/design/primitives';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useDevPresets, type PresetRole } from '@/hooks/useDevPresets';
+import { useWorkspaceServerDefaults } from '@/hooks/useWorkspaceServerDefaults';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { ecoToken } from '@/lib/eco-config';
 
@@ -58,13 +59,24 @@ const initSlot = (): SlotState => ({
 
 export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
   const t = useTokens();
+  const wsDefaults = useWorkspaceServerDefaults(workspace);
+
+  // Si el bubble nunca tocó el toggle dual, arrancamos con el default del
+  // workspace. Si ya lo tocó, respetamos su elección.
+  const DUAL_TOUCHED_KEY = `${DUAL_KEY(bubbleId)}.touched`;
   const [dual, setDual] = useState<boolean>(() => {
-    try { return window.localStorage.getItem(DUAL_KEY(bubbleId)) === '1'; }
-    catch { return false; }
+    try {
+      const touched = window.localStorage.getItem(DUAL_TOUCHED_KEY) === '1';
+      if (touched) return window.localStorage.getItem(DUAL_KEY(bubbleId)) === '1';
+      return wsDefaults.defaults.dual;
+    } catch { return false; }
   });
   const setDualPersist = (v: boolean) => {
     setDual(v);
-    try { window.localStorage.setItem(DUAL_KEY(bubbleId), v ? '1' : '0'); } catch { /* noop */ }
+    try {
+      window.localStorage.setItem(DUAL_KEY(bubbleId), v ? '1' : '0');
+      window.localStorage.setItem(DUAL_TOUCHED_KEY, '1');
+    } catch { /* noop */ }
   };
 
   // ¿Está colapsada la sección de configuración? Persistido por agente.
@@ -95,10 +107,11 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     try { window.localStorage.setItem(MIN_KEY(role), v ? '1' : '0'); } catch { /* noop */ }
   };
 
-  // Comandos por rol — persistidos por separado.
-  const [cmdMain, setCmdMain] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'main')));
-  const [cmdFrontend, setCmdFrontend] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'frontend')));
-  const [cmdBackend, setCmdBackend] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'backend')));
+  // Comandos por rol — persistidos por separado. Fallback al default del
+  // workspace si el bubble nunca tiene nada guardado para ese rol.
+  const [cmdMain, setCmdMain] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'main')) || wsDefaults.defaults.main);
+  const [cmdFrontend, setCmdFrontend] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'frontend')) || wsDefaults.defaults.frontend);
+  const [cmdBackend, setCmdBackend] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'backend')) || wsDefaults.defaults.backend);
 
   function saveCmd(role: SlotRole, v: string) {
     const key = CMD_KEY(bubbleId, role);
@@ -122,6 +135,10 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     frontend: initSlot(),
     backend: initSlot(),
   });
+  // Ref espejo de slots para leer el estado actual desde callbacks async sin
+  // capturarlo en clausuras viejas.
+  const slotsRef = useRef(slots);
+  useEffect(() => { slotsRef.current = slots; }, [slots]);
   const updateSlot = (role: SlotRole, patch: Partial<SlotState>) => {
     setSlots((p) => ({ ...p, [role]: { ...p[role], ...patch } }));
   };
@@ -144,7 +161,11 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bubbleId, dual]);
 
-  // Stream de status vía WS.
+  // Stream de status vía WS. NO emitimos browser_navigate desde acá — el
+  // BrowserPanel tiene su propio listener de dev_status con guard contra
+  // navegación duplicada (lastAutoNavRef). Si emitiéramos acá sin guard, cada
+  // WS push del backend bumparía el refreshKey del BrowserPanel y recrearía
+  // el webview en loop.
   useEffect(() => {
     return ecoOn('eco:dev_status', (e: DevStatusEvent) => {
       if (e.bubbleId !== bubbleId) return;
@@ -154,10 +175,6 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
         url: e.url ?? '',
         command: e.command ?? '',
       });
-      // Auto-bind del navegador a la URL del frontend (o main si single).
-      if (e.status === 'running' && e.url && (role === 'main' || role === 'frontend')) {
-        ecoEmit('eco:browser_navigate', { bubbleId, url: e.url });
-      }
     });
   }, [bubbleId]);
 
@@ -248,9 +265,45 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     updateSlot(role, { actionBusy: null });
   }
 
+  // Espera a que el slot `role` reporte status=running, o falle. Resuelve
+  // booleano (true si llegó a running). Timeout para no quedar colgado si
+  // el backend nunca arranca o nunca pinta el log "Started on port ...".
+  function waitForRoleRunning(role: SlotRole, timeoutMs = 90_000): Promise<boolean> {
+    return new Promise((resolve) => {
+      const startedAt = Date.now();
+      // Si ya está running, salimos inmediato.
+      if (slotsRef.current[role].status === 'running') { resolve(true); return; }
+      const off = ecoOn('eco:dev_status', (e: DevStatusEvent) => {
+        if (e.bubbleId !== bubbleId) return;
+        const r = (e.role ?? 'main') as SlotRole;
+        if (r !== role) return;
+        if (e.status === 'running') { off(); resolve(true); }
+        else if (e.status === 'error' || e.status === 'stopped') { off(); resolve(false); }
+        else if (Date.now() - startedAt > timeoutMs) { off(); resolve(false); }
+      });
+      const timer = window.setTimeout(() => { off(); resolve(false); }, timeoutMs);
+      void timer; // el off del ecoOn maneja la limpieza también.
+    });
+  }
+
   async function runAllAction(action: 'up' | 'down' | 'restart') {
     if (!dual) { return runActionForRole('main', action); }
-    // Dual: corremos en paralelo para que ambos arranquen / se detengan a la vez.
+
+    // Dual + 'up': el backend va primero. Esperamos a que esté running (port
+    // detectado en el log) antes de largar el frontend. Esto evita los
+    // ECONNREFUSED de proxies como gulp/browser-sync que apuntan al backend
+    // y se vuelven locos si el backend todavía no escucha.
+    if (action === 'up') {
+      await runActionForRole('backend', 'up');
+      await waitForRoleRunning('backend');
+      await runActionForRole('frontend', 'up');
+      return;
+    }
+
+    // 'down' y 'restart': los corremos en paralelo, no hay dependencia.
+    // Para 'restart' técnicamente el frontend podría fallar si lo bajamos y
+    // levantamos antes que el backend, pero como el backend se reinicia en
+    // paralelo, en pocos segundos vuelve a estar — y el proxy reintentará.
     await Promise.all([
       runActionForRole('frontend', action),
       runActionForRole('backend', action),
@@ -274,9 +327,9 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
             const anyRunning = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting');
             const anyStoppable = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting' || slots[r].status === 'error');
             const anyBusy = activeRoles.some((r) => !!slots[r].actionBusy);
-            const startLabel = dual ? 'Iniciar ambos' : 'Iniciar';
-            const restartLabel = dual ? 'Reiniciar ambos' : 'Reiniciar';
-            const stopLabel = dual ? 'Detener ambos' : 'Detener';
+            const startLabel = 'Iniciar servidor';
+            const restartLabel = 'Reiniciar servidor';
+            const stopLabel = 'Detener servidor';
             return (
               <>
                 <Btn kind="primary" size="md" onClick={() => void runAllAction('up')}
@@ -334,6 +387,39 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
                 </div>
               </div>
               <Toggle on={dual} onChange={setDualPersist}/>
+            </div>
+
+            {/* Preset del proyecto: guardar/cargar comandos por workspace */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 12px', marginBottom: 12, borderRadius: 10,
+              background: t.bg2, border: `1px solid ${t.glassBorder}`,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: t.text0 }}>
+                  Preset del proyecto
+                </div>
+                <div style={{ fontSize: 10.5, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
+                  {wsDefaults.hasAny
+                    ? 'Hay un preset guardado para este workspace. Las conversaciones nuevas lo van a usar automáticamente.'
+                    : 'Guardá los comandos actuales como default del proyecto — todas las conversaciones nuevas en este workspace los van a heredar.'}
+                </div>
+              </div>
+              <Btn kind="secondary" size="sm" onClick={() => {
+                wsDefaults.save({
+                  dual,
+                  main: cmdMain,
+                  frontend: cmdFrontend,
+                  backend: cmdBackend,
+                });
+              }}>
+                Guardar
+              </Btn>
+              {wsDefaults.hasAny && (
+                <Btn kind="ghost" size="sm" onClick={() => wsDefaults.clear()}>
+                  Borrar
+                </Btn>
+              )}
             </div>
 
         {/* En dual, picker de qué panel de logs se ve grande por defecto */}
@@ -575,20 +661,44 @@ function PanelHeader({
                 {statusLabelFor(s.status)}
               </span>
               {s.url && (
-                <button
-                  type="button"
-                  onClick={() => ecoEmit('eco:browser_navigate', { bubbleId, url: s.url })}
-                  title="Abrir en pestaña Navegador"
-                  style={{
+                <>
+                  <span style={{
                     flex: 1, fontFamily: t.fontMono, fontSize: 11,
-                    background: 'transparent', border: 0,
-                    color: t.accent, cursor: 'pointer', padding: 0,
-                    textDecoration: 'underline', textUnderlineOffset: 2,
-                    textAlign: 'left', minWidth: 0,
+                    color: t.text2, minWidth: 0,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                  {s.url}
-                </button>
+                  }}>{s.url}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      ecoEmit('eco:browser_navigate', { bubbleId, url: s.url });
+                      ecoEmit('eco:switch_tab', { tab: 'browser' });
+                    }}
+                    title="Abrir en el navegador de Eco (tab Navegador)"
+                    style={{
+                      flexShrink: 0,
+                      width: 22, height: 22, padding: 0, borderRadius: 5,
+                      border: 0, background: 'transparent',
+                      color: t.accent, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                    <IconGlobe size={12}/>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try { window.open(s.url, '_blank', 'noopener,noreferrer'); } catch { /* noop */ }
+                    }}
+                    title="Abrir en el navegador del sistema"
+                    style={{
+                      flexShrink: 0,
+                      width: 22, height: 22, padding: 0, borderRadius: 5,
+                      border: 0, background: 'transparent',
+                      color: t.text2, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                    <IconExt size={11}/>
+                  </button>
+                </>
               )}
               {s.actionError && (
                 <span style={{

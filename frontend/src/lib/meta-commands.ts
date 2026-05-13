@@ -19,11 +19,15 @@ export type MetaAction =
   | { kind: 'toggle_voice'; on: boolean }
   | { kind: 'set_theme'; mode: 'dark' | 'light' | 'system' }
   | { kind: 'scroll'; dir: 'up' | 'down' | 'top' | 'bottom' }
-  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' }
+  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server' }
   | { kind: 'confirm'; answer: 'yes' | 'no' }
   | { kind: 'repeat_last' }
   | { kind: 'tts_rate'; dir: 'faster' | 'slower' | 'normal' }
   | { kind: 'tts_volume'; dir: 'up' | 'down' }
+  // Acciones server / remote / obsidian — solo aplican en una conversación.
+  | { kind: 'server_action'; action: 'start' | 'stop' | 'restart' }
+  | { kind: 'toggle_remote_control'; on: boolean }
+  | { kind: 'save_to_obsidian' }
   | { kind: 'help' }
   | { kind: 'unknown' };
 
@@ -202,6 +206,21 @@ const ALIASES: Record<string, string> = {
 
   // Ayuda
   'ayuda': 'help', 'help': 'help', 'comandos': 'help',
+
+  // Server (ctx: requiere "servidor" como arg de un verbo, o "reiniciar" solo)
+  'servidor': 'server_ctx', 'server': 'server_ctx',
+  'reiniciar': 'restart_v', 'reinicia': 'restart_v',
+  'reinicar': 'restart_v', 'restart': 'restart_v',
+  'rebootear': 'restart_v', 'rebootea': 'restart_v',
+
+  // Remote control (ctx: keyword "remote" / "remoto" / "control")
+  'remoto': 'remote_ctx', 'remote': 'remote_ctx',
+  'activar': 'enable_v', 'activa': 'enable_v', 'enable': 'enable_v',
+  'desactivar': 'disable_v', 'desactiva': 'disable_v', 'disable': 'disable_v',
+
+  // Obsidian save
+  'obsidian': 'obsidian_ctx', 'kb': 'obsidian_ctx', 'vault': 'obsidian_ctx',
+  'guardar': 'save_v', 'guarda': 'save_v', 'save': 'save_v',
 };
 
 function normalize(s: string): string {
@@ -275,6 +294,43 @@ export function parseMetaCommand(
     if (aliased === 'tab_plan')     return { kind: 'switch_tab', tab: 'plan' };
     if (aliased === 'tab_chat')     return { kind: 'switch_tab', tab: 'chat' };
     if (aliased === 'archivos_ctx') return { kind: 'switch_tab', tab: 'files' };
+  }
+
+  // Acciones que aplican al agente activo (server, remote control, obsidian).
+  // Requieren estar en una conversación.
+  if (currentScreen === 'detail') {
+    const argTokens = dropFillers(restTokens);
+    const firstArg = argTokens[0] ?? '';
+    const argAliased = ALIASES[firstArg] ?? '';
+    const argHas = (word: string) => argTokens.includes(word);
+
+    // Server: "iniciar/levantar/arrancar servidor", "detener/parar/apagar servidor",
+    // "reiniciar servidor" o "reiniciar" solo (default: el server del agente).
+    const wantsServer = argAliased === 'server_ctx' || argHas('servidor') || argHas('server');
+    if (commandKey === 'restart_v') {
+      // "reiniciar" / "reinicia" solo, o con "servidor" → reiniciar el server.
+      return { kind: 'server_action', action: 'restart' };
+    }
+    if (wantsServer) {
+      if (commandKey === 'create') return { kind: 'server_action', action: 'start' };
+      if (commandKey === 'pause' || commandKey === 'close') return { kind: 'server_action', action: 'stop' };
+    }
+
+    // Remote control: "activar remote control", "abrir remote", "desactivar remote".
+    const wantsRemote = argAliased === 'remote_ctx' || argHas('remoto') || argHas('remote') || argHas('control');
+    if (wantsRemote) {
+      if (commandKey === 'enable_v' || commandKey === 'create') return { kind: 'toggle_remote_control', on: true };
+      if (commandKey === 'disable_v' || commandKey === 'close' || commandKey === 'pause') return { kind: 'toggle_remote_control', on: false };
+    }
+    // Verbo "activar"/"desactivar" solo → asumimos remote (es el toggle más común).
+    if (commandKey === 'enable_v') return { kind: 'toggle_remote_control', on: true };
+    if (commandKey === 'disable_v') return { kind: 'toggle_remote_control', on: false };
+
+    // Obsidian: "guardar en obsidian", "guardar nota", "guarda esto en obsidian".
+    const wantsObsidian = argAliased === 'obsidian_ctx' || argHas('obsidian') || argHas('kb') || argHas('vault') || argHas('nota');
+    if (commandKey === 'save_v' && (wantsObsidian || argTokens.length === 0)) {
+      return { kind: 'save_to_obsidian' };
+    }
   }
   // Conservamos el texto original con casing/acentos para el título (más bonito).
   // Calculamos el índice absoluto del keyword en allTokens para que preserveCasing arranque ahí.
@@ -409,6 +465,18 @@ export function describeAction(action: MetaAction, bubbles: Bubble[], lang: Lang
     case 'repeat_last':    return { title: tr('cmd.repeat') };
     case 'tts_rate':       return { title: tr(`cmd.tts.${action.dir}`) };
     case 'tts_volume':     return { title: tr(action.dir === 'up' ? 'cmd.tts.louder' : 'cmd.tts.quieter') };
+    case 'server_action': {
+      const map = {
+        start: 'cmd.server.start',
+        stop: 'cmd.server.stop',
+        restart: 'cmd.server.restart',
+      } as const;
+      return { title: tr(map[action.action]) };
+    }
+    case 'toggle_remote_control':
+      return { title: tr(action.on ? 'cmd.remote.on' : 'cmd.remote.off') };
+    case 'save_to_obsidian':
+      return { title: tr('cmd.obsidian.save') };
     case 'help':           return { title: tr('cmd.help.title') };
     case 'unknown':        return { title: tr('cmd.unknown.title'), detail: tr('cmd.unknown.detail') };
   }
