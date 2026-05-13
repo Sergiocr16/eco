@@ -81,7 +81,8 @@ restricciones de `X-Frame-Options`/CSP, con DevTools propios.
 │  · Liquid Glass dark/light/AMOLED · 12 acentos · Dock macOS opt-in      │
 │  · Comandos meta «Eco …» con parser tolerante (rellenos + sinónimos)    │
 │  · Wake feedback: ListeningWave en el rail del Dashboard                │
-│  · Web Speech API (dev) → listener Python en empaquetado                │
+│  · STT dual: Web Speech API (dev en navegador) / Swift+SFSpeechRecognizer │
+│    on-device en el .dmg (sin Python, sin internet, sin enviar audio)      │
 │  · Picker de Skills + Picker de Branches en cada agente                 │
 │  · xterm.js en la pestaña Shell — PTY real con reattach                 │
 │  · Commit con AI con preview editable                                   │
@@ -127,11 +128,21 @@ restricciones de `X-Frame-Options`/CSP, con DevTools propios.
                      (~/.eco/worktrees/<id>)
 
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  Listener Python (sidecar — solo dev, NO en .app empaquetada)           │
+│  Listener Python (sidecar — solo dev opcional, NO se usa en .app)       │
 │  · openwakeword (ONNX local) escucha mic 24/7                           │
 │  · Wake word custom "Hey Eco" (training pipeline incluido)              │
 │  · faster-whisper (medium · 30-40% más preciso con initial_prompt)      │
 │  · POST /voice/transcribed → broadcast WS al frontend                   │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  STT nativo macOS en el .dmg (electron/native/eco-stt.swift)             │
+│  · Binario universal arm64+x64 (~150KB) en Resources/bin/eco-stt         │
+│  · SFSpeechRecognizer + requiresOnDeviceRecognition = true               │
+│  · CFRunLoop activo durante recognitionTask (sin esto los callbacks      │
+│    nunca llegan desde un CLI sin app bundle propio)                      │
+│  · Renderer: Web Audio API → PCM 16kHz mono → WAV PCM16 en JS →          │
+│    POST /voice/transcribe-blob (chunks de 4s)                            │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -167,9 +178,10 @@ npm run dev:app
 # 5) Primera vez: crear cuenta local (PIN + frase de recuperación + foto opcional)
 # La AuthScreen te muestra la frase ANTES de entrar a la app.
 
-# 6) (Opcional) Listener de voz local 100%
+# 6) (Opcional, solo si querés wake word "Hey Eco" en dev navegador)
+#    En el .dmg ya no hace falta — la voz va por SFSpeechRecognizer nativo.
 npm run listener:setup   # solo la primera vez
-npm run listener         # arranca el wake word + STT local
+npm run listener         # arranca el wake word + Whisper local
 
 # 7) (Opcional) Entrenar wake word "Hey Eco" custom (~20-35 min, una vez)
 cd listener
@@ -177,7 +189,10 @@ source .venv/bin/activate
 pip install -r training/requirements-train.txt
 python training/train_wake.py --negatives-dir ~/Music/ -v
 # → genera listener/models/hey_eco.onnx
-# El listener lo detecta y usa automático en el próximo arranque
+
+# 8) (Solo si tocaste el CLI Swift) Recompilar eco-stt
+./electron/native/build.sh   # genera electron/build/bin/eco-stt (universal)
+# El dmg lo bundlea desde ahí; correlo siempre que modifiques eco-stt.swift
 ```
 
 > macOS: AirPlay Receiver ocupa el puerto 7000. Por eso el dev backend de Eco
@@ -228,8 +243,14 @@ El pipeline:
   `lib/eco-config.ts` antes del primer render (refactor de `main.tsx`
   con dynamic import del `<App>` para garantizar el orden)
 - Web Speech API se deshabilita en Electron (no tiene API key de
-  Google → entraría en loop start/end). Para voz local en producción,
-  correr el listener Python aparte
+  Google → entraría en loop start/end). En el .dmg la voz va por
+  Swift CLI `eco-stt` + Apple Speech framework on-device
+- macOS pide permiso 2 veces la primera vez que hablás: **Micrófono**
+  + **Speech Recognition** (NSMicrophone/NSSpeechRecognitionUsageDescription
+  van en Info.plist vía electron-builder `extendInfo`)
+- `setPermissionRequestHandler` en main.cjs concede `media/audioCapture/
+  microphone` para que Chromium no rechace `getUserMedia` antes de
+  llegar al prompt nativo de macOS
 - `<webview>` con UA Chrome 131 fijo (sin "Electron" → Google deja de
   redirigir a `/sorry/index`)
 
@@ -315,14 +336,20 @@ eco/
 │   └── .env.example
 │
 ├── electron/                  ← Wrapper Electron 33 para empaquetado
-│   ├── main.cjs               ← Main process: spawn backend, BrowserWindow, IPC
+│   ├── main.cjs               ← Main process: spawn backend, BrowserWindow, IPC,
+│   │                            setPermissionRequestHandler (mic/audioCapture)
 │   ├── preload.cjs            ← Expone window.electronAPI (getConfig, log)
 │   ├── package.json           ← Config electron-builder (mac/win/linux targets)
+│   │                            + NSMicrophoneUsageDescription / NSSpeechRecognition
+│   ├── native/                ← Código Swift compilado al build
+│   │   ├── eco-stt.swift      ← CLI Apple Speech framework (on-device)
+│   │   └── build.sh           ← swiftc → lipo universal arm64+x64
 │   ├── scripts/
 │   │   └── prepare-backend.cjs  ← npm install --omit=dev + chmod spawn-helper
 │   └── build/
 │       ├── icon.icns          ← Ícono mac (generado desde brand/eco-logo.svg)
-│       └── icon.png           ← Ícono linux/fallback
+│       ├── icon.png           ← Ícono linux/fallback
+│       └── bin/eco-stt        ← Binario universal (bundleado en Resources/bin)
 │
 ├── release/                   ← Output de electron-builder (gitignored)
 │   ├── Eco-0.1.0-arm64.dmg
@@ -797,6 +824,12 @@ POST  /integrations/obsidian/save-session  ← guarda conversación como nota .m
 POST  /tts                      ← síntesis TTS (Piper o macOS say)
 GET   /tts/voices               ← {piper, macsay} disponibles
 
+POST  /voice/transcribe-blob    ← (macOS only) audio/* binary → eco-stt CLI →
+                                  Apple Speech on-device → texto. Renderer
+                                  manda WAV PCM16 16kHz mono cada 4s.
+POST  /voice/transcribed        ← legacy: el listener Python postea texto
+                                  ya transcribido para broadcast vía WS
+
 WS    /ws                       ← Claude SDK stream (Bearer via subprotocol)
 WS    /ws/pty                   ← PTY interactivo (Bearer via subprotocol)
 ```
@@ -842,7 +875,8 @@ npm run test:security
 | Frontend | Vite 6, React 18, TS 5, Tailwind v4, Motion 11, Radix UI |
 | Navegador interno | `<webview>` Chromium real con UA Chrome 131 + partition persistida |
 | Terminal | xterm.js + addon-fit + addon-web-links + node-pty (PTY real) |
-| Voz STT | openwakeword (ONNX local) + faster-whisper (CTranslate2, `medium`) |
+| Voz STT (.dmg) | Swift CLI + Apple `SFSpeechRecognizer` on-device · captura PCM con Web Audio API → WAV PCM16 |
+| Voz STT (dev opcional) | openwakeword (ONNX local) + faster-whisper (CTranslate2, `medium`) — Python sidecar |
 | Voz TTS | Piper TTS (ONNX local) · macOS `say` con voces Premium/Enhanced (descargables desde Ajustes) |
 | Backend | Node 20, Express 4, ws, node-pty, Zod, @node-rs/argon2, bip39, Claude Agent SDK |
 | Tema | Light / dark / system / **AMOLED** con `oklch()` + **12 acentos** + glassEffect helper |
@@ -895,6 +929,11 @@ npm run test:security
 - **Pulso animado** del nodo a cada satélite en la vista grafo del Dashboard
 - **TTS dual backend**: Piper (offline) + macOS `say` con voces Apple Premium/Enhanced (Mónica, Paulina, etc.)
 - **Puerto dev 7050** por defecto (evita conflicto con AirPlay Receiver macOS en 7000)
+- **Voz nativa en el .dmg** — Swift CLI `eco-stt` + Apple `SFSpeechRecognizer` on-device
+  - Renderer captura PCM via Web Audio API → WAV PCM16 16kHz mono → `/voice/transcribe-blob`
+  - Backend spawnea el binario universal arm64+x64 (~150KB) bundleado en `Resources/bin/`
+  - 100% offline, audio nunca sale de la Mac
+  - macOS pide permiso Mic + Speech Recognition la primera vez (`extendInfo` en Info.plist)
 - Whisper `medium` por default + `initial_prompt` con vocabulario del producto
 - **Empaquetado Electron 33** — `.dmg` mac, `.exe` NSIS Windows, `.AppImage` Linux
 - **`<webview>` real Chromium** en el navegador interno (sin XFO/CSP, DevTools nativos)
@@ -909,8 +948,10 @@ npm run test:security
 **Pendiente**:
 
 - Code signing + notarización Apple para distribuir `.dmg` firmado
-- Listener Python bundleado con PyInstaller dentro del `.app` (hoy se corre aparte)
-- Push-to-talk con Whisper en Chrome (workaround para no depender de Google Speech)
+- Wake word detection en el .dmg (hoy SFSpeechRecognizer transcribe todo y el
+  parser de comandos detecta el prefijo "Eco" en JS — funciona pero no es lo
+  más eficiente)
+- Voz nativa en Windows / Linux empaquetado (hoy `eco-stt` es solo macOS)
 - SQLite local para chat history de larga duración (hoy es localStorage)
 - Auto-update via `electron-updater` + S3/GitHub Releases
 - License gating con Paddle/LemonSqueezy (cuando vaya a venderse)

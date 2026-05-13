@@ -2,8 +2,10 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import helmet from 'helmet';
 import { createServer } from 'node:http';
-import { existsSync as fsExistsSync } from 'node:fs';
+import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join as pathJoin } from 'node:path';
+import * as path from 'node:path';
+import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace } from './config.js';
 import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
 import { attachPtyServer, killBubblePty } from './pty-server.js';
@@ -292,6 +294,89 @@ app.post('/voice/transcribed', (req: Request, res: Response) => {
   broadcastServerMessage({ type: 'voice_transcribed', text, ts: Date.now() });
   res.json({ ok: true });
 });
+
+// Transcripción on-device para Electron empaquetado en macOS. El renderer
+// captura audio con MediaRecorder, lo postea como blob binario acá, y el
+// backend spawneando el CLI Swift (`eco-stt`) usa Apple Speech framework.
+// Funciona offline, no requiere Python.
+app.post('/voice/transcribe-blob',
+  express.raw({ type: ['audio/*'], limit: '10mb' }),
+  async (req: Request, res: Response) => {
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return errResponse(res, 400, 'http.invalid_body', 'Body vacío o no binario');
+    }
+    if (process.platform !== 'darwin') {
+      return errResponse(res, 501, 'voice.unsupported_platform', 'Transcripción nativa solo en macOS');
+    }
+    // El binario vive en process.resourcesPath/bin (empaquetado) o relativo
+    // al backend (dev). Probamos en ambos lugares.
+    // process.resourcesPath solo existe en Electron-empaquetado; en Node puro
+    // queda undefined. Hacemos cast defensivo a string|undefined.
+    const resourcesPath = (process as unknown as { resourcesPath?: string }).resourcesPath;
+    // __dirname no existe en módulos ESM — derivamos del import.meta.url.
+    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+    const candidatePaths = [
+      // Empaquetado: extraResources puso bin/eco-stt en Resources/
+      resourcesPath ? path.join(resourcesPath, 'bin', 'eco-stt') : '',
+      // Dev: el binario vive en electron/build/bin
+      path.resolve(moduleDir, '..', '..', 'electron', 'build', 'bin', 'eco-stt'),
+    ].filter(Boolean);
+    let binPath = '';
+    for (const p of candidatePaths) {
+      if (existsSync(p)) { binPath = p; break; }
+    }
+    if (!binPath) {
+      return errResponse(res, 500, 'voice.cli_missing', 'eco-stt binary no encontrado');
+    }
+
+    // Detectamos extensión del content-type — AVFoundation auto-detecta el
+    // formato real del contenido pero igual escribir con extensión correcta
+    // ayuda al decoder.
+    const ct = String(req.headers['content-type'] || 'audio/wav').toLowerCase();
+    const ext = ct.includes('wav') ? '.wav'
+      : ct.includes('webm') ? '.webm'
+      : ct.includes('mp4') || ct.includes('m4a') ? '.m4a'
+      : ct.includes('ogg') ? '.ogg'
+      : '.wav';
+    const tmpFile = path.join(
+      tmpdir(),
+      `eco-stt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`,
+    );
+    try {
+      writeFileSync(tmpFile, req.body);
+      const locale = typeof req.query.locale === 'string' ? req.query.locale : 'es-MX';
+      // Validamos locale para que sea seguro pasar como arg (sin shell, pero
+      // por defensa en profundidad).
+      if (!/^[a-z]{2}(-[A-Z]{2})?$/.test(locale)) {
+        return errResponse(res, 400, 'http.invalid_body', 'Locale inválido');
+      }
+      const { spawn } = await import('node:child_process');
+      const proc = spawn(binPath, [tmpFile, locale], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 30_000,
+      });
+      const outChunks: Buffer[] = [];
+      const errChunks: Buffer[] = [];
+      proc.stdout.on('data', (c: Buffer) => outChunks.push(c));
+      proc.stderr.on('data', (c: Buffer) => errChunks.push(c));
+      const exitCode = await new Promise<number>((resolve) => {
+        proc.on('close', (code) => resolve(code ?? -1));
+        proc.on('error', () => resolve(-1));
+      });
+      const text = Buffer.concat(outChunks).toString('utf-8').trim();
+      if (exitCode !== 0) {
+        const errText = Buffer.concat(errChunks).toString('utf-8').slice(0, 400);
+        return errResponse(res, 500, 'voice.transcribe_failed', errText || `exit ${exitCode}`);
+      }
+      res.json({ ok: true, text });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'transcribe failed';
+      return errResponse(res, 500, 'voice.transcribe_failed', msg);
+    } finally {
+      try { unlinkSync(tmpFile); } catch { /* noop */ }
+    }
+  },
+);
 
 app.get('/file/changes', async (req: Request, res: Response) => {
   const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : '';

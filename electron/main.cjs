@@ -144,6 +144,25 @@ async function createWindow() {
     return { action: 'allow' };
   });
 
+  // Permisos del renderer (getUserMedia, etc.). Sin esto Chromium rechaza
+  // mic/cámara antes de que el OS pueda mostrar su prompt nativo. Concedemos
+  // media/audioCapture, y dejamos que macOS muestre el prompt de TCC al usuario
+  // la primera vez (gracias a NSMicrophoneUsageDescription en Info.plist).
+  const sess = mainWindow.webContents.session;
+  sess.setPermissionRequestHandler((_wc, permission, callback) => {
+    const allowed = new Set(['media', 'audioCapture', 'videoCapture', 'microphone', 'clipboard-read', 'clipboard-sanitized-write']);
+    callback(allowed.has(permission));
+  });
+  // Algunas versiones de Chromium también usan setPermissionCheckHandler para
+  // chequeos sincrónicos (ej. al instanciar AudioContext). Lo concedemos para
+  // los mismos permisos. Si no existe el método, ignoramos.
+  if (typeof sess.setPermissionCheckHandler === 'function') {
+    sess.setPermissionCheckHandler((_wc, permission) => {
+      const allowed = new Set(['media', 'audioCapture', 'videoCapture', 'microphone', 'clipboard-read', 'clipboard-sanitized-write']);
+      return allowed.has(permission);
+    });
+  }
+
   if (isDev) {
     await mainWindow.loadURL(DEV_FRONTEND_URL);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
