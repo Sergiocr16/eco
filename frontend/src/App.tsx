@@ -10,6 +10,7 @@ import { FileExplorer } from './screens/FileExplorer';
 import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
+import { usePtyBusyTracker } from './hooks/usePtyBusyNotifier';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
@@ -82,6 +83,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const workspacesHook = useWorkspaces();
   const defaultWs = workspacesHook.list.workspaces[0] ?? '';
   const bubbles = useBubbles(defaultWs);
+  // Mantiene un store global del estado busy/idle del PTY de cada bubble.
+  // Dispara desktop notifications al transitar busy → idle (opt-in via
+  // setting `eco.notify.on_finish`).
+  usePtyBusyTracker(bubbles.bubbles);
   const tts = useTTS();
   const lastSpokenRef = useRef<string | null>(null);
 
@@ -483,7 +488,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   })();
 
   function handleScreenChange(s: Screen) {
-    if (s === 'dashboard') setDetailBubbleId(null);
+    // NO limpiamos detailBubbleId al cambiar de screen — la AgentDetail se
+    // mantiene montada con display:none para que la terminal, el chat y
+    // demás paneles no se reseteen al ir al dashboard y volver. Solo se
+    // limpia cuando se cierra la burbuja (`confirmCloseNow`).
     setScreen(s);
   }
 
@@ -498,7 +506,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   }
 
   function handleBackFromDetail() {
-    setDetailBubbleId(null);
+    // Volvemos al dashboard pero dejamos detailBubbleId apuntando a la
+    // burbuja para que la AgentDetail sobreviva oculta y conserve su PTY,
+    // chat y demás state.
     setScreen('dashboard');
   }
 
@@ -517,6 +527,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       return;
     }
     bubbles.removeBubble(id);
+    if (detailBubbleId === id) setDetailBubbleId(null);
     opts?.afterClose?.();
   }
 
@@ -525,7 +536,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     const id = confirmCloseId;
     setConfirmCloseId(null);
     bubbles.removeBubble(id);
-    if (detailBubbleId === id) handleBackFromDetail();
+    if (detailBubbleId === id) {
+      setDetailBubbleId(null);
+      handleBackFromDetail();
+    }
   }
 
   function handleMicToggle() {
@@ -611,29 +625,39 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         />
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           <ScreenError error={socket.error}/>
-                {screen === 'detail' && detailBubble ? (
-                  <AgentDetail
-                    bubble={detailBubble}
-                    workspaces={workspacesHook.list.workspaces}
-                    onBack={handleBackFromDetail}
-                    onSend={handleAgentDetailSend}
-                    onInterrupt={socket.interrupt}
-                    onRename={(title) => bubbles.renameBubble(detailBubble.id, title)}
-                    onClose={() => {
-                      requestCloseBubble(detailBubble.id, { afterClose: handleBackFromDetail });
-                    }}
-                    onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(detailBubble.id, ws)}
-                    onMicToggle={handleMicToggle}
-                    listening={voice.state === 'listening'}
-                    voiceInterim={voice.interimText}
-                  />
-                ) : screen === 'files' ? (
+                {/* AgentDetail se mantiene montada con display:none al navegar
+                    a otro screen para preservar terminal, chat, browser, etc.
+                    Solo se desmonta cuando la burbuja se cierra. */}
+                {detailBubble && (
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    display: screen === 'detail' ? 'flex' : 'none',
+                    flexDirection: 'column',
+                  }}>
+                    <AgentDetail
+                      bubble={detailBubble}
+                      workspaces={workspacesHook.list.workspaces}
+                      onBack={handleBackFromDetail}
+                      onSend={handleAgentDetailSend}
+                      onInterrupt={socket.interrupt}
+                      onRename={(title) => bubbles.renameBubble(detailBubble.id, title)}
+                      onClose={() => {
+                        requestCloseBubble(detailBubble.id, { afterClose: handleBackFromDetail });
+                      }}
+                      onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(detailBubble.id, ws)}
+                      onMicToggle={handleMicToggle}
+                      listening={voice.state === 'listening'}
+                      voiceInterim={voice.interimText}
+                    />
+                  </div>
+                )}
+                {screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles}/>
                 ) : screen === 'settings' ? (
                   <Settings/>
                 ) : screen === 'history' ? (
                   <HistoryScreen bubbles={bubbles.bubbles} onOpen={handleOpenAgent}/>
-                ) : (
+                ) : screen === 'dashboard' ? (
                   <Dashboard
                     bubbles={bubbles.bubbles}
                     activeBubbleId={bubbles.activeBubbleId}
@@ -652,7 +676,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                     onChangeWorkspace={(id, ws) => bubbles.setBubbleWorkspace(id, ws)}
                     availableWorkspaces={workspacesHook.list.workspaces}
                   />
-                )}
+                ) : null}
         </div>
       </div>
 

@@ -17,6 +17,7 @@ import { useT } from '@/hooks/useI18n';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useProfile } from '@/hooks/useProfile';
 import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
+import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 
 type Props = {
   bubbles: Bubble[];
@@ -523,6 +524,7 @@ function AgentBubble({
   const tr = useT();
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
+  const busy = useBubbleBusy(bubble.id);
   const STATE_LABELS_I18N: Record<AgentState, string> = {
     idle: tr('state.idle'),
     pending: tr('state.pending'),
@@ -570,6 +572,10 @@ function AgentBubble({
         overflow: 'visible',
         minHeight: 200,
         display: 'flex', flexDirection: 'column',
+        ...(busy ? {
+          borderColor: t.ok,
+          boxShadow: `0 0 0 1px ${t.ok}55, 0 0 22px color-mix(in oklch, ${t.ok} 30%, transparent)`,
+        } : null),
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
@@ -626,8 +632,10 @@ function AgentBubble({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-        <StatusDot color={sColor} pulse={state === 'running' || state === 'thinking' || state === 'executing'} size={7}/>
-        <span style={{ fontSize: 11.5, color: sColor, fontWeight: 500 }}>{STATE_LABELS_I18N[state] || tr('state.idle')}</span>
+        <StatusDot color={busy ? t.ok : sColor} pulse={busy || state === 'running' || state === 'thinking' || state === 'executing'} size={7}/>
+        <span style={{ fontSize: 11.5, color: busy ? t.ok : sColor, fontWeight: 500 }}>
+          {busy ? tr('state.executing') : (STATE_LABELS_I18N[state] || tr('state.idle'))}
+        </span>
       </div>
 
       <div style={{
@@ -1259,9 +1267,10 @@ function SatellitesLocal({
   onItemClick?: (subsystem: SatKey) => void;
 }) {
   const [hoverKey, setHoverKey] = useState<SatKey | null>(null);
+  const busy = useBubbleBusy(n.id);
   const items: { key: SatKey; on: boolean; color: string; label: string; icon: JSX.Element; pulse?: boolean }[] = [
     { key: 'chat',    on: n.hasChat,    color: t.text2,  label: 'Conversación',          icon: SAT_ICONS.chat },
-    { key: 'pty',     on: n.hasPty,     color: t.ok,     label: 'Terminal',              icon: SAT_ICONS.pty },
+    { key: 'pty',     on: n.hasPty,     color: t.ok,     label: busy ? 'Procesando…' : 'Terminal', icon: SAT_ICONS.pty, pulse: busy },
     { key: 'files',   on: n.hasFiles,   color: t.warn,   label: 'Archivos modificados',  icon: SAT_ICONS.files, pulse: true },
     { key: 'server',  on: n.hasServer,  color: t.busy,   label: 'Server',                icon: SAT_ICONS.server },
     { key: 'browser', on: n.hasBrowser, color: t.accent, label: 'Navegador',             icon: SAT_ICONS.browser },
@@ -1329,6 +1338,17 @@ function SatellitesLocal({
                 style={{ filter: `drop-shadow(0 0 6px ${it.color})` }}
                 pointerEvents="none"/>
             )}
+            {/* Anillo expansivo cuando el satélite está "pulse" — ej. PTY
+                procesando un comando o cambios en archivos. */}
+            {it.pulse && (
+              <circle cx={sx} cy={sy} r={chipR}
+                fill="none" stroke={it.color} strokeWidth={1.4}
+                opacity={0.7}
+                pointerEvents="none">
+                <animate attributeName="r" values={`${chipR};${chipR + 7}`} dur="1.2s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.7;0" dur="1.2s" repeatCount="indefinite"/>
+              </circle>
+            )}
             {/* Chip de fondo */}
             <circle cx={sx} cy={sy} r={effChipR}
               fill={it.color}
@@ -1391,10 +1411,11 @@ function SatellitesLocal({
 function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) {
   const t = useTokens();
   const state = (bubble.status as AgentState) || 'idle';
-  const sColor = stateColor(state, t);
+  const busy = useBubbleBusy(bubble.id);
+  const sColor = busy ? t.ok : stateColor(state, t);
   // "Activo" = Claude procesando, dev server arriba, o página web abierta.
   // Un PTY abierto solo no cuenta (shell idle no es trabajo).
-  const isActive = useBubbleActive(bubble);
+  const isActive = useBubbleActive(bubble) || busy;
   const lastMsg = bubble.messages[bubble.messages.length - 1];
   return (
     <button
@@ -1563,6 +1584,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     n <= 4 ? 44 :
     n <= 6 ? 36 :
     32;
+  const busyIds = useBusyBubbleIds();
   const nodes = bubbles.map((b, i) => {
     const orbitIdx = i;
     const orbitR = orbitBaseR + orbitIdx * orbitSpacing;
@@ -1595,11 +1617,14 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
         }
       }
     }
-    // "Activo" para el bond/electrón = Claude trabajando o subsistema vivo
-    // (server up, browser abierto, archivos por revisar). PTY abierto solo
-    // NO cuenta.
+    // "Activo" para el bond/electrón = el agente está EJECUTANDO algo ahora
+    // mismo: Claude procesando o PTY con output. Tener un server up, un
+    // browser abierto o archivos modificados son estados pasivos — los
+    // satélites alrededor del electrón ya los indican; el electrón solo
+    // pulsa cuando hay trabajo "vivo".
     const claudeBusy = state === 'thinking' || state === 'executing' || state === 'running' || state === 'pending';
-    const isActive = claudeBusy || hasServer || hasBrowser || hasFiles;
+    const ptyBusy = busyIds.has(b.id);
+    const isActive = claudeBusy || ptyBusy;
     return {
       ...b, state,
       orbitR, period, phaseDeg,

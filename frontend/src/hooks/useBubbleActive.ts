@@ -1,15 +1,17 @@
 // "Activo" = el agente está haciendo algo real o tiene cambios pendientes:
 //   - Claude está procesando (thinking / executing / running / pending)
+//   - El PTY del agente está emitiendo output (claude --print, gulp, etc.)
 //   - El dev server está corriendo
 //   - Hay una página web abierta en el browser del agente
 //   - Hay archivos modificados sin revisar/commitear
 //
-// Tener un PTY abierto NO cuenta: un shell idle no es trabajo.
-// Tener mensajes viejos en el chat tampoco cuenta.
+// Tener un PTY abierto SIN output reciente NO cuenta: un shell idle no es
+// trabajo. Tener mensajes viejos en el chat tampoco cuenta.
 
 import { useEffect, useMemo, useState } from 'react';
 import { on as ecoOn } from '@/lib/eco-bus';
 import type { Bubble } from '@/lib/types';
+import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 
 function readHasBrowser(bubbleId: string): boolean {
   try { return !!window.localStorage.getItem(`eco.browser.url.${bubbleId}`); }
@@ -60,6 +62,7 @@ export function useBubbleActive(bubble: Bubble): boolean {
     || bubble.status === 'executing'
     || bubble.status === 'running'
     || bubble.status === 'pending';
+  const ptyBusy = useBubbleBusy(bubble.id);
 
   // Heurística rápida: el agente editó algún archivo en este bubble?
   // Iteramos las tool calls de los messages — captura cualquier
@@ -78,7 +81,7 @@ export function useBubbleActive(bubble: Bubble): boolean {
     }
   }
 
-  return claudeBusy || serverRunning || hasBrowser || hasFiles;
+  return claudeBusy || ptyBusy || serverRunning || hasBrowser || hasFiles;
 }
 
 // ─── Versión collection-level ─────────────────────────────────────────────
@@ -133,12 +136,17 @@ export function useActiveBubbleIds(bubbles: Bubble[]): Set<string> {
     return () => { offBus(); window.removeEventListener('storage', onStorage); };
   }, []);
 
+  // PTYs procesando — Set global mantenido por usePtyBusyNotifier. Re-render
+  // se dispara cada vez que un PTY cambia entre busy / idle.
+  const busyPtyIds = useBusyBubbleIds();
+
   return useMemo(() => {
     const set = new Set<string>();
     for (const b of bubbles) {
       const claudeBusy =
         b.status === 'thinking' || b.status === 'executing'
         || b.status === 'running' || b.status === 'pending';
+      const ptyBusy = busyPtyIds.has(b.id);
       const serverRunning = (serversByBubble[b.id]?.size ?? 0) > 0;
       const hasBrowser = browsersByBubble.has(b.id);
       let hasFiles = false;
@@ -152,8 +160,8 @@ export function useActiveBubbleIds(bubbles: Bubble[]): Set<string> {
           }
         }
       }
-      if (claudeBusy || serverRunning || hasBrowser || hasFiles) set.add(b.id);
+      if (claudeBusy || ptyBusy || serverRunning || hasBrowser || hasFiles) set.add(b.id);
     }
     return set;
-  }, [bubbles, serversByBubble, browsersByBubble]);
+  }, [bubbles, serversByBubble, browsersByBubble, busyPtyIds]);
 }

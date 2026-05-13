@@ -135,6 +135,12 @@ function SectionGeneral() {
         desc={tr('settings.general.review_mode_desc')}
         storageKey="eco.agent.review_mode"
       />
+      <GeneralToggleRow
+        icon={IconBolt}
+        title={tr('settings.general.notify_on_finish')}
+        desc={tr('settings.general.notify_on_finish_desc')}
+        storageKey="eco.notify.on_finish"
+      />
       <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>
       <GeneralToggleRow
         icon={IconCommand}

@@ -802,9 +802,16 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
         flex: 1, minHeight: 0, position: 'relative',
         display: 'flex', flexDirection: 'column',
       }}>
-        {subTab === 'shell' && (
+        {/* RealTerminal se mantiene MONTADA aunque cambies de sub-tab: el
+            xterm + WebSocket sobreviven, así no perdés el state ni hay
+            reconnect al volver a "Shell". Solo se oculta con display:none. */}
+        <div style={{
+          display: subTab === 'shell' ? 'flex' : 'none',
+          flexDirection: 'column',
+          flex: 1, minHeight: 0,
+        }}>
           <RealTerminal workspace={bubble.workspace} bubbleId={bubble.id} />
-        )}
+        </div>
         {subTab === 'agent' && <AgentBashLog bubble={bubble}/>}
         {subTab === 'cmds' && <SimulatedTerminal bubble={bubble}/>}
       </div>

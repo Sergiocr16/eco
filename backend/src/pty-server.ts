@@ -37,15 +37,59 @@ type PtySession = {
   // Listeners de node-pty, registrados una sola vez por sesión.
   unsubData?: { dispose: () => void };
   unsubExit?: { dispose: () => void };
+  // Detección de "Claude está trabajando vs idle" — basada en inactividad
+  // del output del PTY. Cuando hay output reciente → busy. Cuando pasa
+  // BUSY_IDLE_MS sin output → idle, broadcast event para notificar al user.
+  lastOutputAt: number;
+  busy: boolean;
 };
 
 const sessions = new Map<string, PtySession>();
+
+// Threshold de inactividad para considerar que Claude terminó. Trade-off:
+// muy corto = falsos positivos durante streaming lento; muy largo = la
+// notificación tarda. 1.5 s en práctica funciona bien para Claude CLI.
+const BUSY_IDLE_MS = 1500;
 
 function broadcastPtyStatus(bubbleId: string, running: boolean) {
   if (!bubbleId) return;
   try {
     broadcastServerMessage({ type: 'pty_status', bubbleId, running });
   } catch { /* noop */ }
+}
+
+function broadcastPtyBusy(bubbleId: string, busy: boolean) {
+  if (!bubbleId) return;
+  try {
+    broadcastServerMessage({ type: 'pty_busy_change', bubbleId, busy });
+  } catch { /* noop */ }
+}
+
+function markBusy(s: PtySession) {
+  s.lastOutputAt = Date.now();
+  if (!s.busy) {
+    s.busy = true;
+    broadcastPtyBusy(s.bubbleId, true);
+  }
+}
+
+// Poller global: cada 500 ms revisa todas las sessions y transiciona
+// busy → idle si pasó BUSY_IDLE_MS sin output nuevo. Único timer para
+// no spamear setTimeout por sesión.
+let idleTimer: NodeJS.Timeout | null = null;
+function startIdleScanner() {
+  if (idleTimer) return;
+  idleTimer = setInterval(() => {
+    const now = Date.now();
+    for (const s of sessions.values()) {
+      if (!s.busy || s.exited) continue;
+      if (now - s.lastOutputAt >= BUSY_IDLE_MS) {
+        s.busy = false;
+        broadcastPtyBusy(s.bubbleId, false);
+      }
+    }
+  }, 500);
+  idleTimer.unref?.();
 }
 
 function appendBuffer(s: PtySession, data: string) {
@@ -191,6 +235,8 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
       buffer: '',
       exited: false,
       activeWs: ws,
+      lastOutputAt: Date.now(),
+      busy: false,
     };
     if (bubbleId) {
       sessions.set(bubbleId, session);
@@ -200,8 +246,10 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     // node-pty listeners (registrados una sola vez, no se desuscriben al cambiar de WS).
     session.unsubData = pty.onData((data) => {
       appendBuffer(session, data);
+      markBusy(session);
       sendJson(session.activeWs, { type: 'data', data });
     });
+    startIdleScanner();
     session.unsubExit = pty.onExit(({ exitCode, signal }) => {
       session.exited = true;
       sendJson(session.activeWs, { type: 'exit', code: exitCode, signal });

@@ -13,6 +13,7 @@ type ServerMsg =
   | { type: 'client_action'; action: ClientAction }
   | { type: 'voice_transcribed'; text: string; ts: number }
   | { type: 'pty_status'; bubbleId: string; running: boolean }
+  | { type: 'pty_busy_change'; bubbleId: string; busy: boolean }
   | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string }
   | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string };
 
@@ -256,6 +257,15 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         }
         else if (msg.type === 'pty_status') {
           handlersRef.current.onPtyStatus?.(msg.bubbleId, msg.running);
+        }
+        else if (msg.type === 'pty_busy_change') {
+          // Re-emit por eco-bus para que cualquier componente reaccione
+          // (indicador visual + opcionalmente desktop notification).
+          try {
+            window.dispatchEvent(new CustomEvent('eco:pty_busy_change', {
+              detail: { bubbleId: msg.bubbleId, busy: msg.busy },
+            }));
+          } catch { /* noop */ }
         }
         else if (msg.type === 'dev_status') {
           handlersRef.current.onDevStatus?.(msg.bubbleId, msg.status, msg.url, msg.command, msg.skill, msg.role);

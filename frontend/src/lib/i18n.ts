@@ -454,6 +454,14 @@ const DICT = {
     es: 'El agente aplica los cambios sin interrupciones. Después revisás los diffs en la pestaña Archivos: aceptás o rechazás cada hunk o el archivo entero. Lo rechazado se revierte con git apply -R.',
     en: 'The agent applies changes without interruption. You then review the diffs in the Files tab: accept or reject each hunk or the whole file. Rejected hunks are reverted with git apply -R.',
   },
+  'settings.general.notify_on_finish': {
+    es: 'Notificar cuando Claude termine',
+    en: 'Notify when Claude finishes',
+  },
+  'settings.general.notify_on_finish_desc': {
+    es: 'Muestra una notificación del sistema cuando el PTY del agente queda idle después de procesar. Solo se dispara si la ventana de Eco no está visible (estás en otra app).',
+    en: 'Shows a system notification when the agent PTY goes idle after processing. Only fires when the Eco window is not visible (you’re in another app).',
+  },
   'settings.general.menubar': { es: 'Mantener Eco en la barra de menú', en: 'Keep Eco in the menu bar' },
   'settings.general.default_folder': { es: 'Carpeta por defecto', en: 'Default folder' },
   'settings.general.default_folder_desc': {

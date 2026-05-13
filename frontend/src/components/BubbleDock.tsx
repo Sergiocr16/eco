@@ -5,6 +5,7 @@ import { stateColor, type AgentState } from '@/design/tokens';
 import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
 import { IconCommand } from '@/design/icons';
+import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
 
 type Props = {
   bubbles: Bubble[];
@@ -188,8 +189,13 @@ function DockIcon({
   const [showTip, setShowTip] = useState(false);
 
   const state = (bubble.status as AgentState) || 'idle';
-  const sColor = stateColor(state, t);
-  const isActive = state === 'thinking' || state === 'executing' || state === 'running';
+  const busy = useBubbleBusy(bubble.id);
+  const baseColor = stateColor(state, t);
+  // PTY procesando = listo cuando termine. Pintamos el dot en verde (t.ok)
+  // para diferenciarlo del estado de Claude SDK (sColor) y conectar con el
+  // mismo color que usa el satélite "Terminal" en la vista de nodos.
+  const sColor = busy ? t.ok : baseColor;
+  const isActive = busy || state === 'thinking' || state === 'executing' || state === 'running';
   const initial = bubbleLetter(bubble.title);
   const accentColor = bubble.accent || t.accent;
 
@@ -305,7 +311,7 @@ function DockIcon({
             {bubble.title || 'Burbuja sin título'}
             {isActive && (
               <span style={{ marginLeft: 6, color: sColor, fontFamily: t.fontMono, fontSize: 10.5 }}>
-                · {state}
+                · {busy ? 'procesando' : state}
               </span>
             )}
           </motion.div>

@@ -29,5 +29,8 @@ export type ServerMessage =
   | { type: 'client_action'; action: ClientAction }
   | { type: 'voice_transcribed'; text: string; ts: number }
   | { type: 'pty_status'; bubbleId: string; running: boolean; active?: boolean }
+  // Notifica cambios en si Claude (en el PTY) está procesando output o ya
+  // terminó. Basado en inactividad del PTY (1.5 s sin output → idle).
+  | { type: 'pty_busy_change'; bubbleId: string; busy: boolean }
   | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string }
   | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string };

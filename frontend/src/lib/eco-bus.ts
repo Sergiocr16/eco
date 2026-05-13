@@ -33,6 +33,11 @@ export type EcoBusEvents = {
   // — emitido por componentes que mutan git por fuera de BranchPicker
   // (ej. checkout de PR).
   'eco:git_refresh': { bubbleId: string };
+  // Cambio en el estado "Claude está procesando" del PTY de la burbuja.
+  // El backend lo detecta por inactividad del output (1.5 s sin escribir
+  // = idle). Se usa para mostrar indicadores visuales y opcionalmente
+  // notificar al sistema cuando termina.
+  'eco:pty_busy_change': { bubbleId: string; busy: boolean };
 };
 
 type EventName = keyof EcoBusEvents;
