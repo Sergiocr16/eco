@@ -401,15 +401,27 @@ Para usar la app empaquetada: arrastrá `release/mac-arm64/Eco.app` a
 `/Applications/` (o abrí el `.dmg`). Si querés actualizar después de
 rebuildear: `rm -rf /Applications/Eco.app && cp -R release/mac-arm64/Eco.app /Applications/`.
 
-### Comandos de voz/texto en la app (prefijo `Eco`)
+### Comandos de voz/texto en la app (prefijo `Hey Eco`)
+
+**Wake prefix obligatorio**: una palabra de invocación + `Eco` (o
+`Jarvis`/`Ekko`/`Héctor`). «Eco» solo no despierta — es muy corto y
+genera falsos positivos en español natural ("el **eco** del valle",
+"**eco**-amigable"). Aceptados:
+
+- `Hey Eco …` · `Oye Eco …` · `Hola Eco …`
+- `Ok Eco …` · `Okey Eco …` · `Okay Eco …`
+- `Che Eco …` · `Epa Eco …` · `Oi Eco …`
+
+En las tablas de abajo, donde aparece `Eco …` leelo como `Hey Eco …` (o
+cualquier otro prefijo aceptado).
 
 El parser tolera relleno discursivo, conjugaciones y orden libre dentro
 de cada frase:
 
 - **Leading fillers**: `me`, `te`, `por favor`, `porfa`, `necesito`,
-  `quiero`, `podes`, `ahora`, `ya`, `che`, etc. se saltean.
+  `quiero`, `podes`, `ahora`, `ya`, etc. se saltean después del wake.
 - **Match de keyword**: si el primer token no es un alias, escanea todos
-  los tokens hasta encontrar uno (ej: «che ayudame y **abrí** Aditum»).
+  los tokens hasta encontrar uno (ej: «Hey Eco ayudame y **abrí** Aditum»).
 - **~200 alias** incluyen variantes como `entrar/entrame`, `abrime`,
   `creame`, `lanzá`, `matar`, `pasame`, etc.
 
@@ -459,10 +471,12 @@ de cada frase:
 
 **Ruteo de voz dentro de una agente**:
 
-- Sin prefijo `Eco`, en pestaña **Chat** → mensaje al agente como prompt.
-- Sin prefijo `Eco`, en pestaña **Terminal → Shell** → se tipea al PTY
-  con `\n` (como si lo hubieras hablado al shell).
-- Con prefijo `Eco` → comando meta global, no importa la pestaña.
+- Sin wake (`Hey Eco`, etc.), en pestaña **Chat** → mensaje al agente
+  como prompt.
+- Sin wake, en pestaña **Terminal → Shell** → se tipea al PTY con `\n`
+  (como si lo hubieras hablado al shell).
+- Con wake (`Hey Eco …`, `Oye Eco …`, etc.) → comando meta global, no
+  importa la pestaña.
 
 Al detectar el wake prefix, el rail del Dashboard muestra un
 **ListeningWave** animado (sin beep — solo visual).

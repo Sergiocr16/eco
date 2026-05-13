@@ -255,7 +255,7 @@ El backend agrega su propio `http://127.0.0.1:<port>` y `http://localhost:<port>
 
 - `window.SpeechRecognition` (Web Speech API) — Chrome provee la API key de Google.
 - `useVoice` arranca un `SpeechRecognition` con `continuous=true, interimResults=true`.
-- Wake word: detectado en el interim text con regex `^(?:hey\s+)?(?:eco|jarvis|...)` en `stripWakePrefix`.
+- Wake word: detectado en el interim text con regex en `stripWakePrefix` (`meta-commands.ts`). El prefijo de invocación es **obligatorio** — `Eco` solo no despierta porque aparece naturalmente en español ("el eco del valle"). Aceptados: `hey|oye|oi|hola|ok|okey|okay|che|epa` + `eco|ekko|jarvis|héctor`.
 
 ### Modo .dmg empaquetado
 
@@ -265,9 +265,11 @@ Web Speech NO funciona (Chromium-Electron no tiene API key de Google → loop st
 
 1. `getUserMedia({ audio: true })` — macOS pide **Mic** y **Speech Recognition** la primera vez (2 prompts).
 2. `AudioContext` + `MediaStreamAudioSourceNode` + `ScriptProcessor` (bufSize 4096) → captura PCM Float32 al sample rate nativo.
-3. Resampleo lineal a 16kHz mono inline.
-4. Accumulación en array; cada 4 segundos (`targetSamples = 16000 * 4`) toma chunk completo.
-5. `encodeWav()` en JS → WAV PCM16 mono 16kHz.
+3. Resampleo nativeRate → 16kHz mono. Si `nativeRate ≥ 32k`, anti-alias 3-tap (media móvil con vecinos) antes de decimar.
+4. **VAD adaptativo** por frames de 50ms (800 samples). Estado `idle | recording`:
+   - `idle`: RMS del frame entra a EMA suave (`noiseFloor = 0.95·prev + 0.05·rms`). Pre-roll buffer de 300ms (últimos samples). Trigger cuando `rms > max(0.01, noiseFloor·3)` → cambia a `recording` y prepende el pre-roll.
+   - `recording`: acumula. Cuenta frames de silencio consecutivos. Cierra la frase a los **700ms continuos de silencio** o al tope de **8s**. Descarta frases <400ms.
+5. Al cerrar la frase: trim de los últimos 700ms (silencio), `encodeWav()` → WAV PCM16 mono 16kHz, POST al backend.
 6. `apiFetch('/voice/transcribe-blob', { body: blob, headers: 'Content-Type': 'audio/wav' })`.
 7. Backend escribe `/tmp/eco-stt-<uniq>.wav`, spawnea `eco-stt /tmp/... es-MX`.
 8. Swift CLI:
@@ -275,6 +277,8 @@ Web Speech NO funciona (Chromium-Electron no tiene API key de Google → loop st
    - `requiresOnDeviceRecognition = true` (sin internet)
    - `recognitionTask(with: request) { result, error in ... }` con callback que para el `CFRunLoop`.
 9. Stdout → backend → response `{ok: true, text}` → renderer → `onPhraseRef.current(text)`.
+
+Latencia efectiva: ~700ms después de que terminás de hablar (vs los 4s fijos del esquema anterior). El pre-roll evita perder el ataque del wake ("Hey") y el noise floor adaptativo soporta ambientes ruidosos (AC, ventilador) sin calibración manual.
 
 ### Gotchas que te van a morder
 

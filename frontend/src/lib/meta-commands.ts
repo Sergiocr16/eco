@@ -38,7 +38,11 @@ export type MetaActionFeedback = {
   detail?: string;
 };
 
-const WAKE_PREFIX = /^\s*(?:hey\s+)?(?:eco+|ech+o+|h[eé]ctor|ekko|hey\s+jarvis|jarvis)[\s,:¡!.?-]*/i;
+// "Eco" solo es muy corto y aparece naturalmente en español ("el eco del
+// valle", "eco-amigable", etc.) — genera falsos positivos. Forzamos una
+// palabra de invocación antes del nombre para que despertarlo sea siempre
+// intencional. Aceptados: hey/oye/oi/hola/ok/che/epa + eco|ekko|jarvis.
+const WAKE_PREFIX = /^\s*(?:hey|oye|oi|hola|ok|okey|okay|che|epa)\s+(?:eco+|ech+o+|jarvis|ekko|h[eé]ctor)[\s,:¡!.?-]*/i;
 
 export function stripWakePrefix(text: string): { isMeta: boolean; rest: string } {
   const m = WAKE_PREFIX.exec(text);
