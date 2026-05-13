@@ -637,9 +637,7 @@ app.post('/integrations/obsidian/save-session', (req: Request, res: Response) =>
   res.json({ ok: true, path: r.path });
 });
 
-app.post('/pty/kill', async (req: Request, res: Response) => {
-  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
-  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+async function closeBubbleResources(bubbleId: string) {
   const killed = killBubblePty(bubbleId);
   // Matamos también el dev server del agente si existe (cleanup completo de
   // process group + verificación de puerto) en los 3 roles posibles.
@@ -648,10 +646,30 @@ app.post('/pty/kill', async (req: Request, res: Response) => {
     devServer.stopDevServer(bubbleId, 'frontend'),
     devServer.stopDevServer(bubbleId, 'backend'),
   ]);
+  // Borrar las entries del `sessions` Map de dev-server — sin esto, las
+  // sesiones detenidas siguen en RAM (64 KB ring buffer cada una) y en disco
+  // (~/.eco/dev-sessions.json), creciendo con cada bubble cerrada.
+  const forgotten = devServer.forgetSession(bubbleId);
   // El worktree de la burbuja también se libera; la rama eco/<id> queda
   // viva en el repo padre para que el usuario pueda mergear si quiere.
   const worktreeRemoved = removeWorktree(bubbleId);
-  res.json({ ok: true, killed, worktreeRemoved });
+  return { killed, worktreeRemoved, forgotten };
+}
+
+app.post('/pty/kill', async (req: Request, res: Response) => {
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const r = await closeBubbleResources(bubbleId);
+  res.json({ ok: true, ...r });
+});
+
+// Alias semánticamente más claro de /pty/kill: el frontend lo llama al cerrar
+// una burbuja para liberar PTY + dev servers + worktree + sessions Map.
+app.post('/bubble/close', async (req: Request, res: Response) => {
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const r = await closeBubbleResources(bubbleId);
+  res.json({ ok: true, ...r });
 });
 
 const shellConcurrency = { active: 0, max: 3 };

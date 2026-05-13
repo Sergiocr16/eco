@@ -28,6 +28,11 @@ import { ecoToken } from '@/lib/eco-config';
 type Status = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 type SlotRole = 'main' | 'frontend' | 'backend';
 
+// Cap del buffer de logs por slot. 200 KB cubre los últimos miles de líneas
+// (xterm tiene su propio scrollback) y evita que un dev server ruidoso
+// (gulp, webpack, java) infle el heap del renderer.
+const LOGS_MAX = 200_000;
+
 type DevStatusEvent = {
   bubbleId: string;
   role?: SlotRole;
@@ -206,6 +211,8 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
 
   // Stream de log chunks por WS — reemplaza el polling cada 1.5s. El backend
   // batchea los chunks cada ~80ms así que el handler recibe ráfagas, no caracteres.
+  // Cap en frontend: 200 KB por slot — suficiente para xterm scrollback,
+  // evita acumulación sin cota con frameworks ruidosos.
   useEffect(() => {
     return ecoOn('eco:dev_log', (e) => {
       if (e.bubbleId !== bubbleId) return;
@@ -213,7 +220,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
       if (role !== 'main' && role !== 'frontend' && role !== 'backend') return;
       setSlots((prev) => ({
         ...prev,
-        [role]: { ...prev[role], logs: prev[role].logs + e.chunk },
+        [role]: { ...prev[role], logs: (prev[role].logs + e.chunk).slice(-LOGS_MAX) },
       }));
     });
   }, [bubbleId]);
@@ -1079,7 +1086,7 @@ function TerminalLogs({
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 11.5,
       lineHeight: 1.3,
-      scrollback: 10000,
+      scrollback: 3000,
       allowTransparency: false,
       theme: {
         background: TERMINAL_BG,

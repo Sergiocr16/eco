@@ -16,6 +16,11 @@ type DevStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 
 const storageKey = (id: string) => `eco.browser.url.${id}`;
 const zoomStorageKey = (id: string) => `eco.browser.zoom.${id}`;
+// Cap del buffer de logs del server panel — evita crecimiento sin cota con
+// frameworks ruidosos. xterm internal scrollback se encarga del scroll.
+const SERVER_LOGS_MAX = 200_000;
+// Cap del historial de entradas en la console del DevTools panel.
+const DEVLOG_MAX = 200;
 // Una pequeña home con shortcuts. Útil cuando todavía no se cargó nada.
 const SHORTCUTS = [
   { label: 'localhost:5174', url: 'http://localhost:5174/' },
@@ -196,7 +201,7 @@ export function BrowserPanel({ bubbleId }: Props) {
       // BrowserPanel ve los logs del rol 'main' (single server). El dual mode
       // muestra logs por rol en el ServerPanel.
       if (e.role !== 'main') return;
-      setServerLogs((prev) => prev + e.chunk);
+      setServerLogs((prev) => (prev + e.chunk).slice(-SERVER_LOGS_MAX));
     });
   }, [bubbleId]);
 
@@ -224,7 +229,7 @@ export function BrowserPanel({ bubbleId }: Props) {
   function runEval() {
     const code = evalInput.trim();
     if (!code) return;
-    setDevLog((prev) => [...prev, { ts: Date.now(), kind: 'info', text: `› ${code}` }]);
+    setDevLog((prev) => [...prev.slice(-(DEVLOG_MAX - 1)), { ts: Date.now(), kind: 'info', text: `› ${code}` }]);
     setEvalInput('');
     try {
       const ifr = iframeRef.current;
@@ -233,9 +238,9 @@ export function BrowserPanel({ bubbleId }: Props) {
       // eslint-disable-next-line no-eval
       const result = (win.eval)(code);
       const text = (() => { try { return JSON.stringify(result); } catch { return String(result); } })();
-      setDevLog((prev) => [...prev, { ts: Date.now(), kind: 'log', text }]);
+      setDevLog((prev) => [...prev.slice(-(DEVLOG_MAX - 1)), { ts: Date.now(), kind: 'log', text }]);
     } catch (e) {
-      setDevLog((prev) => [...prev, {
+      setDevLog((prev) => [...prev.slice(-(DEVLOG_MAX - 1)), {
         ts: Date.now(), kind: 'error',
         text: e instanceof Error ? e.message : String(e),
       }]);

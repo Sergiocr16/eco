@@ -130,6 +130,12 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       while (globalPromptTimestamps.length > 0 && now - globalPromptTimestamps[0]! > 60_000) {
         globalPromptTimestamps.shift();
       }
+      // Defensa contra crecimiento patológico: si por alguna razón el shift por
+      // tiempo no alcanzó, capamos el array a 1000 entries (basta para todo el
+      // rate-limiting). Defensa pura — no debería dispararse en uso normal.
+      if (globalPromptTimestamps.length > 1000) {
+        globalPromptTimestamps.splice(0, globalPromptTimestamps.length - 1000);
+      }
       if (globalPromptTimestamps.length >= config.maxPromptsPerMinute) {
         return error('rate_limit', `Rate limit: ${config.maxPromptsPerMinute} prompts/min (global)`);
       }

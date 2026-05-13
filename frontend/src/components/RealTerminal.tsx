@@ -40,7 +40,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 12.5,
       lineHeight: 1.25,
-      scrollback: 5000,
+      scrollback: 2000,
       allowTransparency: false,
       theme: {
         background: TERMINAL_BG,

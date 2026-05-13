@@ -53,11 +53,16 @@ palabras + opcional foto de perfil. La cuenta vive en `~/.eco/user.json`
 con argon2id y chmod 600. Sin servidor externo, sin Firebase. Bloquear /
 cerrar sesión / eliminar usuario desde el menú de cuenta.
 
-**App nativa**: empaquetable como `.dmg` (mac arm64+x64), `.exe` (Win
-NSIS) y `.AppImage` (Linux) con `npm run dist:mac|win|linux`. Electron
-33 spawnea el backend Node como subprocess interno (sin servers
-externos). Navegador interno con `<webview>` real Chromium — sin
-restricciones de `X-Frame-Options`/CSP, con DevTools propios.
+**App nativa**: empaquetable como `.dmg` para macOS Apple Silicon
+(arm64) con `npm run dmg`. Electron 33 spawnea el backend Node como
+subprocess interno (sin servers externos). Navegador interno con
+`<webview>` real Chromium — sin restricciones de `X-Frame-Options`/CSP,
+con DevTools propios.
+
+**Bundle compacto**: `.dmg` de **112 MB** (296 MB instalado). Logradas
+vía filtros multi-arch (sólo `arm64-darwin` para `node-pty`/`ripgrep`),
+eliminación de deps muertas, code-splitting Vite y compresión de
+assets. Detalles en la sección [Optimizaciones de bundle y memoria](#optimizaciones-de-bundle-y-memoria).
 
 ---
 
@@ -201,35 +206,46 @@ python training/train_wake.py --negatives-dir ~/Music/ -v
 
 ---
 
-## Empaquetar como app nativa (.dmg / .exe / .AppImage)
+## Empaquetar como app nativa (.dmg arm64)
 
-Eco se distribuye como app nativa vía **Electron 33** + **electron-builder**.
+Eco se distribuye como `.dmg` para **macOS Apple Silicon** vía **Electron 33** + **electron-builder**.
 
 ```bash
-# Mac (.dmg arm64+x64 universal)
-npm run dist:mac
-# → release/Eco-0.1.0-arm64.dmg  (~145 MB)
-
-# Windows (.exe NSIS, x64)
-npm run dist:win
-
-# Linux (.AppImage, x64)
-npm run dist:linux
+# Mac (.dmg arm64)
+npm run dmg
+# → release/Eco-0.1.0-arm64.dmg  (~112 MB)
+# → release/mac-arm64/Eco.app    (~296 MB instalado)
 
 # Dev con Electron (hot-reload del renderer + backend en watch)
 npm run dev:app
 ```
 
+> Windows / Linux targets fueron removidos del `electron/package.json` —
+> el uso es macOS-only. Si en el futuro hay que distribuir cross-platform,
+> se restauran agregando los bloques `win`/`linux` con sus targets.
+
 El pipeline:
 
 1. `npm run build:backend` → compila TS → `backend/dist/*.js`
-2. `npm run build:frontend` → Vite build → `frontend/dist/`
+2. `npm run build:frontend` → Vite build → `frontend/dist/` (con
+   code-splitting: `vendor-react`, `vendor-motion`, `vendor-xterm`
+   en chunks paralelos cacheables)
 3. `npm run build:backend-deps` → `npm install --omit=dev` en `backend/`
    (workspaces hoist al root, así que necesita install dedicado) + `chmod
    +x` del `spawn-helper` de node-pty (npm a veces pierde el bit)
 4. `electron-builder --mac dmg` → packaging final, sin firmar
    (`identity: null` para uso personal — para distribuir más allá,
    activar code signing con Apple Developer ID + notarization)
+
+El bundle aplica filtros agresivos en `electron/package.json`:
+
+- `mac.target.arch = ["arm64"]` (sólo Apple Silicon)
+- `mac.electronLanguages = ["en", "es"]` (descarta 54 packs `.lproj`)
+- Filtros en `extraResources` que excluyen:
+  - `@anthropic-ai/claude-agent-sdk/vendor/ripgrep/{arm64-linux,x64-darwin,x64-linux,x64-win32}/` (−43 MB)
+  - `node-pty/prebuilds/{darwin-x64,win32-arm64,win32-x64}/` y `deps/winpty/` (−59 MB)
+  - `bip39/src/wordlists/` salvo `english.json` (−300 KB)
+  - `typescript/`, `esbuild/`, `tsx/`, `@types/`, tests/docs/changelogs (−varios MB)
 
 **En tiempo de runtime de la app empaquetada**:
 
@@ -253,6 +269,111 @@ El pipeline:
   llegar al prompt nativo de macOS
 - `<webview>` con UA Chrome 131 fijo (sin "Electron" → Google deja de
   redirigir a `/sorry/index`)
+
+---
+
+## Optimizaciones de bundle y memoria
+
+Eco aplica varias capas de optimización para que el `.dmg` sea
+compacto y la app consuma poco RAM aunque haya múltiples burbujas
+activas en paralelo.
+
+### Bundle (.dmg arm64)
+
+| Antes | Después | Cambio |
+|---|---|---|
+| DMG 148 MB | **112 MB** | −36 MB (−24 %) |
+| App instalada 401 MB | **296 MB** | −105 MB (−26 %) |
+| `backend/node_modules` 165 MB | **50 MB** | −115 MB (−70 %) |
+
+Cambios clave:
+
+- **`better-sqlite3` eliminada** del `backend/package.json` — era dep
+  muerta (no se importaba en ningún `.ts`, −13 MB).
+- **Filtros multi-arch** en `electron/package.json` → `build.extraResources.filter`:
+  sólo `arm64-darwin` para los binarios nativos (`ripgrep` del SDK,
+  prebuilds de `node-pty`).
+- **`mac.target.arch = ["arm64"]`** y `mac.electronLanguages = ["en", "es"]`
+  para no bundlear x64, Linux ni packs de localización innecesarios.
+- **`icon.icns`** regenerado con `iconutil` desde un PNG limpio
+  (892 KB → 321 KB).
+- **`frontend/public/brand/eco-logo.png`** removido (no referenciado en
+  el bundle final, −894 KB).
+- **Vite `manualChunks`**: `vendor-react` / `vendor-motion` /
+  `vendor-xterm` separados — el bundle inicial baja de 891 KB a
+  463 KB y las libs pesadas se cachean independientemente.
+
+### Runtime (CPU / RAM / red)
+
+**Polling → WebSocket push**: los logs del dev server ya no se polean
+cada 1.5 s. El backend (`dev-server.ts:scheduleLogFlush`) batchea los
+chunks de stdout/stderr cada 80 ms y los broadcastea como mensaje
+`dev_log` por el WS existente. `ServerPanel` y `BrowserPanel` consumen
+el stream vía `eco-bus` (`eco:dev_log`). El polling `/file/changes`
+subió de 4 s a 10 s y se pausa cuando `document.visibilityState !==
+'visible'`. Idem `BranchPicker` (20 s) y `ClaudeAuthStatusCard` (30 s).
+
+**Animaciones pausadas en background**: cuando la ventana de Eco
+queda minimizada / detrás de otra app, `App.tsx` toggle la clase
+`eco-hidden` en `<body>`. La regla CSS en `index.css` aplica
+`animation-play-state: paused !important` a todo el árbol → cero
+gasto de GPU en aurora, partículas y shimmer cuando el user no nos
+ve. También respeta `prefers-reduced-motion`.
+
+**Coalesce de streaming WS**: durante el streaming de un mensaje del
+agente, los deltas de texto se acumulan en un `Map` y se flushean una
+sola vez por `requestAnimationFrame` (max 60 setState/s en vez de
+100+/s). Reduce trabajo de React durante respuestas largas de Claude.
+
+**Caps a buffers sin cota**:
+
+| Estructura | Antes | Después | Archivo |
+|---|---|---|---|
+| `bubble.messages` en memoria | sin cap | **300** últimos | `useBubbles.ts:appendMessage` |
+| `bubble.messages` en localStorage | sin cap | **100** últimos | `useBubbles.ts:persist` |
+| `toolCall.output` en localStorage | sin cap | **10 KB** + marker | `useBubbles.ts:thinMessageForStorage` |
+| `serverLogs` (BrowserPanel) | sin cap | **200 KB** | `BrowserPanel.tsx` |
+| `slot.logs` (ServerPanel) | sin cap | **200 KB** | `ServerPanel.tsx` |
+| `devLog` (DevTools console) | sin cap | **200 entries** | `BrowserPanel.tsx` |
+| xterm `scrollback` (Server) | 10 000 | **3 000** | `ServerPanel.tsx` |
+| xterm `scrollback` (Shell) | 5 000 | **2 000** | `RealTerminal.tsx` |
+| `s.output` ring buffer al stop | persistía | **liberado** | `dev-server.ts:stopDevServer` |
+
+**Cleanup atómico al cerrar burbuja**: `removeBubble` dispara
+`POST /bubble/close` (`/pty/kill` apunta al mismo handler) que:
+
+1. Mata el PTY (`killBubblePty`).
+2. Detiene los dev servers de los 3 roles
+   (`stopDevServer × main/frontend/backend`).
+3. **Borra las entries del `sessions` Map y del `logBuffers`** de
+   `dev-server.ts` vía `forgetSession(bubbleId)` (sin esto, las
+   sesiones quedaban en RAM con su ring buffer + en
+   `~/.eco/dev-sessions.json`).
+4. Remueve el git worktree.
+
+Además, el frontend limpia todas las keys `eco.*.${bubbleId}` de
+localStorage (`eco.dev.cmd.*`, `eco.browser.url.${id}`,
+`eco.browser.zoom.${id}`, `eco.detail.tab.${id}`, etc.) — antes
+quedaban como residuo histórico por cada bubble cerrada.
+
+**Otras defensas**:
+
+- `toolToBubble` Map del WS hook se `.clear()` al `done` / `error`
+  del turn.
+- `globalPromptTimestamps` con cap defensivo a 1000 entries.
+- DevTools en dev **no** se abre automático (toggle con
+  `ECO_DEVTOOLS=1` o `Cmd+Opt+I` a demanda) — antes consumía
+  ~50-80 MB del helper.
+
+### Métricas esperadas
+
+Con 5 agentes activos y server corriendo en algunos:
+
+- Renderer RAM: −75 a −270 MB (depende del histórico de mensajes y
+  cuán ruidosos son los dev servers).
+- localStorage: −90 % típicamente (5 MB → < 500 KB).
+- Red en idle: 0 req/min (antes ~120 req/min de polling de logs).
+- CPU/GPU en background: ~0 (animaciones pausadas).
 
 ---
 
@@ -389,17 +510,15 @@ eco/
 | Comando | Descripción |
 |---|---|
 | `npm run build:backend` | TS → `backend/dist/` |
-| `npm run build:frontend` | Vite build → `frontend/dist/` |
+| `npm run build:frontend` | Vite build → `frontend/dist/` (con manualChunks vendor-react/motion/xterm) |
 | `npm run build:backend-deps` | `npm install --omit=dev` en `backend/` + chmod node-pty |
 | `npm run build:all` | Encadena los 3 anteriores |
-| `npm run dist` | Build all + electron-builder (todos los targets configurados) |
-| `npm run dist:mac` | `.dmg` (arm64 + x64) en `release/` |
-| `npm run dist:win` | `.exe` NSIS en `release/` |
-| `npm run dist:linux` | `.AppImage` en `release/` |
+| `npm run dmg` | Alias de `dist:mac`: build all + electron-builder → `.dmg` arm64 (~112 MB) |
+| `npm run dist:mac` | `.dmg` arm64 en `release/` |
 
 Para usar la app empaquetada: arrastrá `release/mac-arm64/Eco.app` a
 `/Applications/` (o abrí el `.dmg`). Si querés actualizar después de
-rebuildear: `rm -rf /Applications/Eco.app && cp -R release/mac-arm64/Eco.app /Applications/`.
+rebuildear: `rm -rf /Applications/Eco.app && ditto release/mac-arm64/Eco.app /Applications/Eco.app && xattr -dr com.apple.quarantine /Applications/Eco.app`.
 
 ### Comandos de voz/texto en la app (prefijo `Eco`)
 
@@ -761,6 +880,7 @@ slash command).
 | `ECO_PTY_AUTOCLAUDE` | `1` | Auto-launch de `claude` en cada PTY nuevo. `0` para desactivar |
 | `CLAUDE_CLI_PATH` | `~/.local/bin/claude` | Ruta del binario Claude |
 | `ANTHROPIC_API_KEY` | (opcional) | Solo si no usás `claude login` ni guardás la key en `~/.eco/api-key` |
+| `ECO_DEVTOOLS` | (vacío) | `1` para auto-abrir DevTools al lanzar Electron (dev y prod). Default: cerrado — abrir con `Cmd+Opt+I` a demanda |
 
 ### Frontend (`frontend/.env.local`)
 
@@ -810,7 +930,10 @@ POST  /git/rename-branch        ← git branch -m
 POST  /git/commit-suggest       ← claude -p sugiere mensaje
 POST  /git/commit               ← git add -A && git commit -F -
 
-POST  /pty/kill                 ← mata PTY + worktree de la agente
+POST  /pty/kill                 ← mata PTY + dev servers + worktree + sessions Map (idem /bubble/close)
+POST  /bubble/close             ← cleanup completo al cerrar burbuja
+                                  (PTY + dev servers de los 3 roles + worktree +
+                                  entries del sessions Map en dev-server)
 
 POST  /dev/start                ← arranca dev server {workspace, bubbleId, command, role}
 POST  /dev/stop                 ← detiene server por process group {bubbleId, role}
@@ -871,7 +994,7 @@ npm run test:security
 
 | Capa | Tecnología |
 |---|---|
-| Empaquetado | **Electron 33** + electron-builder 25 (mac arm64+x64 / win NSIS / linux AppImage) |
+| Empaquetado | **Electron 33** + electron-builder 25 (mac arm64 únicamente · ~112 MB DMG) |
 | Frontend | Vite 6, React 18, TS 5, Tailwind v4, Motion 11, Radix UI |
 | Navegador interno | `<webview>` Chromium real con UA Chrome 131 + partition persistida |
 | Terminal | xterm.js + addon-fit + addon-web-links + node-pty (PTY real) |
@@ -945,16 +1068,55 @@ npm run test:security
 - **Auto-recovery de worktree conflicts** en `checkoutBranch` (limpia worktrees huérfanos de Eco)
 - **IPC log channel** `eco:renderer-log` → stdout del main process para debug
 
+- **Bundle compacto** — `.dmg` reducido de 148 → 112 MB (−24 %), app
+  401 → 296 MB (−26 %), `backend/node_modules` 165 → 50 MB (−70 %)
+  via filtros multi-arch (sólo `arm64-darwin`), arm64-only,
+  eliminación de `better-sqlite3` muerta, `bip39` wordlist solo
+  inglés, `icon.icns` regenerado y `eco-logo.png` no-usado removido
+- **WebSocket push para logs del dev server** — `dev_log` batcheado
+  cada 80 ms en el backend, consumido por `ServerPanel`/`BrowserPanel`
+  via eco-bus → cero polling (antes ~80 req/min × server)
+- **Polling con `document.visibilityState`** — `useGitChanges` (10 s),
+  `BranchPicker` (20 s), `ClaudeAuthStatusCard` (30 s) pausan
+  cuando la ventana no está visible
+- **Animaciones pausadas en background** — `App.tsx` toggle clase
+  `eco-hidden` en `<body>` + CSS `animation-play-state: paused`
+  cuando `document.hidden`. También respeta `prefers-reduced-motion`
+- **Coalesce de streaming WS** — `useEcoSocket` flush de deltas con
+  `requestAnimationFrame` (max 60 setState/s)
+- **Caps a buffers sin cota** — `bubble.messages` (300 mem / 100
+  disk), `toolCall.output` truncate >10 KB en localStorage,
+  `serverLogs`/`slot.logs` cap 200 KB, `devLog` 200 entries, xterm
+  scrollback (3000/2000)
+- **Endpoint `POST /bubble/close`** — cleanup atómico al cerrar
+  burbuja: PTY + dev servers de los 3 roles + `forgetSession` del
+  Map + worktree + cleanup de keys `eco.*.${bubbleId}` en
+  localStorage
+- **Liberación del ring buffer dev-server al stop** — `s.output`
+  reseteado a `''` para liberar los 64 KB cuando el server queda
+  detenido
+- **Vite code-splitting** — `manualChunks` separa `vendor-react`,
+  `vendor-motion` y `vendor-xterm` en chunks paralelos cacheables
+  (App bundle 891 → 463 KB)
+- **Particle count reducido** — Dashboard graph view 14 → 7
+  partículas
+
 **Pendiente**:
 
 - Code signing + notarización Apple para distribuir `.dmg` firmado
 - Wake word detection en el .dmg (hoy SFSpeechRecognizer transcribe todo y el
   parser de comandos detecta el prefijo "Eco" en JS — funciona pero no es lo
   más eficiente)
-- Voz nativa en Windows / Linux empaquetado (hoy `eco-stt` es solo macOS)
-- SQLite local para chat history de larga duración (hoy es localStorage)
+- Windows / Linux empaquetado (hoy `electron/package.json` declara sólo
+  `arm64-darwin`; si hace falta cross-platform habría que restaurar targets
+  + portar `eco-stt` Swift a una alternativa por OS)
+- Chat history de larga duración con paginación / lazy load (hoy
+  localStorage cap a 100 mensajes por bubble persiste; en memoria
+  cap a 300)
 - Auto-update via `electron-updater` + S3/GitHub Releases
 - License gating con Paddle/LemonSqueezy (cuando vaya a venderse)
+- (Opcional) Compactación automática de bubbles inactivas >30 días al
+  boot, o botón manual "Limpiar burbujas inactivas" en Settings
 
 ---
 

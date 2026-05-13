@@ -6,6 +6,22 @@ import { apiFetch } from '@/lib/api';
 const STORAGE_KEY = 'eco.bubbles.v1';
 const ACTIVE_KEY = 'eco.bubbles.active';
 
+// Cap de mensajes que mantenemos EN MEMORIA por bubble. Los más viejos se
+// drop silenciosamente — los muy largos tienden a quedar fuera de pantalla
+// igual, y el costo de renderizar 1000+ mensajes con tool outputs grandes
+// supera el valor de tenerlos accesibles.
+const MAX_MESSAGES_IN_MEMORY = 300;
+
+// Cap más agresivo de mensajes que serializamos a localStorage. Solo se
+// usa en `persist()`. Suficiente para que al recargar la app, el user tenga
+// contexto reciente sin saturar el quota de localStorage (~5-10 MB).
+const MAX_MESSAGES_IN_STORAGE = 100;
+
+// Outputs de tool calls (ej. Read tool con un archivo entero) pueden pesar
+// MBs cada uno. Los truncamos al serializar para que la persistencia
+// localStorage no explote — la sesión viva los tiene completos.
+const MAX_TOOL_OUTPUT_IN_STORAGE = 10_000;
+
 const ACCENT_PALETTE = [
   'oklch(0.74 0.16 80)',   // dorado (default)
   'oklch(0.7 0.16 200)',   // cyan
@@ -46,6 +62,21 @@ function loadStored(): { bubbles: Bubble[]; activeId: string | null } {
   }
 }
 
+// Adelgaza un mensaje para persistencia: trunca tool outputs grandes y deja
+// un marker para que el user sepa que hubo contenido. El mensaje en memoria
+// queda intacto — solo se transforma al escribir a disco.
+function thinMessageForStorage(m: Message): Message {
+  if (!m.toolCalls || m.toolCalls.length === 0) return m;
+  const thinnedToolCalls = m.toolCalls.map((tc) => {
+    if (!tc.output || tc.output.length <= MAX_TOOL_OUTPUT_IN_STORAGE) return tc;
+    return {
+      ...tc,
+      output: `${tc.output.slice(0, MAX_TOOL_OUTPUT_IN_STORAGE)}\n\n[…truncado para persistencia, ${tc.output.length} bytes originales]`,
+    };
+  });
+  return { ...m, toolCalls: thinnedToolCalls };
+}
+
 function persist(bubbles: Bubble[], activeId: string | null) {
   if (typeof window === 'undefined') return;
   try {
@@ -53,6 +84,8 @@ function persist(bubbles: Bubble[], activeId: string | null) {
       ...b,
       status: 'idle' as const,
       unread: 0,
+      // Solo los últimos N mensajes + sus tool outputs truncados.
+      messages: b.messages.slice(-MAX_MESSAGES_IN_STORAGE).map(thinMessageForStorage),
     }));
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
     if (activeId) window.localStorage.setItem(ACTIVE_KEY, activeId);
@@ -131,12 +164,30 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
       const remaining = bubbles.filter((b) => b.id !== id);
       return remaining[0]?.id ?? null;
     });
-    // Best-effort: matar el PTY que haya quedado corriendo en el backend.
-    void apiFetch('/pty/kill', {
+    // Best-effort: cleanup completo en backend (PTY + dev servers + worktree
+    // + sessions Map). El endpoint /bubble/close engloba todo.
+    void apiFetch('/bubble/close', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bubbleId: id }),
     }).catch(() => { /* noop */ });
+    // Cleanup de localStorage: las keys "eco.*.<bubbleId>" sobrevivirían a la
+    // bubble cerrada y crecen con cada nueva burbuja histórica. Las borramos
+    // todas — el suffix por id es consistente y predecible.
+    try {
+      const prefixes = [
+        'eco.dev.cmd.', 'eco.dev.dual.', 'eco.dev.config_collapsed.',
+        'eco.dev.min.frontend.', 'eco.dev.min.backend.',
+        'eco.browser.url.', 'eco.browser.zoom.',
+        'eco.detail.tab.', 'eco.remote.',
+      ];
+      for (const p of prefixes) window.localStorage.removeItem(`${p}${id}`);
+      // También las dual-mode meta y per-role command keys (`eco.dev.cmd.<role>.<id>`).
+      for (const role of ['frontend', 'backend']) {
+        window.localStorage.removeItem(`eco.dev.cmd.${role}.${id}`);
+      }
+      window.localStorage.removeItem(`eco.dev.dual.${id}.touched`);
+    } catch { /* noop */ }
   }, [bubbles]);
 
   const focusBubble = useCallback((id: string) => {
@@ -170,9 +221,14 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     setBubbles((prev) => prev.map((b) => {
       if (b.id !== bubbleId) return b;
       const isActive = bubbleId === activeBubbleId;
+      const next = [...b.messages, message];
+      // Cap en memoria: drop silencioso de los más viejos cuando crecemos.
+      const trimmed = next.length > MAX_MESSAGES_IN_MEMORY
+        ? next.slice(-MAX_MESSAGES_IN_MEMORY)
+        : next;
       return {
         ...b,
-        messages: [...b.messages, message],
+        messages: trimmed,
         unread: isActive ? 0 : (message.role === 'assistant' ? b.unread + 1 : b.unread),
         updatedAt: Date.now(),
       };

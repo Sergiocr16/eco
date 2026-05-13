@@ -672,7 +672,10 @@ export async function stopDevServer(bubbleId: string, role: ServerRole = 'main')
     s.status = 'stopped';
     s.proc = null;
     s.pgid = null;
-    appendOutput(s, `[eco] Server detenido. Puerto ${port} libre.\n`);
+    // Liberar el ring buffer (64 KB) — para servers detenidos no hace falta
+    // mantener historia, y un re-start lo arranca limpio igual. Solo dejamos
+    // el último mensaje informativo para que el user vea por qué está stopped.
+    s.output = `[eco] Server detenido. Puerto ${port} libre.\n`;
     broadcastStatus(s);
     return { ok: true };
   }
@@ -722,6 +725,24 @@ export function devListActive(): Array<{
 
 export function devLogs(bubbleId: string, role: ServerRole = 'main'): string {
   return sessions.get(sessionKey(bubbleId, role))?.output ?? '';
+}
+
+/**
+ * Borra todas las entries del `sessions` Map para una burbuja (los 3 roles
+ * posibles) y persiste a disco. Asume que el proceso ya está muerto — llamalo
+ * después de `stopDevServer`. También limpia el ring buffer de logs.
+ */
+export function forgetSession(bubbleId: string): number {
+  let removed = 0;
+  for (const role of ['main', 'frontend', 'backend'] as ServerRole[]) {
+    const key = sessionKey(bubbleId, role);
+    if (sessions.delete(key)) removed += 1;
+    // Liberar también el batch buffer pendiente (si quedó algún timer en flight,
+    // su callback será no-op porque la session ya no existe).
+    logBuffers.delete(key);
+  }
+  if (removed > 0) persistSessions();
+  return removed;
 }
 
 // ─── Skill-managed dev server ─────────────────────────────────────────────

@@ -275,6 +275,10 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
           }
           currentAssistantIdRef.current = null;
           activeBubbleIdRef.current = null;
+          // Map de routing tool_use_id → bubbleId solo es válido durante el
+          // turn activo. Limpiar al `done` evita acumulación en sesiones
+          // largas con muchos tool calls.
+          toolToBubble.current.clear();
         } else if (msg.type === 'error') {
           flushDeltas();
           const localized = translateBackendError({ error: msg.code, message: msg.message }, msg.message);
@@ -286,6 +290,7 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
           }
           handlersRef.current.onError?.(bubbleId, localized);
           activeBubbleIdRef.current = null;
+          toolToBubble.current.clear();
         }
       } catch (e) {
         console.warn('WS parse error', e);
