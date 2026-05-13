@@ -639,14 +639,59 @@ La pestaña **Terminal** tiene tres sub-vistas:
 
 ### Pestaña Files con diff side-by-side
 
-- El badge de "Archivos modificados" merg-ea cambios del agente (vía
-  `Write`/`Edit`/`MultiEdit`) **con** cambios detectados por `git status
-  --porcelain` cada 4s → captura ediciones de Bash, del PTY, o de otras
-  herramientas externas.
-- Click en un archivo → modal **DiffViewer** estilo GitHub: split de 4
-  columnas (lineNo viejo · texto viejo · lineNo nuevo · texto nuevo),
-  hunks con header azul, adds verde / dels rojo / contexto neutral.
+- La lista de archivos viene de `git status --porcelain=v1
+  --untracked-files=all` polleado cada 4 s. `useGitChanges` cachea por
+  bubble en module-scope, así al volver a la conversación los archivos
+  se ven al instante (stale-while-revalidate). El polling se pausa con
+  `document.visibilityState !== 'visible'` y se dispara on-demand via
+  evento `eco:git_refresh` después de cada acción que toca git.
+- El backend reporta por archivo `{ change, unstaged }` donde `unstaged`
+  parsea el segundo carácter de `XY` del porcelain (cambios en el work
+  tree sin stagear). El dot ámbar/verde del FilesPanel se basa en eso —
+  es la verdad absoluta, no depende solo del state local.
+- Click en un archivo → **diff desplegable inline** (sin modal): la card
+  se expande hacia abajo y muestra el diff side-by-side de 4 columnas
+  (lineNo viejo · texto viejo · lineNo nuevo · texto nuevo), hunks con
+  header azul, adds verde / dels rojo / contexto neutral.
 - **Búsqueda** en el diff: filtra hunks y resalta matches con `<mark>`.
+
+### Review estilo Cursor (modo opcional)
+
+Toggle: **Ajustes → General → "Revisar cambios estilo Cursor"**
+(`eco.agent.review_mode`, default OFF). Cuando se activa, el flujo se
+vuelve revisión-después-de-aceptar tipo Cursor / PR review:
+
+- El agente sigue editando libremente al worktree (sin pausa). El
+  comportamiento del `canUseTool` no cambia — sigue siendo
+  `permissionMode: 'acceptEdits'` con gate sólo de workspace bounds.
+- **Banner persistente** en la pestaña Archivos: `N cambios pendientes
+  — [Aceptar todos]`.
+- **Dot ámbar** en archivos con cambios sin stagear; **dot verde** en
+  los ya aceptados.
+- **Diff inline al expandir** una card del archivo, con toolbar arriba:
+  - **Aceptar archivo** → `POST /file/accept` → `git add <path>` → el
+    archivo pasa al index, el diff `vsIndex` queda vacío.
+  - **Descartar archivo** → `POST /file/discard` → distingue 3 estados:
+    en HEAD (`git checkout HEAD --`), staged-pero-nuevo (`git rm -f`),
+    untracked puro (`unlinkSync`).
+  - **Aceptar / Rechazar por hunk** (botones en el header de cada
+    hunk) → `POST /file/accept-hunk` (git apply --cached) o
+    `/file/revert-hunk` (git apply -R). Para archivos untracked con
+    un solo hunk, fallback a `git add` o `unlink` respectivamente.
+  - **Toggle "Nuevos / Todos"**: alterna el scope del diff entre
+    working tree vs index (sólo lo no aceptado) y working tree vs
+    HEAD (todo lo pendiente de commit incluyendo lo ya aceptado).
+- **Auto-invalidación**: si el agente vuelve a editar un archivo ya
+  aceptado, `useReviewState` lo trackea por timestamp y la próxima vez
+  que se procese `bubble.messages`, si hay un message con
+  `createdAt > acceptedAt`, el archivo se desmarca y vuelve a pendiente.
+- **`CommitWithAI` limpia** el state local del review al success
+  (`review.clearAll()`) — todo lo commiteado pasa a aceptado implícito.
+
+El estado persiste por bubble en `eco.review.accepted.<bubbleId>` como
+`{ [path]: timestamp }`. Sobrevive a unmount/remount del componente y a
+recargas de la app. Migración del formato boolean viejo a timestamp
+automática en `load()`.
 
 ### Branch picker + Commit con AI
 
@@ -931,10 +976,22 @@ DELETE /auth/user               ← elimina usuario (PIN required)
 GET   /auth/status              ← hasUser + username
 
 GET   /info /workspaces /skills /tts/voices
-POST  /workspaces /shell /tts /file/diff /voice/transcribed
-GET   /file/changes             ← git status --porcelain
+POST  /workspaces /shell /tts /voice/transcribed
 DELETE /workspaces /config/api-key
 GET   /config/api-key
+
+GET   /file/changes             ← git status --porcelain (incluye `unstaged` por archivo)
+POST  /file/diff                ← unified diff. Param `vsIndex: bool` →
+                                  true = working tree vs index (review mode),
+                                  false = working tree vs HEAD (default).
+POST  /file/contents            ← contenido completo del archivo (cap 512 KB)
+POST  /file/discard             ← descarta archivo entero (3 estados:
+                                  checkout HEAD / git rm -f / unlinkSync)
+POST  /file/accept              ← `git add <path>` — stagea el archivo entero
+POST  /file/accept-hunk         ← `git apply --cached` — stagea UN hunk
+                                  (fallback a `git add` si archivo untracked)
+POST  /file/revert-hunk         ← `git apply -R` — revierte UN hunk
+                                  (fallback a `unlinkSync` si archivo untracked)
 
 GET   /git/branches             ← list + ahead/behind por bubbleId
 POST  /git/checkout             ← {branch, create?}
@@ -943,6 +1000,11 @@ POST  /git/fetch                ← --all --prune
 POST  /git/rename-branch        ← git branch -m
 POST  /git/commit-suggest       ← claude -p sugiere mensaje
 POST  /git/commit               ← git add -A && git commit -F -
+GET   /git/prs                  ← gh pr list (open PRs del repo)
+POST  /git/pr/checkout          ← gh pr checkout <num> (en el worktree)
+GET   /git/pr/current           ← gh pr view (PR de la rama actual, si hay)
+POST  /git/pr/merge             ← gh pr merge {number, method: merge|squash|rebase}
+POST  /git/pr/close             ← gh pr close <num>
 
 POST  /pty/kill                 ← mata PTY + dev servers + worktree + sessions Map (idem /bubble/close)
 POST  /bubble/close             ← cleanup completo al cerrar burbuja

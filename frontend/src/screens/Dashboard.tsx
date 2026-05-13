@@ -16,7 +16,7 @@ import { stateColor, type AgentState } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useProfile } from '@/hooks/useProfile';
-import { useBubbleActive } from '@/hooks/useBubbleActive';
+import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 
 type Props = {
   bubbles: Bubble[];
@@ -296,13 +296,18 @@ function CardShell({
 function LiveAgentsCard({ bubbles }: { bubbles: Bubble[] }) {
   const t = useTokens();
   const tr = useT();
+  // Mismo criterio que la graph view: contamos agentes "activos" usando
+  // dev server / browser / archivos modificados / Claude busy. El
+  // bubble.status solo NO alcanza — está en 'idle' aunque haya server up.
+  const activeIds = useActiveBubbleIds(bubbles);
+  const active = activeIds.size;
   const running = bubbles.filter((b) => b.status === 'running' || b.status === 'thinking' || b.status === 'executing').length;
   const waiting = bubbles.filter((b) => b.status === 'waiting').length;
   const errors = bubbles.filter((b) => b.status === 'error').length;
-  const idle = bubbles.length - running - waiting - errors;
-  const active = running + waiting;
+  const idle = bubbles.length - active - errors;
   const total = bubbles.length;
   const pct = (n: number) => total === 0 ? 0 : (n / total) * 100;
+  void running; void waiting;
 
   return (
     <CardShell icon={IconZap} iconColor={t.accent}>
@@ -1218,16 +1223,25 @@ const SAT_ICONS = {
       <path d="M7 7a7 7 0 0110 0M4.5 4.5a11 11 0 0115 0"/>
     </>
   ),
+  // Archivos modificados — hoja con esquina doblada + líneas internas.
+  files: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <path d="M14 2v6h6"/>
+      <path d="M8 13h8M8 17h6"/>
+    </>
+  ),
 } as const;
 
 // Mapeo de cada satélite a la tab que se abre en AgentDetail.
-type SatKey = 'chat' | 'pty' | 'server' | 'browser' | 'remote';
-const SAT_TO_TAB: Record<SatKey, 'chat' | 'terminal' | 'server' | 'browser'> = {
+type SatKey = 'chat' | 'pty' | 'server' | 'browser' | 'remote' | 'files';
+const SAT_TO_TAB: Record<SatKey, 'chat' | 'terminal' | 'server' | 'browser' | 'files'> = {
   chat: 'chat',
   pty: 'terminal',
   server: 'server',
   browser: 'browser',
   remote: 'terminal', // click en el satélite remote te lleva a la terminal
+  files: 'files',
 };
 
 // Satélites alrededor de un electrón — íconos de cada subsistema (chat,
@@ -1239,7 +1253,7 @@ function SatellitesLocal({
 }: {
   n: {
     id: string; size: number;
-    hasChat: boolean; hasPty: boolean; hasServer: boolean; hasBrowser: boolean; hasRemote: boolean;
+    hasChat: boolean; hasPty: boolean; hasServer: boolean; hasBrowser: boolean; hasRemote: boolean; hasFiles: boolean;
   };
   t: ReturnType<typeof useTokens>;
   onItemClick?: (subsystem: SatKey) => void;
@@ -1247,7 +1261,8 @@ function SatellitesLocal({
   const [hoverKey, setHoverKey] = useState<SatKey | null>(null);
   const items: { key: SatKey; on: boolean; color: string; label: string; icon: JSX.Element; pulse?: boolean }[] = [
     { key: 'chat',    on: n.hasChat,    color: t.text2,  label: 'Conversación',          icon: SAT_ICONS.chat },
-    { key: 'pty',     on: n.hasPty,     color: t.warn,   label: 'Terminal',              icon: SAT_ICONS.pty },
+    { key: 'pty',     on: n.hasPty,     color: t.ok,     label: 'Terminal',              icon: SAT_ICONS.pty },
+    { key: 'files',   on: n.hasFiles,   color: t.warn,   label: 'Archivos modificados',  icon: SAT_ICONS.files, pulse: true },
     { key: 'server',  on: n.hasServer,  color: t.busy,   label: 'Server',                icon: SAT_ICONS.server },
     { key: 'browser', on: n.hasBrowser, color: t.accent, label: 'Navegador',             icon: SAT_ICONS.browser },
     { key: 'remote',  on: n.hasRemote,  color: t.accent, label: 'Claude remote control', icon: SAT_ICONS.remote, pulse: true },
@@ -1563,10 +1578,28 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     let hasBrowser = false;
     try { hasBrowser = !!window.localStorage.getItem(`eco.browser.url.${b.id}`); } catch { /* noop */ }
     const hasRemote = !!remoteByBubble[b.id];
+    // Detección rápida de archivos modificados: revisamos las tool calls
+    // exitosas del agente buscando Write/Edit/MultiEdit/NotebookEdit. No
+    // hacemos fetch a `/file/changes` desde el Dashboard para no spamearlo
+    // — esta heurística captura los cambios del agente y se actualiza con
+    // los messages del bubble en tiempo real.
+    let hasFiles = false;
+    if (b.workspace) {
+      outer: for (const m of b.messages) {
+        for (const tc of m.toolCalls ?? []) {
+          if (tc.status !== 'success') continue;
+          if (tc.name === 'Write' || tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'NotebookEdit') {
+            hasFiles = true;
+            break outer;
+          }
+        }
+      }
+    }
     // "Activo" para el bond/electrón = Claude trabajando o subsistema vivo
-    // (server up, browser abierto). PTY abierto solo NO cuenta.
+    // (server up, browser abierto, archivos por revisar). PTY abierto solo
+    // NO cuenta.
     const claudeBusy = state === 'thinking' || state === 'executing' || state === 'running' || state === 'pending';
-    const isActive = claudeBusy || hasServer || hasBrowser;
+    const isActive = claudeBusy || hasServer || hasBrowser || hasFiles;
     return {
       ...b, state,
       orbitR, period, phaseDeg,
@@ -1575,7 +1608,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
       x: cx + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
       y: cy + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
       size: 22 + (state === 'running' ? 8 : 0),
-      hasChat, hasPty, hasServer, hasBrowser, hasRemote, isActive,
+      hasChat, hasPty, hasServer, hasBrowser, hasRemote, hasFiles, isActive,
     };
   });
 

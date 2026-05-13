@@ -1,12 +1,13 @@
-// "Activo" = el agente está haciendo algo real:
+// "Activo" = el agente está haciendo algo real o tiene cambios pendientes:
 //   - Claude está procesando (thinking / executing / running / pending)
 //   - El dev server está corriendo
 //   - Hay una página web abierta en el browser del agente
+//   - Hay archivos modificados sin revisar/commitear
 //
 // Tener un PTY abierto NO cuenta: un shell idle no es trabajo.
 // Tener mensajes viejos en el chat tampoco cuenta.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { on as ecoOn } from '@/lib/eco-bus';
 import type { Bubble } from '@/lib/types';
 
@@ -60,5 +61,99 @@ export function useBubbleActive(bubble: Bubble): boolean {
     || bubble.status === 'running'
     || bubble.status === 'pending';
 
-  return claudeBusy || serverRunning || hasBrowser;
+  // Heurística rápida: el agente editó algún archivo en este bubble?
+  // Iteramos las tool calls de los messages — captura cualquier
+  // Write/Edit/MultiEdit/NotebookEdit exitoso del agente. No requiere
+  // fetch al backend, se actualiza en vivo con los messages.
+  let hasFiles = false;
+  if (bubble.workspace) {
+    outer: for (const m of bubble.messages) {
+      for (const tc of m.toolCalls ?? []) {
+        if (tc.status !== 'success') continue;
+        if (tc.name === 'Write' || tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'NotebookEdit') {
+          hasFiles = true;
+          break outer;
+        }
+      }
+    }
+  }
+
+  return claudeBusy || serverRunning || hasBrowser || hasFiles;
+}
+
+// ─── Versión collection-level ─────────────────────────────────────────────
+// Para componentes que muestran un AGREGADO (ej. el card "Agentes en vivo"
+// del Dashboard), queremos el mismo criterio que `useBubbleActive` pero
+// aplicado a una lista. Devolvemos el Set de IDs activos — el caller hace
+// el count o el filtrado.
+export function useActiveBubbleIds(bubbles: Bubble[]): Set<string> {
+  // Servers vivos por bubble — listener global del WS event.
+  const [serversByBubble, setServersByBubble] = useState<Record<string, Set<string>>>({});
+  useEffect(() => {
+    return ecoOn('eco:dev_status', (d) => {
+      const role = d.role ?? 'main';
+      const live = d.status === 'running' || d.status === 'starting';
+      setServersByBubble((prev) => {
+        const cur = new Set(prev[d.bubbleId] ?? []);
+        if (live) cur.add(role); else cur.delete(role);
+        return { ...prev, [d.bubbleId]: cur };
+      });
+    });
+  }, []);
+
+  // Browsers abiertos por bubble — listener del eco-bus + storage events.
+  const [browsersByBubble, setBrowsersByBubble] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    try {
+      for (const b of bubbles) {
+        if (window.localStorage.getItem(`eco.browser.url.${b.id}`)) s.add(b.id);
+      }
+    } catch { /* noop */ }
+    return s;
+  });
+  useEffect(() => {
+    const offBus = ecoOn('eco:browser_url_changed', (e) => {
+      setBrowsersByBubble((prev) => {
+        const next = new Set(prev);
+        if (e.hasUrl) next.add(e.bubbleId); else next.delete(e.bubbleId);
+        return next;
+      });
+    });
+    const onStorage = (ev: StorageEvent) => {
+      const m = ev.key && /^eco\.browser\.url\.(.+)$/.exec(ev.key);
+      if (!m) return;
+      const id = m[1]!;
+      setBrowsersByBubble((prev) => {
+        const next = new Set(prev);
+        if (ev.newValue) next.add(id); else next.delete(id);
+        return next;
+      });
+    };
+    window.addEventListener('storage', onStorage);
+    return () => { offBus(); window.removeEventListener('storage', onStorage); };
+  }, []);
+
+  return useMemo(() => {
+    const set = new Set<string>();
+    for (const b of bubbles) {
+      const claudeBusy =
+        b.status === 'thinking' || b.status === 'executing'
+        || b.status === 'running' || b.status === 'pending';
+      const serverRunning = (serversByBubble[b.id]?.size ?? 0) > 0;
+      const hasBrowser = browsersByBubble.has(b.id);
+      let hasFiles = false;
+      if (b.workspace) {
+        outer: for (const m of b.messages) {
+          for (const tc of m.toolCalls ?? []) {
+            if (tc.status !== 'success') continue;
+            if (tc.name === 'Write' || tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'NotebookEdit') {
+              hasFiles = true; break outer;
+            }
+          }
+        }
+      }
+      if (claudeBusy || serverRunning || hasBrowser || hasFiles) set.add(b.id);
+    }
+    return set;
+  }, [bubbles, serversByBubble, browsersByBubble]);
 }
