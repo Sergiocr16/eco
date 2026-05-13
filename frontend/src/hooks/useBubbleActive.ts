@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { on as ecoOn } from '@/lib/eco-bus';
 import type { Bubble } from '@/lib/types';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
+import { peekHasFiles, useFileChangesSubscription, useBubbleHasFilesMap } from '@/hooks/useGitChanges';
 
 function readHasBrowser(bubbleId: string): boolean {
   try { return !!window.localStorage.getItem(`eco.browser.url.${bubbleId}`); }
@@ -64,22 +65,14 @@ export function useBubbleActive(bubble: Bubble): boolean {
     || bubble.status === 'pending';
   const ptyBusy = useBubbleBusy(bubble.id);
 
-  // Heurística rápida: el agente editó algún archivo en este bubble?
-  // Iteramos las tool calls de los messages — captura cualquier
-  // Write/Edit/MultiEdit/NotebookEdit exitoso del agente. No requiere
-  // fetch al backend, se actualiza en vivo con los messages.
-  let hasFiles = false;
-  if (bubble.workspace) {
-    outer: for (const m of bubble.messages) {
-      for (const tc of m.toolCalls ?? []) {
-        if (tc.status !== 'success') continue;
-        if (tc.name === 'Write' || tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'NotebookEdit') {
-          hasFiles = true;
-          break outer;
-        }
-      }
-    }
-  }
+  // hasFiles real: leemos del cache global de `git status`. El cache lo
+  // mantiene el Dashboard (useBubbleHasFilesMap) y/o la FilesPanel
+  // (useGitChanges). Si no hay entry todavía, asumimos `false` — preferimos
+  // un falso negativo transitorio a un falso positivo permanente.
+  useFileChangesSubscription();
+  const hasFiles = bubble.workspace
+    ? (peekHasFiles(bubble.workspace, bubble.id) ?? false)
+    : false;
 
   return claudeBusy || ptyBusy || serverRunning || hasBrowser || hasFiles;
 }
@@ -140,6 +133,12 @@ export function useActiveBubbleIds(bubbles: Bubble[]): Set<string> {
   // se dispara cada vez que un PTY cambia entre busy / idle.
   const busyPtyIds = useBusyBubbleIds();
 
+  // hasFiles real por bubble — polleo compartido con el Dashboard. Triggerea
+  // el fetch periódico de `/file/changes` para cada bubble con workspace.
+  const hasFilesMap = useBubbleHasFilesMap(
+    bubbles.map((b) => ({ id: b.id, workspace: b.workspace || '' })),
+  );
+
   return useMemo(() => {
     const set = new Set<string>();
     for (const b of bubbles) {
@@ -149,19 +148,9 @@ export function useActiveBubbleIds(bubbles: Bubble[]): Set<string> {
       const ptyBusy = busyPtyIds.has(b.id);
       const serverRunning = (serversByBubble[b.id]?.size ?? 0) > 0;
       const hasBrowser = browsersByBubble.has(b.id);
-      let hasFiles = false;
-      if (b.workspace) {
-        outer: for (const m of b.messages) {
-          for (const tc of m.toolCalls ?? []) {
-            if (tc.status !== 'success') continue;
-            if (tc.name === 'Write' || tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'NotebookEdit') {
-              hasFiles = true; break outer;
-            }
-          }
-        }
-      }
+      const hasFiles = hasFilesMap.get(b.id) ?? false;
       if (claudeBusy || ptyBusy || serverRunning || hasBrowser || hasFiles) set.add(b.id);
     }
     return set;
-  }, [bubbles, serversByBubble, browsersByBubble, busyPtyIds]);
+  }, [bubbles, serversByBubble, browsersByBubble, busyPtyIds, hasFilesMap]);
 }

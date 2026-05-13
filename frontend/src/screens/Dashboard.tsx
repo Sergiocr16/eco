@@ -18,6 +18,7 @@ import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useProfile } from '@/hooks/useProfile';
 import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
+import { useBubbleHasFilesMap } from '@/hooks/useGitChanges';
 
 type Props = {
   bubbles: Bubble[];
@@ -1585,6 +1586,12 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     n <= 6 ? 36 :
     32;
   const busyIds = useBusyBubbleIds();
+  // hasFiles real basado en `git status` (no heurística sobre history de
+  // tool calls del agente). Comparte cache con la FilesPanel — el dot ámbar
+  // y el satélite naranja se calculan con la misma fuente de verdad.
+  const hasFilesMap = useBubbleHasFilesMap(
+    bubbles.map((b) => ({ id: b.id, workspace: b.workspace || '' })),
+  );
   const nodes = bubbles.map((b, i) => {
     const orbitIdx = i;
     const orbitR = orbitBaseR + orbitIdx * orbitSpacing;
@@ -1600,23 +1607,12 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     let hasBrowser = false;
     try { hasBrowser = !!window.localStorage.getItem(`eco.browser.url.${b.id}`); } catch { /* noop */ }
     const hasRemote = !!remoteByBubble[b.id];
-    // Detección rápida de archivos modificados: revisamos las tool calls
-    // exitosas del agente buscando Write/Edit/MultiEdit/NotebookEdit. No
-    // hacemos fetch a `/file/changes` desde el Dashboard para no spamearlo
-    // — esta heurística captura los cambios del agente y se actualiza con
-    // los messages del bubble en tiempo real.
-    let hasFiles = false;
-    if (b.workspace) {
-      outer: for (const m of b.messages) {
-        for (const tc of m.toolCalls ?? []) {
-          if (tc.status !== 'success') continue;
-          if (tc.name === 'Write' || tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'NotebookEdit') {
-            hasFiles = true;
-            break outer;
-          }
-        }
-      }
-    }
+    // hasFiles real: viene de `git status` via `useBubbleHasFilesMap`.
+    // Si el cache aún no tiene entry para esta burbuja (primer poll en curso)
+    // devuelve undefined → false. Es OK que tarde 1-2s en aparecer el
+    // satélite naranja la primera vez — preferible a un falso positivo
+    // permanente basado en history.
+    const hasFiles = hasFilesMap.get(b.id) ?? false;
     // "Activo" para el bond/electrón = el agente está EJECUTANDO algo ahora
     // mismo: Claude procesando o PTY con output. Tener un server up, un
     // browser abierto o archivos modificados son estados pasivos — los

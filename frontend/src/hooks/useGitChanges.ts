@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn } from '@/lib/eco-bus';
 
@@ -71,6 +71,7 @@ export function useGitChanges(workspace: string, bubbleId?: string, intervalMs =
         }));
         setFiles(normalized);
         cache.set(cacheKey(workspace, bubbleId), { files: normalized, ts: Date.now() });
+        notifyAll();
       } catch { /* noop */ }
       finally {
         if (!cancelled) setLoading(false);
@@ -99,4 +100,110 @@ export function useGitChanges(workspace: string, bubbleId?: string, intervalMs =
     loading,
     refresh: () => setBust((n) => n + 1),
   };
+}
+
+// ─── Aggregate: hasFiles por bubble para el Dashboard ─────────────────────
+// El Dashboard quiere saber, para cada burbuja, si tiene archivos modificados
+// reales (no heurística de "alguna vez se editó algo"). Compartimos el mismo
+// `cache` que llena `useGitChanges`, y polleamos en paralelo cualquier burbuja
+// que no tenga entry todavía. Visibilidad: si la pestaña está oculta no
+// polleamos (la próxima `visibilitychange` refresca).
+
+type BubbleRef = { id: string; workspace: string };
+
+const subscribers = new Set<() => void>();
+function notifyAll() { for (const fn of subscribers) { try { fn(); } catch { /* noop */ } } }
+
+/** Lectura sincrónica del cache — sin disparar fetch. Devuelve `undefined`
+ *  si no hay entry para esa (workspace, bubble). */
+export function peekHasFiles(workspace: string, bubbleId: string): boolean | undefined {
+  const entry = cache.get(cacheKey(workspace, bubbleId));
+  if (!entry) return undefined;
+  return entry.files.length > 0;
+}
+
+/** Subscribe a updates del cache global de file changes. Útil cuando un
+ *  hook quiere re-renderizar al cambiar el state pero no es responsable
+ *  de disparar el fetch. */
+export function useFileChangesSubscription(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((n) => n + 1);
+    subscribers.add(fn);
+    return () => { subscribers.delete(fn); };
+  }, []);
+  return tick;
+}
+
+async function refreshOne(workspace: string, bubbleId: string): Promise<void> {
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+  try {
+    const params = new URLSearchParams({ workspace, bubbleId });
+    const r = await apiFetch(`/file/changes?${params}`);
+    if (!r.ok) return;
+    const data = await r.json() as { workspace: string; files: { path: string; change: string; unstaged?: boolean }[] };
+    const base = (data.workspace || workspace).endsWith('/') ? (data.workspace || workspace) : (data.workspace || workspace) + '/';
+    const normalized: GitChange[] = data.files.map((f) => ({
+      path: f.path.startsWith('/') ? f.path : base + f.path,
+      change: f.change,
+      unstaged: f.unstaged !== false,
+    }));
+    cache.set(cacheKey(workspace, bubbleId), { files: normalized, ts: Date.now() });
+    notifyAll();
+  } catch { /* noop */ }
+}
+
+/**
+ * Polea `/file/changes` para todas las burbujas con workspace y devuelve un
+ * Map<bubbleId, hasFiles>. Comparte cache con `useGitChanges` — si la
+ * FilesPanel ya está montada para una burbuja, no se duplica el fetch (el
+ * último que termina pisa al otro con el mismo resultado).
+ */
+export function useBubbleHasFilesMap(bubbles: BubbleRef[], intervalMs = 12_000): Map<string, boolean> {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((n) => n + 1);
+    subscribers.add(fn);
+    return () => { subscribers.delete(fn); };
+  }, []);
+
+  const validBubbles = useMemo(
+    () => bubbles.filter((b) => !!b.workspace),
+    [bubbles],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      for (const b of validBubbles) {
+        if (cancelled) return;
+        void refreshOne(b.workspace, b.id);
+      }
+    };
+    tick();
+    const iv = setInterval(tick, intervalMs);
+    const onVis = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVis);
+    const offBus = ecoOn('eco:git_refresh', (e) => {
+      const target = validBubbles.find((b) => b.id === e.bubbleId);
+      if (target) void refreshOne(target.workspace, target.id);
+    });
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVis);
+      offBus();
+    };
+  }, [validBubbles, intervalMs]);
+
+  return useMemo(() => {
+    const out = new Map<string, boolean>();
+    for (const b of validBubbles) {
+      const entry = cache.get(cacheKey(b.workspace, b.id));
+      out.set(b.id, !!entry && entry.files.length > 0);
+    }
+    return out;
+    // `tick` fuerza re-derivación cuando un fetch completa y notifica.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validBubbles, tick]);
 }
