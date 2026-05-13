@@ -40,6 +40,13 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  // Scope del diff:
+  //  - 'unstaged' = working tree vs index. Muestra SOLO lo nuevo desde la
+  //    última aceptación (default cuando reviewMode está ON).
+  //  - 'all'      = working tree vs HEAD. Muestra TODOS los cambios desde
+  //    el último commit (incluye lo que ya fue staged/aceptado).
+  // El user lo alterna con el toggle "Nuevos / Todos los cambios" en el header.
+  const [diffScope, setDiffScope] = useState<'unstaged' | 'all'>(reviewMode ? 'unstaged' : 'all');
   // Hunks aceptados localmente (solo visual feedback — no toca el archivo).
   // El user "acepta" para marcar revisado; rechazar sí revierte el cambio.
   const [acceptedHunks, setAcceptedHunks] = useState<Set<number>>(new Set());
@@ -52,6 +59,8 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
     setQuery('');
     setAcceptedHunks(new Set());
     setActionMsg(null);
+    setDiffScope(reviewMode ? 'unstaged' : 'all');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
   useEffect(() => {
@@ -72,9 +81,9 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
       body: JSON.stringify({
         path, workspace,
         ...(bubbleId ? { bubbleId } : {}),
-        // En review mode comparamos working tree vs index: solo vemos lo
-        // NUEVO sin aceptar. Lo aceptado vive en el index y desaparece.
-        ...(reviewMode ? { vsIndex: true } : {}),
+        // 'unstaged' = working tree vs index (lo nuevo desde aceptar).
+        // 'all'      = working tree vs HEAD (todo desde el último commit).
+        ...(diffScope === 'unstaged' ? { vsIndex: true } : {}),
       }),
     })
       .then(async (r) => {
@@ -86,7 +95,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Error'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [path, workspace, bubbleId, reloadBust, reviewMode]);
+  }, [path, workspace, bubbleId, reloadBust, diffScope]);
 
   useEffect(() => {
     if (!onClose) return;
@@ -305,6 +314,33 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                 loading ? tr('diff.loading') : ''}
             </div>
           </div>
+          {/* Toggle Nuevos / Todos — visible solo en review mode, porque
+              sino "nuevo" y "todo" son lo mismo (no hay nada aceptado). */}
+          {reviewMode && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center',
+              background: t.bg2, border: `1px solid ${t.glassBorder}`,
+              borderRadius: 7, padding: 2,
+            }}>
+              {(['unstaged', 'all'] as const).map((s) => (
+                <button key={s} type="button"
+                  onClick={() => setDiffScope(s)}
+                  title={s === 'unstaged'
+                    ? 'Solo cambios sin aceptar (working tree vs index)'
+                    : 'Todos los cambios desde el último commit (vs HEAD)'}
+                  style={{
+                    padding: '4px 10px', borderRadius: 5, border: 0,
+                    background: diffScope === s ? t.accent : 'transparent',
+                    color: diffScope === s ? t.accentOn : t.text2,
+                    fontSize: 11, fontWeight: 600,
+                    fontFamily: t.fontSans, cursor: 'pointer',
+                  }}>
+                  {s === 'unstaged' ? 'Nuevos' : 'Todos'}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '4px 8px', borderRadius: 8,
