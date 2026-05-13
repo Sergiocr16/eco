@@ -159,9 +159,11 @@ const DICT = {
   'dash.card.live.title':     { es: 'Agentes en vivo', en: 'Live agents' },
 
   'dash.card.res.title':      { es: 'Recursos en uso', en: 'Open resources' },
-  'dash.card.res.ptys':       { es: 'Terminales abiertos', en: 'Open terminals' },
+  'dash.card.res.ptys':       { es: 'Terminales', en: 'Terminals' },
   'dash.card.res.servers':    { es: 'Dev servers', en: 'Dev servers' },
-  'dash.card.res.browsers':   { es: 'Navegadores con URL', en: 'Browsers with URL' },
+  'dash.card.res.browsers':   { es: 'Navegadores', en: 'Browsers' },
+  'dash.card.res.files':      { es: 'Archivos modificados', en: 'Modified files' },
+  'dash.card.res.remote':     { es: 'Remote control', en: 'Remote control' },
   'dash.card.res.worktreesactivos': { es: 'Worktrees', en: 'Worktrees' },
   'dash.card.res.worktrees':  { es: 'Worktrees', en: 'Worktrees' },
 

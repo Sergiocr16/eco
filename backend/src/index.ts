@@ -378,6 +378,52 @@ app.post('/voice/transcribe-blob',
   },
 );
 
+// Cache + in-flight dedup para `/file/changes`. El Dashboard pollea TODAS
+// las burbujas y la FilesPanel pollea LA activa, así que pollers concurrentes
+// suelen pegar al mismo key — sin esto, spawneamos N veces git status para
+// el mismo worktree en cada tick.
+type FileChangesPayload = {
+  workspace: string;
+  files: { path: string; change: 'created' | 'modified' | 'deleted' | 'renamed'; unstaged: boolean }[];
+  git: boolean;
+};
+const fileChangesCache = new Map<string, { result: FileChangesPayload; ts: number }>();
+const fileChangesInFlight = new Map<string, Promise<FileChangesPayload>>();
+const FILE_CHANGES_CACHE_MS = 300;
+
+function computeFileChanges(effective: string): Promise<FileChangesPayload> {
+  return new Promise<FileChangesPayload>((resolve) => {
+    import('node:child_process').then(({ spawn }) => {
+      const proc = spawn('git', ['-C', effective, 'status', '--porcelain=v1', '--untracked-files=all'], {
+        timeout: 5000,
+      });
+      let out = '';
+      proc.stdout.on('data', (d) => { out += d.toString(); });
+      proc.on('close', (code) => {
+        if (code !== 0) return resolve({ workspace: effective, files: [], git: false });
+        const files: FileChangesPayload['files'] = [];
+        for (const line of out.split('\n')) {
+          if (!line) continue;
+          const xy = line.slice(0, 2);
+          const workCh = xy[1];
+          const path = line.slice(3).trim();
+          if (!path) continue;
+          let change: FileChangesPayload['files'][number]['change'];
+          if (xy === '??' || xy.includes('A')) change = 'created';
+          else if (xy.includes('D')) change = 'deleted';
+          else if (xy.includes('R')) change = 'renamed';
+          else change = 'modified';
+          const unstaged = xy === '??' || (workCh !== undefined && workCh !== ' ');
+          const finalPath = path.includes(' -> ') ? path.split(' -> ').pop()! : path;
+          files.push({ path: finalPath, change, unstaged });
+        }
+        resolve({ workspace: effective, files, git: true });
+      });
+      proc.on('error', () => resolve({ workspace: effective, files: [], git: false }));
+    });
+  });
+}
+
 app.get('/file/changes', async (req: Request, res: Response) => {
   const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : '';
   const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
@@ -385,53 +431,45 @@ app.get('/file/changes', async (req: Request, res: Response) => {
   if (!isAllowedWorkspace(workspace)) {
     return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
   }
-  // Si la burbuja tiene worktree, sus cambios son los del worktree (no del repo padre).
-  // Si todavía no se creó (Files tab abierto antes que la primera prompt o shell),
-  // lo creamos lazy acá.
   const effective = bubbleId ? ensureWorktree(bubbleId, workspace) : workspace;
-  const { spawn } = await import('node:child_process');
-  const proc = spawn('git', ['-C', effective, 'status', '--porcelain=v1', '--untracked-files=all'], {
-    timeout: 5000,
-  });
-  let out = '';
-  proc.stdout.on('data', (d) => { out += d.toString(); });
-  proc.on('close', (code) => {
-    if (code !== 0) return res.json({ workspace, files: [], git: false });
-    const files: { path: string; change: 'created' | 'modified' | 'deleted' | 'renamed'; unstaged: boolean }[] = [];
-    for (const line of out.split('\n')) {
-      if (!line) continue;
-      // formato: XY <path>  (X=index, Y=worktree). "??" = untracked.
-      const xy = line.slice(0, 2);
-      const indexCh = xy[0];
-      const workCh = xy[1];
-      const path = line.slice(3).trim();
-      if (!path) continue;
-      let change: 'created' | 'modified' | 'deleted' | 'renamed';
-      if (xy === '??' || xy.includes('A')) change = 'created';
-      else if (xy.includes('D')) change = 'deleted';
-      else if (xy.includes('R')) change = 'renamed';
-      else change = 'modified';
-      // Hay cambios "sin aceptar" si:
-      //  - es untracked (todo el archivo es unstaged)
-      //  - el char del worktree (segundo) NO es ' ' (hay cambios en el wt
-      //    que no están en el index, sea M, D, A, R, etc.)
-      const unstaged = xy === '??' || (workCh !== undefined && workCh !== ' ');
-      void indexCh;
-      // Para renames "R  old -> new", quedate con el destino.
-      const finalPath = path.includes(' -> ') ? path.split(' -> ').pop()! : path;
-      files.push({ path: finalPath, change, unstaged });
-    }
-    res.json({ workspace: effective, files, git: true });
-  });
-  proc.on('error', () => res.json({ workspace: effective, files: [], git: false }));
+  const key = effective;
+  const now = Date.now();
+  // Cache hot: si tenemos resultado fresco, lo devolvemos sin tocar git.
+  const cached = fileChangesCache.get(key);
+  if (cached && now - cached.ts < FILE_CHANGES_CACHE_MS) {
+    return res.json(cached.result);
+  }
+  // Dedup in-flight: si ya hay una request corriendo para esta key, esperamos
+  // su resultado en lugar de spawnear otro git.
+  let pending = fileChangesInFlight.get(key);
+  if (!pending) {
+    pending = computeFileChanges(effective).then((result) => {
+      fileChangesCache.set(key, { result, ts: Date.now() });
+      fileChangesInFlight.delete(key);
+      return result;
+    });
+    fileChangesInFlight.set(key, pending);
+  }
+  try {
+    const result = await pending;
+    res.json(result);
+  } catch {
+    res.json({ workspace: effective, files: [], git: false });
+  }
 });
+
+function invalidateFileChanges(dir: string) {
+  fileChangesCache.delete(dir);
+}
 
 app.post('/file/discard', (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const path = typeof req.body?.path === 'string' ? req.body.path : '';
   if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
-  res.json(gitOps.discardFile(dir, path));
+  const result = gitOps.discardFile(dir, path);
+  invalidateFileChanges(dir);
+  res.json(result);
 });
 
 // Review estilo Cursor: revertir UN solo hunk del unified diff.
@@ -444,7 +482,9 @@ app.post('/file/revert-hunk', (req: Request, res: Response) => {
   if (!hunkText) return errResponse(res, 400, 'http.invalid_body', 'hunkText requerido');
   // Cap defensivo: un hunk razonable no debería pasar de 100 KB.
   if (hunkText.length > 100_000) return errResponse(res, 400, 'http.invalid_body', 'hunk demasiado grande');
-  res.json(gitOps.revertHunk(dir, path, hunkText));
+  const result = gitOps.revertHunk(dir, path, hunkText);
+  invalidateFileChanges(dir);
+  res.json(result);
 });
 
 // Aceptar UN hunk (git apply --cached). Lo staged-ea → desaparece del diff
@@ -457,7 +497,9 @@ app.post('/file/accept-hunk', (req: Request, res: Response) => {
   if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
   if (!hunkText) return errResponse(res, 400, 'http.invalid_body', 'hunkText requerido');
   if (hunkText.length > 100_000) return errResponse(res, 400, 'http.invalid_body', 'hunk demasiado grande');
-  res.json(gitOps.acceptHunk(dir, path, hunkText));
+  const result = gitOps.acceptHunk(dir, path, hunkText);
+  invalidateFileChanges(dir);
+  res.json(result);
 });
 
 // Aceptar archivo entero (git add). Idem efecto: queda staged.
@@ -466,7 +508,9 @@ app.post('/file/accept', (req: Request, res: Response) => {
   if (!dir) return;
   const path = typeof req.body?.path === 'string' ? req.body.path : '';
   if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
-  res.json(gitOps.acceptFile(dir, path));
+  const result = gitOps.acceptFile(dir, path);
+  invalidateFileChanges(dir);
+  res.json(result);
 });
 
 // Contenido completo del archivo — útil para mostrar el archivo entero
@@ -536,6 +580,12 @@ app.post('/git/fetch', (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   res.json(gitOps.fetch(dir));
+});
+
+app.post('/git/push', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  res.json(gitOps.push(dir));
 });
 
 app.post('/git/rename-branch', (req: Request, res: Response) => {

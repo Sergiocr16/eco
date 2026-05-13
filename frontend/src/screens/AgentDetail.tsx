@@ -25,7 +25,7 @@ import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
-  IconCheck, IconX, IconBolt,
+  IconCheck, IconX, IconBolt, IconBranch,
   IconEdit, IconFolder, IconTrash, IconCopy,
   type IconProps,
 } from '@/design/icons';
@@ -206,11 +206,15 @@ export function AgentDetail({
     setRenaming(false);
   }
 
-  const agentFiles = collectFilesChanged(bubble);
-  // Polling cada 4s en lugar del default 10s para que los cambios del
-  // agente aparezcan rápido al entrar a la pestaña Archivos. Adicional,
-  // el hook escucha `eco:git_refresh` y hace refetch inmediato.
-  const gitChangesResult = useGitChanges(bubble.workspace, bubble.id, 4000);
+  // agentFiles depende SOLO de los messages — memoizamos para no romper la
+  // identidad del array en cada render del AgentDetail (sin esto, el
+  // useMemo de filesChanged abajo nunca hit-ea y todo el árbol se
+  // recomputa por cualquier setState).
+  const agentFiles = useMemo(() => collectFilesChanged(bubble), [bubble.messages]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Polling cada 6s — los eventos `eco:git_refresh` que dispara cada acción
+  // (accept/discard/revert) refrescan al instante, así que el poll es solo
+  // catch-all para cambios externos (commits CLI, etc.). 4s era overkill.
+  const gitChangesResult = useGitChanges(bubble.workspace, bubble.id, 6000);
   const gitChanges = gitChangesResult.files;
   const gitChangesLoading = gitChangesResult.loading;
   const filesChanged = useMemo(() => {
@@ -1858,6 +1862,86 @@ function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: st
   );
 }
 
+// Push de la rama actual al remoto. Auto-detecta upstream y fallback a
+// --set-upstream origin <branch> si no existe.
+function PushButton({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
+  const t = useTokens();
+  type Phase = 'idle' | 'pushing' | 'done' | 'error';
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function push() {
+    setMsg(null); setPhase('pushing');
+    try {
+      const r = await apiFetch('/git/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace, bubbleId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.ok) { setMsg(d.message || 'Push OK'); setPhase('done'); }
+      else { setMsg(d.error || 'Push falló'); setPhase('error'); }
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Error'); setPhase('error');
+    }
+  }
+
+  // Reset el banner de "done"/"error" tras unos segundos para no quedar
+  // gritando estado viejo.
+  useEffect(() => {
+    if (phase !== 'done' && phase !== 'error') return;
+    const id = window.setTimeout(() => { setPhase('idle'); setMsg(null); }, 5000);
+    return () => window.clearTimeout(id);
+  }, [phase]);
+
+  const isError = phase === 'error';
+  const isDone = phase === 'done';
+
+  return (
+    <Glass radius={10} style={{ padding: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 6,
+          background: t.accentFaint, color: t.accent,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <IconBranch size={11}/>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>Push</div>
+          <div style={{ fontSize: 10, color: t.text3, marginTop: 0 }}>
+            Publica la rama actual en origin
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void push()}
+          disabled={phase === 'pushing'}
+          style={{
+            height: 26, padding: '0 12px', border: 0, borderRadius: 6,
+            background: t.accent, color: t.accentOn,
+            fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
+            cursor: phase === 'pushing' ? 'default' : 'pointer',
+            opacity: phase === 'pushing' ? 0.6 : 1,
+          }}>
+          {phase === 'pushing' ? 'Pushing…' : 'Push'}
+        </button>
+      </div>
+      {msg && (isDone || isError) && (
+        <div style={{
+          marginTop: 6,
+          padding: '6px 8px', borderRadius: 6,
+          background: `color-mix(in oklch, ${isError ? t.err : t.ok} 12%, transparent)`,
+          color: isError ? t.err : t.ok,
+          fontFamily: t.fontMono, fontSize: 10.5,
+          whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
+        }}>{msg}</div>
+      )}
+    </Glass>
+  );
+}
+
 // ─── AgentSidebar — UX rework ─────────────────────────────────────────────
 // Mejoras de UX/UI aplicadas:
 //  1) Secciones colapsables individualmente (estado persistido por bubble).
@@ -2275,6 +2359,7 @@ function AgentSidebar({
               <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
               <PullRequestsList workspace={bubble.workspace} bubbleId={bubble.id}/>
               <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
+              <PushButton bubbleId={bubble.id} workspace={bubble.workspace}/>
             </div>
           </CollapsibleSection>
         );
@@ -2394,10 +2479,13 @@ function AgentSidebar({
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>›</button>
       </div>
 
-      {/* Scrollable area — sin header sticky ni footer fijo. */}
+      {/* Scrollable area — top padding generoso para que el botón flotante
+          de colapsar (›) que vive en top:8/right:8 no se traslape con el
+          header de la primera sección (Skills tiene un SkillsPicker
+          alineado a la derecha en el mismo eje horizontal). */}
       <div style={{
         flex: 1, overflow: 'auto',
-        padding: '14px 18px 20px',
+        padding: '46px 18px 20px',
         display: 'flex', flexDirection: 'column', gap: 18,
       }}>
         {sectionOrder.map(renderSection)}

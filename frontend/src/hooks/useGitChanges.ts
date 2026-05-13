@@ -26,6 +26,15 @@ type CacheEntry = { files: GitChange[]; ts: number };
 const cache = new Map<string, CacheEntry>();
 const cacheKey = (workspace: string, bubbleId?: string) => `${workspace}|${bubbleId ?? ''}`;
 
+function sameFiles(a: GitChange[], b: GitChange[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!; const y = b[i]!;
+    if (x.path !== y.path || x.change !== y.change || x.unstaged !== y.unstaged) return false;
+  }
+  return true;
+}
+
 export function useGitChanges(workspace: string, bubbleId?: string, intervalMs = 10_000): UseGitChangesResult {
   // Inicializamos con el cache si existe — la UI ve inmediatamente la última
   // lista conocida en lugar de "vacío + spinner".
@@ -69,7 +78,9 @@ export function useGitChanges(workspace: string, bubbleId?: string, intervalMs =
           // pendiente que aceptado por error).
           unstaged: f.unstaged !== false,
         }));
-        setFiles(normalized);
+        // Skip setState si el resultado es idéntico al anterior — sin esto,
+        // cada poll dispara re-render incluso cuando no cambió nada.
+        setFiles((prev) => sameFiles(prev, normalized) ? prev : normalized);
         cache.set(cacheKey(workspace, bubbleId), { files: normalized, ts: Date.now() });
         notifyAll();
       } catch { /* noop */ }
@@ -135,22 +146,40 @@ export function useFileChangesSubscription(): number {
   return tick;
 }
 
+// Dedup de requests in-flight: si dos consumers piden la misma key al
+// mismo tiempo, solo disparamos UN fetch al backend. Los demás esperan.
+const inFlight = new Map<string, Promise<void>>();
+
 async function refreshOne(workspace: string, bubbleId: string): Promise<void> {
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-  try {
-    const params = new URLSearchParams({ workspace, bubbleId });
-    const r = await apiFetch(`/file/changes?${params}`);
-    if (!r.ok) return;
-    const data = await r.json() as { workspace: string; files: { path: string; change: string; unstaged?: boolean }[] };
-    const base = (data.workspace || workspace).endsWith('/') ? (data.workspace || workspace) : (data.workspace || workspace) + '/';
-    const normalized: GitChange[] = data.files.map((f) => ({
-      path: f.path.startsWith('/') ? f.path : base + f.path,
-      change: f.change,
-      unstaged: f.unstaged !== false,
-    }));
-    cache.set(cacheKey(workspace, bubbleId), { files: normalized, ts: Date.now() });
-    notifyAll();
-  } catch { /* noop */ }
+  const key = cacheKey(workspace, bubbleId);
+  const existing = inFlight.get(key);
+  if (existing) return existing;
+  const promise = (async () => {
+    try {
+      const params = new URLSearchParams({ workspace, bubbleId });
+      const r = await apiFetch(`/file/changes?${params}`);
+      if (!r.ok) return;
+      const data = await r.json() as { workspace: string; files: { path: string; change: string; unstaged?: boolean }[] };
+      const base = (data.workspace || workspace).endsWith('/') ? (data.workspace || workspace) : (data.workspace || workspace) + '/';
+      const normalized: GitChange[] = data.files.map((f) => ({
+        path: f.path.startsWith('/') ? f.path : base + f.path,
+        change: f.change,
+        unstaged: f.unstaged !== false,
+      }));
+      const prev = cache.get(key)?.files;
+      if (prev && sameFiles(prev, normalized)) {
+        // Sin cambios — actualizamos solo el timestamp, no notificamos.
+        cache.set(key, { files: prev, ts: Date.now() });
+        return;
+      }
+      cache.set(key, { files: normalized, ts: Date.now() });
+      notifyAll();
+    } catch { /* noop */ }
+    finally { inFlight.delete(key); }
+  })();
+  inFlight.set(key, promise);
+  return promise;
 }
 
 /**

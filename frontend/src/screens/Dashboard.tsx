@@ -9,7 +9,7 @@ import {
   IconWave, IconMic, IconSend, IconPlus, IconGrid, IconGraph, IconExt, IconColumns,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal,
   IconClock, IconAlert, IconZap, IconCpu, IconEdit, IconTrash,
-  IconGlobe, IconLayers, IconShield, type IconProps,
+  IconGlobe, IconLayers, IconShield, IconFile, IconCommand, type IconProps,
 } from '@/design/icons';
 import type { Bubble, VoiceState } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
@@ -62,7 +62,12 @@ export function Dashboard(props: Props) {
     try { window.localStorage.setItem('eco.dashboard.view', v); } catch { /* noop */ }
   };
 
-  const active = bubbles.filter((b) => ['running', 'thinking', 'executing', 'waiting'].includes(b.status as string));
+  // "Activos" usa el criterio compartido (Claude SDK busy, PTY busy, server
+  // up, browser abierto, archivos modificados) — mismo que la card "Agentes
+  // en vivo" y la vista de nodos. Sin esto, el header decía "0 agentes
+  // activos" mientras la card mostraba 1.
+  const activeIds = useActiveBubbleIds(bubbles);
+  const active = bubbles.filter((b) => activeIds.has(b.id));
   const running = active.filter((b) => b.status === 'running' || b.status === 'thinking' || b.status === 'executing');
   const waiting = active.filter((b) => b.status === 'waiting' as string);
   const errors = bubbles.filter((b) => b.status === 'error' as string);
@@ -351,25 +356,116 @@ function LiveAgentsCard({ bubbles }: { bubbles: Bubble[] }) {
 function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
   const t = useTokens();
   const tr = useT();
-  // PTYs abiertos: bubble.ptyOpen === true
+
+  // ─── Counts en vivo de cada subsistema ──────────────────────────────────
+
+  // Terminales: PTYs abiertos.
   const ptys = bubbles.filter((b) => b.ptyOpen).length;
-  // Worktrees: workspaces únicos en uso (cada bubble con workspace tiene worktree).
-  const worktrees = new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size;
-  // Servers + browsers: leemos del localStorage (servers via dev_status NO se
-  // persiste — usamos un fallback simple por ahora). Para el conteo exacto
-  // habría que escuchar eco:dev_status; lo dejamos como mejora futura.
-  let browsers = 0;
-  try {
-    for (const b of bubbles) {
-      if (window.localStorage.getItem(`eco.browser.url.${b.id}`)) browsers += 1;
+
+  // Dev servers: escuchamos eco:dev_status para mantener un Map por bubble.
+  // Seed inicial con /dev/active para no perder estado al montar el dashboard
+  // después de que los servers ya estén corriendo.
+  const [serverRoles, setServerRoles] = useState<Record<string, Set<string>>>({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch('/dev/active');
+        if (!r.ok || cancelled) return;
+        const data = await r.json() as { sessions: Array<{ bubbleId: string; role: string; status: string }> };
+        const seed: Record<string, Set<string>> = {};
+        for (const s of data.sessions ?? []) {
+          if (s.status !== 'running' && s.status !== 'starting') continue;
+          if (!seed[s.bubbleId]) seed[s.bubbleId] = new Set();
+          seed[s.bubbleId]!.add(s.role);
+        }
+        setServerRoles((prev) => ({ ...prev, ...seed }));
+      } catch { /* noop */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    return ecoOn('eco:dev_status', (d) => {
+      const role = d.role ?? 'main';
+      const live = d.status === 'running' || d.status === 'starting';
+      setServerRoles((prev) => {
+        const cur = new Set(prev[d.bubbleId] ?? []);
+        if (live) cur.add(role); else cur.delete(role);
+        return { ...prev, [d.bubbleId]: cur };
+      });
+    });
+  }, []);
+  const servers = Object.values(serverRoles).reduce((sum, s) => sum + s.size, 0);
+
+  // Navegadores con URL: leemos localStorage + escuchamos eco:browser_url_changed
+  // para vivos updates sin re-leer todo el storage en cada render.
+  const [browsersSet, setBrowsersSet] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    try {
+      for (const b of bubbles) {
+        if (window.localStorage.getItem(`eco.browser.url.${b.id}`)) s.add(b.id);
+      }
+    } catch { /* noop */ }
+    return s;
+  });
+  useEffect(() => {
+    return ecoOn('eco:browser_url_changed', (e) => {
+      setBrowsersSet((prev) => {
+        const next = new Set(prev);
+        if (e.hasUrl) next.add(e.bubbleId); else next.delete(e.bubbleId);
+        return next;
+      });
+    });
+  }, []);
+  // Filtramos por bubbles vivas — si una se cerró, su entry en el set queda
+  // huérfana hasta el siguiente unload.
+  const liveIds = new Set(bubbles.map((b) => b.id));
+  const browsers = [...browsersSet].filter((id) => liveIds.has(id)).length;
+
+  // Archivos modificados: comparte cache con FilesPanel y el Dashboard.
+  const hasFilesMap = useBubbleHasFilesMap(
+    bubbles.map((b) => ({ id: b.id, workspace: b.workspace || '' })),
+  );
+  const files = bubbles.filter((b) => hasFilesMap.get(b.id)).length;
+
+  // Remote control activo por bubble — usamos el evento del RemoteControlBar.
+  const [remoteSet, setRemoteSet] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    try {
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith('eco.remote.') && window.localStorage.getItem(k)) {
+          s.add(k.slice('eco.remote.'.length));
+        }
+      }
+    } catch { /* noop */ }
+    return s;
+  });
+  useEffect(() => {
+    function onChange(e: Event) {
+      const detail = (e as CustomEvent<{ bubbleId: string; slug: string | null }>).detail;
+      if (!detail?.bubbleId) return;
+      setRemoteSet((prev) => {
+        const next = new Set(prev);
+        if (detail.slug) next.add(detail.bubbleId); else next.delete(detail.bubbleId);
+        return next;
+      });
     }
-  } catch { /* noop */ }
+    window.addEventListener('eco:remote-changed', onChange);
+    return () => window.removeEventListener('eco:remote-changed', onChange);
+  }, []);
+  const remote = [...remoteSet].filter((id) => liveIds.has(id)).length;
+
+  // Worktrees: workspaces únicos en uso.
+  const worktrees = new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size;
 
   const items = [
-    { icon: IconTerminal, count: ptys,      color: t.warn,   label: tr('dash.card.res.ptys') },
-    { icon: IconCpu,      count: 0,         color: t.busy,   label: tr('dash.card.res.servers') }, // TODO live
+    { icon: IconTerminal, count: ptys,      color: t.ok,     label: tr('dash.card.res.ptys') },
+    { icon: IconCpu,      count: servers,   color: t.busy,   label: tr('dash.card.res.servers') },
     { icon: IconGlobe,    count: browsers,  color: t.accent, label: tr('dash.card.res.browsers') },
-    { icon: IconFolder,   count: worktrees, color: t.ok,     label: tr('dash.card.res.worktrees') },
+    { icon: IconFile,     count: files,     color: t.warn,   label: tr('dash.card.res.files') },
+    { icon: IconCommand,  count: remote,    color: t.accent, label: tr('dash.card.res.remote') },
+    { icon: IconFolder,   count: worktrees, color: t.text2,  label: tr('dash.card.res.worktrees') },
   ];
 
   return (

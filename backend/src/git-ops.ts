@@ -501,6 +501,40 @@ export function fetch(workspace: string): GitActionResult {
   return { ok: true, message: 'Fetch completado' };
 }
 
+/**
+ * Push de la rama actual al remoto (`origin` por convención). Si la rama
+ * no tiene upstream, intenta crearlo con `--set-upstream origin <branch>`.
+ * Maneja los errores comunes (no remote, no permisos, rejected fast-forward).
+ */
+export function push(workspace: string): GitActionResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  // Detectar rama actual.
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'], workspace);
+  if (!head.ok) return { ok: false, error: 'No se pudo determinar la rama actual' };
+  const branch = head.stdout.trim();
+  if (!branch || branch === 'HEAD') return { ok: false, error: 'No estás en una rama (HEAD detached)' };
+  // Verificar que exista al menos un remoto.
+  const remotes = git(['remote'], workspace);
+  if (!remotes.ok || !remotes.stdout.trim()) {
+    return { ok: false, error: 'El repositorio no tiene remoto configurado' };
+  }
+  // Intentar push. Si no hay upstream, fallaremos y haremos un segundo
+  // intento con --set-upstream origin <branch>.
+  let r = git(['push'], workspace);
+  if (!r.ok) {
+    const stderr = r.stderr || r.stdout;
+    if (/has no upstream branch|--set-upstream/i.test(stderr)) {
+      r = git(['push', '--set-upstream', 'origin', branch], workspace);
+    }
+    if (!r.ok) {
+      const msg = (r.stderr || r.stdout).trim();
+      return { ok: false, error: msg.slice(0, 600) || 'push falló' };
+    }
+    return { ok: true, message: `Rama «${branch}» publicada en origin` };
+  }
+  return { ok: true, message: r.stdout.trim() || `Push de «${branch}» OK` };
+}
+
 export function renameBranch(workspace: string, newName: string): GitActionResult {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
   if (!newName || /[\s'"`;|&$<>()\\]/.test(newName)) return { ok: false, error: 'Nombre de rama inválido' };
