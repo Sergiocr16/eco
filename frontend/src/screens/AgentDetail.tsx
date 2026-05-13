@@ -12,6 +12,7 @@ import { ecoToken } from '@/lib/eco-config';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { BranchPicker } from '@/components/BranchPicker';
+import { PullRequestsList } from '@/components/PullRequestsList';
 import { BrowserPanel } from '@/components/BrowserPanel';
 import { ServerPanel } from '@/components/ServerPanel';
 import {
@@ -1705,7 +1706,7 @@ function AgentSidebar({
 
   return (
     <div style={{
-      width: 280, flexShrink: 0,
+      width: 360, flexShrink: 0,
       borderLeft: `1px solid ${t.glassBorder}`,
       overflow: 'auto', padding: '14px 18px 20px',
       display: 'flex', flexDirection: 'column', gap: 18,
@@ -1734,6 +1735,7 @@ function AgentSidebar({
             position: 'relative',
           }}>
             <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
+            <PullRequestsList workspace={bubble.workspace} bubbleId={bubble.id}/>
             <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
           </div>
         </div>

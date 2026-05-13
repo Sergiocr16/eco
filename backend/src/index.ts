@@ -508,6 +508,22 @@ app.post('/git/commit', (req: Request, res: Response) => {
   res.json(gitOps.commitWithMessage(dir, message));
 });
 
+// Pull requests del repo (vía gh CLI). El user hace click en uno y se le
+// ofrece checkoutear esa rama en el worktree del agente para revisar.
+app.get('/git/prs', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  res.json(gitOps.listPullRequests(dir));
+});
+
+app.post('/git/pr/checkout', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const num = Number(req.body?.number);
+  if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
+  res.json(gitOps.checkoutPullRequest(dir, num));
+});
+
 // ─── Worktrees mantenimiento ──────────────────────────────────────────────
 // Llama pruneCleanWorktrees() bajo demanda — devuelve qué se removió/conservó.
 // Para usar desde la UI cuando el usuario pide "limpiar worktrees".

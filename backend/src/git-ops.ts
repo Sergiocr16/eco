@@ -394,3 +394,122 @@ export function commitWithMessage(workspace: string, message: string): GitAction
   }
   return { ok: true, message: (r.stdout ?? '').toString().trim() || 'Commit creado' };
 }
+
+// ─── Pull requests (GitHub) ───────────────────────────────────────────────
+// Usa `gh` CLI ya autenticado en la máquina (~/.config/gh/hosts.yml). No
+// almacenamos tokens propios — gh maneja keychain + OAuth.
+//
+// Requisitos: gh CLI instalado y `gh auth login` ejecutado por el user. Si
+// alguno falta, listPullRequests devuelve un error legible.
+
+export type PullRequest = {
+  number: number;
+  title: string;
+  author: string;
+  headRefName: string;
+  baseRefName: string;
+  isDraft: boolean;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+  // Si el PR viene de un fork (su head repo owner ≠ owner del repo actual).
+  // Lo marcamos para que el frontend pueda avisar al user (el checkout
+  // crea una rama local con prefix del fork).
+  isFork: boolean;
+  additions?: number;
+  deletions?: number;
+};
+
+export type PullRequestsResult =
+  | { ok: true; prs: PullRequest[] }
+  | { ok: false; error: string; code?: string };
+
+function ghAvailable(): boolean {
+  const r = spawnSync('gh', ['--version'], { timeout: 3_000, encoding: 'utf-8' });
+  return r.status === 0;
+}
+
+export function listPullRequests(workspace: string): PullRequestsResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git', code: 'git.not_a_repo' };
+  if (!ghAvailable()) {
+    return { ok: false, error: 'GitHub CLI (gh) no está instalado. Instalalo con `brew install gh`.', code: 'pr.gh_missing' };
+  }
+  // gh pr list necesita un remote configurado. Si el repo no tiene origin de
+  // GitHub, gh devuelve un error claro que pasamos tal cual.
+  const r = spawnSync('gh', [
+    'pr', 'list',
+    '--state', 'open',
+    '--limit', '50',
+    '--json', 'number,title,author,headRefName,baseRefName,isDraft,createdAt,updatedAt,url,headRepositoryOwner,additions,deletions',
+  ], {
+    cwd: workspace,
+    timeout: 20_000,
+    encoding: 'utf-8',
+    env: buildSafeEnv({}),
+  });
+  if (r.status !== 0) {
+    const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString()).trim();
+    // gh dice "no GitHub repo found" cuando no hay remote o no está auth.
+    if (/auth/i.test(err) && /login/i.test(err)) {
+      return { ok: false, error: 'gh no autenticado. Corré `gh auth login` en una terminal.', code: 'pr.gh_unauthenticated' };
+    }
+    if (/no\s+(github\s+)?(remote|repository)/i.test(err)) {
+      return { ok: false, error: 'Este repo no tiene un remote de GitHub configurado.', code: 'pr.no_github_remote' };
+    }
+    return { ok: false, error: err.slice(0, 400) || 'gh pr list falló' };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse((r.stdout ?? '').toString());
+  } catch {
+    return { ok: false, error: 'No pude parsear la respuesta de gh' };
+  }
+  if (!Array.isArray(raw)) return { ok: true, prs: [] };
+
+  // Para detectar forks, consultamos el owner del repo actual una sola vez.
+  const ownerR = spawnSync('gh', ['repo', 'view', '--json', 'owner', '-q', '.owner.login'], {
+    cwd: workspace, timeout: 8_000, encoding: 'utf-8', env: buildSafeEnv({}),
+  });
+  const repoOwner = ownerR.status === 0 ? ((ownerR.stdout ?? '').toString()).trim() : '';
+
+  const prs: PullRequest[] = raw.map((p: any) => ({
+    number: Number(p.number),
+    title: String(p.title ?? ''),
+    author: String(p.author?.login ?? ''),
+    headRefName: String(p.headRefName ?? ''),
+    baseRefName: String(p.baseRefName ?? ''),
+    isDraft: !!p.isDraft,
+    createdAt: String(p.createdAt ?? ''),
+    updatedAt: String(p.updatedAt ?? ''),
+    url: String(p.url ?? ''),
+    isFork: !!(repoOwner && p.headRepositoryOwner?.login && p.headRepositoryOwner.login !== repoOwner),
+    additions: typeof p.additions === 'number' ? p.additions : undefined,
+    deletions: typeof p.deletions === 'number' ? p.deletions : undefined,
+  }));
+  return { ok: true, prs };
+}
+
+/**
+ * Checkout de un PR usando `gh pr checkout <number>`. Maneja forks
+ * transparentemente (crea remote temporal si hace falta) y branches que
+ * ya existen localmente. Se ejecuta en el worktree del agente — el user
+ * pierde la rama actual del worktree (igual que con checkoutBranch),
+ * pero como cada agente tiene su propio worktree, no afecta a otros.
+ */
+export function checkoutPullRequest(workspace: string, number: number): GitActionResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!ghAvailable()) return { ok: false, error: 'gh CLI no instalado' };
+  if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
+
+  const r = spawnSync('gh', ['pr', 'checkout', String(number)], {
+    cwd: workspace,
+    timeout: 60_000,
+    encoding: 'utf-8',
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+  });
+  if (r.status !== 0) {
+    const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString()).trim();
+    return { ok: false, error: err.slice(0, 600) || 'gh pr checkout falló' };
+  }
+  return { ok: true, message: `Checkout del PR #${number} OK` };
+}

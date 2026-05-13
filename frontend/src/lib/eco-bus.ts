@@ -29,6 +29,10 @@ export type EcoBusEvents = {
   // Notifica que la URL del browser de una burbuja cambió (set o cleared).
   // Usado por useBubbleActive para evitar el polling de localStorage.
   'eco:browser_url_changed': { bubbleId: string; hasUrl: boolean };
+  // Pedido para refrescar el estado git (branches, status) de una burbuja
+  // — emitido por componentes que mutan git por fuera de BranchPicker
+  // (ej. checkout de PR).
+  'eco:git_refresh': { bubbleId: string };
 };
 
 type EventName = keyof EcoBusEvents;

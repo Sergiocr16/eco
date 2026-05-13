@@ -5,6 +5,7 @@ import { useTokens } from '@/design/theme';
 import { Glass } from '@/design/primitives';
 import { IconBranch, IconSearch, IconX, IconCheck, IconResume, IconEdit } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
+import { on as ecoOn } from '@/lib/eco-bus';
 
 type BranchInfo = {
   name: string;
@@ -69,6 +70,16 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace, bubbleId]);
+
+  // Refresh externo cuando algo cambia el estado git por fuera del picker
+  // (ej. checkout de un PR desde PullRequestsList).
+  useEffect(() => {
+    return ecoOn('eco:git_refresh', (e) => {
+      if (e.bubbleId !== bubbleId) return;
+      void refresh();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bubbleId]);
 
   useEffect(() => {
     if (!expanded) return;
