@@ -524,6 +524,34 @@ app.post('/git/pr/checkout', (req: Request, res: Response) => {
   res.json(gitOps.checkoutPullRequest(dir, num));
 });
 
+// PR asociado a la rama actual del worktree (si lo hay). Lo consume el
+// banner del chat para mostrar "estás en el PR #N" + acciones merge/close.
+app.get('/git/pr/current', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  res.json(gitOps.currentPullRequest(dir));
+});
+
+app.post('/git/pr/merge', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const num = Number(req.body?.number);
+  if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
+  const rawMethod = typeof req.body?.method === 'string' ? req.body.method : 'merge';
+  const method: 'merge' | 'squash' | 'rebase' =
+    rawMethod === 'squash' || rawMethod === 'rebase' ? rawMethod : 'merge';
+  res.json(gitOps.mergePullRequest(dir, num, method));
+});
+
+app.post('/git/pr/close', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const num = Number(req.body?.number);
+  if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
+  const comment = typeof req.body?.comment === 'string' ? req.body.comment : undefined;
+  res.json(gitOps.closePullRequest(dir, num, comment));
+});
+
 // ─── Worktrees mantenimiento ──────────────────────────────────────────────
 // Llama pruneCleanWorktrees() bajo demanda — devuelve qué se removió/conservó.
 // Para usar desde la UI cuando el usuario pide "limpiar worktrees".

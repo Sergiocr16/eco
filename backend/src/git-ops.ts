@@ -489,6 +489,119 @@ export function listPullRequests(workspace: string): PullRequestsResult {
   return { ok: true, prs };
 }
 
+// PR asociado a la rama actual del worktree (si lo hay). Lo usa el banner
+// en el chat para mostrar "estás en el PR #N" + acciones.
+export type CurrentPr = {
+  number: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  isDraft: boolean;
+  // gh devuelve "MERGEABLE" | "CONFLICTING" | "UNKNOWN" (mayúsculas).
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | string;
+  headRefName: string;
+  baseRefName: string;
+  author: string;
+};
+
+export type CurrentPrResult =
+  | { ok: true; pr: CurrentPr | null }
+  | { ok: false; error: string };
+
+export function currentPullRequest(workspace: string): CurrentPrResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!ghAvailable()) return { ok: false, error: 'gh no instalado' };
+  // `gh pr view` sin número usa la rama actual del repo. Si no hay PR
+  // asociado, devuelve exit code 1 con "no pull requests found".
+  const r = spawnSync('gh', [
+    'pr', 'view',
+    '--json', 'number,title,url,state,isDraft,mergeable,headRefName,baseRefName,author',
+  ], {
+    cwd: workspace,
+    timeout: 15_000,
+    encoding: 'utf-8',
+    env: buildSafeEnv({}),
+  });
+  if (r.status !== 0) {
+    const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString());
+    if (/no pull request|no open pull request|found for branch/i.test(err)) {
+      return { ok: true, pr: null };
+    }
+    return { ok: false, error: err.trim().slice(0, 400) };
+  }
+  try {
+    const raw = JSON.parse((r.stdout ?? '').toString()) as any;
+    return {
+      ok: true,
+      pr: {
+        number: Number(raw.number),
+        title: String(raw.title ?? ''),
+        url: String(raw.url ?? ''),
+        state: String(raw.state ?? 'OPEN') as CurrentPr['state'],
+        isDraft: !!raw.isDraft,
+        mergeable: String(raw.mergeable ?? 'UNKNOWN'),
+        headRefName: String(raw.headRefName ?? ''),
+        baseRefName: String(raw.baseRefName ?? ''),
+        author: String(raw.author?.login ?? ''),
+      },
+    };
+  } catch {
+    return { ok: false, error: 'No pude parsear la respuesta de gh' };
+  }
+}
+
+/**
+ * Merge del PR usando `gh pr merge`. Método configurable: merge commit
+ * (default), squash o rebase. Asume que el PR está mergeable — si hay
+ * conflictos, gh devuelve error legible que pasamos al user.
+ */
+export function mergePullRequest(
+  workspace: string,
+  number: number,
+  method: 'merge' | 'squash' | 'rebase' = 'merge',
+): GitActionResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!ghAvailable()) return { ok: false, error: 'gh no instalado' };
+  if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
+  const flag = method === 'squash' ? '--squash' : method === 'rebase' ? '--rebase' : '--merge';
+  const r = spawnSync('gh', ['pr', 'merge', String(number), flag], {
+    cwd: workspace,
+    timeout: 90_000,
+    encoding: 'utf-8',
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+  });
+  if (r.status !== 0) {
+    const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString());
+    return { ok: false, error: err.trim().slice(0, 600) || 'gh pr merge falló' };
+  }
+  return { ok: true, message: `PR #${number} mergeado (${method})` };
+}
+
+/**
+ * Cierra el PR sin mergear. Opcionalmente acepta un comentario que se
+ * agrega al PR.
+ */
+export function closePullRequest(workspace: string, number: number, comment?: string): GitActionResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!ghAvailable()) return { ok: false, error: 'gh no instalado' };
+  if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
+  const args = ['pr', 'close', String(number)];
+  if (comment && comment.trim()) {
+    args.push('--comment', comment.trim().slice(0, 1000));
+  }
+  const r = spawnSync('gh', args, {
+    cwd: workspace,
+    timeout: 30_000,
+    encoding: 'utf-8',
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+  });
+  if (r.status !== 0) {
+    const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString());
+    return { ok: false, error: err.trim().slice(0, 600) || 'gh pr close falló' };
+  }
+  return { ok: true, message: `PR #${number} cerrado` };
+}
+
 /**
  * Checkout de un PR usando `gh pr checkout <number>`. Maneja forks
  * transparentemente (crea remote temporal si hace falta) y branches que

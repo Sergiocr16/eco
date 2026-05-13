@@ -13,6 +13,7 @@ import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { BranchPicker } from '@/components/BranchPicker';
 import { PullRequestsList } from '@/components/PullRequestsList';
+import { CurrentPrBanner } from '@/components/CurrentPrBanner';
 import { BrowserPanel } from '@/components/BrowserPanel';
 import { ServerPanel } from '@/components/ServerPanel';
 import {
@@ -1734,6 +1735,7 @@ function AgentSidebar({
             display: 'flex', flexDirection: 'column', gap: 8,
             position: 'relative',
           }}>
+            <CurrentPrBanner workspace={bubble.workspace} bubbleId={bubble.id}/>
             <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
             <PullRequestsList workspace={bubble.workspace} bubbleId={bubble.id}/>
             <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
