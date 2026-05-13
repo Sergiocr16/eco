@@ -11,6 +11,10 @@ export const DiffRequestSchema = z.object({
   workspace: z.string().min(1).max(4096),
   bubbleId: z.string().max(128).optional(),
   ref: z.string().min(1).max(80).optional(),
+  // Si true, el diff es contra el INDEX (lo staged) en vez de contra HEAD.
+  // Eso permite "review incremental": cuando aceptás un cambio lo
+  // staged-eamos, y los próximos diffs muestran solo lo nuevo unstaged.
+  vsIndex: z.boolean().optional(),
 });
 
 export type DiffRequest = z.infer<typeof DiffRequestSchema>;
@@ -79,20 +83,28 @@ export async function fileDiff(req: DiffRequest): Promise<DiffResult> {
   // Verificar si hay git
   const gitDir = realpathSafe(`${effectiveWorkspace}/.git`);
   if (gitDir && existsSync(gitDir)) {
-    const ref = req.ref ?? 'HEAD';
     const rel = relativeTo(effectiveWorkspace, fullPath);
-    const args = ['diff', '--no-color', '-U3', ref, '--', rel];
+    // vsIndex=true → muestra unstaged (working tree vs index). Útil para
+    // review incremental: lo ya aceptado vive en el index y desaparece
+    // del diff hasta que vuelva a haber cambios unstaged.
+    // vsIndex=false (default) → muestra todo vs HEAD (compatibilidad).
+    const args = req.vsIndex
+      ? ['diff', '--no-color', '-U3', '--', rel]
+      : ['diff', '--no-color', '-U3', req.ref ?? 'HEAD', '--', rel];
     const { stdout } = await runGit(args, effectiveWorkspace);
     if (stdout.trim()) {
       return { mode: 'git', diff: stdout, hasChanges: true };
     }
-    // Sin cambios contra HEAD — probar si es archivo nuevo no trackeado
+    // Sin cambios contra el target — probar si es archivo nuevo no trackeado
     const untracked = await runGit(['ls-files', '--others', '--exclude-standard', '--', rel], effectiveWorkspace);
     if (untracked.stdout.trim()) {
       // Archivo nuevo — mostrar todo el contenido con prefijo +
       return readAsCreated(fullPath, rel);
     }
-    return { mode: 'git', diff: '', hasChanges: false, message: 'Sin cambios contra HEAD' };
+    return {
+      mode: 'git', diff: '', hasChanges: false,
+      message: req.vsIndex ? 'Sin cambios nuevos desde la última aceptación' : 'Sin cambios contra HEAD',
+    };
   }
 
   // Sin git: mostrar contenido plano

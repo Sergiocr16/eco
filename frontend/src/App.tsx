@@ -419,6 +419,26 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     voice.start();
   }, [voice]);
 
+  // Setting de la voz aplicado al ENTRAR a una conversación (cambio de
+  // bubble o llegada al detail). El setting es BIDIRECCIONAL:
+  //   ON  → si la voz está apagada, la prende.
+  //   OFF → si la voz está escuchando, la apaga (evita que el autostart
+  //         de boot deje el mic prendido al entrar a una conversación).
+  // El effect SOLO depende de `detailBubbleId` para no re-aplicar en cada
+  // toggle manual del mic — una vez dentro de la conversación, el user
+  // mantiene control con el botón de mic.
+  useEffect(() => {
+    if (!detailBubbleId) return;
+    if (!voice.isSupported) return;
+    const prefersPerConversation = window.localStorage?.getItem('eco.voice.autostart_per_conversation') === '1';
+    if (prefersPerConversation) {
+      if (voice.state === 'off') voice.start();
+    } else {
+      if (voice.state === 'listening') voice.stop();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailBubbleId]);
+
   function sendTo(bubbleId: string, text: string) {
     const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
     if (!bubble) return;

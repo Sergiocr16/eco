@@ -123,6 +123,18 @@ function SectionGeneral() {
     <div style={{ maxWidth: 720 }}>
       <Header title={tr('settings.general.title')} sub={tr('settings.general.sub')}/>
       <GeneralToggleRow icon={IconBolt} title={tr('settings.general.listen_on_boot')} storageKey="eco.voice.autostart" defaultOn/>
+      <GeneralToggleRow
+        icon={IconMic}
+        title={tr('settings.general.listen_on_conversation')}
+        desc={tr('settings.general.listen_on_conversation_desc')}
+        storageKey="eco.voice.autostart_per_conversation"
+      />
+      <GeneralToggleRow
+        icon={IconShield}
+        title={tr('settings.general.review_mode')}
+        desc={tr('settings.general.review_mode_desc')}
+        storageKey="eco.agent.review_mode"
+      />
       <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>
       <GeneralToggleRow
         icon={IconCommand}

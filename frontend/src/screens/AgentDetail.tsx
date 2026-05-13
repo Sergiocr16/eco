@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '@/lib/api';
 import { useTokens } from '@/design/theme';
-import { DiffViewer } from '@/components/DiffViewer';
+import { DiffPane } from '@/components/DiffViewer';
 import { RealTerminal } from '@/components/RealTerminal';
 import { SkillsPicker } from '@/components/SkillsPicker';
 import { useSkills, type SkillInfo } from '@/hooks/useSkills';
@@ -11,6 +12,7 @@ import { setVoiceTarget } from '@/lib/voice-router';
 import { ecoToken } from '@/lib/eco-config';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
+import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
 import { BranchPicker } from '@/components/BranchPicker';
 import { PullRequestsList } from '@/components/PullRequestsList';
 import { CurrentPrBanner } from '@/components/CurrentPrBanner';
@@ -23,7 +25,7 @@ import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
-  IconCheck, IconX, IconBolt, IconDiff,
+  IconCheck, IconX, IconBolt,
   IconEdit, IconFolder, IconTrash, IconCopy,
   type IconProps,
 } from '@/design/icons';
@@ -205,18 +207,34 @@ export function AgentDetail({
   }
 
   const agentFiles = collectFilesChanged(bubble);
-  const gitChanges = useGitChanges(bubble.workspace, bubble.id);
+  // Polling cada 4s en lugar del default 10s para que los cambios del
+  // agente aparezcan rápido al entrar a la pestaña Archivos. Adicional,
+  // el hook escucha `eco:git_refresh` y hace refetch inmediato.
+  const gitChangesResult = useGitChanges(bubble.workspace, bubble.id, 4000);
+  const gitChanges = gitChangesResult.files;
+  const gitChangesLoading = gitChangesResult.loading;
   const filesChanged = useMemo(() => {
-    const map = new Map<string, FileChange>();
-    for (const f of agentFiles) map.set(f.path, f);
-    const ws = bubble.workspace;
+    // `gitChanges` es la fuente de verdad: lo que git considera pendiente
+    // de commit en el worktree. Si un archivo NO aparece acá, no tiene
+    // cambios revisables (fue commiteado, descartado, o nunca existió).
+    // Filtramos los `deleted` porque no hay diff que mostrar.
+    const gitSet = new Map<string, FileChange>();
     for (const g of gitChanges) {
-      // gitChanges paths ya vienen absolutos (el hook los expande)
-      if (!map.has(g.path)) map.set(g.path, { path: g.path, change: g.change, agent: 'git' });
+      if (g.change === 'deleted') continue;
+      gitSet.set(g.path, { path: g.path, change: g.change, agent: 'git', unstaged: g.unstaged });
     }
-    void ws;
-    return [...map.values()];
-  }, [agentFiles, gitChanges, bubble.workspace]);
+    // Sólo agregamos archivos del agente que TAMBIÉN están en git status
+    // (con cambios pendientes). Si el agente editó algo pero ya no aparece
+    // en git status (commiteado/descartado), no debe mostrarse.
+    for (const f of agentFiles) {
+      const gitEntry = gitSet.get(f.path);
+      if (gitEntry) {
+        // Override con el agent attribution pero preservar `unstaged` de git.
+        gitSet.set(f.path, { ...f, unstaged: gitEntry.unstaged });
+      }
+    }
+    return [...gitSet.values()];
+  }, [agentFiles, gitChanges]);
 
   // Comandos por voz: cambiar tab desde fuera del componente.
   useEffect(() => ecoOn('eco:switch_tab', ({ tab }) => setTab(tab)), []);
@@ -327,7 +345,7 @@ export function AgentDetail({
             />
           )}
           {tab === 'terminal' && <TerminalPanel bubble={bubble}/>}
-          {tab === 'files' && <FilesPanel files={filesChanged} workspace={bubble.workspace} bubbleId={bubble.id}/>}
+          {tab === 'files' && <FilesPanel files={filesChanged} workspace={bubble.workspace} bubbleId={bubble.id} bubble={bubble} loading={gitChangesLoading}/>}
           {tab === 'plan' && <PlanPanel bubble={bubble}/>}
           {/* Navegador queda MONTADO siempre una vez abierto, solo se oculta cuando
               cambiás de pestaña. Así el iframe no recarga y la sesión del browser
@@ -347,7 +365,7 @@ export function AgentDetail({
   );
 }
 
-type FileChange = { path: string; change: string; agent: string };
+type FileChange = { path: string; change: string; agent: string; unstaged?: boolean };
 
 function collectFilesChanged(bubble: Bubble): FileChange[] {
   const out: FileChange[] = [];
@@ -1099,64 +1117,236 @@ function normalizePosixPath(p: string): string {
   return '/' + out.join('/');
 }
 
-function FilesPanel({ files, workspace, bubbleId }: { files: FileChange[]; workspace: string; bubbleId: string }) {
+function FilesPanel({ files, workspace, bubbleId, bubble, loading }: { files: FileChange[]; workspace: string; bubbleId: string; bubble: Bubble; loading?: boolean }) {
   const t = useTokens();
   const tr = useT();
-  const [diffPath, setDiffPath] = useState<string | null>(null);
+  const review = useReviewState(bubbleId);
+  const reviewMode = isReviewModeEnabled();
+  // Paths expandidos (mostrando el diff inline debajo de la card). Multi-expand:
+  // varios pueden estar abiertos a la vez.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpand(path: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path); else next.add(path);
+      return next;
+    });
+  }
+
+  // Aceptar todos: stagea cada archivo en git (`git add`) ANTES de marcar
+  // como aceptado local. Sin `git add`, el archivo sigue modified vs index
+  // y al abrirlo aparecería diff aunque el dot local diga "aceptado".
+  // Marcamos local solo los que el backend confirma OK.
+  async function acceptAllFiles() {
+    const paths = files.map((f) => f.path);
+    const results = await Promise.all(paths.map(async (p) => {
+      try {
+        const r = await apiFetch('/file/accept', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: p, workspace, bubbleId }),
+        });
+        const data = await r.json().catch(() => ({}));
+        return { path: p, ok: r.ok && data.ok === true };
+      } catch { return { path: p, ok: false }; }
+    }));
+    const okPaths = results.filter((r) => r.ok).map((r) => r.path);
+    if (okPaths.length > 0) review.acceptAll(okPaths);
+    ecoEmit('eco:git_refresh', { bubbleId });
+  }
+
+  // Si el agente edita un archivo DESPUÉS de que el user lo aceptó,
+  // desmarcamos automáticamente. Comparamos `m.createdAt` del message
+  // que contiene el tool call con `review.acceptedAt(path)`: si el edit
+  // sucedió después del accept, el accept ya no es válido — hay cambios
+  // nuevos sin revisar.
+  //
+  // Este approach es robusto al re-mount (no depende de un ref que se
+  // resetea) y al re-entrar a la conversación: el `acceptedAt` vive en
+  // localStorage y el `createdAt` del message también persiste.
+  useEffect(() => {
+    let sawNewEdit = false;
+    for (const m of bubble.messages) {
+      for (const tc of m.toolCalls ?? []) {
+        if (tc.status !== 'success') continue;
+        if (tc.name !== 'Write' && tc.name !== 'Edit' && tc.name !== 'MultiEdit' && tc.name !== 'NotebookEdit') continue;
+        const filePath = (tc.input as { file_path?: unknown }).file_path;
+        if (typeof filePath !== 'string' || !filePath) continue;
+        const acceptedAt = review.acceptedAt(filePath);
+        // Si nunca se aceptó, no hay nada que invalidar.
+        if (acceptedAt === 0) continue;
+        // Si la edición es POSTERIOR al accept, invalidamos.
+        if (m.createdAt > acceptedAt) {
+          review.unaccept(filePath);
+          sawNewEdit = true;
+        }
+      }
+    }
+    if (sawNewEdit) ecoEmit('eco:git_refresh', { bubbleId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bubble.messages]);
+
   if (files.length === 0) {
     return (
       <div style={{
         flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 32, color: t.text2, fontSize: 13,
+        flexDirection: 'column', gap: 10,
       }}>
-        {tr('detail.files.empty')}
+        {loading ? (
+          <>
+            <span style={{
+              width: 18, height: 18, borderRadius: '50%',
+              border: `2px solid ${t.glassBorder}`,
+              borderTopColor: t.accent,
+              animation: 'eco-spin 0.8s linear infinite',
+              display: 'inline-block',
+            }}/>
+            <span>Buscando archivos modificados…</span>
+          </>
+        ) : (
+          tr('detail.files.empty')
+        )}
       </div>
     );
   }
+
+  // Un archivo está "pendiente" si tiene cambios unstaged en git
+  // (independiente del state local del review). Esa es la fuente de verdad:
+  // si hay unstaged, hay cambios sin aceptar. El review state local
+  // (acceptedAt) lo usamos solo como hint visual cuando NO hay unstaged.
+  const pending = reviewMode
+    ? files.filter((f) => f.unstaged !== false).length
+    : 0;
+
   return (
-    <>
-      <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-        <SectionLabel count={files.length}>{tr('detail.files.modified')}</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {files.map((f, i) => (
-            <Glass key={i} radius={12} hover style={{
-              padding: 14, display: 'flex', alignItems: 'center', gap: 12,
-            }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 10,
-                background: t.bg3, color: t.text1,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}><IconFile size={16}/></div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                }}>{f.path}</div>
-                <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Pill color={f.change === 'created' ? t.ok : t.accent}>{f.change === 'created' ? tr('detail.files.created') : tr('detail.files.modified_one')}</Pill>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <Btn kind="secondary" size="sm" icon={IconDiff} onClick={() => setDiffPath(f.path)}>{tr('files.diff_btn')}</Btn>
-                <DiscardFileButton
-                  path={f.path}
-                  workspace={workspace}
-                  bubbleId={bubbleId}
-                  change={f.change}
-                />
-              </div>
-            </Glass>
-          ))}
+    <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+      {reviewMode && pending > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 14px', marginBottom: 12,
+          borderRadius: 10,
+          background: `color-mix(in oklch, ${t.warn} 8%, transparent)`,
+          border: `1px solid color-mix(in oklch, ${t.warn} 50%, transparent)`,
+        }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: t.warn,
+            boxShadow: `0 0 6px ${t.warn}`,
+            flexShrink: 0,
+          }}/>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, color: t.text0, fontWeight: 600 }}>
+              {pending} {pending === 1 ? 'cambio pendiente' : 'cambios pendientes'} de revisión
+            </div>
+            <div style={{ fontSize: 11, color: t.text2, marginTop: 2 }}>
+              Click en un archivo para ver el diff y aceptar/rechazar inline.
+            </div>
+          </div>
+          <Btn kind="primary" size="sm" icon={IconCheck} onClick={() => void acceptAllFiles()}>
+            Aceptar todos
+          </Btn>
         </div>
+      )}
+      <SectionLabel count={files.length}>{tr('detail.files.modified')}</SectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {files.map((f, i) => {
+          // El dot es VERDE solo si:
+          //  - reviewMode está on,
+          //  - no hay cambios unstaged en git (todo ya staged),
+          //  - el user marcó accepted localmente.
+          // Si hay unstaged hay cambios sin aceptar → ámbar.
+          const hasUnstaged = f.unstaged !== false;
+          const accepted = reviewMode && !hasUnstaged && review.isAccepted(f.path);
+          const dotColor = accepted ? t.ok : t.warn;
+          const isOpen = expanded.has(f.path);
+          return (
+            <div key={i} style={{
+              borderRadius: 12,
+              border: `1px solid ${isOpen ? t.accent : t.glassBorder}`,
+              background: t.bg2,
+              overflow: 'hidden',
+              transition: 'border-color 140ms',
+            }}>
+              {/* Header clickeable — toggle del diff inline */}
+              <button type="button"
+                onClick={() => toggleExpand(f.path)}
+                style={{
+                  width: '100%',
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: 14, border: 0,
+                  background: 'transparent',
+                  color: t.text0, cursor: 'pointer', textAlign: 'left',
+                }}>
+                <span style={{
+                  width: 18, height: 18,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  color: t.text2,
+                  transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 160ms ease',
+                  flexShrink: 0,
+                  fontFamily: 'monospace', fontSize: 14, fontWeight: 600,
+                }}>›</span>
+                {reviewMode && (
+                  <span
+                    title={accepted ? 'Aceptado' : 'Pendiente de revisión'}
+                    style={{
+                      width: 10, height: 10, borderRadius: '50%',
+                      background: dotColor,
+                      boxShadow: accepted ? 'none' : `0 0 6px ${dotColor}`,
+                      flexShrink: 0,
+                    }}/>
+                )}
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: t.bg3, color: t.text1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}><IconFile size={16}/></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: t.fontMono, fontSize: 13, color: t.text0,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>{f.path}</div>
+                  <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Pill color={f.change === 'created' ? t.ok : t.accent}>{f.change === 'created' ? tr('detail.files.created') : tr('detail.files.modified_one')}</Pill>
+                    {accepted && (
+                      <Pill color={t.ok}>Revisado</Pill>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}
+                  onClick={(e) => e.stopPropagation()}>
+                  <DiscardFileButton
+                    path={f.path}
+                    workspace={workspace}
+                    bubbleId={bubbleId}
+                    change={f.change}
+                  />
+                </div>
+              </button>
+
+              {/* Diff inline desplegado */}
+              {isOpen && (
+                <div style={{
+                  borderTop: `1px solid ${t.glassBorder}`,
+                  maxHeight: '70vh',
+                  display: 'flex', flexDirection: 'column',
+                  background: t.bg0,
+                }}>
+                  <DiffPane
+                    path={f.path}
+                    workspace={workspace}
+                    bubbleId={bubbleId}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
-      <DiffViewer
-        open={!!diffPath}
-        path={diffPath}
-        workspace={workspace}
-        bubbleId={bubbleId}
-        onClose={() => setDiffPath(null)}
-      />
-    </>
+    </div>
   );
 }
 
@@ -1479,6 +1669,7 @@ function PlanPanel({ bubble }: { bubble: Bubble }) {
 
 function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
   const t = useTokens();
+  const review = useReviewState(bubbleId);
   type Phase = 'idle' | 'suggesting' | 'preview' | 'committing' | 'done' | 'error';
   const [phase, setPhase] = useState<Phase>('idle');
   const [extra, setExtra] = useState('');
@@ -1516,6 +1707,9 @@ function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: st
         setCommitResult(d.message ?? 'Commit creado');
         setPhase('done');
         setMessage(''); setExtra('');
+        // Review estilo Cursor: tras un commit, todo lo "aceptado" ya quedó
+        // en historia. Limpiamos el state local para que el banner desaparezca.
+        review.clearAll();
       } else {
         setErr(d.error || 'Commit falló'); setPhase('error');
       }
@@ -1656,7 +1850,282 @@ function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: st
   );
 }
 
+// ─── AgentSidebar — UX rework ─────────────────────────────────────────────
+// Mejoras de UX/UI aplicadas:
+//  1) Secciones colapsables individualmente (estado persistido por bubble).
+//  2) Header sticky con status del agente + título + último timestamp.
+//  3) Reordenamiento dinámico: si el agente está corriendo o hay archivos
+//     modificados, "Próxima acción" sube arriba; sino orden por defecto.
+//  4) Quick action bar fija abajo con accesos rápidos al chat/files/terminal.
+//  5) Width redimensionable con drag splitter en el borde izquierdo.
+//  6) Stats con sparkline mini de mensajes/min en últimos 30 min.
+//  7) Animaciones de novedad: framer collapse/expand suave; status dot pulsa.
+
 const SIDEBAR_COLLAPSE_KEY = 'eco.detail.sidebar.collapsed';
+const SIDEBAR_WIDTH_KEY = 'eco.detail.sidebar.width';
+const SIDEBAR_WIDTH_MIN = 280;
+const SIDEBAR_WIDTH_MAX = 520;
+const SIDEBAR_WIDTH_DEFAULT = 360;
+
+type SectionId = 'skills' | 'quick' | 'git' | 'next' | 'stats' | 'obsidian';
+
+function sectionCollapseStorageKey(bubbleId: string): string {
+  return `eco.detail.sidebar.sections.${bubbleId}`;
+}
+
+function useSectionCollapse(bubbleId: string) {
+  const key = sectionCollapseStorageKey(bubbleId);
+  const [state, setState] = useState<Partial<Record<SectionId, boolean>>>(() => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'object' && parsed ? parsed : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(key, JSON.stringify(state)); } catch { /* noop */ }
+  }, [key, state]);
+  return {
+    isCollapsed: (s: SectionId) => !!state[s],
+    toggle: (s: SectionId) => setState((p) => ({ ...p, [s]: !p[s] })),
+  };
+}
+
+// Wrapper de sección con header clickeable para colapsar. Reemplaza al uso
+// directo de <SectionLabel> cuando queremos comportamiento colapsable.
+function CollapsibleSection({
+  id, title, count, collapsed, onToggle, action, children, accentDot,
+}: {
+  id?: string;
+  title: string;
+  count?: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  action?: ReactNode;
+  children: ReactNode;
+  // Cuando hay novedad (ej. count cambió hacia arriba), el header parpadea.
+  accentDot?: boolean;
+}) {
+  const t = useTokens();
+  return (
+    <div data-section={id}>
+      <button type="button" onClick={onToggle}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+          padding: '6px 4px 10px',
+          border: 0, background: 'transparent',
+          color: t.text2, cursor: 'pointer',
+          fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
+          letterSpacing: 0.5, textTransform: 'uppercase',
+          textAlign: 'left',
+        }}>
+        <span style={{
+          fontSize: 16, opacity: 0.85, color: t.text1,
+          transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+          transition: 'transform 180ms ease',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 18, height: 18, lineHeight: 1,
+        }}>▾</span>
+        <span>{title}</span>
+        {count != null && (
+          <span style={{
+            padding: '1px 7px', background: t.bg3, borderRadius: 999,
+            fontSize: 10, color: t.text1, letterSpacing: 0,
+          }}>{count}</span>
+        )}
+        {accentDot && (
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: t.accent, boxShadow: `0 0 6px ${t.accent}`,
+            animation: 'eco-shimmer 1.4s ease-in-out infinite',
+          }} title="Hay novedades"/>
+        )}
+        <span style={{ flex: 1 }}/>
+        {action}
+      </button>
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            style={{ overflow: 'hidden' }}>
+            <div style={{ paddingTop: 2 }}>{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// Sparkline mini para visualizar actividad (mensajes/min en últimos 30 min).
+function Sparkline({
+  points, color, height = 22,
+}: {
+  points: number[];
+  color: string;
+  height?: number;
+}) {
+  if (points.length === 0) return null;
+  const max = Math.max(...points, 1);
+  const w = 80;
+  const stepX = points.length > 1 ? w / (points.length - 1) : w;
+  const path = points.map((p, i) => {
+    const x = i * stepX;
+    const y = height - (p / max) * (height - 2) - 1;
+    return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  // Última barra resaltada
+  const lastX = (points.length - 1) * stepX;
+  const lastY = height - (points[points.length - 1]! / max) * (height - 2) - 1;
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} style={{ width: '100%', height, display: 'block' }} preserveAspectRatio="none">
+      <path d={path} stroke={color} strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx={lastX} cy={lastY} r={1.5} fill={color}/>
+    </svg>
+  );
+}
+
+function computeActivityBuckets(messages: Message[], windowMin = 30, buckets = 8): number[] {
+  const now = Date.now();
+  const start = now - windowMin * 60_000;
+  const bucketMs = (windowMin * 60_000) / buckets;
+  const result = new Array(buckets).fill(0) as number[];
+  for (const m of messages) {
+    if (m.createdAt < start) continue;
+    const idx = Math.min(buckets - 1, Math.max(0, Math.floor((m.createdAt - start) / bucketMs)));
+    result[idx] = (result[idx] ?? 0) + 1;
+  }
+  return result;
+}
+
+// Quick actions inline (sin SectionLabel ni footer fijo). Va como una
+// "sección" más del flow del sidebar.
+function QuickActions({
+  bubble, filesChangedCount, onGoTab, onSend,
+}: {
+  bubble: Bubble;
+  filesChangedCount: number;
+  onGoTab: (tab: Tab) => void;
+  onSend: (text: string) => void;
+}) {
+  const t = useTokens();
+  type QA = {
+    label: string; icon: ReactNode; onClick: () => void;
+    badge?: number; disabled?: boolean; tooltip?: string;
+  };
+  const actions: QA[] = [
+    {
+      label: 'Chat', icon: <IconCommand size={12}/>,
+      onClick: () => onGoTab('chat'),
+      badge: bubble.unread > 0 ? bubble.unread : undefined,
+      tooltip: 'Ir al chat',
+    },
+    {
+      label: 'Archivos', icon: <IconFile size={12}/>,
+      onClick: () => onGoTab('files'),
+      badge: filesChangedCount > 0 ? filesChangedCount : undefined,
+      tooltip: 'Ver archivos modificados',
+    },
+    {
+      label: 'Terminal', icon: <IconTerminal size={12}/>,
+      onClick: () => onGoTab('terminal'),
+      tooltip: 'Abrir terminal del agente',
+    },
+    {
+      label: 'Resumir', icon: <IconLayers size={12}/>,
+      onClick: () => onSend('Hacé un resumen breve de los cambios y decisiones de esta sesión.'),
+      tooltip: 'Pedirle al agente un resumen',
+    },
+  ];
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(${actions.length}, 1fr)`,
+      gap: 6,
+    }}>
+      {actions.map((a, i) => (
+        <button key={i} type="button" onClick={a.onClick} disabled={a.disabled}
+          title={a.tooltip ?? a.label}
+          style={{
+            position: 'relative',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+            padding: '8px 4px',
+            border: `1px solid ${t.glassBorder}`, borderRadius: 8,
+            background: t.bg2,
+            color: t.text1, cursor: a.disabled ? 'not-allowed' : 'pointer',
+            opacity: a.disabled ? 0.4 : 1,
+            fontFamily: t.fontSans, fontSize: 10, fontWeight: 500,
+            transition: 'background 120ms, border-color 120ms',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = t.bg3;
+            e.currentTarget.style.borderColor = t.accent;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = t.bg2;
+            e.currentTarget.style.borderColor = t.glassBorder;
+          }}>
+          <span style={{
+            width: 24, height: 24, borderRadius: 6,
+            background: t.bg3, color: t.text1,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>{a.icon}</span>
+          <span>{a.label}</span>
+          {a.badge != null && (
+            <span style={{
+              position: 'absolute', top: 4, right: 6,
+              minWidth: 16, height: 16, padding: '0 5px',
+              borderRadius: 999,
+              background: t.accent, color: t.accentOn,
+              fontSize: 9, fontWeight: 700,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              boxSizing: 'border-box',
+            }}>{a.badge > 99 ? '99+' : a.badge}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubble }) {
+  const t = useTokens();
+  const animated = bubble.status === 'thinking' || bubble.status === 'executing'
+    || bubble.status === 'running' || bubble.status === 'pending';
+  const color = animated ? t.warn : t.text3;
+  return (
+    <div style={{
+      width: 36, flexShrink: 0,
+      borderLeft: `1px solid ${t.glassBorder}`,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+      padding: '12px 0',
+    }}>
+      <button
+        type="button"
+        onClick={onExpand}
+        title="Mostrar panel"
+        style={{
+          width: 30, height: 30, border: 0, borderRadius: 8,
+          background: 'transparent', color: t.text1, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: t.fontMono, fontSize: 18, fontWeight: 600,
+          lineHeight: 1,
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>‹</button>
+      {/* Dot de status — visible aunque el panel esté colapsado */}
+      <span style={{
+        width: 8, height: 8, borderRadius: '50%',
+        background: color,
+        boxShadow: animated ? `0 0 6px ${color}` : 'none',
+        animation: animated ? 'eco-shimmer 1.4s ease-in-out infinite' : 'none',
+      }} title={animated ? 'Agente activo' : 'Agente inactivo'}/>
+    </div>
+  );
+}
 
 function AgentSidebar({
   bubble, filesChangedCount, onSend, onInterrupt, onGoTab,
@@ -1669,111 +2138,262 @@ function AgentSidebar({
 }) {
   const t = useTokens();
   const tr = useT();
+
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try { return window.localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === '1'; } catch { return false; }
   });
-  function toggleCollapsed() {
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      const n = raw ? Number(raw) : NaN;
+      if (Number.isFinite(n) && n >= SIDEBAR_WIDTH_MIN && n <= SIDEBAR_WIDTH_MAX) return n;
+    } catch { /* noop */ }
+    return SIDEBAR_WIDTH_DEFAULT;
+  });
+  const widthRef = useRef(width);
+  useEffect(() => { widthRef.current = width; }, [width]);
+
+  const sectionCollapse = useSectionCollapse(bubble.id);
+
+  const toggleCollapsed = useCallback(() => {
     setCollapsed((v) => {
       const next = !v;
       try { window.localStorage.setItem(SIDEBAR_COLLAPSE_KEY, next ? '1' : '0'); } catch { /* noop */ }
       return next;
     });
-  }
-  const min = Math.max(1, Math.round((Date.now() - bubble.createdAt) / 60000));
+  }, []);
+
+  // Drag para redimensionar: listener global mientras dura el drag.
+  const onSplitterDown = useCallback((e: React.MouseEvent) => {
+    const startX = e.clientX;
+    const startW = widthRef.current;
+    const onMove = (e2: MouseEvent) => {
+      // Drag hacia la IZQUIERDA aumenta el width (el sidebar está a la derecha).
+      const dx = startX - e2.clientX;
+      const next = Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, startW + dx));
+      setWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      try { window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(widthRef.current)); } catch { /* noop */ }
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    e.preventDefault();
+  }, []);
+
+  // Esc colapsa el sidebar — atajo consistente.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !collapsed) {
+        // Solo colapsamos si no hay un input/textarea/modal focuseado.
+        const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+        // Modal abierto? Detectamos por presencia de dialog con backdrop.
+        // El portal a body crea elementos con position:fixed; saltamos.
+        // (Conservador: si el target del key no es body, dejamos.)
+        if (document.activeElement && document.activeElement !== document.body) return;
+        toggleCollapsed();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [collapsed, toggleCollapsed]);
+
+  const min = Math.max(1, Math.round((Date.now() - bubble.createdAt) / 60_000));
   const toolCallCount = bubble.messages.reduce((acc, m) => acc + (m.toolCalls?.length ?? 0), 0);
 
-  // Versión colapsada: solo una barra finita con un botón para re-expandir.
+  // Detecta "novedades" comparando el último count con el anterior — usado
+  // por las secciones para parpadear el accentDot cuando algo cambió.
+  const prevFilesRef = useRef(filesChangedCount);
+  const [filesNovel, setFilesNovel] = useState(false);
+  useEffect(() => {
+    if (filesChangedCount > prevFilesRef.current) {
+      setFilesNovel(true);
+      const tid = setTimeout(() => setFilesNovel(false), 2500);
+      return () => clearTimeout(tid);
+    }
+    prevFilesRef.current = filesChangedCount;
+  }, [filesChangedCount]);
+
+  // Reordenamiento por contexto: si el agente está corriendo o hay archivos
+  // sin commitear, "Próxima acción" pasa arriba para que el user lo vea sin
+  // scrollear. Skills y QuickActions van siempre arriba (en ese orden).
+  const running = bubble.status === 'thinking' || bubble.status === 'executing'
+    || bubble.status === 'running' || bubble.status === 'pending';
+  const sectionOrder = useMemo<SectionId[]>(() => {
+    if (running || filesChangedCount > 0) {
+      return ['skills', 'quick', 'next', 'git', 'stats', 'obsidian'];
+    }
+    return ['skills', 'quick', 'git', 'next', 'stats', 'obsidian'];
+  }, [running, filesChangedCount]);
+
+  // Datos para sparkline.
+  const activity = useMemo(() => computeActivityBuckets(bubble.messages), [bubble.messages]);
+  const hasActivity = activity.some((n) => n > 0);
+
   if (collapsed) {
-    return (
-      <div style={{
-        width: 32, flexShrink: 0,
-        borderLeft: `1px solid ${t.glassBorder}`,
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        padding: '12px 0',
-      }}>
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          title="Mostrar panel"
-          style={{
-            width: 22, height: 22, border: 0, borderRadius: 6,
-            background: 'transparent', color: t.text2, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: t.fontMono, fontSize: 12,
-          }}>‹</button>
-      </div>
-    );
+    return <CollapsedBar onExpand={toggleCollapsed} bubble={bubble}/>;
   }
+
+  const renderSection = (id: SectionId): ReactNode => {
+    switch (id) {
+      case 'skills':
+        return <SkillsCard key="skills" bubbleId={bubble.id} workspace={bubble.workspace}/>;
+
+      case 'quick':
+        return (
+          <QuickActions key="quick"
+            bubble={bubble}
+            filesChangedCount={filesChangedCount}
+            onGoTab={onGoTab}
+            onSend={onSend}/>
+        );
+
+      case 'git':
+        if (!bubble.workspace) return null;
+        return (
+          <CollapsibleSection key="git" id="git"
+            title="Git"
+            collapsed={sectionCollapse.isCollapsed('git')}
+            onToggle={() => sectionCollapse.toggle('git')}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <CurrentPrBanner workspace={bubble.workspace} bubbleId={bubble.id}/>
+              <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
+              <PullRequestsList workspace={bubble.workspace} bubbleId={bubble.id}/>
+              <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
+            </div>
+          </CollapsibleSection>
+        );
+
+      case 'next':
+        return (
+          <CollapsibleSection key="next" id="next"
+            title={tr('detail.sidebar.next')}
+            collapsed={sectionCollapse.isCollapsed('next')}
+            onToggle={() => sectionCollapse.toggle('next')}
+            accentDot={filesNovel}>
+            <NextActionsPanel
+              bubble={bubble}
+              filesChangedCount={filesChangedCount}
+              onSend={onSend}
+              onInterrupt={onInterrupt}
+              onGoTab={onGoTab}
+              hideHeader
+            />
+          </CollapsibleSection>
+        );
+
+      case 'stats':
+        return (
+          <CollapsibleSection key="stats" id="stats"
+            title={tr('detail.sidebar.stats')}
+            collapsed={sectionCollapse.isCollapsed('stats')}
+            onToggle={() => sectionCollapse.toggle('stats')}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {hasActivity && (
+                <div style={{
+                  padding: '8px 10px', borderRadius: 8,
+                  background: t.bg2, border: `1px solid ${t.glassBorder}`,
+                }}>
+                  <div style={{
+                    fontSize: 10, color: t.text3, letterSpacing: 0.4,
+                    textTransform: 'uppercase', marginBottom: 4,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <span>Actividad · 30 min</span>
+                    <span style={{ flex: 1 }}/>
+                    <span style={{ fontFamily: t.fontMono, color: t.text2 }}>
+                      {activity.reduce((a, b) => a + b, 0)} msg
+                    </span>
+                  </div>
+                  <Sparkline points={activity} color={t.accent} height={24}/>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <StatBox
+                  label={tr('detail.stat.last_activity')}
+                  value={fmtAgo(bubble.updatedAt)}
+                  sub={`activo ${min}m`}/>
+                <StatBox
+                  label={tr('detail.stat.messages')}
+                  value={String(bubble.messages.length)}
+                  onClick={() => onGoTab('chat')}/>
+                <StatBox
+                  label={tr('detail.stat.files_changed')}
+                  value={String(filesChangedCount)}
+                  onClick={filesChangedCount > 0 ? () => onGoTab('files') : undefined}/>
+                <StatBox
+                  label={tr('detail.stat.tool_calls')}
+                  value={String(toolCallCount)}/>
+              </div>
+            </div>
+          </CollapsibleSection>
+        );
+
+      case 'obsidian':
+        return <SaveToObsidianButton key="obsidian" bubble={bubble}/>;
+    }
+  };
 
   return (
     <div style={{
-      width: 360, flexShrink: 0,
+      width, flexShrink: 0,
       borderLeft: `1px solid ${t.glassBorder}`,
-      overflow: 'auto', padding: '14px 18px 20px',
-      display: 'flex', flexDirection: 'column', gap: 18,
+      display: 'flex', flexDirection: 'column',
+      position: 'relative',
+      background: t.bg0,
     }}>
-      {/* Header con botón de colapso */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          title="Ocultar panel"
-          style={{
-            width: 22, height: 22, border: 0, borderRadius: 6,
-            background: 'transparent', color: t.text3, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: t.fontMono, fontSize: 12,
-          }}>›</button>
-      </div>
-
-      <SkillsCard bubbleId={bubble.id} workspace={bubble.workspace}/>
-
-      {bubble.workspace && (
-        <div>
-          <SectionLabel>Git</SectionLabel>
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: 8,
-            position: 'relative',
-          }}>
-            <CurrentPrBanner workspace={bubble.workspace} bubbleId={bubble.id}/>
-            <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
-            <PullRequestsList workspace={bubble.workspace} bubbleId={bubble.id}/>
-            <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
-          </div>
-        </div>
-      )}
-
-      <NextActionsPanel
-        bubble={bubble}
-        filesChangedCount={filesChangedCount}
-        onSend={onSend}
-        onInterrupt={onInterrupt}
-        onGoTab={onGoTab}
+      {/* Splitter — área de 6 px en el borde izquierdo. Hover muestra el
+          accent; durante el drag, cursor col-resize global. */}
+      <div
+        onMouseDown={onSplitterDown}
+        title="Arrastrar para redimensionar"
+        style={{
+          position: 'absolute', left: -3, top: 0, bottom: 0, width: 6,
+          cursor: 'col-resize', zIndex: 10,
+          background: 'transparent',
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLDivElement).style.background =
+            `linear-gradient(90deg, transparent 0%, ${t.accent} 50%, transparent 100%)`;
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+        }}
       />
 
-      <div>
-        <SectionLabel>{tr('detail.sidebar.stats')}</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <StatBox
-            label={tr('detail.stat.last_activity')}
-            value={fmtAgo(bubble.updatedAt)}
-            sub={`activo ${min}m`}/>
-          <StatBox
-            label={tr('detail.stat.messages')}
-            value={String(bubble.messages.length)}
-            onClick={() => onGoTab('chat')}/>
-          <StatBox
-            label={tr('detail.stat.files_changed')}
-            value={String(filesChangedCount)}
-            onClick={filesChangedCount > 0 ? () => onGoTab('files') : undefined}/>
-          <StatBox
-            label={tr('detail.stat.tool_calls')}
-            value={String(toolCallCount)}/>
-        </div>
+      {/* Botón discreto arriba a la derecha para colapsar el panel. Esc
+          también funciona (atajo registrado en el sidebar). */}
+      <div style={{
+        position: 'absolute', top: 8, right: 8, zIndex: 8,
+      }}>
+        <button type="button" onClick={toggleCollapsed}
+          title="Ocultar panel (Esc)"
+          style={{
+            width: 30, height: 30, border: 0, borderRadius: 8,
+            background: 'transparent', color: t.text2, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: 'monospace', fontSize: 18, fontWeight: 600,
+            lineHeight: 1,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>›</button>
       </div>
 
-      <SaveToObsidianButton bubble={bubble}/>
-
+      {/* Scrollable area — sin header sticky ni footer fijo. */}
+      <div style={{
+        flex: 1, overflow: 'auto',
+        padding: '14px 18px 20px',
+        display: 'flex', flexDirection: 'column', gap: 18,
+      }}>
+        {sectionOrder.map(renderSection)}
+      </div>
     </div>
   );
 }
@@ -2042,13 +2662,14 @@ function fmtAgo(ts: number): string {
 }
 
 function NextActionsPanel({
-  bubble, filesChangedCount, onSend, onInterrupt, onGoTab,
+  bubble, filesChangedCount, onSend, onInterrupt, onGoTab, hideHeader,
 }: {
   bubble: Bubble;
   filesChangedCount: number;
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onGoTab: (tab: Tab) => void;
+  hideHeader?: boolean;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -2135,7 +2756,7 @@ function NextActionsPanel({
 
   return (
     <div>
-      <SectionLabel>{tr('detail.sidebar.next')}</SectionLabel>
+      {!hideHeader && <SectionLabel>{tr('detail.sidebar.next')}</SectionLabel>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {visible.map((a, i) => {
           const color = a.tone === 'danger' ? t.err : a.tone === 'primary' ? t.accent : t.text1;

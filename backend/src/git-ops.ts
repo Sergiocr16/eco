@@ -2,9 +2,9 @@
 // de rama, pull, fetch. Pensado para usarse desde el frontend tipo GitHub app.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, unlinkSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { resolve as pathResolve, sep as pathSep } from 'node:path';
+import { existsSync, unlinkSync, writeFileSync, mkdtempSync, statSync, readFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { resolve as pathResolve, sep as pathSep, join as pathJoin } from 'node:path';
 import { buildSafeEnv } from './security.js';
 import { config } from './config.js';
 
@@ -275,6 +275,193 @@ export function discardFile(workspace: string, inputPath: string): GitActionResu
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No se pudo eliminar' };
   }
+}
+
+/**
+ * Revierte UN solo hunk de un archivo (review estilo Cursor). El frontend
+ * extrae el bloque crudo del unified diff (líneas que arrancan con `@@`,
+ * `+`, `-`, ` `) y lo pasa acá. Construimos un patch mínimo y lo aplicamos
+ * con `git apply -R` para deshacer ese hunk sin tocar los demás.
+ *
+ * `--recount` regenera los números de línea del header del hunk, así no
+ * fallamos por offsets cuando hubo cambios intermedios (otros hunks ya
+ * aceptados/rechazados antes).
+ */
+export function revertHunk(
+  workspace: string,
+  inputPath: string,
+  hunkText: string,
+): GitActionResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!inputPath) return { ok: false, error: 'Path vacío' };
+  if (!hunkText || !hunkText.trim()) return { ok: false, error: 'Hunk vacío' };
+
+  const abs = pathResolve(workspace, inputPath);
+  const wsNorm = pathResolve(workspace);
+  const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
+  if (!inside) return { ok: false, error: `Path fuera del workspace (${inputPath})` };
+  const relPath = abs.slice(wsNorm.length + 1) || abs;
+
+  // Si el archivo es untracked (nuevo creado por el agente), su "diff" es
+  // un solo hunk con todo el contenido — rechazarlo equivale a borrar el
+  // archivo entero. `git apply -R` no puede manejar archivos sin base en
+  // el index/HEAD, así que caemos al fallback de discardFile.
+  const ls = git(['ls-files', '--error-unmatch', '--', relPath], workspace);
+  if (!ls.ok) {
+    try {
+      unlinkSync(abs);
+      return { ok: true, message: `Archivo nuevo descartado (${relPath})` };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'No se pudo eliminar archivo nuevo' };
+    }
+  }
+
+  // El bloque crudo del hunk debe arrancar con `@@`. Si el frontend mandó
+  // algo distinto, fail fast.
+  const cleaned = hunkText.endsWith('\n') ? hunkText : hunkText + '\n';
+  if (!cleaned.startsWith('@@')) {
+    return { ok: false, error: 'El hunk debe empezar con @@' };
+  }
+
+  const patch =
+    `diff --git a/${relPath} b/${relPath}\n` +
+    `--- a/${relPath}\n` +
+    `+++ b/${relPath}\n` +
+    cleaned;
+
+  let tmpDir: string;
+  try {
+    tmpDir = mkdtempSync(pathJoin(tmpdir(), 'eco-revert-'));
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No pude crear temp dir' };
+  }
+  const tmpFile = pathJoin(tmpDir, 'hunk.patch');
+  try {
+    writeFileSync(tmpFile, patch, 'utf-8');
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No pude escribir patch' };
+  }
+
+  const r = git(['apply', '-R', '--whitespace=nowarn', '--recount', tmpFile], workspace);
+  try { unlinkSync(tmpFile); } catch { /* noop */ }
+
+  if (!r.ok) {
+    return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 600) || 'git apply -R falló' };
+  }
+  return { ok: true, message: `Hunk revertido en ${relPath}` };
+}
+
+/**
+ * "Acepta" UN hunk haciendo `git apply --cached` del patch — el hunk pasa
+ * a vivir en el INDEX (staged) y desaparece del diff working tree vs index.
+ * Si después el agente edita el archivo, los cambios NUEVOS aparecen como
+ * unstaged (lo único que queda por revisar).
+ */
+export function acceptHunk(
+  workspace: string,
+  inputPath: string,
+  hunkText: string,
+): GitActionResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!inputPath) return { ok: false, error: 'Path vacío' };
+  if (!hunkText || !hunkText.trim()) return { ok: false, error: 'Hunk vacío' };
+
+  const abs = pathResolve(workspace, inputPath);
+  const wsNorm = pathResolve(workspace);
+  const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
+  if (!inside) return { ok: false, error: `Path fuera del workspace (${inputPath})` };
+  const relPath = abs.slice(wsNorm.length + 1) || abs;
+
+  // Si el archivo no está en el index (archivo nuevo / untracked),
+  // `git apply --cached` falla con "does not exist in index". Para nuevos
+  // archivos el "diff" suele ser un solo hunk con todo el contenido —
+  // aceptarlo equivale a stagear el archivo entero.
+  const ls = git(['ls-files', '--error-unmatch', '--', relPath], workspace);
+  if (!ls.ok) {
+    const add = git(['add', '--', relPath], workspace);
+    if (!add.ok) {
+      return { ok: false, error: (add.stderr || add.stdout).trim().slice(0, 600) || 'git add falló' };
+    }
+    return { ok: true, message: `Archivo nuevo aceptado entero (${relPath})` };
+  }
+
+  const cleaned = hunkText.endsWith('\n') ? hunkText : hunkText + '\n';
+  if (!cleaned.startsWith('@@')) {
+    return { ok: false, error: 'El hunk debe empezar con @@' };
+  }
+  const patch =
+    `diff --git a/${relPath} b/${relPath}\n` +
+    `--- a/${relPath}\n` +
+    `+++ b/${relPath}\n` +
+    cleaned;
+
+  let tmpDir: string;
+  try { tmpDir = mkdtempSync(pathJoin(tmpdir(), 'eco-accept-')); }
+  catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'No pude crear temp dir' }; }
+  const tmpFile = pathJoin(tmpDir, 'hunk.patch');
+  try { writeFileSync(tmpFile, patch, 'utf-8'); }
+  catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'No pude escribir patch' }; }
+
+  // --cached aplica al index sin tocar el working tree. El cambio ya estaba
+  // en el filesystem (el agente lo escribió); solo lo marcamos como staged.
+  const r = git(['apply', '--cached', '--whitespace=nowarn', '--recount', tmpFile], workspace);
+  try { unlinkSync(tmpFile); } catch { /* noop */ }
+  if (!r.ok) {
+    return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 600) || 'git apply --cached falló' };
+  }
+  return { ok: true, message: `Hunk aceptado en ${relPath}` };
+}
+
+/**
+ * Lee el contenido completo de un archivo dentro del workspace (con cap
+ * de tamaño). El frontend lo usa para mostrar el archivo entero con
+ * highlight de las líneas modificadas, complementando el diff puro.
+ */
+export type FileContentsResult =
+  | { ok: true; content: string; size: number; truncated: boolean }
+  | { ok: false; error: string };
+
+export function readFileContents(workspace: string, inputPath: string): FileContentsResult {
+  if (!inputPath) return { ok: false, error: 'Path vacío' };
+  const abs = pathResolve(workspace, inputPath);
+  const wsNorm = pathResolve(workspace);
+  const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
+  if (!inside) return { ok: false, error: `Path fuera del workspace (${inputPath})` };
+  if (!existsSync(abs)) return { ok: false, error: 'Archivo no existe' };
+  const MAX = 512 * 1024; // 512 KB
+  try {
+    const stat = statSync(abs);
+    if (stat.isDirectory()) return { ok: false, error: 'Es un directorio' };
+    const truncated = stat.size > MAX;
+    // readFileSync con utf-8 puede romper caracteres multi-byte si truncamos
+    // a la mitad de uno. Para mantener simple aceptamos esa imperfección
+    // — los archivos > 512 KB son raros en review y el warning lo indica.
+    const fullContent = readFileSync(abs, 'utf-8');
+    const content = truncated ? fullContent.slice(0, MAX) : fullContent;
+    return { ok: true, content, size: stat.size, truncated };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Error leyendo archivo' };
+  }
+}
+
+/**
+ * "Acepta" un archivo entero: `git add` lo stagea. Los cambios futuros
+ * (si el agente vuelve a editarlo) aparecerán como unstaged y volverán
+ * a mostrarse en el diff de review.
+ */
+export function acceptFile(workspace: string, inputPath: string): GitActionResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!inputPath) return { ok: false, error: 'Path vacío' };
+  const abs = pathResolve(workspace, inputPath);
+  const wsNorm = pathResolve(workspace);
+  const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
+  if (!inside) return { ok: false, error: `Path fuera del workspace (${inputPath})` };
+  const relPath = abs.slice(wsNorm.length + 1) || abs;
+  const r = git(['add', '--', relPath], workspace);
+  if (!r.ok) {
+    return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 600) || 'git add falló' };
+  }
+  return { ok: true, message: `Archivo aceptado en ${relPath}` };
 }
 
 export function pull(workspace: string): GitActionResult {

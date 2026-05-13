@@ -87,6 +87,9 @@ function makeCanUseTool(workspace: string): CanUseTool {
           message: `Escritura denegada: ${typeof filePath === 'string' ? filePath : '(sin path)'} está fuera del workspace ${workspace}`,
         };
       }
+      // En modo "review estilo Cursor" el user revisa los diffs DESPUÉS
+      // de que el agente edita, no antes. Acá solo gatekeepean workspace
+      // bounds.
       return { behavior: 'allow', updatedInput: input };
     }
 
@@ -134,8 +137,9 @@ export function runAgent(opts: AgentRunOptions): Query {
     abortController: opts.abortController,
     pathToClaudeCodeExecutable: config.claudeCliPath,
     model: config.model,
-    // 'acceptEdits' = auto mode: el SDK no espera approval de edits ni de comandos.
-    // canUseTool sigue corriendo como gate fino (workspace-bound writes, etc.).
+    // 'acceptEdits' = auto mode: el SDK aplica edits automáticamente sin
+    // pasar por canUseTool en cada paso. El review estilo Cursor sucede
+    // DESPUÉS en el frontend (DiffViewer + FilesPanel).
     permissionMode: 'acceptEdits',
     canUseTool: makeCanUseTool(cwd),
     mcpServers,

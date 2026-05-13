@@ -23,6 +23,11 @@ const DEV_FRONTEND_URL = 'http://127.0.0.1:5173';
 
 let mainWindow = null;
 let backendProc = null;
+// En macOS, cerrar la ventana NO sale de la app (convención del sistema).
+// Interceptamos el close del botón rojo para ocultar en lugar de destruir,
+// preservando el backend y el state. Cuando el user hace Cmd+Q (o el menú
+// → Quit), seteamos isQuitting=true para permitir el close real.
+let isQuitting = false;
 
 function tokenPath() {
   return path.join(os.homedir(), '.eco', 'token');
@@ -181,6 +186,20 @@ async function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+
+  // macOS: el botón rojo "cierra" la ventana pero la app sigue corriendo.
+  // Interceptamos el close para ocultar la ventana en lugar de destruirla
+  // — así el backend, los PTYs y los dev servers no mueren, y al re-abrir
+  // (click en el dock) recuperamos la sesión exacta. En Cmd+Q normal,
+  // before-quit setea isQuitting=true y dejamos pasar el close real.
+  if (process.platform === 'darwin') {
+    mainWindow.on('close', (event) => {
+      if (!isQuitting) {
+        event.preventDefault();
+        mainWindow.hide();
+      }
+    });
+  }
 }
 
 ipcMain.on('eco:renderer-log', (_e, args) => {
@@ -217,15 +236,30 @@ app.whenReady().then(async () => {
   await createWindow();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    // En Mac: si la ventana está oculta (cerrada con botón rojo) la mostramos.
+    // Si no existe (raro porque la mantenemos viva), creamos una nueva.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
+      void createWindow();
+    }
   });
 });
 
 app.on('window-all-closed', () => {
-  killBackend();
-  if (process.platform !== 'darwin') app.quit();
+  // En macOS, NO matamos el backend al cerrar la ventana — la app sigue
+  // viva en el dock y el user espera que su sesión continue al re-abrir.
+  // killBackend solo en Win/Linux donde cerrar la ventana sí quitea la app.
+  if (process.platform !== 'darwin') {
+    killBackend();
+    app.quit();
+  }
 });
 
 app.on('before-quit', () => {
+  // Marca que esto es un quit "de verdad" (Cmd+Q, menú Quit, app.quit()),
+  // así el handler de 'close' del mainWindow deja pasar el destroy real.
+  isQuitting = true;
   killBackend();
 });

@@ -151,14 +151,13 @@ export function PullRequestsList({ workspace, bubbleId }: Props) {
           </button>
         )}
         <span style={{
-          color: t.text3, fontSize: 10, fontFamily: t.fontMono,
+          color: t.text1, fontSize: 16, fontFamily: t.fontMono,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 16, height: 16,
-          transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          transition: 'transform 160ms ease',
+          width: 22, height: 22,
+          transition: 'transform 180ms ease',
           flexShrink: 0,
         }}>
-          {expanded ? <IconChevD size={11}/> : <IconChevR size={11}/>}
+          {expanded ? <IconChevD size={16}/> : <IconChevR size={16}/>}
         </span>
       </button>
 

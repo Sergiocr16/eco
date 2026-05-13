@@ -438,6 +438,22 @@ const DICT = {
   'settings.general.title': { es: 'General', en: 'General' },
   'settings.general.sub': { es: 'Comportamiento global de Eco.', en: 'Global behavior of Eco.' },
   'settings.general.listen_on_boot': { es: 'Escuchar al abrir Eco', en: 'Listen on startup' },
+  'settings.general.listen_on_conversation': {
+    es: 'Escuchar al entrar a una conversación',
+    en: 'Listen when entering a conversation',
+  },
+  'settings.general.listen_on_conversation_desc': {
+    es: 'Si está ON, prende el micrófono al entrar a una conversación. Si está OFF, lo apaga al entrar (anula el "Escuchar al abrir Eco" para conversaciones).',
+    en: 'If ON, turns the mic on when entering a conversation. If OFF, turns it off on entry (overrides "Listen on startup" for conversations).',
+  },
+  'settings.general.review_mode': {
+    es: 'Revisar cambios estilo Cursor',
+    en: 'Review changes (Cursor-style)',
+  },
+  'settings.general.review_mode_desc': {
+    es: 'El agente aplica los cambios sin interrupciones. Después revisás los diffs en la pestaña Archivos: aceptás o rechazás cada hunk o el archivo entero. Lo rechazado se revierte con git apply -R.',
+    en: 'The agent applies changes without interruption. You then review the diffs in the Files tab: accept or reject each hunk or the whole file. Rejected hunks are reverted with git apply -R.',
+  },
   'settings.general.menubar': { es: 'Mantener Eco en la barra de menú', en: 'Keep Eco in the menu bar' },
   'settings.general.default_folder': { es: 'Carpeta por defecto', en: 'Default folder' },
   'settings.general.default_folder_desc': {

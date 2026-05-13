@@ -264,11 +264,12 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
             </div>
             {!noRepo && (
               <span style={{
-                color: t.text3, fontSize: 10, fontFamily: t.fontMono,
+                color: t.text1, fontSize: 18, fontFamily: t.fontMono, fontWeight: 600,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 16, height: 16,
+                width: 22, height: 22,
                 transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                transition: 'transform 160ms ease',
+                transition: 'transform 180ms ease',
+                lineHeight: 1,
               }}>›</span>
             )}
           </button>

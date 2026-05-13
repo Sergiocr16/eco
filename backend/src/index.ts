@@ -397,11 +397,13 @@ app.get('/file/changes', async (req: Request, res: Response) => {
   proc.stdout.on('data', (d) => { out += d.toString(); });
   proc.on('close', (code) => {
     if (code !== 0) return res.json({ workspace, files: [], git: false });
-    const files: { path: string; change: 'created' | 'modified' | 'deleted' | 'renamed' }[] = [];
+    const files: { path: string; change: 'created' | 'modified' | 'deleted' | 'renamed'; unstaged: boolean }[] = [];
     for (const line of out.split('\n')) {
       if (!line) continue;
       // formato: XY <path>  (X=index, Y=worktree). "??" = untracked.
       const xy = line.slice(0, 2);
+      const indexCh = xy[0];
+      const workCh = xy[1];
       const path = line.slice(3).trim();
       if (!path) continue;
       let change: 'created' | 'modified' | 'deleted' | 'renamed';
@@ -409,9 +411,15 @@ app.get('/file/changes', async (req: Request, res: Response) => {
       else if (xy.includes('D')) change = 'deleted';
       else if (xy.includes('R')) change = 'renamed';
       else change = 'modified';
+      // Hay cambios "sin aceptar" si:
+      //  - es untracked (todo el archivo es unstaged)
+      //  - el char del worktree (segundo) NO es ' ' (hay cambios en el wt
+      //    que no están en el index, sea M, D, A, R, etc.)
+      const unstaged = xy === '??' || (workCh !== undefined && workCh !== ' ');
+      void indexCh;
       // Para renames "R  old -> new", quedate con el destino.
       const finalPath = path.includes(' -> ') ? path.split(' -> ').pop()! : path;
-      files.push({ path: finalPath, change });
+      files.push({ path: finalPath, change, unstaged });
     }
     res.json({ workspace: effective, files, git: true });
   });
@@ -424,6 +432,51 @@ app.post('/file/discard', (req: Request, res: Response) => {
   const path = typeof req.body?.path === 'string' ? req.body.path : '';
   if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
   res.json(gitOps.discardFile(dir, path));
+});
+
+// Review estilo Cursor: revertir UN solo hunk del unified diff.
+app.post('/file/revert-hunk', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const path = typeof req.body?.path === 'string' ? req.body.path : '';
+  const hunkText = typeof req.body?.hunkText === 'string' ? req.body.hunkText : '';
+  if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
+  if (!hunkText) return errResponse(res, 400, 'http.invalid_body', 'hunkText requerido');
+  // Cap defensivo: un hunk razonable no debería pasar de 100 KB.
+  if (hunkText.length > 100_000) return errResponse(res, 400, 'http.invalid_body', 'hunk demasiado grande');
+  res.json(gitOps.revertHunk(dir, path, hunkText));
+});
+
+// Aceptar UN hunk (git apply --cached). Lo staged-ea → desaparece del diff
+// unstaged hasta que el agente vuelva a tocar el archivo.
+app.post('/file/accept-hunk', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const path = typeof req.body?.path === 'string' ? req.body.path : '';
+  const hunkText = typeof req.body?.hunkText === 'string' ? req.body.hunkText : '';
+  if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
+  if (!hunkText) return errResponse(res, 400, 'http.invalid_body', 'hunkText requerido');
+  if (hunkText.length > 100_000) return errResponse(res, 400, 'http.invalid_body', 'hunk demasiado grande');
+  res.json(gitOps.acceptHunk(dir, path, hunkText));
+});
+
+// Aceptar archivo entero (git add). Idem efecto: queda staged.
+app.post('/file/accept', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const path = typeof req.body?.path === 'string' ? req.body.path : '';
+  if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
+  res.json(gitOps.acceptFile(dir, path));
+});
+
+// Contenido completo del archivo — útil para mostrar el archivo entero
+// con highlight de las líneas modificadas, además del diff puro.
+app.post('/file/contents', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const path = typeof req.body?.path === 'string' ? req.body.path : '';
+  if (!path) return errResponse(res, 400, 'http.invalid_body', 'path requerido');
+  res.json(gitOps.readFileContents(dir, path));
 });
 
 app.post('/file/diff', async (req: Request, res: Response) => {
