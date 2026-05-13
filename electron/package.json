@@ -50,12 +50,47 @@
         "to": "backend/node_modules",
         "filter": [
           "**/*",
-          "!**/*.{md,markdown,ts,map}",
+          "!**/*.{md,markdown,ts,map,d.ts.map}",
           "!**/test/**",
           "!**/tests/**",
+          "!**/__tests__/**",
           "!**/example/**",
           "!**/examples/**",
-          "!**/.bin/**"
+          "!**/docs/**",
+          "!**/.bin/**",
+          "!**/*.tsbuildinfo",
+          "!**/LICENSE*",
+          "!**/CHANGELOG*",
+          "!**/AUTHORS*",
+          "!**/CONTRIBUTING*",
+          "!**/HISTORY*",
+          "!**/.github/**",
+          "!**/.vscode/**",
+          "!**/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-linux/**",
+          "!**/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-darwin/**",
+          "!**/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-linux/**",
+          "!**/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-win32/**",
+          "!**/node-pty/prebuilds/darwin-x64/**",
+          "!**/node-pty/prebuilds/win32-arm64/**",
+          "!**/node-pty/prebuilds/win32-x64/**",
+          "!**/node-pty/deps/winpty/**",
+          "!**/node-pty/build/**",
+          "!**/node-pty/src/**",
+          "!**/node-pty/scripts/**",
+          "!**/node-pty/tools/**",
+          "!**/bip39/src/wordlists/chinese_simplified.json",
+          "!**/bip39/src/wordlists/chinese_traditional.json",
+          "!**/bip39/src/wordlists/czech.json",
+          "!**/bip39/src/wordlists/french.json",
+          "!**/bip39/src/wordlists/italian.json",
+          "!**/bip39/src/wordlists/japanese.json",
+          "!**/bip39/src/wordlists/korean.json",
+          "!**/bip39/src/wordlists/portuguese.json",
+          "!**/bip39/src/wordlists/spanish.json",
+          "!**/typescript/**",
+          "!**/esbuild/**",
+          "!**/tsx/**",
+          "!**/@types/**"
         ]
       },
       {
@@ -78,8 +113,7 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64",
-            "x64"
+            "arm64"
           ]
         }
       ],
@@ -90,7 +124,11 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Eco usa el micrófono para tus comandos de voz (transcripción local con el motor de Apple en el dispositivo).",
         "NSSpeechRecognitionUsageDescription": "Eco transcribe tus comandos de voz usando el reconocimiento on-device de Apple — el audio no sale de tu Mac."
-      }
+      },
+      "electronLanguages": [
+        "en",
+        "es"
+      ]
     },
     "dmg": {
       "title": "Eco ${version}",
@@ -107,33 +145,6 @@
           "path": "/Applications"
         }
       ]
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "category": "Development",
-      "icon": "build/icon.png"
     }
   }
 }

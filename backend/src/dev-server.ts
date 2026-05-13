@@ -166,6 +166,39 @@ function broadcastStatus(s: Session) {
 
 function appendOutput(s: Session, chunk: string) {
   s.output = (s.output + chunk).slice(-BUFFER_MAX);
+  scheduleLogFlush(s, chunk);
+}
+
+// ─── Batching de broadcast de logs ────────────────────────────────────────
+// Agrupamos chunks de stdout/stderr por (bubbleId, role) y los flusheamos
+// cada FLUSH_MS para no saturar el WS con un mensaje por cada bufferazo
+// (los frameworks pueden escribir cientos por segundo en arranque).
+const LOG_FLUSH_MS = 80;
+type LogBuf = { chunks: string[]; timer: NodeJS.Timeout | null };
+const logBuffers = new Map<string, LogBuf>();
+
+function scheduleLogFlush(s: Session, chunk: string) {
+  const key = sessionKey(s.bubbleId, s.role);
+  let buf = logBuffers.get(key);
+  if (!buf) {
+    buf = { chunks: [], timer: null };
+    logBuffers.set(key, buf);
+  }
+  buf.chunks.push(chunk);
+  if (buf.timer) return;
+  buf.timer = setTimeout(() => {
+    const merged = buf!.chunks.join('');
+    buf!.chunks = [];
+    buf!.timer = null;
+    try {
+      broadcastServerMessage({
+        type: 'dev_log',
+        bubbleId: s.bubbleId,
+        role: s.role,
+        chunk: merged,
+      });
+    } catch { /* noop */ }
+  }, LOG_FLUSH_MS);
 }
 
 // ─── Cleanup robusto del server ───────────────────────────────────────────

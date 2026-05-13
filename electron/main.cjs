@@ -165,13 +165,16 @@ async function createWindow() {
 
   if (isDev) {
     await mainWindow.loadURL(DEV_FRONTEND_URL);
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    // En dev solo abrimos DevTools si ECO_DEVTOOLS=1 — abrirlas siempre gasta
+    // bastante GPU/memoria. Cmd+Opt+I las abre a demanda igual.
+    if (process.env.ECO_DEVTOOLS === '1') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     // El backend sirve el frontend bundle como static. Cargamos por http://
     // del mismo origen → sin CORS, fetch funciona, ws funciona, todo en un
     // solo origen 127.0.0.1:7100.
     await mainWindow.loadURL(BACKEND_URL + '/');
-    // DevTools también en prod (temporal para debug) — abrir con Cmd+Opt+I.
     if (process.env.ECO_DEVTOOLS === '1') {
       mainWindow.webContents.openDevTools({ mode: 'detach' });
     }

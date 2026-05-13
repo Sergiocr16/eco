@@ -50,3 +50,25 @@ select {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.03); }
 }
+
+/* Cuando la ventana de Eco está minimizada o detrás de otra app, pausamos
+   todas las animaciones CSS para no gastar GPU/batería renderizando algo
+   que el usuario no está viendo. El toggle de la clase lo hace App.tsx
+   reaccionando al visibilitychange event. */
+body.eco-hidden,
+body.eco-hidden *,
+body.eco-hidden *::before,
+body.eco-hidden *::after {
+  animation-play-state: paused !important;
+}
+
+/* Respetar reduced motion: usuarios con la preferencia desactivan
+   animaciones decorativas (shimmer/spin/typing) — preservamos solo las
+   transiciones cortas de hover/feedback que ya son sub-200ms. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

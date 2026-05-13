@@ -14,10 +14,21 @@ export type EcoBusEvents = {
     command: string;
     skill?: string;
   };
+  // Stream de log chunks del dev server. El backend batchea cada ~80ms
+  // así que el handler recibe ráfagas grandes, no cada caracter. Cada chunk
+  // es texto raw incluyendo escapes ANSI.
+  'eco:dev_log': {
+    bubbleId: string;
+    role: 'main' | 'frontend' | 'backend';
+    chunk: string;
+  };
   // Pedido al BrowserPanel del agente para cargar una URL específica (por
   // ejemplo desde el ServerPanel cuando el server arranca o el user clickea
   // la URL del server).
   'eco:browser_navigate': { bubbleId: string; url: string };
+  // Notifica que la URL del browser de una burbuja cambió (set o cleared).
+  // Usado por useBubbleActive para evitar el polling de localStorage.
+  'eco:browser_url_changed': { bubbleId: string; hasUrl: boolean };
 };
 
 type EventName = keyof EcoBusEvents;

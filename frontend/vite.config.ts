@@ -19,6 +19,24 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    // Habilitamos sourcemap solo en dev; en prod no para reducir bundle disk
+    sourcemap: false,
+    // chunk size warning solo informativo
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        // Separamos libs pesadas en chunks paralelos para que el navegador
+        // las cachee independientemente y solo recargue el chunk de la app
+        // cuando cambia código nuestro.
+        manualChunks: {
+          'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
+          'vendor-motion': ['motion', 'motion/react'],
+          'vendor-react': ['react', 'react-dom'],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     host: '127.0.0.1',

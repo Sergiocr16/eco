@@ -1620,19 +1620,12 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             vivas. Coordenadas relativas al viewBox W×H. */}
         {[
           { fx: 0.08, fy: 0.12, r: 2.5, dur: 7,  color: t.accent },
-          { fx: 0.16, fy: 0.30, r: 1.5, dur: 9,  color: 'oklch(78% 0.15 220)' },
           { fx: 0.25, fy: 0.78, r: 2,   dur: 8,  color: 'oklch(72% 0.16 290)' },
-          { fx: 0.34, fy: 0.18, r: 1.5, dur: 10, color: t.accent },
           { fx: 0.42, fy: 0.90, r: 2.5, dur: 7,  color: 'oklch(78% 0.15 220)' },
           { fx: 0.55, fy: 0.08, r: 2,   dur: 9,  color: t.accent },
-          { fx: 0.66, fy: 0.84, r: 1.5, dur: 8,  color: 'oklch(72% 0.16 290)' },
           { fx: 0.74, fy: 0.22, r: 2.5, dur: 10, color: 'oklch(78% 0.15 220)' },
-          { fx: 0.82, fy: 0.62, r: 1.5, dur: 7,  color: t.accent },
           { fx: 0.92, fy: 0.14, r: 2,   dur: 9,  color: 'oklch(72% 0.16 290)' },
-          { fx: 0.95, fy: 0.86, r: 1.5, dur: 8,  color: t.accent },
           { fx: 0.05, fy: 0.55, r: 2,   dur: 10, color: 'oklch(78% 0.15 220)' },
-          { fx: 0.12, fy: 0.88, r: 1.5, dur: 7,  color: t.accent },
-          { fx: 0.88, fy: 0.42, r: 2,   dur: 8,  color: 'oklch(72% 0.16 290)' },
         ].map((p, i) => {
           const x = p.fx * W;
           const y = p.fy * H;

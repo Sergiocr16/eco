@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { IconArrowL, IconResume, IconGlobe, IconExt, IconX } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
-import { on as ecoOn } from '@/lib/eco-bus';
+import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 
 type Props = {
@@ -81,6 +81,10 @@ export function BrowserPanel({ bubbleId }: Props) {
       if (url) window.localStorage.setItem(storageKey(bubbleId), url);
       else window.localStorage.removeItem(storageKey(bubbleId));
     } catch { /* noop */ }
+    // Notificar al resto de la UI (useBubbleActive, Dashboard) sin que tengan
+    // que pollear localStorage. El storage event no dispara en la misma tab,
+    // por eso usamos eco-bus.
+    ecoEmit('eco:browser_url_changed', { bubbleId, hasUrl: !!url });
   }, [url, bubbleId]);
 
   useEffect(() => { setDraft(url); }, [url]);
@@ -164,30 +168,37 @@ export function BrowserPanel({ bubbleId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bubbleId]);
 
-  // Mientras esté starting o running, polleamos logs cada 1.5s y mostramos el
-  // DevTools panel con la tab Server para que el user siempre vea qué está
-  // pasando. Para que no sea molesto, solo abrimos auto la primera vez del
-  // ciclo — si el user lo cierra manualmente, respetamos.
-  const autoOpenedRef = useRef<string>(''); // status que ya disparó auto-open
+  // Auto-open del DevTools panel con la tab Server cuando arranca el server,
+  // una sola vez por ciclo. Los logs se streamean por WS — no hay polling.
+  const autoOpenedRef = useRef<string>('');
   useEffect(() => {
-    if (serverStatus !== 'starting' && serverStatus !== 'running') return;
-    // Abrir DevTools + tab Server cuando arrancamos, una vez.
     if (serverStatus === 'starting' && autoOpenedRef.current !== 'starting') {
       autoOpenedRef.current = 'starting';
       setDevOpen(true);
       setDevTab('server');
     }
     if (serverStatus !== 'starting') autoOpenedRef.current = '';
-    let cancelled = false;
-    const tick = async () => {
-      const text = await loadLogs();
-      if (!cancelled) setServerLogs(text);
-    };
-    void tick();
-    const iv = setInterval(tick, 1500);
-    return () => { cancelled = true; clearInterval(iv); };
+    // Snapshot inicial al cambiar de status starting/running — siembra el
+    // viewer con lo que ya esté acumulado en el ring buffer del backend.
+    if (serverStatus === 'starting' || serverStatus === 'running') {
+      void (async () => {
+        const text = await loadLogs();
+        setServerLogs(text);
+      })();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverStatus, bubbleId]);
+
+  // Stream de log chunks por WS — reemplaza el polling cada 1.5s.
+  useEffect(() => {
+    return ecoOn('eco:dev_log', (e) => {
+      if (e.bubbleId !== bubbleId) return;
+      // BrowserPanel ve los logs del rol 'main' (single server). El dual mode
+      // muestra logs por rol en el ServerPanel.
+      if (e.role !== 'main') return;
+      setServerLogs((prev) => prev + e.chunk);
+    });
+  }, [bubbleId]);
 
   async function loadLogs(): Promise<string> {
     try {

@@ -385,6 +385,9 @@ function ClaudeAuthStatusCard() {
   useEffect(() => {
     let cancel = false;
     const fetch = () => {
+      // No pollear cuando la ventana no está visible — el focus event ya
+      // dispara fetch al volver al frente.
+      if (document.visibilityState !== 'visible') return;
       void apiFetch('/config/claude-auth').then(async (r) => {
         if (cancel || !r.ok) return;
         const data = await r.json().catch(() => null);
@@ -396,7 +399,9 @@ function ClaudeAuthStatusCard() {
     // en una terminal aparte y vuelve a Eco.
     const onFocus = () => fetch();
     window.addEventListener('focus', onFocus);
-    const iv = window.setInterval(fetch, 8000);
+    // Intervalo más relajado (30s); con el listener de focus el user igual ve
+    // el estado fresco apenas vuelve a Eco.
+    const iv = window.setInterval(fetch, 30_000);
     return () => {
       cancel = true;
       window.removeEventListener('focus', onFocus);

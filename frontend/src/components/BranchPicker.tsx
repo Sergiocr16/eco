@@ -72,8 +72,17 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
 
   useEffect(() => {
     if (!expanded) return;
-    const iv = setInterval(() => void refresh(), 12_000);
-    return () => clearInterval(iv);
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      void refresh();
+    };
+    const iv = setInterval(tick, 20_000);
+    const onVis = () => { if (document.visibilityState === 'visible') void refresh(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVis);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
 

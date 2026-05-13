@@ -175,22 +175,23 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
         url: e.url ?? '',
         command: e.command ?? '',
       });
+      // Al iniciar un nuevo ciclo limpiamos los logs en pantalla — vienen
+      // frescos por el stream WS. Para 'stopped'/'error' los preservamos
+      // hasta que el user los lea o el server reinicie.
+      if (e.status === 'starting') {
+        updateSlot(role, { logs: '' });
+      }
     });
   }, [bubbleId]);
 
-  // Poll de logs cada 1.5s para los slots activos.
+  // Snapshot inicial de logs al montar — un solo GET para sembrar el viewer
+  // con lo que ya esté en el ring buffer del backend. Después, el stream WS
+  // (eco:dev_log) appendea deltas; no hay polling.
   useEffect(() => {
-    const activeRoles: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
-    const needsPoll = activeRoles.some((r) => {
-      const st = slots[r].status;
-      return st === 'starting' || st === 'running' || st === 'error';
-    });
-    if (!needsPoll) return;
     let cancelled = false;
-    const fetchLogs = async () => {
-      for (const role of activeRoles) {
-        const st = slots[role].status;
-        if (st === 'idle' || st === 'stopped') continue;
+    const rolesToSeed: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
+    (async () => {
+      for (const role of rolesToSeed) {
         try {
           const r = await apiFetch(`/dev/logs?bubbleId=${encodeURIComponent(bubbleId)}&role=${role}`);
           if (!r.ok || cancelled) continue;
@@ -198,12 +199,24 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
           updateSlot(role, { logs: text });
         } catch { /* noop */ }
       }
-    };
-    void fetchLogs();
-    const iv = setInterval(fetchLogs, 1500);
-    return () => { cancelled = true; clearInterval(iv); };
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bubbleId, dual, slots.main.status, slots.frontend.status, slots.backend.status]);
+  }, [bubbleId, dual]);
+
+  // Stream de log chunks por WS — reemplaza el polling cada 1.5s. El backend
+  // batchea los chunks cada ~80ms así que el handler recibe ráfagas, no caracteres.
+  useEffect(() => {
+    return ecoOn('eco:dev_log', (e) => {
+      if (e.bubbleId !== bubbleId) return;
+      const role = e.role as SlotRole;
+      if (role !== 'main' && role !== 'frontend' && role !== 'backend') return;
+      setSlots((prev) => ({
+        ...prev,
+        [role]: { ...prev[role], logs: prev[role].logs + e.chunk },
+      }));
+    });
+  }, [bubbleId]);
 
   // Helpers de fetch.
   async function postWithRetry(path: string, body: Record<string, unknown>): Promise<Response> {

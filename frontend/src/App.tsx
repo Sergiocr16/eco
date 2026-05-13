@@ -31,6 +31,20 @@ const BACKEND = ecoBackend();
 const TOKEN = ecoToken();
 
 export function App() {
+  // Toggle clase global cuando la ventana se oculta. El CSS asociado en
+  // index.css pausa todas las @keyframes con `animation-play-state: paused`
+  // — evita gastar GPU/batería en aurora, partículas, shimmer cuando el user
+  // no nos ve.
+  useEffect(() => {
+    const apply = () => {
+      const hidden = document.visibilityState !== 'visible';
+      document.body.classList.toggle('eco-hidden', hidden);
+    };
+    apply();
+    document.addEventListener('visibilitychange', apply);
+    return () => document.removeEventListener('visibilitychange', apply);
+  }, []);
+
   return (
     <ThemeProvider>
       <I18nProvider>
@@ -144,6 +158,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       },
       onDevStatus: (bubbleId, status, url, command, skill, role) => {
         ecoEmit('eco:dev_status', { bubbleId, role, status, url, command, ...(skill ? { skill } : {}) });
+      },
+      onDevLog: (bubbleId, role, chunk) => {
+        ecoEmit('eco:dev_log', { bubbleId, role, chunk });
       },
       onError: () => { /* ya manejado en socket.error */ },
       onClientAction: (sourceBubbleId, action) => {

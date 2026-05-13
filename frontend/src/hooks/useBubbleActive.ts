@@ -35,10 +35,23 @@ export function useBubbleActive(bubble: Bubble): boolean {
 
   useEffect(() => {
     setHasBrowser(readHasBrowser(bubble.id));
-    const iv = window.setInterval(() => {
-      setHasBrowser(readHasBrowser(bubble.id));
-    }, 2000);
-    return () => window.clearInterval(iv);
+    // En esta misma tab, escuchamos el eco-bus (storage event NO dispara para
+    // la propia tab que escribió). Cross-tab (raro acá, pero soportado) se
+    // resuelve con el storage event nativo.
+    const offBus = ecoOn('eco:browser_url_changed', (e) => {
+      if (e.bubbleId !== bubble.id) return;
+      setHasBrowser(e.hasUrl);
+    });
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key === `eco.browser.url.${bubble.id}`) {
+        setHasBrowser(!!ev.newValue);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      offBus();
+      window.removeEventListener('storage', onStorage);
+    };
   }, [bubble.id]);
 
   const claudeBusy =

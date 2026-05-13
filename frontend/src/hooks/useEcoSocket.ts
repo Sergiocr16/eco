@@ -13,7 +13,8 @@ type ServerMsg =
   | { type: 'client_action'; action: ClientAction }
   | { type: 'voice_transcribed'; text: string; ts: number }
   | { type: 'pty_status'; bubbleId: string; running: boolean }
-  | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string };
+  | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string }
+  | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string };
 
 export type ClientAction =
   | { kind: 'open_bubble'; id: string; title: string; focus: boolean }
@@ -87,6 +88,11 @@ export type SocketHandlers = {
     skill?: string,
     role?: 'main' | 'frontend' | 'backend',
   ) => void;
+  onDevLog?: (
+    bubbleId: string,
+    role: 'main' | 'frontend' | 'backend',
+    chunk: string,
+  ) => void;
   onClientAction?: (sourceBubbleId: string, action: ClientAction) => void;
   onVoiceTranscribed?: (text: string) => void;
 };
@@ -126,6 +132,34 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
   const currentAssistantIdRef = useRef<string | null>(null);
   const toolToBubble = useRef<Map<string, string>>(new Map());
 
+  // Coalesce de assistant text deltas. El SDK emite muchos deltas por segundo
+  // durante streaming; un setState por delta hace que React re-renderice
+  // ChatBubble + Markdown N veces/segundo. Acumulamos en una pendingMap y
+  // flusheamos un solo onAssistantTextDelta por bubble+assistantId por frame.
+  const pendingDeltasRef = useRef<Map<string, { bubbleId: string; assistantId: string; text: string }>>(new Map());
+  const rafIdRef = useRef<number | null>(null);
+  const flushDeltas = () => {
+    rafIdRef.current = null;
+    const pending = pendingDeltasRef.current;
+    if (pending.size === 0) return;
+    const H = handlersRef.current;
+    for (const { bubbleId, assistantId, text } of pending.values()) {
+      H.onAssistantTextDelta?.(bubbleId, assistantId, text);
+    }
+    pending.clear();
+  };
+  const scheduleDelta = (bubbleId: string, assistantId: string, text: string) => {
+    const key = `${bubbleId}|${assistantId}`;
+    const existing = pendingDeltasRef.current.get(key);
+    if (existing) existing.text += text;
+    else pendingDeltasRef.current.set(key, { bubbleId, assistantId, text });
+    if (rafIdRef.current == null) {
+      rafIdRef.current = typeof requestAnimationFrame !== 'undefined'
+        ? requestAnimationFrame(flushDeltas)
+        : (setTimeout(flushDeltas, 16) as unknown as number);
+    }
+  };
+
   const handleSdkMessage = useCallback((sdk: SdkMessage) => {
     const bubbleId = activeBubbleIdRef.current;
     if (!bubbleId) return;
@@ -150,7 +184,7 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
 
       for (const block of msg.content) {
         if (block.type === 'text') {
-          H.onAssistantTextDelta?.(bubbleId, assistantId, block.text);
+          scheduleDelta(bubbleId, assistantId, block.text);
         } else if (block.type === 'tool_use') {
           toolToBubble.current.set(block.id, bubbleId);
           H.onToolUse?.(bubbleId, assistantId, {
@@ -166,6 +200,9 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
     }
 
     if (sdk.type === 'user') {
+      // Flushear deltas pendientes ANTES de emitir tool_result, así el usuario
+      // ve el texto completo antes del output de la tool.
+      flushDeltas();
       const results = (sdk as SdkUserToolResult).message.content.filter((c) => c.type === 'tool_result');
       for (const r of results) {
         const targetBubble = toolToBubble.current.get(r.tool_use_id) ?? bubbleId;
@@ -179,6 +216,7 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
     }
 
     if (sdk.type === 'result') {
+      flushDeltas();
       H.onThinkingChange?.(bubbleId, false);
       H.onExecutingChange?.(bubbleId, false);
     }
@@ -222,9 +260,13 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         else if (msg.type === 'dev_status') {
           handlersRef.current.onDevStatus?.(msg.bubbleId, msg.status, msg.url, msg.command, msg.skill, msg.role);
         }
+        else if (msg.type === 'dev_log') {
+          handlersRef.current.onDevLog?.(msg.bubbleId, msg.role, msg.chunk);
+        }
         else if (msg.type === 'session_started') {
           // already handled in system init
         } else if (msg.type === 'done') {
+          flushDeltas();
           const bubbleId = activeBubbleIdRef.current;
           if (bubbleId) {
             handlersRef.current.onThinkingChange?.(bubbleId, false);
@@ -234,6 +276,7 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
           currentAssistantIdRef.current = null;
           activeBubbleIdRef.current = null;
         } else if (msg.type === 'error') {
+          flushDeltas();
           const localized = translateBackendError({ error: msg.code, message: msg.message }, msg.message);
           setError(localized);
           const bubbleId = activeBubbleIdRef.current;

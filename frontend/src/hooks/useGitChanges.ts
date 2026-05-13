@@ -3,13 +3,16 @@ import { apiFetch } from '@/lib/api';
 
 export type GitChange = { path: string; change: string };
 
-export function useGitChanges(workspace: string, bubbleId?: string, intervalMs = 4000): GitChange[] {
+export function useGitChanges(workspace: string, bubbleId?: string, intervalMs = 10_000): GitChange[] {
   const [files, setFiles] = useState<GitChange[]>([]);
 
   useEffect(() => {
     if (!workspace) { setFiles([]); return; }
     let cancelled = false;
     const fetchChanges = async () => {
+      // No polleamos cuando la ventana está minimizada/oculta — la próxima
+      // visibilidad dispara un refetch.
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       try {
         const params = new URLSearchParams({ workspace });
         if (bubbleId) params.set('bubbleId', bubbleId);
@@ -27,7 +30,13 @@ export function useGitChanges(workspace: string, bubbleId?: string, intervalMs =
     };
     void fetchChanges();
     const iv = setInterval(fetchChanges, intervalMs);
-    return () => { cancelled = true; clearInterval(iv); };
+    const onVis = () => { if (document.visibilityState === 'visible') void fetchChanges(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [workspace, bubbleId, intervalMs]);
 
   return files;
