@@ -252,61 +252,159 @@ export function useVoice({ language = 'es-419', onPhrase, onWakeDetected }: Opti
     } catch { /* silently ignore — UI no se rompe por un chunk perdido */ }
   }
 
-  // Loop principal: captura PCM continuo a 16kHz, junta windows de 4s,
-  // encodea WAV y manda. AudioContext con destination conectado a un
-  // ScriptProcessor → buffer Float32. Sí, ScriptProcessor está deprecated;
-  // funciona en Electron Chromium y es 10x más simple que AudioWorklet
-  // (que requiere un módulo separado servido por http).
+  // Loop principal: VAD adaptativo a 16kHz mono. En vez de chunks fijos de 4s
+  // (que sumaban latencia + cortaban palabras en el borde), detectamos inicio
+  // y fin de frase por energía RMS comparada con el ruido ambiental.
+  //
+  // Pipeline por frame (~50ms = 800 samples a 16kHz):
+  //   1. Resampleo nativeRate → 16k (con media móvil 3-tap si nativeRate alto)
+  //   2. RMS del frame
+  //   3. En 'idle': mantenemos pre-roll de 300ms + EMA del noise floor.
+  //      Si RMS > umbral (3x noise floor, mínimo 0.01) → 'recording' y
+  //      prependemos el pre-roll.
+  //   4. En 'recording': acumulamos. Si hay 700ms continuos de silencio o
+  //      pasamos 8s → cerramos la frase, mandamos al backend, volvemos a idle.
   async function electronCaptureLoop(stream: MediaStream): Promise<void> {
-    const targetRate = 16000;
-    const windowSec = 4;
-    const targetSamples = targetRate * windowSec;
-    // Algunos navegadores (Electron Chromium) no soportan AudioContext con
-    // sampleRate forzado; capturamos al rate nativo y resampleamos manual.
+    const TARGET_RATE = 16000;
+    const FRAME_SAMPLES = 800;                    // 50ms a 16kHz
+    const PRE_ROLL_SAMPLES = TARGET_RATE * 0.3;   // 300ms
+    const SILENCE_FRAMES_END = 14;                // 14 * 50ms = 700ms
+    const MIN_RECORDING_SAMPLES = TARGET_RATE * 0.4; // descartar <400ms (ruido suelto)
+    const MAX_RECORDING_SAMPLES = TARGET_RATE * 8;   // tope de seguridad 8s
+    const NOISE_FLOOR_INIT = 0.005;
+    const ABSOLUTE_MIN_THRESHOLD = 0.01;
+    const TRIGGER_MULT = 3;
+
     const ctx = new AudioContext();
     audioCtxRef.current = ctx;
     const nativeRate = ctx.sampleRate;
     const source = ctx.createMediaStreamSource(stream);
-    const bufSize = 4096;
-    // ScriptProcessor: deprecated pero universal y suficiente.
-    const proc = ctx.createScriptProcessor(bufSize, 1, 1);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
 
-    let acc: number[] = [];
+    // Estado del VAD. Usamos un wrapper object porque TS hace control-flow
+    // narrowing de variables `let` y, como las mutaciones a `vad.state` viven
+    // dentro de un callback del ScriptProcessor, perdería el narrowing al
+    // leerlo después del while loop. Con un campo de objeto no narrowea.
+    type VadState = 'idle' | 'recording';
+    const vad: { state: VadState } = { state: 'idle' };
+    let noiseFloor = NOISE_FLOOR_INIT;
+    let preRoll: number[] = [];
+    let recBuf: number[] = [];
+    let silenceFrames = 0;
+    let frameAcc: number[] = []; // samples ya resampleados pero <800
+
+    // Resampleo: si nativeRate es muy alto (44.1k, 48k), un filtro 3-tap
+    // simple antes de decimar reduce aliasing notable. Para nativeRate cercano
+    // a 16k (raro pero posible) saltamos el filtro.
+    const ratio = nativeRate / TARGET_RATE;
+    const needsAntiAlias = ratio >= 2;
+
+    function processFrame(frame: number[]) {
+      // RMS del frame (energía).
+      let sumSq = 0;
+      for (let i = 0; i < frame.length; i++) {
+        const s = frame[i]!;
+        sumSq += s * s;
+      }
+      const rms = Math.sqrt(sumSq / frame.length);
+
+      // Cuando estamos en idle, actualizamos el noise floor con EMA suave —
+      // así el VAD se adapta a ambientes ruidosos (aire acondicionado, fan, etc.)
+      // sin necesidad de calibración manual.
+      if (vad.state === 'idle') {
+        noiseFloor = noiseFloor * 0.95 + rms * 0.05;
+      }
+      const threshold = Math.max(ABSOLUTE_MIN_THRESHOLD, noiseFloor * TRIGGER_MULT);
+
+      if (vad.state === 'idle') {
+        // Pre-roll: mantenemos los últimos 300ms para no perder el ataque
+        // de "Eco" cuando dispara el trigger.
+        preRoll.push(...frame);
+        if (preRoll.length > PRE_ROLL_SAMPLES) {
+          preRoll = preRoll.slice(-PRE_ROLL_SAMPLES);
+        }
+        if (rms > threshold) {
+          vad.state = 'recording';
+          recBuf = preRoll.concat(frame);
+          preRoll = [];
+          silenceFrames = 0;
+        }
+        return;
+      }
+
+      // recording
+      recBuf.push(...frame);
+      if (rms < threshold) silenceFrames++;
+      else silenceFrames = 0;
+
+      const tooLong = recBuf.length >= MAX_RECORDING_SAMPLES;
+      const endOfPhrase = silenceFrames >= SILENCE_FRAMES_END;
+
+      if (endOfPhrase || tooLong) {
+        // Cortamos los últimos 700ms de silencio (no aportan al STT).
+        const trimmed = endOfPhrase
+          ? recBuf.slice(0, Math.max(MIN_RECORDING_SAMPLES, recBuf.length - SILENCE_FRAMES_END * FRAME_SAMPLES))
+          : recBuf;
+        if (trimmed.length >= MIN_RECORDING_SAMPLES) {
+          const chunk = new Float32Array(trimmed);
+          const blob = encodeWav(chunk, TARGET_RATE);
+          void sendChunkForTranscription(blob);
+        }
+        // Reset
+        vad.state = 'idle';
+        recBuf = [];
+        silenceFrames = 0;
+        preRoll = [];
+      }
+    }
+
     proc.onaudioprocess = (ev) => {
       const ch = ev.inputBuffer.getChannelData(0);
-      // Resample on-the-fly nativeRate → 16kHz (decimación lineal simple).
-      const ratio = nativeRate / targetRate;
-      for (let i = 0; i < ch.length / ratio; i++) {
+
+      // Resampleo nativeRate → 16k con anti-alias simple (media móvil 3-tap)
+      // cuando hace falta. Eso suaviza altos antes de decimar.
+      const outLen = Math.floor(ch.length / ratio);
+      for (let i = 0; i < outLen; i++) {
         const src = i * ratio;
         const lo = Math.floor(src);
         const hi = Math.min(ch.length - 1, lo + 1);
         const frac = src - lo;
-        acc.push(ch[lo]! * (1 - frac) + ch[hi]! * frac);
+        let s = ch[lo]! * (1 - frac) + ch[hi]! * frac;
+        if (needsAntiAlias) {
+          // Promedio con vecinos para atenuar alias > 8kHz.
+          const a = ch[Math.max(0, lo - 1)] ?? s;
+          const b = ch[Math.min(ch.length - 1, lo + 1)] ?? s;
+          s = (a + 2 * s + b) * 0.25;
+        }
+        frameAcc.push(s);
       }
 
-      while (acc.length >= targetSamples) {
-        const chunk = new Float32Array(acc.slice(0, targetSamples));
-        acc = acc.slice(targetSamples);
-        const blob = encodeWav(chunk, targetRate);
-        void sendChunkForTranscription(blob);
+      while (frameAcc.length >= FRAME_SAMPLES) {
+        const frame = frameAcc.splice(0, FRAME_SAMPLES);
+        processFrame(frame);
       }
     };
 
     source.connect(proc);
-    // ScriptProcessor necesita estar conectado a destination para que dispare
-    // onaudioprocess. Si lo mandamos a un GainNode con gain=0, lo silenciamos
-    // (no se escucha la captura por las bocinas).
+    // ScriptProcessor necesita destination para disparar onaudioprocess.
+    // Lo mandamos a un GainNode con gain=0 (silencioso, no rebota por bocinas).
     const silentGain = ctx.createGain();
     silentGain.gain.value = 0;
     proc.connect(silentGain);
     silentGain.connect(ctx.destination);
 
-    // Espera hasta que nos pidan parar.
     while (electronLoopRef.current && wantedRef.current) {
       await new Promise((r) => setTimeout(r, 250));
     }
 
-    // Cleanup
+    // Si quedó una grabación abierta al detener, mandala (mejor algo que perderlo).
+    if (vad.state === 'recording' && recBuf.length >= MIN_RECORDING_SAMPLES) {
+      try {
+        const chunk = new Float32Array(recBuf);
+        void sendChunkForTranscription(encodeWav(chunk, TARGET_RATE));
+      } catch { /* noop */ }
+    }
+
     try { proc.disconnect(); } catch { /* noop */ }
     try { source.disconnect(); } catch { /* noop */ }
     try { silentGain.disconnect(); } catch { /* noop */ }
