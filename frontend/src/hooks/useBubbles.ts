@@ -97,7 +97,7 @@ export type UseBubblesResult = {
   bubbles: Bubble[];
   activeBubble: Bubble | null;
   activeBubbleId: string | null;
-  createBubble: (opts?: { title?: string; workspace?: string; focus?: boolean }) => Bubble;
+  createBubble: (opts?: { title?: string; workspace?: string; focus?: boolean; baseBranch?: string }) => Bubble;
   removeBubble: (id: string) => void;
   focusBubble: (id: string) => void;
   renameBubble: (id: string, title: string) => void;
@@ -137,12 +137,14 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     persist(bubbles, activeBubbleId);
   }, [bubbles, activeBubbleId]);
 
-  const createBubble = useCallback((opts?: { title?: string; workspace?: string; focus?: boolean }): Bubble => {
+  const createBubble = useCallback((opts?: { title?: string; workspace?: string; focus?: boolean; baseBranch?: string }): Bubble => {
     const accent = nextAccent(bubbles);
+    const workspace = opts?.workspace ?? defaultWorkspace;
+    const baseBranch = opts?.baseBranch?.trim() || undefined;
     const bubble: Bubble = {
       id: newId('b'),
       title: opts?.title?.trim() || translate('agent.default_title', loadLang(), { n: bubbles.length + 1 }),
-      workspace: opts?.workspace ?? defaultWorkspace,
+      workspace,
       sessionId: null,
       messages: [],
       status: 'idle',
@@ -151,9 +153,20 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
       pinned: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      baseBranch,
     };
     setBubbles((prev) => [...prev, bubble]);
     if (opts?.focus !== false) setActiveBubbleId(bubble.id);
+    // Si hay workspace, pre-creamos el worktree con la baseBranch elegida.
+    // Fire-and-forget — el worktree es idempotente y el backend cae al
+    // fallback si workspace no es repo o si la rama no existe.
+    if (workspace) {
+      void apiFetch('/worktree/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bubbleId: bubble.id, workspace, baseBranch }),
+      }).catch(() => { /* noop */ });
+    }
     return bubble;
   }, [bubbles, defaultWorkspace]);
 

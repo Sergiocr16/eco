@@ -51,11 +51,16 @@ function ensureRoot() {
  * a usar como cwd. Si el workspace no es repo git, devuelve el workspace
  * tal cual (sin aislamiento).
  */
-export function ensureWorktree(bubbleId: string, parentWorkspace: string): string {
+export function ensureWorktree(
+  bubbleId: string,
+  parentWorkspace: string,
+  baseBranch?: string,
+): string {
   if (!bubbleId || !parentWorkspace) return parentWorkspace;
   if (!isAllowedWorkspace(parentWorkspace)) return parentWorkspace;
 
-  // Cache hit
+  // Cache hit — si el worktree ya existe, ignoramos baseBranch (se decidió
+  // al crearlo y no podemos cambiar el punto de partida sin destruirlo).
   const cached = worktrees.get(bubbleId);
   if (cached && existsSync(cached)) return cached;
 
@@ -75,8 +80,18 @@ export function ensureWorktree(bubbleId: string, parentWorkspace: string): strin
   // Limpiamos worktrees huérfanos en el repo padre antes de crear uno nuevo.
   runGit(['worktree', 'prune'], parentWorkspace, 3_000);
 
-  // Crear worktree + rama nueva desde HEAD del repo padre.
-  let result = runGit(['worktree', 'add', '-b', branch, target], parentWorkspace);
+  // Validamos baseBranch contra inyección: solo permitimos chars típicos de
+  // nombres de rama git. Cualquier cosa rara → fallback a HEAD.
+  const safeBase = baseBranch && /^[a-zA-Z0-9._\-/]+$/.test(baseBranch)
+    ? baseBranch
+    : null;
+
+  // Crear worktree + rama nueva. Si hay baseBranch válido, partimos de ahí;
+  // sino, del HEAD del repo padre (comportamiento legacy).
+  const addArgs = safeBase
+    ? ['worktree', 'add', '-b', branch, target, safeBase]
+    : ['worktree', 'add', '-b', branch, target];
+  let result = runGit(addArgs, parentWorkspace);
   if (!result.ok) {
     // La rama ya puede existir (e.g., re-crear burbuja con mismo id).
     // Intentamos checkout sin -b.

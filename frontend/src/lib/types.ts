@@ -44,6 +44,10 @@ export type Bubble = {
   // True si hay un PTY (shell) abierto en el backend para esta burbuja. NO implica
   // que esté ejecutando un comando — el shell zsh queda vivo entre comandos.
   ptyOpen?: boolean;
+  // Rama base desde la cual se creó el worktree de esta burbuja. Solo aplica
+  // si el workspace es repo git. Sin valor → el worktree salió del HEAD del
+  // repo padre al momento de crear la burbuja (comportamiento legacy).
+  baseBranch?: string;
 };
 
 export type BubbleAction =

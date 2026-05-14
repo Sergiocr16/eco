@@ -7,7 +7,7 @@ import {
 import {
   IconSettings, IconKey, IconMic, IconFolder, IconShield, IconLayers,
   IconInfo, IconCheck, IconCpu, IconTerminal, IconWave, IconGlobe, IconAlert,
-  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, type IconProps,
+  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
 import { useTTS, type UnifiedVoice } from '@/hooks/useTTS';
@@ -940,38 +940,39 @@ function SectionFolders() {
           {ws.list.workspaces.map((p) => {
             const fromEnv = ws.list.fromEnv.includes(p);
             return (
-              <Glass key={p} radius={12} style={{
-                padding: 14, display: 'flex', alignItems: 'center', gap: 12,
-              }}>
-                <div style={{ color: t.accent }}><IconFolder size={18}/></div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>{p}</div>
-                  <div style={{ marginTop: 3, fontSize: 11, color: t.text2 }}>
-                    {fromEnv ? tr('settings.folders.from_env') : tr('settings.folders.from_app')}
+              <Glass key={p} radius={12} style={{ padding: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ color: t.accent }}><IconFolder size={18}/></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: t.fontMono, fontSize: 13, color: t.text0,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>{p}</div>
+                    <div style={{ marginTop: 3, fontSize: 11, color: t.text2 }}>
+                      {fromEnv ? tr('settings.folders.from_env') : tr('settings.folders.from_app')}
+                    </div>
                   </div>
+                  {fromEnv ? (
+                    <div style={{
+                      fontSize: 10.5, padding: '4px 8px', borderRadius: 999,
+                      background: t.bg3, color: t.text2,
+                      fontFamily: t.fontMono, letterSpacing: 0.4, textTransform: 'uppercase',
+                    }}>env</div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => ws.remove(p)}
+                      title={tr('settings.claude.apikey.remove_btn')}
+                      style={{
+                        width: 30, height: 30, borderRadius: 8, border: 0,
+                        background: 'transparent', color: t.text2, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                      <IconTrash size={14}/>
+                    </button>
+                  )}
                 </div>
-                {fromEnv ? (
-                  <div style={{
-                    fontSize: 10.5, padding: '4px 8px', borderRadius: 999,
-                    background: t.bg3, color: t.text2,
-                    fontFamily: t.fontMono, letterSpacing: 0.4, textTransform: 'uppercase',
-                  }}>env</div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => ws.remove(p)}
-                    title={tr('settings.claude.apikey.remove_btn')}
-                    style={{
-                      width: 30, height: 30, borderRadius: 8, border: 0,
-                      background: 'transparent', color: t.text2, cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                    <IconTrash size={14}/>
-                  </button>
-                )}
+                <WorktreeFavoritesField workspace={p}/>
               </Glass>
             );
           })}
@@ -980,6 +981,62 @@ function SectionFolders() {
       {ws.error && (
         <div style={{ marginTop: 14, fontSize: 12, color: t.err }}>{ws.error}</div>
       )}
+    </div>
+  );
+}
+
+// Editor inline para los branches base favoritos de un workspace. Se guarda
+// en localStorage `eco.worktree.favorites.<workspace>` como CSV. El picker
+// del NameAgentDialog lee desde acá.
+function WorktreeFavoritesField({ workspace }: { workspace: string }) {
+  const t = useTokens();
+  const key = `eco.worktree.favorites.${workspace}`;
+  const [draft, setDraft] = useState<string>(() => {
+    try { return window.localStorage.getItem(key) ?? ''; } catch { return ''; }
+  });
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  function save(v: string) {
+    setDraft(v);
+    try {
+      if (v.trim()) window.localStorage.setItem(key, v.trim());
+      else window.localStorage.removeItem(key);
+    } catch { /* noop */ }
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1200);
+  }
+
+  return (
+    <div style={{
+      marginTop: 10, paddingTop: 10,
+      borderTop: `1px dashed ${t.glassBorder}`,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        fontSize: 11, color: t.text2, marginBottom: 6,
+      }}>
+        <IconBranch size={11}/>
+        <span>Branches base favoritos (separados por coma)</span>
+        {savedFlash && <span style={{ color: t.ok, fontSize: 10.5 }}>· guardado</span>}
+      </div>
+      <input
+        value={draft}
+        onChange={(e) => save(e.target.value)}
+        placeholder="main, develop, staging"
+        spellCheck={false}
+        autoCorrect="off"
+        style={{
+          width: '100%', boxSizing: 'border-box',
+          background: t.bg2, border: `1px solid ${t.glassBorder}`,
+          borderRadius: 8, padding: '7px 10px',
+          fontFamily: t.fontMono, fontSize: 12, color: t.text0,
+          outline: 'none',
+        }}
+      />
+      <div style={{ marginTop: 4, fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
+        Al crear una burbuja con este workspace, podés elegir desde qué rama base
+        crear el worktree. Si está vacío, se usa el HEAD del repo padre.
+      </div>
     </div>
   );
 }

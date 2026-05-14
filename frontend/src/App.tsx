@@ -170,7 +170,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       onError: () => { /* ya manejado en socket.error */ },
       onClientAction: (sourceBubbleId, action) => {
         if (action.kind === 'open_bubble') {
-          bubbles.createBubble({ title: action.title, focus: action.focus });
+          bubbles.createBubble({ title: action.title, focus: action.focus, baseBranch: defaultBaseBranchForWorkspace() });
         } else if (action.kind === 'rename_bubble') {
           bubbles.renameBubble(sourceBubbleId, action.title);
         } else if (action.kind === 'close_bubble') {
@@ -242,7 +242,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       case 'create_bubble':
       case 'open_or_create': {
         const title = action.kind === 'open_or_create' ? action.title : action.title;
-        const fresh = bubbles.createBubble({ title, focus: true });
+        const fresh = bubbles.createBubble({ title, focus: true, baseBranch: defaultBaseBranchForWorkspace() });
         handleOpenAgent(fresh.id);
         return;
       }
@@ -561,11 +561,26 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
 
   function handleDashboardSend(text: string) {
     if (!bubbles.activeBubble) {
-      const fresh = bubbles.createBubble({ focus: true });
+      const fresh = bubbles.createBubble({ focus: true, baseBranch: defaultBaseBranchForWorkspace() });
       sendTo(fresh.id, text);
     } else {
       sendTo(bubbles.activeBubble.id, text);
     }
+  }
+
+  // Helper compartido: devuelve la rama base por defecto para crear un
+  // worktree, basada en el workspace default + favoritos del user. Sin
+  // workspace default o sin favoritos → undefined (backend cae a HEAD).
+  function defaultBaseBranchForWorkspace(): string | undefined {
+    try {
+      const ws = window.localStorage.getItem('eco.workspace.default') || '';
+      if (!ws) return undefined;
+      const last = window.localStorage.getItem(`eco.worktree.last_branch.${ws}`);
+      if (last) return last;
+      const favRaw = window.localStorage.getItem(`eco.worktree.favorites.${ws}`) || '';
+      const first = favRaw.split(',').map((s) => s.trim()).filter(Boolean)[0];
+      return first || undefined;
+    } catch { return undefined; }
   }
 
   function handleAgentDetailSend(text: string) {
@@ -573,16 +588,24 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     sendTo(detailBubbleId, text);
   }
 
-  function handleCreateAgent(title?: string) {
-    const defaultWs = (typeof window !== 'undefined' && window.localStorage?.getItem('eco.workspace.default')) || '';
+  function handleCreateAgent(title?: string, workspace?: string, baseBranch?: string) {
+    // El dialog ahora pasa workspace explícito (selector de carpeta).
+    // Si no se pasó (ej. flujo de voz), caemos al default del usuario.
+    const ws = workspace
+      || (typeof window !== 'undefined' && window.localStorage?.getItem('eco.workspace.default'))
+      || '';
+    // Si el dialog no pasó baseBranch, caemos al default del workspace
+    // (última elegida o primer favorito).
+    const finalBase = baseBranch ?? defaultBaseBranchForWorkspace();
     const fresh = bubbles.createBubble({
       title,
-      workspace: defaultWs || '',
+      workspace: ws,
       focus: true,
+      baseBranch: finalBase,
     });
     handleOpenAgent(fresh.id);
-    // Si no hay default seteado, abrir picker para elegir
-    if (!defaultWs) setWsPickerForBubble(fresh.id);
+    // Si no hay workspace todavía, abrir picker para elegir
+    if (!ws) setWsPickerForBubble(fresh.id);
   }
 
   const activeCount = bubbles.bubbles.filter((b) =>

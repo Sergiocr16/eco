@@ -58,6 +58,7 @@ export default defineConfig({
       '/voice': { target: HTTP_TARGET, changeOrigin: false },
       '/dev': { target: HTTP_TARGET, changeOrigin: false },
       '/proxy': { target: HTTP_TARGET, changeOrigin: false },
+      '/worktree': { target: HTTP_TARGET, changeOrigin: false },
     },
   },
 });

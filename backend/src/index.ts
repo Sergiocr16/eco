@@ -559,6 +559,27 @@ app.get('/git/branches', (req: Request, res: Response) => {
   res.json(gitOps.listBranches(dir));
 });
 
+// Crear el worktree de una burbuja con un baseBranch opcional. Idempotente:
+// si ya existe el worktree para ese bubbleId, no toca nada. Usado por la
+// UI cuando crea una burbuja con workspace git, para que el user pueda
+// elegir desde qué rama parte el worktree (típicamente "main" o feature
+// branches favoritos configurados por workspace).
+const WorktreeCreateSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  workspace: z.string().min(1).max(4096),
+  baseBranch: z.string().min(1).max(256).optional(),
+});
+app.post('/worktree/create', (req: Request, res: Response) => {
+  const parsed = WorktreeCreateSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const { bubbleId, workspace, baseBranch } = parsed.data;
+  if (!isAllowedWorkspace(workspace)) {
+    return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
+  }
+  const path = ensureWorktree(bubbleId, workspace, baseBranch);
+  res.json({ ok: true, path, baseBranch: baseBranch ?? null });
+});
+
 app.post('/git/checkout', (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;

@@ -1428,11 +1428,18 @@ function SkillsCard({ bubbleId, workspace }: { bubbleId: string; workspace: stri
           {favSkills.map((s) => {
             const running = busy === s.name;
             return (
-              <button
+              // <div role="button"> en lugar de <button>: el chip tiene otro
+              // <button> adentro (×) y los browsers no permiten button anidado.
+              <div
                 key={skillIdOf(s)}
-                type="button"
-                onClick={() => void run(s)}
-                disabled={!!busy}
+                role="button"
+                tabIndex={busy ? -1 : 0}
+                aria-disabled={!!busy}
+                onClick={() => { if (!busy) void run(s); }}
+                onKeyDown={(e) => {
+                  if (busy) return;
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void run(s); }
+                }}
                 title={`Ejecuta /${s.name} en la terminal`}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
@@ -1461,7 +1468,7 @@ function SkillsCard({ bubbleId, workspace }: { bubbleId: string; workspace: stri
                     background: 'transparent', color: t.text3, cursor: 'pointer',
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   }}>×</button>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -2355,6 +2362,23 @@ function AgentSidebar({
             collapsed={sectionCollapse.isCollapsed('git')}
             onToggle={() => sectionCollapse.toggle('git')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {bubble.baseBranch && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 10px', borderRadius: 8,
+                  background: t.bg2, border: `1px solid ${t.glassBorder}`,
+                  fontSize: 11, color: t.text2,
+                }}
+                title={`El worktree de esta burbuja salió de la rama "${bubble.baseBranch}" del repo padre.`}>
+                  <IconBranch size={11}/>
+                  <span>worktree salió de</span>
+                  <code style={{
+                    fontFamily: t.fontMono, fontSize: 11, color: t.text0,
+                    padding: '1px 6px', borderRadius: 4,
+                    background: t.bg3,
+                  }}>{bubble.baseBranch}</code>
+                </div>
+              )}
               <CurrentPrBanner workspace={bubble.workspace} bubbleId={bubble.id}/>
               <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
               <PullRequestsList workspace={bubble.workspace} bubbleId={bubble.id}/>

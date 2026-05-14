@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { apiFetch } from '@/lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
@@ -7,7 +7,7 @@ import {
 } from '@/design/primitives';
 import {
   IconWave, IconMic, IconSend, IconPlus, IconGrid, IconGraph, IconExt, IconColumns,
-  IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal,
+  IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck,
   IconClock, IconAlert, IconZap, IconCpu, IconEdit, IconTrash,
   IconGlobe, IconLayers, IconShield, IconFile, IconCommand, type IconProps,
 } from '@/design/icons';
@@ -30,7 +30,7 @@ type Props = {
   onSend: (text: string) => void;
   onMicToggle: () => void;
   onOpenAgent: (id: string) => void;
-  onCreateAgent: (title?: string) => void;
+  onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
   onFocus: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onRemove: (id: string) => void;
@@ -142,7 +142,7 @@ export function Dashboard(props: Props) {
               <IconBtn icon={IconColumns} size={28} active={view === 'kanban'} onClick={() => setView('kanban')}/>
               <IconBtn icon={IconGraph} size={28} active={view === 'graph'} onClick={() => setView('graph')}/>
             </div>
-            <CreateAgentButton onCreate={onCreateAgent}/>
+            <CreateAgentButton onCreate={onCreateAgent} workspaces={availableWorkspaces}/>
           </div>
         }>{tr('dash.section.agents')}</SectionLabel>
 
@@ -184,7 +184,7 @@ export function Dashboard(props: Props) {
               transition={{ type: 'spring', stiffness: 280, damping: 26, delay: 0.1 }}
               whileHover={{ y: -2 }}
             >
-              <NewAgentCard onCreate={onCreateAgent}/>
+              <NewAgentCard onCreate={onCreateAgent} workspaces={availableWorkspaces}/>
             </motion.div>
           </div>
         ) : view === 'kanban' ? (
@@ -192,6 +192,7 @@ export function Dashboard(props: Props) {
             bubbles={bubbles}
             onOpenAgent={onOpenAgent}
             onCreateAgent={onCreateAgent}
+            workspaces={availableWorkspaces}
           />
         ) : (
           <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
@@ -763,33 +764,107 @@ function AgentBubble({
   );
 }
 
+// Best-effort: detectamos el home del user a partir de un path conocido
+// para mostrar los workspaces como `~/Documents/...` en lugar del absoluto.
+// Cacheado para no recalcular en cada render.
+let _cachedHome = '';
+function getHome(): string {
+  if (_cachedHome) return _cachedHome;
+  try {
+    // Buscamos un workspace en localStorage y nos quedamos con el prefijo
+    // común estándar de macOS: /Users/<name>/.
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (!k) continue;
+      const v = window.localStorage.getItem(k) || '';
+      const m = v.match(/^\/Users\/[^/]+/);
+      if (m) { _cachedHome = m[0]; return _cachedHome; }
+    }
+  } catch { /* noop */ }
+  return '';
+}
+
 // Hook + modal compartido para naming de agente nuevo. Lo usan el botón
 // del header del Dashboard y la columna idle del Kanban.
-function useNameAgentDialog(onCreate: (title?: string) => void) {
+function useNameAgentDialog(
+  onCreate: (title?: string, workspace?: string, baseBranch?: string) => void,
+  workspaces: string[],
+) {
   const [open, setOpen] = useState(false);
-  const dialog = <NameAgentDialog open={open} onClose={() => setOpen(false)} onCreate={onCreate}/>;
+  const dialog = <NameAgentDialog open={open} onClose={() => setOpen(false)} onCreate={onCreate} workspaces={workspaces}/>;
   return { open: () => setOpen(true), dialog };
 }
 
 function NameAgentDialog({
-  open, onClose, onCreate,
+  open, onClose, onCreate, workspaces,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (title?: string) => void;
+  onCreate: (title?: string, workspace?: string, baseBranch?: string) => void;
+  workspaces: string[];
 }) {
   const t = useTokens();
   const tr = useT();
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Flujo nuevo: PRIMERO elegís workspace, DESPUÉS el branch. Los branches
+  // listados son los favoritos del workspace seleccionado (configurables en
+  // Settings → Carpetas). Si no hay favoritos para ese ws, solo "otra…".
+  const defaultWs = typeof window !== 'undefined'
+    ? (window.localStorage?.getItem('eco.workspace.default') || '')
+    : '';
+  const [selectedWs, setSelectedWs] = useState<string>(() => {
+    if (defaultWs && workspaces.includes(defaultWs)) return defaultWs;
+    return workspaces[0] || '';
+  });
+  const favorites = useMemo<string[]>(() => {
+    if (!selectedWs) return [];
+    try {
+      const raw = window.localStorage.getItem(`eco.worktree.favorites.${selectedWs}`) || '';
+      return raw.split(',').map((s) => s.trim()).filter(Boolean);
+    } catch { return []; }
+  }, [selectedWs]);
+  const lastChosen = (() => {
+    if (!selectedWs) return '';
+    try { return window.localStorage.getItem(`eco.worktree.last_branch.${selectedWs}`) || ''; }
+    catch { return ''; }
+  })();
+  const [baseBranch, setBaseBranch] = useState<string>(() => lastChosen || favorites[0] || '');
+  // Modo "otra...": el user typea una rama custom no listada.
+  const [customMode, setCustomMode] = useState(false);
+  const [customDraft, setCustomDraft] = useState('');
+
   useEffect(() => {
     if (open) {
       setDraft('');
+      // Re-evaluamos workspace al abrir (puede haber cambiado el default).
+      const ws = (defaultWs && workspaces.includes(defaultWs)) ? defaultWs : (workspaces[0] || '');
+      setSelectedWs(ws);
+      setCustomMode(false);
+      setCustomDraft('');
       const id = window.setTimeout(() => inputRef.current?.focus(), 60);
       return () => window.clearTimeout(id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Cuando cambia el workspace seleccionado, reset al baseBranch desde
+  // los favoritos / last_chosen del NUEVO ws.
+  useEffect(() => {
+    if (!selectedWs) { setBaseBranch(''); return; }
+    let last = '';
+    try { last = window.localStorage.getItem(`eco.worktree.last_branch.${selectedWs}`) || ''; }
+    catch { /* noop */ }
+    let favs: string[] = [];
+    try {
+      const raw = window.localStorage.getItem(`eco.worktree.favorites.${selectedWs}`) || '';
+      favs = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    } catch { /* noop */ }
+    setBaseBranch(last || favs[0] || '');
+    setCustomMode(false);
+    setCustomDraft('');
+  }, [selectedWs]);
 
   useEffect(() => {
     if (!open) return;
@@ -802,8 +877,13 @@ function NameAgentDialog({
 
   function submit() {
     const v = draft.trim();
+    const branch = customMode ? customDraft.trim() : baseBranch.trim();
+    if (branch && selectedWs) {
+      try { window.localStorage.setItem(`eco.worktree.last_branch.${selectedWs}`, branch); }
+      catch { /* noop */ }
+    }
     onClose();
-    onCreate(v || undefined);
+    onCreate(v || undefined, selectedWs || undefined, branch || undefined);
   }
 
   return (
@@ -857,6 +937,118 @@ function NameAgentDialog({
             outline: 'none',
           }}
         />
+        {/* Selector de workspace (carpeta). Filas verticales con el path
+            completo + el nombre de la carpeta resaltado. Solo si hay más de
+            un workspace disponible. */}
+        {workspaces.length > 1 && (
+          <div>
+            <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
+              Carpeta
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {workspaces.map((ws) => {
+                const active = selectedWs === ws;
+                const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
+                const display = ws.startsWith(getHome())
+                  ? '~' + ws.slice(getHome().length)
+                  : ws;
+                return (
+                  <button
+                    key={ws}
+                    type="button"
+                    onClick={() => setSelectedWs(ws)}
+                    title={ws}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px', borderRadius: 8,
+                      border: `1px solid ${active ? t.accent : t.glassBorder}`,
+                      background: active ? t.accentFaint : t.bg2,
+                      color: active ? t.accent : t.text1,
+                      cursor: 'pointer', textAlign: 'left',
+                      transition: 'all 140ms',
+                    }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                      background: active ? t.accent : t.bg3,
+                      color: active ? t.accentOn : t.text2,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <IconFolder size={11}/>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+                        color: active ? t.accent : t.text0,
+                      }}>{name}</div>
+                      <div style={{
+                        fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                        marginTop: 1,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>{display}</div>
+                    </div>
+                    {active && <IconCheck size={13}/>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {/* Selector de rama base — siempre visible cuando hay workspace
+            seleccionado. Favoritos vienen de Settings → Carpetas → ws actual.
+            Si no hay favoritos para este ws, mostramos solo "otra…". */}
+        <div>
+          <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
+            Rama base del worktree {favorites.length === 0 && (
+              <span style={{ color: t.text3, fontWeight: 400 }}>
+                · sin favoritos para esta carpeta
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {favorites.map((b: string) => {
+                const active = !customMode && baseBranch === b;
+                return (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => { setCustomMode(false); setBaseBranch(b); }}
+                    style={{
+                      padding: '5px 10px', borderRadius: 999,
+                      border: `1px solid ${active ? t.accent : t.glassBorder}`,
+                      background: active ? t.accentFaint : t.bg2,
+                      color: active ? t.accent : t.text1,
+                      fontFamily: t.fontMono, fontSize: 11, cursor: 'pointer',
+                    }}>{b}</button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setCustomMode(true)}
+                style={{
+                  padding: '5px 10px', borderRadius: 999,
+                  border: `1px solid ${customMode ? t.accent : t.glassBorder}`,
+                  background: customMode ? t.accentFaint : t.bg2,
+                  color: customMode ? t.accent : t.text2,
+                  fontFamily: t.fontSans, fontSize: 11, cursor: 'pointer',
+                }}>otra…</button>
+            </div>
+          {customMode && (
+            <input
+              value={customDraft}
+              onChange={(e) => setCustomDraft(e.target.value)}
+              placeholder="nombre de la rama"
+              spellCheck={false}
+              autoCorrect="off"
+              style={{
+                marginTop: 6, width: '100%', boxSizing: 'border-box',
+                background: t.bg2, border: `1px solid ${t.glassBorder}`,
+                borderRadius: 8, padding: '7px 10px',
+                fontFamily: t.fontMono, fontSize: 12, color: t.text0,
+                outline: 'none',
+              }}
+            />
+          )}
+        </div>
         <div style={{ fontSize: 10.5, color: t.text3 }}>
           {tr('dash.bubble.enter_hint')}
         </div>
@@ -890,10 +1082,15 @@ function NameAgentDialog({
 }
 
 // Botón "Nuevo agente" (header del Dashboard) — pill prominent.
-function CreateAgentButton({ onCreate }: { onCreate: (title?: string) => void }) {
+function CreateAgentButton({
+  onCreate, workspaces,
+}: {
+  onCreate: (title?: string, workspace?: string, baseBranch?: string) => void;
+  workspaces: string[];
+}) {
   const t = useTokens();
   const tr = useT();
-  const { open, dialog } = useNameAgentDialog(onCreate);
+  const { open, dialog } = useNameAgentDialog(onCreate, workspaces);
   return (
     <>
       <button
@@ -916,7 +1113,12 @@ function CreateAgentButton({ onCreate }: { onCreate: (title?: string) => void })
   );
 }
 
-function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
+function NewAgentCard({
+  onCreate, workspaces,
+}: {
+  onCreate: (title?: string, workspace?: string, baseBranch?: string) => void;
+  workspaces: string[];
+}) {
   const t = useTokens();
   const tr = useT();
   const [h, setH] = useState(false);
@@ -924,13 +1126,60 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Mismo flujo que el dialog del header: workspace primero, branch después
+  // basado en los favoritos del workspace.
+  const defaultWs = typeof window !== 'undefined'
+    ? (window.localStorage?.getItem('eco.workspace.default') || '')
+    : '';
+  const [selectedWs, setSelectedWs] = useState<string>(() => {
+    if (defaultWs && workspaces.includes(defaultWs)) return defaultWs;
+    return workspaces[0] || '';
+  });
+  const favorites = useMemo<string[]>(() => {
+    if (!selectedWs) return [];
+    try {
+      const raw = window.localStorage.getItem(`eco.worktree.favorites.${selectedWs}`) || '';
+      return raw.split(',').map((s) => s.trim()).filter(Boolean);
+    } catch { return []; }
+  }, [selectedWs]);
+  const [baseBranch, setBaseBranch] = useState<string>('');
+  const [customMode, setCustomMode] = useState(false);
+  const [customDraft, setCustomDraft] = useState('');
+
   useEffect(() => {
-    if (naming) inputRef.current?.focus();
+    if (naming) {
+      inputRef.current?.focus();
+      const ws = (defaultWs && workspaces.includes(defaultWs)) ? defaultWs : (workspaces[0] || '');
+      setSelectedWs(ws);
+      setCustomMode(false);
+      setCustomDraft('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [naming]);
+
+  useEffect(() => {
+    if (!selectedWs) { setBaseBranch(''); return; }
+    let last = '';
+    try { last = window.localStorage.getItem(`eco.worktree.last_branch.${selectedWs}`) || ''; }
+    catch { /* noop */ }
+    let favs: string[] = [];
+    try {
+      const raw = window.localStorage.getItem(`eco.worktree.favorites.${selectedWs}`) || '';
+      favs = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    } catch { /* noop */ }
+    setBaseBranch(last || favs[0] || '');
+    setCustomMode(false);
+    setCustomDraft('');
+  }, [selectedWs]);
 
   function submit() {
     const v = draft.trim();
-    onCreate(v || undefined);
+    const branch = customMode ? customDraft.trim() : baseBranch.trim();
+    if (branch && selectedWs) {
+      try { window.localStorage.setItem(`eco.worktree.last_branch.${selectedWs}`, branch); }
+      catch { /* noop */ }
+    }
+    onCreate(v || undefined, selectedWs || undefined, branch || undefined);
     setDraft('');
     setNaming(false);
   }
@@ -972,6 +1221,114 @@ function NewAgentCard({ onCreate }: { onCreate: (title?: string) => void }) {
             outline: 'none',
           }}
         />
+        {/* Selector de workspace — filas con path completo. */}
+        {workspaces.length > 1 && (
+          <div>
+            <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
+              Carpeta
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {workspaces.map((ws) => {
+                const active = selectedWs === ws;
+                const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
+                const display = ws.startsWith(getHome())
+                  ? '~' + ws.slice(getHome().length)
+                  : ws;
+                return (
+                  <button
+                    key={ws}
+                    type="button"
+                    onClick={() => setSelectedWs(ws)}
+                    title={ws}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px', borderRadius: 8,
+                      border: `1px solid ${active ? t.accent : t.glassBorder}`,
+                      background: active ? t.accentFaint : t.bg2,
+                      color: active ? t.accent : t.text1,
+                      cursor: 'pointer', textAlign: 'left',
+                      transition: 'all 140ms',
+                    }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                      background: active ? t.accent : t.bg3,
+                      color: active ? t.accentOn : t.text2,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <IconFolder size={11}/>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+                        color: active ? t.accent : t.text0,
+                      }}>{name}</div>
+                      <div style={{
+                        fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                        marginTop: 1,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>{display}</div>
+                    </div>
+                    {active && <IconCheck size={13}/>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {/* Picker de rama base — favoritos del workspace seleccionado. */}
+        <div>
+          <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
+            Rama base del worktree {favorites.length === 0 && (
+              <span style={{ color: t.text3, fontWeight: 400 }}>
+                · sin favoritos para esta carpeta
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {favorites.map((b: string) => {
+              const active = !customMode && baseBranch === b;
+              return (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => { setCustomMode(false); setBaseBranch(b); }}
+                  style={{
+                    padding: '5px 10px', borderRadius: 999,
+                    border: `1px solid ${active ? t.accent : t.glassBorder}`,
+                    background: active ? t.accentFaint : t.bg2,
+                    color: active ? t.accent : t.text1,
+                    fontFamily: t.fontMono, fontSize: 11, cursor: 'pointer',
+                  }}>{b}</button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setCustomMode(true)}
+              style={{
+                padding: '5px 10px', borderRadius: 999,
+                border: `1px solid ${customMode ? t.accent : t.glassBorder}`,
+                background: customMode ? t.accentFaint : t.bg2,
+                color: customMode ? t.accent : t.text2,
+                fontFamily: t.fontSans, fontSize: 11, cursor: 'pointer',
+              }}>otra…</button>
+          </div>
+          {customMode && (
+            <input
+              value={customDraft}
+              onChange={(e) => setCustomDraft(e.target.value)}
+              placeholder="nombre de la rama"
+              spellCheck={false}
+              autoCorrect="off"
+              style={{
+                marginTop: 6, width: '100%', boxSizing: 'border-box',
+                background: t.bg2, border: `1px solid ${t.glassBorder}`,
+                borderRadius: 8, padding: '7px 10px',
+                fontFamily: t.fontMono, fontSize: 12, color: t.text0,
+                outline: 'none',
+              }}
+            />
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
           <button
             type="button"
@@ -1140,15 +1497,16 @@ function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
 // Columnas por estado. Cada agente es una card chiquita arrastrable visualmente
 // (drag real es feature aparte — por ahora click para abrir).
 function KanbanView({
-  bubbles, onOpenAgent, onCreateAgent,
+  bubbles, onOpenAgent, onCreateAgent, workspaces,
 }: {
   bubbles: Bubble[];
   onOpenAgent: (id: string) => void;
-  onCreateAgent: (title?: string) => void;
+  onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
+  workspaces: string[];
 }) {
   const t = useTokens();
   const tr = useT();
-  const { open: openNameDialog, dialog: nameDialog } = useNameAgentDialog(onCreateAgent);
+  const { open: openNameDialog, dialog: nameDialog } = useNameAgentDialog(onCreateAgent, workspaces);
 
   type ColumnDef = {
     id: string;
