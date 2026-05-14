@@ -148,7 +148,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     setSendingToClaude(false);
     if (r.ok) {
       setSendMsg('Pegada');
-      ecoEmit('eco:switch_tab', { tab: 'terminal' });
+      ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId });
       setTimeout(() => setSendMsg(null), 1800);
     } else {
       setSendMsg(`Error: ${r.error}`);

@@ -17,6 +17,7 @@ import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { apiFetch } from '@/lib/api';
 import { useApiKey } from '@/hooks/useApiKey';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
+import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useI18n, useT } from '@/hooks/useI18n';
 
 type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appearance' | 'integrations' | 'about';
@@ -1246,6 +1247,116 @@ function SectionAppearance() {
             </button>
           );
         })}
+      </div>
+
+      <SectionLabel>Categorías de agentes</SectionLabel>
+      <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
+        Etiquetá tus agentes con categorías. El color de la categoría tiñe el
+        nodo del agente en la vista de grafo del Dashboard.
+      </div>
+      <CategoryManager/>
+    </div>
+  );
+}
+
+// Editor de categorías — lista con nombre + color picker + borrar, y un
+// botón para agregar. Persiste vía useCategories (localStorage compartido).
+function CategoryManager() {
+  const t = useTokens();
+  const { categories, add, update, remove } = useCategories();
+  const [draftName, setDraftName] = useState('');
+
+  return (
+    <div style={{ marginBottom: 22, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {categories.length === 0 && (
+        <div style={{
+          padding: '10px 12px', borderRadius: 10,
+          background: t.bg2, border: `1px dashed ${t.glassBorder}`,
+          fontSize: 11.5, color: t.text2,
+        }}>
+          Sin categorías. Agregá una abajo (ej. «Producción», «Bugs», «Spike»).
+        </div>
+      )}
+      {categories.map((c) => (
+        <div key={c.id} style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 10px', borderRadius: 10,
+          background: t.bg2, border: `1px solid ${t.glassBorder}`,
+        }}>
+          {/* Swatches de color */}
+          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+            {CATEGORY_PALETTE.map((col) => (
+              <button
+                key={col}
+                type="button"
+                onClick={() => update(c.id, { color: col })}
+                title={col}
+                style={{
+                  width: 16, height: 16, borderRadius: '50%',
+                  background: col, cursor: 'pointer', padding: 0,
+                  border: c.color === col ? `2px solid ${t.text0}` : `2px solid transparent`,
+                  boxShadow: c.color === col ? `0 0 0 1px ${col}` : 'none',
+                }}
+              />
+            ))}
+          </div>
+          <input
+            value={c.name}
+            onChange={(e) => update(c.id, { name: e.target.value })}
+            placeholder="Nombre de la categoría"
+            style={{
+              flex: 1, minWidth: 0, boxSizing: 'border-box',
+              background: t.bg3, border: `1px solid ${t.glassBorder}`,
+              borderRadius: 8, padding: '5px 9px',
+              fontFamily: t.fontSans, fontSize: 12.5, color: t.text0,
+              outline: 'none',
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => remove(c.id)}
+            title="Eliminar categoría"
+            style={{
+              width: 26, height: 26, borderRadius: 7, border: 0,
+              background: 'transparent', color: t.text3, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = t.err; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = t.text3; }}>
+            <IconTrash size={13}/>
+          </button>
+        </div>
+      ))}
+      {/* Fila para agregar */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && draftName.trim()) {
+              add(draftName.trim(), CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length]!);
+              setDraftName('');
+            }
+          }}
+          placeholder="Nueva categoría…"
+          style={{
+            flex: 1, boxSizing: 'border-box',
+            background: t.bg2, border: `1px solid ${t.glassBorder}`,
+            borderRadius: 8, padding: '7px 10px',
+            fontFamily: t.fontSans, fontSize: 12.5, color: t.text0,
+            outline: 'none',
+          }}
+        />
+        <Btn
+          kind="primary" size="sm"
+          disabled={!draftName.trim()}
+          onClick={() => {
+            add(draftName.trim(), CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length]!);
+            setDraftName('');
+          }}>
+          Agregar
+        </Btn>
       </div>
     </div>
   );

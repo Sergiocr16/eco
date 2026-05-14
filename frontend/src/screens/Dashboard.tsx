@@ -8,7 +8,7 @@ import {
 import {
   IconWave, IconMic, IconSend, IconGrid, IconGraph, IconExt, IconColumns,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck, IconAgent,
-  IconClock, IconAlert, IconZap, IconCpu, IconTrash,
+  IconClock, IconAlert, IconZap, IconCpu, IconTrash, IconX,
   IconGlobe, IconLayers, IconShield, IconFile, IconCommand, type IconProps,
 } from '@/design/icons';
 import type { Bubble, VoiceState } from '@/lib/types';
@@ -18,6 +18,7 @@ import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useProfile } from '@/hooks/useProfile';
 import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
+import { useCategories, getCategoryById } from '@/hooks/useCategories';
 import { useBubbleHasFilesMap } from '@/hooks/useGitChanges';
 
 type Props = {
@@ -35,6 +36,7 @@ type Props = {
   onRename: (id: string, title: string) => void;
   onRemove: (id: string) => void;
   onChangeWorkspace: (id: string, workspace: string) => void;
+  onSetCategory: (id: string, categoryId: string | undefined) => void;
   availableWorkspaces: string[];
   voiceError?: string | null;
 };
@@ -42,7 +44,7 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles, activeBubbleId, voiceState, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, availableWorkspaces, wakeActive } = props;
+  const { bubbles, activeBubbleId, voiceState, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onSetCategory, availableWorkspaces, wakeActive } = props;
   const { username } = useProfile();
   // onSend / interimText / voiceError siguen llegando por contrato pero ya
   // no se usan en el Dashboard tras remover la CommandBar — el input vive
@@ -173,6 +175,7 @@ export function Dashboard(props: Props) {
                     onRename={(title) => onRename(b.id, title)}
                     onRemove={() => onRemove(b.id)}
                     onChangeWorkspace={(ws) => onChangeWorkspace(b.id, ws)}
+                    onSetCategory={(catId) => onSetCategory(b.id, catId)}
                   />
                 </motion.div>
               ))}
@@ -605,7 +608,7 @@ function VoiceOrb({ state, onClick }: { state: VoiceState; onClick: () => void }
 }
 
 function AgentBubble({
-  bubble, workspaces, onClick, onRename, onRemove, onChangeWorkspace,
+  bubble, workspaces, onClick, onRename, onRemove, onChangeWorkspace, onSetCategory,
 }: {
   bubble: Bubble;
   workspaces: string[];
@@ -613,6 +616,7 @@ function AgentBubble({
   onRename: (title: string) => void;
   onRemove: () => void;
   onChangeWorkspace: (ws: string) => void;
+  onSetCategory: (categoryId: string | undefined) => void;
 }) {
   const t = useTokens();
   const [hover, setHover] = useState(false);
@@ -623,6 +627,8 @@ function AgentBubble({
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
   const busy = useBubbleBusy(bubble.id);
+  const { byId: categoryById } = useCategories();
+  const category = categoryById(bubble.categoryId);
   const STATE_LABELS_I18N: Record<AgentState, string> = {
     idle: tr('state.idle'),
     pending: tr('state.pending'),
@@ -724,6 +730,8 @@ function AgentBubble({
               onClose={() => setMenuOpen(false)}
               onRename={startRename}
               onRemove={(e) => { e.stopPropagation(); onRemove(); setMenuOpen(false); }}
+              currentCategoryId={bubble.categoryId}
+              onSetCategory={(catId) => { onSetCategory(catId); setMenuOpen(false); }}
             />
           )}
         </div>
@@ -734,6 +742,22 @@ function AgentBubble({
         <span style={{ fontSize: 11.5, color: busy ? t.ok : sColor, fontWeight: 500 }}>
           {busy ? tr('state.executing') : (STATE_LABELS_I18N[state] || tr('state.idle'))}
         </span>
+        {/* Chip de categoría — solo si la burbuja tiene una asignada. */}
+        {category && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            marginLeft: 'auto',
+            padding: '1px 7px', borderRadius: 999,
+            background: `color-mix(in oklch, ${category.color} 16%, transparent)`,
+            border: `1px solid color-mix(in oklch, ${category.color} 45%, transparent)`,
+            fontSize: 10, fontWeight: 500, color: category.color,
+            whiteSpace: 'nowrap', maxWidth: 110,
+            overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: category.color, flexShrink: 0 }}/>
+            {category.name}
+          </span>
+        )}
       </div>
 
       <div style={{
@@ -1450,14 +1474,17 @@ function WorkspaceChip({
 }
 
 function BubbleMenu({
-  onClose, onRename, onRemove,
+  onClose, onRename, onRemove, currentCategoryId, onSetCategory,
 }: {
   onClose: () => void;
   onRename: (e: React.MouseEvent) => void;
   onRemove: (e: React.MouseEvent) => void;
+  currentCategoryId?: string;
+  onSetCategory: (categoryId: string | undefined) => void;
 }) {
   const t = useTokens();
   const tr = useT();
+  const { categories } = useCategories();
   useEffect(() => {
     const onDocClick = () => onClose();
     document.addEventListener('click', onDocClick, { once: true });
@@ -1468,7 +1495,7 @@ function BubbleMenu({
       onClick={(e) => e.stopPropagation()}
       style={{
         position: 'absolute', top: 30, right: 0, zIndex: 30,
-        minWidth: 160, padding: 4,
+        minWidth: 180, padding: 4,
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         borderRadius: 12, boxShadow: t.shadowLg,
         display: 'flex', flexDirection: 'column',
@@ -1477,6 +1504,43 @@ function BubbleMenu({
       <button type="button" onClick={onRename} style={menuItemStyle(t)}>
         <IconAgent size={13}/> {tr('menu.rename')}
       </button>
+      {/* Sección de categorías — solo si hay categorías configuradas. */}
+      {categories.length > 0 && (
+        <>
+          <div style={{
+            fontSize: 9.5, color: t.text3, letterSpacing: 0.4,
+            textTransform: 'uppercase', fontWeight: 600,
+            padding: '6px 10px 3px',
+          }}>Categoría</div>
+          {categories.map((c) => {
+            const active = c.id === currentCategoryId;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onSetCategory(active ? undefined : c.id)}
+                style={{ ...menuItemStyle(t), color: active ? t.text0 : t.text1 }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: c.color, flexShrink: 0,
+                  boxShadow: active ? `0 0 0 2px ${t.bg1}, 0 0 0 3px ${c.color}` : 'none',
+                }}/>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
+                {active && <IconCheck size={12}/>}
+              </button>
+            );
+          })}
+          {currentCategoryId && (
+            <button
+              type="button"
+              onClick={() => onSetCategory(undefined)}
+              style={{ ...menuItemStyle(t), color: t.text3 }}>
+              <IconX size={11}/> Sin categoría
+            </button>
+          )}
+          <div style={{ height: 1, background: t.glassBorder, margin: '4px 6px' }}/>
+        </>
+      )}
       <button type="button" onClick={onRemove} style={{ ...menuItemStyle(t), color: t.err }}>
         <IconTrash size={12}/> {tr('menu.close_bubble')}
       </button>
@@ -1935,6 +1999,11 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   const t = useTokens();
   const tr = useT();
   const [hover, setHover] = useState<string | null>(null);
+  // Suscripción al store de categorías — re-renderiza el grafo cuando el
+  // user agrega/edita/borra una categoría o reasigna agentes. `getCategoryById`
+  // (lectura sync) se usa dentro del map, pero necesitamos este hook para
+  // que React sepa que tiene que re-pintar.
+  useCategories();
   // Estados live de servers por (bubbleId, role) — un agente puede tener
   // frontend y backend corriendo a la vez; cada role se trackea por separado
   // para que parar uno no apague el indicador del otro.
@@ -2297,7 +2366,11 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
         {nodes.map((n, i) => {
           const isActive = n.isActive;
           const isHover = hover === n.id;
-          const sColor = stateColor(n.state, t);
+          // Si la burbuja tiene categoría, su color tiñe el electrón —
+          // así agrupás visualmente los agentes por categoría. Sin
+          // categoría, cae al color del estado (legacy).
+          const nodeCategory = getCategoryById(n.categoryId);
+          const sColor = nodeCategory ? nodeCategory.color : stateColor(n.state, t);
           // Wobble local de 2-3 px alrededor de la posición fija — apenas
           // perceptible, da sensación de que el electrón "vibra" en su
           // estado cuántico sin desplazarse del orbital.
@@ -2348,11 +2421,21 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
                     style={{ filter: `blur(8px)` }}/>
                 </>
               )}
-              {/* Cuerpo del electrón */}
+              {/* Cuerpo del electrón — si tiene categoría, el fill se tiñe
+                  sutilmente con su color y el borde lo usa siempre (no solo
+                  cuando está activo), así se ve "un poco" del color de la
+                  categoría aunque el agente esté idle. */}
               <circle cx={0} cy={0} r={n.size}
-                fill={t.bg1}
-                stroke={isActive ? sColor : (isHover ? t.accent : t.glassBorder)}
-                strokeWidth={isActive ? 2 : (isHover ? 1.5 : 1)}
+                fill={nodeCategory
+                  ? `color-mix(in oklch, ${nodeCategory.color} 16%, ${t.bg1})`
+                  : t.bg1}
+                stroke={isActive
+                  ? sColor
+                  : (isHover ? t.accent
+                    : (nodeCategory
+                      ? `color-mix(in oklch, ${nodeCategory.color} 55%, ${t.glassBorder})`
+                      : t.glassBorder))}
+                strokeWidth={isActive ? 2 : (isHover ? 1.5 : (nodeCategory ? 1.5 : 1))}
                 style={isActive ? { filter: `drop-shadow(0 0 8px ${sColor})` } : undefined}/>
               <text x={0} y={1} textAnchor="middle" dominantBaseline="middle"
                 fill={n.accent} fontFamily={t.fontSans} fontSize="13" fontWeight="600"
@@ -2373,7 +2456,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
                 onOpenAgent(n.id);
                 // Pequeño delay para que AgentDetail monte antes de cambiar tab.
                 window.setTimeout(() => {
-                  ecoEmit('eco:switch_tab', { tab: SAT_TO_TAB[sub] });
+                  ecoEmit('eco:switch_tab', { tab: SAT_TO_TAB[sub], bubbleId: n.id });
                 }, 60);
               }}/>
             </g>

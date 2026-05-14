@@ -727,7 +727,7 @@ function PanelHeader({
                       // todavía no registró su listener `eco:browser_navigate`
                       // y el evento se pierde (bug del "primer click no abre
                       // el URL, el segundo sí").
-                      ecoEmit('eco:switch_tab', { tab: 'browser' });
+                      ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId });
                       const url = s.url;
                       window.setTimeout(() => {
                         ecoEmit('eco:browser_navigate', { bubbleId, url });
@@ -1214,7 +1214,7 @@ function TerminalLogs({
       termRef.current?.clearSelection();
       setSelection('');
       // Ahora sí cambiamos al tab Terminal para que el user vea la respuesta.
-      ecoEmit('eco:switch_tab', { tab: 'terminal' });
+      ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId });
     } else {
       setFeedback({ ok: false, text: r.error });
     }

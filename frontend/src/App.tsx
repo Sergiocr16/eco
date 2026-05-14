@@ -301,7 +301,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       case 'scroll':
         ecoEmit('eco:scroll', { dir: action.dir }); return;
       case 'switch_tab':
-        ecoEmit('eco:switch_tab', { tab: action.tab }); return;
+        // Comando de voz "Eco terminal/chat/..." → aplica a la burbuja
+        // del detalle activo.
+        ecoEmit('eco:switch_tab', { tab: action.tab, bubbleId: detailBubbleId ?? undefined }); return;
       case 'confirm':
         ecoEmit('eco:confirm', { answer: action.answer }); return;
       case 'repeat_last': {
@@ -420,6 +422,58 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     onPhrase: (text: string) => handleIncomingVoiceText(text),
     onWakeDetected: () => activateWake(),
   });
+
+  // ─── Auto-lock por inactividad ──────────────────────────────────────────
+  // Lee `eco.security.lockAfterMin` (default '15'; 'never' = deshabilitado).
+  // Cualquier actividad del user (mouse/teclado/touch) re-arma el timer.
+  // Al cumplirse el tiempo sin actividad, `auth.lock()` pide el PIN de nuevo.
+  // El cambio de preferencia desde Settings emite `eco:security-pref-change`.
+  const authRef = useRef(auth);
+  useEffect(() => { authRef.current = auth; }, [auth]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let lastArm = 0;
+
+    const readMinutes = (): number => {
+      try {
+        const v = window.localStorage.getItem('eco.security.lockAfterMin') ?? '15';
+        if (v === 'never') return 0;
+        const n = Number(v);
+        return Number.isFinite(n) && n > 0 ? n : 0;
+      } catch { return 0; }
+    };
+
+    const arm = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      const mins = readMinutes();
+      if (mins <= 0) return;  // deshabilitado
+      timer = setTimeout(() => { authRef.current.lock(); }, mins * 60_000);
+    };
+
+    // Throttle: re-armar como máximo 1x/segundo — mousemove dispara cientos
+    // de eventos por segundo y no necesitamos resetear el timer en cada uno.
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastArm < 1000) return;
+      lastArm = now;
+      arm();
+    };
+    const events: (keyof WindowEventMap)[] = [
+      'mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart',
+    ];
+    for (const ev of events) window.addEventListener(ev, onActivity, { passive: true });
+    // Cambio de preferencia en Settings → re-armar con el nuevo valor.
+    const onPrefChange = () => { lastArm = Date.now(); arm(); };
+    window.addEventListener('eco:security-pref-change', onPrefChange);
+
+    arm();  // armado inicial
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      for (const ev of events) window.removeEventListener(ev, onActivity);
+      window.removeEventListener('eco:security-pref-change', onPrefChange);
+    };
+  }, []);
 
   // Modo siempre escuchando: arranca automático si el user ya dio permiso
   const autoStartedRef = useRef(false);
@@ -720,6 +774,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                           requestCloseBubble(b.id, { afterClose: handleBackFromDetail });
                         }}
                         onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(b.id, ws)}
+                        onSetCategory={(catId) => bubbles.setBubbleCategory(b.id, catId)}
                         onMicToggle={handleMicToggle}
                         listening={voice.state === 'listening'}
                         voiceInterim={voice.interimText}
@@ -750,6 +805,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                     onRename={(id, title) => bubbles.renameBubble(id, title)}
                     onRemove={(id) => requestCloseBubble(id)}
                     onChangeWorkspace={(id, ws) => bubbles.setBubbleWorkspace(id, ws)}
+                    onSetCategory={(id, catId) => bubbles.setBubbleCategory(id, catId)}
                     availableWorkspaces={workspacesHook.list.workspaces}
                   />
                 ) : null}

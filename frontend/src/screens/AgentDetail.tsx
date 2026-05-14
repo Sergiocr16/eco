@@ -13,6 +13,7 @@ import { ecoToken } from '@/lib/eco-config';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
+import { useCategories } from '@/hooks/useCategories';
 import { BranchPicker } from '@/components/BranchPicker';
 import { PullRequestsList } from '@/components/PullRequestsList';
 import { CurrentPrBanner } from '@/components/CurrentPrBanner';
@@ -56,7 +57,7 @@ function copyTranscriptToClipboard(bubble: Bubble) {
 
 function HeaderMenu({
   workspaces, currentWorkspace, onClose, onRename, onChangeWorkspace,
-  onCopyTranscript, onCloseBubble,
+  onCopyTranscript, onCloseBubble, currentCategoryId, onSetCategory,
 }: {
   workspaces: string[];
   currentWorkspace: string;
@@ -65,10 +66,13 @@ function HeaderMenu({
   onChangeWorkspace: (ws: string) => void;
   onCopyTranscript: () => void;
   onCloseBubble: () => void;
+  currentCategoryId?: string;
+  onSetCategory: (categoryId: string | undefined) => void;
 }) {
   const t = useTokens();
   const tr = useT();
   const [wsOpen, setWsOpen] = useState(false);
+  const { categories } = useCategories();
   useEffect(() => {
     if (wsOpen) return;
     const onDocClick = () => onClose();
@@ -89,6 +93,43 @@ function HeaderMenu({
       <button type="button" onClick={onRename} style={menuItemStyleAt(t)}>
         <IconAgent size={13}/> {tr('detail.menu.rename')}
       </button>
+      {/* Categoría — solo si hay categorías configuradas en Settings. */}
+      {categories.length > 0 && (
+        <>
+          <div style={{
+            fontSize: 9.5, color: t.text3, letterSpacing: 0.4,
+            textTransform: 'uppercase', fontWeight: 600,
+            padding: '6px 10px 3px',
+          }}>Categoría</div>
+          {categories.map((c) => {
+            const active = c.id === currentCategoryId;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => { onSetCategory(active ? undefined : c.id); onClose(); }}
+                style={{ ...menuItemStyleAt(t), color: active ? t.text0 : t.text1 }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: c.color, flexShrink: 0,
+                  boxShadow: active ? `0 0 0 2px ${t.bg1}, 0 0 0 3px ${c.color}` : 'none',
+                }}/>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
+                {active && <IconCheck size={12}/>}
+              </button>
+            );
+          })}
+          {currentCategoryId && (
+            <button
+              type="button"
+              onClick={() => { onSetCategory(undefined); onClose(); }}
+              style={{ ...menuItemStyleAt(t), color: t.text3 }}>
+              <IconX size={11}/> Sin categoría
+            </button>
+          )}
+          <div style={{ height: 1, background: t.glassBorder, margin: '4px 8px' }}/>
+        </>
+      )}
       <button type="button" onClick={() => setWsOpen((v) => !v)} style={menuItemStyleAt(t)}>
         <IconFolder size={12}/>
         <span style={{ flex: 1 }}>{tr('detail.menu.change_workspace')}</span>
@@ -150,6 +191,7 @@ type Props = {
   onRename: (title: string) => void;
   onClose: () => void;
   onChangeWorkspace: (workspace: string) => void;
+  onSetCategory: (categoryId: string | undefined) => void;
   onMicToggle: () => void;
   listening: boolean;
   voiceInterim: string;
@@ -159,10 +201,12 @@ type Tab = 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server';
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
-  onMicToggle, listening, voiceInterim,
+  onSetCategory, onMicToggle, listening, voiceInterim,
 }: Props) {
   const t = useTokens();
   const tr = useT();
+  const { byId: categoryById } = useCategories();
+  const category = categoryById(bubble.categoryId);
   const STATE_LABELS_I18N: Record<AgentState, string> = {
     idle: tr('state.idle'),
     pending: tr('state.pending'),
@@ -241,7 +285,15 @@ export function AgentDetail({
   }, [agentFiles, gitChanges]);
 
   // Comandos por voz: cambiar tab desde fuera del componente.
-  useEffect(() => ecoOn('eco:switch_tab', ({ tab }) => setTab(tab)), []);
+  // Solo reaccionamos al `eco:switch_tab` si es para ESTA burbuja (o si el
+  // emisor no especificó bubbleId — legacy/voz). Con multi-detail keepalive
+  // hay varias AgentDetail montadas a la vez; sin este filtro todas
+  // cambiaban de tab cuando una sola lo pedía.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => ecoOn('eco:switch_tab', (e) => {
+    if (e.bubbleId && e.bubbleId !== bubble.id) return;
+    setTab(e.tab);
+  }), [bubble.id]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -281,6 +333,26 @@ export function AgentDetail({
                 }}>{bubble.title}</h2>
             )}
             <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>
+            {/* Chip de categoría — clickeable: abre el menú para cambiarla.
+                "arriba donde está el nombre", como pidió el user. */}
+            {category && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+                title="Cambiar categoría"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '2px 9px', borderRadius: 999,
+                  background: `color-mix(in oklch, ${category.color} 16%, transparent)`,
+                  border: `1px solid color-mix(in oklch, ${category.color} 45%, transparent)`,
+                  color: category.color, fontSize: 11, fontWeight: 500,
+                  fontFamily: t.fontSans, cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: category.color }}/>
+                {category.name}
+              </button>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('detail.header.bubble')}</span>
@@ -315,6 +387,8 @@ export function AgentDetail({
               onChangeWorkspace={(ws) => { setMenuOpen(false); onChangeWorkspace(ws); }}
               onCopyTranscript={() => { setMenuOpen(false); copyTranscriptToClipboard(bubble); }}
               onCloseBubble={() => { setMenuOpen(false); onClose(); }}
+              currentCategoryId={bubble.categoryId}
+              onSetCategory={onSetCategory}
             />
           )}
         </div>
@@ -355,7 +429,7 @@ export function AgentDetail({
               cambiás de pestaña. Así el iframe no recarga y la sesión del browser
               (cookies, localStorage del sitio, scroll position) se preserva. */}
           <KeepAliveBrowser visible={tab === 'browser'} bubbleId={bubble.id} workspace={bubble.workspace}/>
-          {tab === 'server' && <ServerPanel bubbleId={bubble.id} workspace={bubble.workspace}/>}
+          <KeepAliveServer visible={tab === 'server'} bubbleId={bubble.id} workspace={bubble.workspace}/>
         </div>
         <AgentSidebar
           bubble={bubble}
@@ -1377,7 +1451,7 @@ async function runSkillInTerminal(opts: {
     token: ecoToken(),
   });
   if (r.ok) {
-    ecoEmit('eco:switch_tab', { tab: 'terminal' });
+    ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId: opts.bubbleId });
   }
   return r;
 }
@@ -3037,6 +3111,27 @@ function KeepAliveBrowser({ visible, bubbleId, workspace }: { visible: boolean; 
       flex: 1, minHeight: 0,
     }}>
       <BrowserPanel bubbleId={bubbleId} workspace={workspace}/>
+    </div>
+  );
+}
+
+// Mismo patrón que KeepAliveBrowser: el ServerPanel monta UNA SOLA VEZ (la
+// primera vez que entrás a la tab Server) y queda vivo con display:none al
+// cambiar de tab. Sin esto, cada vuelta a la tab Server remontaba el panel
+// → re-fetch del ring buffer de logs (hasta 64 KB por slot) + re-render
+// completo del xterm — lento y con parpadeo. Manteniéndolo vivo, el stream
+// WS de logs sigue appendando en background y al volver ya está todo ahí.
+function KeepAliveServer({ visible, bubbleId, workspace }: { visible: boolean; bubbleId: string; workspace: string }) {
+  const [hasMounted, setHasMounted] = useState(visible);
+  useEffect(() => { if (visible && !hasMounted) setHasMounted(true); }, [visible, hasMounted]);
+  if (!hasMounted) return null;
+  return (
+    <div style={{
+      display: visible ? 'flex' : 'none',
+      flexDirection: 'column',
+      flex: 1, minHeight: 0,
+    }}>
+      <ServerPanel bubbleId={bubbleId} workspace={workspace}/>
     </div>
   );
 }

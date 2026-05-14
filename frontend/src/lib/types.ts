@@ -48,6 +48,10 @@ export type Bubble = {
   // si el workspace es repo git. Sin valor → el worktree salió del HEAD del
   // repo padre al momento de crear la burbuja (comportamiento legacy).
   baseBranch?: string;
+  // Categoría asignada (id de una categoría configurable en Settings). Se
+  // usa para colorear el nodo en la vista de grafo y agrupar visualmente.
+  // Sin valor → el nodo usa el color del estado del agente (legacy).
+  categoryId?: string;
 };
 
 export type BubbleAction =

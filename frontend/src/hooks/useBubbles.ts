@@ -108,6 +108,7 @@ export type UseBubblesResult = {
   setBubbleSessionId: (id: string, sessionId: string) => void;
   setBubbleMessages: (id: string, updater: (messages: Message[]) => Message[]) => void;
   setBubbleWorkspace: (id: string, workspace: string) => void;
+  setBubbleCategory: (id: string, categoryId: string | undefined) => void;
   setBubblePtyOpen: (id: string, open: boolean) => void;
 };
 
@@ -269,6 +270,12 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     ));
   }, []);
 
+  const setBubbleCategory = useCallback((id: string, categoryId: string | undefined) => {
+    setBubbles((prev) => prev.map((b) =>
+      b.id === id ? { ...b, categoryId, updatedAt: Date.now() } : b,
+    ));
+  }, []);
+
   const activeBubble = bubbles.find((b) => b.id === activeBubbleId) ?? null;
 
   return {
@@ -286,6 +293,7 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     setBubbleSessionId,
     setBubbleMessages,
     setBubbleWorkspace,
+    setBubbleCategory,
     setBubblePtyOpen,
   };
 }

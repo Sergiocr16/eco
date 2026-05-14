@@ -3,7 +3,11 @@
 
 export type EcoBusEvents = {
   'eco:scroll': { dir: 'up' | 'down' | 'top' | 'bottom' };
-  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server' };
+  // `bubbleId` opcional: si viene, SOLO la AgentDetail de esa burbuja
+  // reacciona. Sin él (legacy / voz sin contexto), reacciona cualquiera
+  // montada. Sin este filtro, con multi-detail keepalive TODAS las
+  // AgentDetail montadas cambiaban de tab al mismo tiempo.
+  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server'; bubbleId?: string };
   'eco:confirm': { answer: 'yes' | 'no' };
   'eco:wake_detected': { ts: number };
   'eco:dev_status': {
