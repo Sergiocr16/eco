@@ -48,8 +48,9 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
   const [busy, setBusy] = useState<'merging' | 'closing' | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [showMergeMenu, setShowMergeMenu] = useState(false);
-  const [confirming, setConfirming] = useState<'close' | null>(null);
+  const [confirming, setConfirming] = useState<'close' | { method: MergeMethod } | null>(null);
   const mergeBtnRef = useRef<HTMLDivElement | null>(null);
+  const mergeMenuRef = useRef<HTMLDivElement | null>(null);
 
   const fetchCurrent = async () => {
     if (!workspace) { setLoading(false); return; }
@@ -84,8 +85,12 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
   useEffect(() => {
     if (!showMergeMenu) return;
     function onDoc(e: MouseEvent) {
-      if (!mergeBtnRef.current) return;
-      if (!mergeBtnRef.current.contains(e.target as Node)) setShowMergeMenu(false);
+      const target = e.target as Node;
+      // El menú se portalea a <body>, así que cuenta como "dentro" tanto el
+      // botón como el menú mismo.
+      if (mergeBtnRef.current?.contains(target)) return;
+      if (mergeMenuRef.current?.contains(target)) return;
+      setShowMergeMenu(false);
     }
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
@@ -280,7 +285,7 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
           {/* Merge split button */}
           <div ref={mergeBtnRef} style={{ position: 'relative', display: 'inline-flex', flex: 1, minWidth: 0 }}>
             <button type="button"
-              onClick={() => void doMerge('merge')}
+              onClick={() => setConfirming({ method: 'merge' })}
               disabled={!canMerge}
               title={conflicting ? 'Hay conflictos — resolvelos primero' : pr.isDraft ? 'PR en draft' : 'Mergear con merge commit'}
               style={{
@@ -316,42 +321,49 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
               }}>
               <IconChevD size={9}/>
             </button>
-            <AnimatePresence>
-              {showMergeMenu && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.12 }}
-                  style={{
-                    position: 'absolute', top: '100%', right: 0, marginTop: 4,
-                    zIndex: 20,
-                    background: t.bg1,
-                    border: `1px solid ${t.glassBorder}`,
-                    borderRadius: 8, padding: 4,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                    minWidth: 200,
-                  }}>
-                  {(['merge', 'squash', 'rebase'] as const).map((m) => (
-                    <button key={m} type="button"
-                      onClick={() => void doMerge(m)}
-                      style={{
-                        width: '100%', padding: '7px 10px', borderRadius: 5,
-                        border: 0, background: 'transparent', color: t.text1,
-                        fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
-                        textAlign: 'left', cursor: 'pointer',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                      <div>{m === 'merge' ? 'Merge commit' : m === 'squash' ? 'Squash and merge' : 'Rebase and merge'}</div>
-                      <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>
-                        {m === 'merge' ? 'Crea merge commit en la base' : m === 'squash' ? 'Aplasta commits en uno' : 'Reaplica commits sobre la base'}
-                      </div>
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* Menú porteado a <body>. Sin AnimatePresence: un portal como
+                hijo directo de AnimatePresence no se trackea bien y el menú
+                no llegaba a montarse. La entrada igual se anima con
+                initial→animate del motion.div. */}
+            {showMergeMenu && (() => {
+              const r = mergeBtnRef.current?.getBoundingClientRect();
+              return createPortal(
+                  <motion.div
+                    ref={mergeMenuRef}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.12 }}
+                    style={{
+                      position: 'fixed', zIndex: 400,
+                      top: r ? r.bottom + 4 : 0,
+                      right: r ? Math.max(8, window.innerWidth - r.right) : 8,
+                      background: t.bg1,
+                      border: `1px solid ${t.glassBorder}`,
+                      borderRadius: 8, padding: 4,
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                      minWidth: 200,
+                    }}>
+                    {(['merge', 'squash', 'rebase'] as const).map((m) => (
+                      <button key={m} type="button"
+                        onClick={() => { setShowMergeMenu(false); setConfirming({ method: m }); }}
+                        style={{
+                          width: '100%', padding: '7px 10px', borderRadius: 5,
+                          border: 0, background: 'transparent', color: t.text1,
+                          fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+                          textAlign: 'left', cursor: 'pointer',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+                        <div>{m === 'merge' ? 'Merge commit' : m === 'squash' ? 'Squash and merge' : 'Rebase and merge'}</div>
+                        <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>
+                          {m === 'merge' ? 'Crea merge commit en la base' : m === 'squash' ? 'Aplasta commits en uno' : 'Reaplica commits sobre la base'}
+                        </div>
+                      </button>
+                    ))}
+                  </motion.div>,
+                  document.body,
+                );
+            })()}
           </div>
 
           <button type="button"
@@ -380,6 +392,17 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
             pr={pr}
             onCancel={() => setConfirming(null)}
             onConfirm={() => void doClose()}/>
+        )}
+        {confirming && confirming !== 'close' && pr && (
+          <ConfirmMergeDialog
+            pr={pr}
+            method={confirming.method}
+            onCancel={() => setConfirming(null)}
+            onConfirm={() => {
+              const m = confirming.method;
+              setConfirming(null);
+              void doMerge(m);
+            }}/>
         )}
       </AnimatePresence>
     </Glass>
@@ -415,6 +438,80 @@ function FeedbackInline({
       </button>
     </div>
   );
+}
+
+function ConfirmMergeDialog({
+  pr, method, onCancel, onConfirm,
+}: {
+  pr: CurrentPr;
+  method: MergeMethod;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useTokens();
+  const methodLabel = method === 'merge' ? 'Merge commit'
+    : method === 'squash' ? 'Squash and merge'
+    : 'Rebase and merge';
+  const methodDesc = method === 'merge' ? 'Crea un merge commit en la rama base.'
+    : method === 'squash' ? 'Aplasta todos los commits del PR en uno solo.'
+    : 'Reaplica los commits del PR sobre la rama base.';
+  return createPortal((
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+      onClick={onCancel}>
+      <motion.div
+        initial={{ scale: 0.96, y: 6 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 6 }}
+        transition={{ duration: 0.18 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(480px, 100%)',
+          background: t.bg1,
+          border: `1px solid ${t.glassBorder}`,
+          borderRadius: 16,
+          padding: 20,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+        }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
+          ¿Mergear el PR #{pr.number}?
+        </h3>
+        <div style={{
+          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 14,
+          lineHeight: 1.5,
+        }}>
+          <code style={{
+            fontFamily: t.fontMono, fontSize: 11,
+            padding: '1px 5px', borderRadius: 4,
+            background: t.bg3, color: t.text1,
+          }}>{pr.title}</code>
+          <div style={{ marginTop: 6 }}>
+            Método: <strong style={{ color: t.text1 }}>{methodLabel}</strong> — {methodDesc}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onCancel}
+            style={{
+              padding: '9px 14px', borderRadius: 9,
+              background: 'transparent', color: t.text2,
+              border: `1px solid ${t.glassBorder}`,
+              fontSize: 12.5, cursor: 'pointer',
+            }}>Cancelar</button>
+          <button type="button" onClick={onConfirm}
+            style={{
+              padding: '9px 14px', borderRadius: 9,
+              background: t.ok, color: '#fff', border: 0,
+              fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            }}>Mergear</button>
+        </div>
+      </motion.div>
+    </motion.div>
+  ), document.body);
 }
 
 function ConfirmCloseDialog({

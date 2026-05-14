@@ -256,9 +256,15 @@ eco.dev.presets                          ← presets globales user
 eco.dev.presets.hidden                   ← built-ins ocultados
 eco.remote.<bubbleId>                    ← slug si remote control activo
 eco.skills.favorites                     ← favoritos del SkillsCard
+eco.skills.fav_collapsed                 ← '1' si la lista de favoritos del SkillsCard está colapsada
 eco.bubbles                              ← state global de burbujas (id, title, workspace, messages, …)
 eco.categories                           ← categorías configurables (id, name, color)
-eco.graph.zoom                           ← nivel de zoom de la vista de nodos del Dashboard
+eco.graph.spread_nodes                   ← separación agentes↔carpeta en la vista de nodos
+eco.graph.spread_ws                      ← separación carpetas↔Eco en la vista de nodos
+eco.graph.scale                          ← zoom visual de la vista de nodos
+eco.graph.ws_offsets                     ← offsets manuales {dx,dy} por nodo de workspace arrastrado
+eco.graph.agent_offsets                  ← offsets manuales {dx,dy} por nodo de agente arrastrado
+eco.graph.fullscreen                     ← '1' si la vista de nodos quedó en pantalla completa
 ```
 
 ### Auto-allowlist de orígenes (backend)

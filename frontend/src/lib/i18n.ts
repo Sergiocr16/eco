@@ -568,9 +568,18 @@ const DICT = {
   'graph.ws.agents_one': { es: '{{n}} agente', en: '{{n}} agent' },
   'graph.ws.agents_many': { es: '{{n}} agentes', en: '{{n}} agents' },
   'graph.recenter': { es: 'Centrar vista', en: 'Recenter view' },
+  'graph.reset_layout': { es: 'Restablecer disposición', en: 'Reset layout' },
   'graph.zoom_in': { es: 'Acercar', en: 'Zoom in' },
   'graph.zoom_out': { es: 'Alejar', en: 'Zoom out' },
   'graph.zoom_reset': { es: 'Restablecer zoom', en: 'Reset zoom' },
+  'graph.view_zoom': { es: 'Zoom de la vista', en: 'View zoom' },
+  'graph.spread_nodes': { es: 'Separación agentes ↔ carpeta', en: 'Agent ↔ folder spacing' },
+  'graph.spread_ws': { es: 'Separación carpetas ↔ Eco', en: 'Folder ↔ Eco spacing' },
+  'graph.spread_more': { es: 'Más separación', en: 'More spacing' },
+  'graph.spread_less': { es: 'Menos separación', en: 'Less spacing' },
+  'graph.spread_reset': { es: 'Restablecer separación', en: 'Reset spacing' },
+  'graph.fullscreen': { es: 'Pantalla completa', en: 'Fullscreen' },
+  'graph.exit_fullscreen': { es: 'Salir de pantalla completa', en: 'Exit fullscreen' },
 
   // ─────────────────────────── Rail
   'rail.cli.label': { es: 'Claude CLI', en: 'Claude CLI' },

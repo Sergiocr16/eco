@@ -18,16 +18,39 @@ const STORAGE_KEY = 'eco.categories';
 
 // Paleta sugerida para el color picker — colores distinguibles entre sí.
 export const CATEGORY_PALETTE = [
+  // Saturados — espectro completo
   '#ef4444', // rojo
   '#f97316', // naranja
+  '#f59e0b', // ámbar
   '#eab308', // amarillo
+  '#84cc16', // lima
   '#22c55e', // verde
+  '#10b981', // esmeralda
   '#14b8a6', // teal
   '#06b6d4', // cian
+  '#0ea5e9', // celeste
   '#3b82f6', // azul
+  '#6366f1', // índigo
   '#8b5cf6', // violeta
+  '#a855f7', // púrpura
+  '#d946ef', // fucsia
   '#ec4899', // rosa
+  '#f43f5e', // rosado
+  // Tonos suaves
+  '#fca5a5', // rojo claro
+  '#fdba74', // naranja claro
+  '#fde047', // amarillo claro
+  '#86efac', // verde claro
+  '#5eead4', // teal claro
+  '#7dd3fc', // celeste claro
+  '#93c5fd', // azul claro
+  '#c4b5fd', // violeta claro
+  '#f9a8d4', // rosa claro
+  // Neutros
+  '#78716c', // piedra
   '#a3a3a3', // gris
+  '#64748b', // pizarra
+  '#475569', // pizarra oscuro
 ];
 
 function load(): Category[] {

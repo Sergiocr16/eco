@@ -1468,6 +1468,19 @@ function SkillsCard({
   const { isFav, toggle: toggleFav } = useSkillFavorites();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // La lista de favoritos es desplegable (estado global, persistido).
+  const [favCollapsed, setFavCollapsed] = useState<boolean>(() => {
+    try { return window.localStorage.getItem('eco.skills.fav_collapsed') === '1'; }
+    catch { return false; }
+  });
+  const toggleFavCollapsed = () => {
+    setFavCollapsed((v) => {
+      const next = !v;
+      try { window.localStorage.setItem('eco.skills.fav_collapsed', next ? '1' : '0'); }
+      catch { /* noop */ }
+      return next;
+    });
+  };
 
   // Solo los favoritos que existen en el workspace actual.
   const favSkills = useMemo(
@@ -1523,7 +1536,31 @@ function SkillsCard({
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <>
+          {/* Header desplegable de la lista de favoritos. */}
+          <button type="button" onClick={toggleFavCollapsed}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+              padding: '4px 4px 8px', border: 0, background: 'transparent',
+              color: t.text2, cursor: 'pointer', textAlign: 'left',
+              fontFamily: t.fontSans, fontSize: 10.5, fontWeight: 600,
+              letterSpacing: 0.4, textTransform: 'uppercase',
+            }}>
+            <span style={{
+              fontSize: 14, color: t.text1, lineHeight: 1,
+              transform: favCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+              transition: 'transform 180ms ease',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 14, height: 14,
+            }}>▾</span>
+            <span>Favoritos</span>
+            <span style={{
+              padding: '1px 7px', background: t.bg3, borderRadius: 999,
+              fontSize: 10, color: t.text1, letterSpacing: 0,
+            }}>{favSkills.length}</span>
+          </button>
+          {!favCollapsed && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {favSkills.map((s) => {
             const running = busy === s.name;
             const desc = s.description?.trim();
@@ -1629,7 +1666,9 @@ function SkillsCard({
               </div>
             );
           })}
-        </div>
+          </div>
+          )}
+        </>
       )}
       {err && (
         <div style={{
@@ -2031,7 +2070,9 @@ function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: st
 // --set-upstream origin <branch> si no existe.
 function PushButton({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
   const t = useTokens();
-  type Phase = 'idle' | 'pushing' | 'done' | 'error';
+  // 'confirm' = paso intermedio de confirmación (igual que el preview del
+  // commit) — el push no se dispara hasta que el user confirma.
+  type Phase = 'idle' | 'confirm' | 'pushing' | 'done' | 'error';
   const [phase, setPhase] = useState<Phase>('idle');
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -2079,20 +2120,58 @@ function PushButton({ bubbleId, workspace }: { bubbleId: string; workspace: stri
             Publica la rama actual en origin
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void push()}
-          disabled={phase === 'pushing'}
-          style={{
-            height: 26, padding: '0 12px', border: 0, borderRadius: 6,
-            background: t.accent, color: t.accentOn,
-            fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
-            cursor: phase === 'pushing' ? 'default' : 'pointer',
-            opacity: phase === 'pushing' ? 0.6 : 1,
-          }}>
-          {phase === 'pushing' ? 'Pushing…' : 'Push'}
-        </button>
+        {phase !== 'confirm' && (
+          <button
+            type="button"
+            onClick={() => setPhase('confirm')}
+            disabled={phase === 'pushing'}
+            style={{
+              height: 26, padding: '0 12px', border: 0, borderRadius: 6,
+              background: t.accent, color: t.accentOn,
+              fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
+              cursor: phase === 'pushing' ? 'default' : 'pointer',
+              opacity: phase === 'pushing' ? 0.6 : 1,
+            }}>
+            {phase === 'pushing' ? 'Pushing…' : 'Push'}
+          </button>
+        )}
       </div>
+      {/* Paso de confirmación — igual que el preview del commit, el push
+          no se dispara hasta confirmar. */}
+      {phase === 'confirm' && (
+        <div style={{
+          marginTop: 8, padding: '8px 10px', borderRadius: 8,
+          background: t.bg2, border: `1px solid ${t.glassBorder}`,
+        }}>
+          <div style={{ fontSize: 11, color: t.text1, lineHeight: 1.5 }}>
+            ¿Publicar la rama actual en <code style={{
+              fontFamily: t.fontMono, fontSize: 10.5,
+              padding: '1px 5px', borderRadius: 4,
+              background: t.bg3, color: t.text1,
+            }}>origin</code>?
+          </div>
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => setPhase('idle')}
+              style={{
+                height: 26, padding: '0 12px', borderRadius: 6,
+                background: 'transparent', color: t.text2,
+                border: `1px solid ${t.glassBorder}`,
+                fontFamily: t.fontSans, fontSize: 11, cursor: 'pointer',
+              }}>Cancelar</button>
+            <button
+              type="button"
+              onClick={() => void push()}
+              style={{
+                height: 26, padding: '0 12px', border: 0, borderRadius: 6,
+                background: t.accent, color: t.accentOn,
+                fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
+                cursor: 'pointer',
+              }}>Pushear</button>
+          </div>
+        </div>
+      )}
       {msg && (isDone || isError) && (
         <div style={{
           marginTop: 6,

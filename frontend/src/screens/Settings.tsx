@@ -1283,8 +1283,11 @@ function CategoryManager() {
           padding: '8px 10px', borderRadius: 10,
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
         }}>
-          {/* Swatches de color */}
-          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+          {/* Swatches de color — envuelven en varias filas con paleta amplia. */}
+          <div style={{
+            display: 'flex', gap: 4, flexWrap: 'wrap', flexShrink: 0,
+            maxWidth: 198,
+          }}>
             {CATEGORY_PALETTE.map((col) => (
               <button
                 key={col}
@@ -1292,7 +1295,7 @@ function CategoryManager() {
                 onClick={() => update(c.id, { color: col })}
                 title={col}
                 style={{
-                  width: 16, height: 16, borderRadius: '50%',
+                  width: 15, height: 15, borderRadius: '50%',
                   background: col, cursor: 'pointer', padding: 0,
                   border: c.color === col ? `2px solid ${t.text0}` : `2px solid transparent`,
                   boxShadow: c.color === col ? `0 0 0 1px ${col}` : 'none',

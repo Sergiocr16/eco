@@ -42,6 +42,9 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
     }
     return [...map.entries()].map(([key, items]) => ({
       key,
+      label: key === '__none__'
+        ? 'Sin carpeta'
+        : (key.split('/').filter(Boolean).pop() || key),
       items: [...items].sort(sortFn),
     }));
   })();
@@ -104,25 +107,53 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
             {bubbles.length > 0 && divider}
           </>
         )}
+        {/* Wrapper scrolleable — con muchos agentes los iconos se salían del
+            pill. `overflowX:auto` les da scroll horizontal. El padding/margin
+            negativo da headroom para que la magnificación (que crece hacia
+            arriba) y el dot inferior no queden recortados por el overflow. */}
+        <div
+          className="eco-thin-scroll"
+          style={{
+            minWidth: 0,
+            display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: 4,
+            overflowX: 'auto', overflowY: 'hidden',
+            paddingTop: 22, paddingBottom: 8,
+            marginTop: -22, marginBottom: -8,
+          }}>
         {grouped ? (
           wsGroups.map((g, gi) => (
             <Fragment key={g.key}>
               {gi > 0 && divider}
+              {/* Cluster del workspace — etiqueta de la carpeta arriba +
+                  fila de iconos abajo, así se entiende de qué proyecto es. */}
               <div style={{
-                display: 'flex', flexDirection: 'row',
-                alignItems: 'flex-end', gap: 4,
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', gap: 3,
               }}>
-                <AnimatePresence initial={false}>
-                  {g.items.map((b, i) => (
-                    <DockIcon
-                      key={b.id}
-                      bubble={b}
-                      index={i}
-                      active={b.id === activeBubbleId}
-                      onClick={() => onOpenAgent(b.id)}
-                    />
-                  ))}
-                </AnimatePresence>
+                <span title={g.label} style={{
+                  maxWidth: 'calc(100% - 4px)',
+                  fontFamily: t.fontSans, fontSize: 8.5, fontWeight: 700,
+                  letterSpacing: 0.4, textTransform: 'uppercase',
+                  color: t.text3,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  pointerEvents: 'none', userSelect: 'none',
+                }}>{g.label}</span>
+                <div style={{
+                  display: 'flex', flexDirection: 'row',
+                  alignItems: 'flex-end', gap: 4,
+                }}>
+                  <AnimatePresence initial={false}>
+                    {g.items.map((b, i) => (
+                      <DockIcon
+                        key={b.id}
+                        bubble={b}
+                        index={i}
+                        active={b.id === activeBubbleId}
+                        onClick={() => onOpenAgent(b.id)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
               </div>
             </Fragment>
           ))
@@ -139,6 +170,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
             ))}
           </AnimatePresence>
         )}
+        </div>
       </div>
     </motion.div>
   );
@@ -260,6 +292,7 @@ function DockIcon({
       <motion.button
         type="button"
         onClick={onClick}
+        title={bubble.title || 'Burbuja sin título'}
         initial={{ opacity: 0, scale: 0.6, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.6, y: 8 }}

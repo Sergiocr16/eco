@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { apiFetch } from '@/lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
@@ -609,6 +610,7 @@ function AgentBubble({
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
+  const menuAnchorRef = useRef<HTMLDivElement>(null);
   const tr = useT();
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
@@ -705,7 +707,7 @@ function AgentBubble({
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tStr}</span>
           </div>
         </div>
-        <div style={{ position: 'relative' }}>
+        <div ref={menuAnchorRef} style={{ position: 'relative' }}>
           <IconBtn
             icon={IconMore}
             size={26}
@@ -713,6 +715,7 @@ function AgentBubble({
           />
           {menuOpen && (
             <BubbleMenu
+              anchorRef={menuAnchorRef}
               onClose={() => setMenuOpen(false)}
               onRename={startRename}
               onRemove={(e) => { e.stopPropagation(); onRemove(); setMenuOpen(false); }}
@@ -1460,8 +1463,9 @@ function WorkspaceChip({
 }
 
 function BubbleMenu({
-  onClose, onRename, onRemove, currentCategoryId, onSetCategory,
+  anchorRef, onClose, onRename, onRemove, currentCategoryId, onSetCategory,
 }: {
+  anchorRef: React.RefObject<HTMLDivElement | null>;
   onClose: () => void;
   onRename: (e: React.MouseEvent) => void;
   onRemove: (e: React.MouseEvent) => void;
@@ -1471,16 +1475,24 @@ function BubbleMenu({
   const t = useTokens();
   const tr = useT();
   const { categories } = useCategories();
+  // Posición fija calculada desde el botón ancla. Portaleamos a <body> para
+  // que el menú no quede atrapado bajo el card del agente vecino — cada card
+  // es un motion.div con transform → su propio stacking context, así que un
+  // z-index local no alcanzaba.
+  const [rect] = useState<DOMRect | null>(() =>
+    anchorRef.current?.getBoundingClientRect() ?? null);
   useEffect(() => {
     const onDocClick = () => onClose();
     document.addEventListener('click', onDocClick, { once: true });
     return () => document.removeEventListener('click', onDocClick);
   }, [onClose]);
-  return (
+  const menu = (
     <div
       onClick={(e) => e.stopPropagation()}
       style={{
-        position: 'absolute', top: 30, right: 0, zIndex: 30,
+        position: 'fixed', zIndex: 400,
+        top: rect ? rect.bottom + 4 : 0,
+        right: rect ? Math.max(8, window.innerWidth - rect.right) : 8,
         minWidth: 180, padding: 4,
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         borderRadius: 12, boxShadow: t.shadowLg,
@@ -1532,6 +1544,7 @@ function BubbleMenu({
       </button>
     </div>
   );
+  return createPortal(menu, document.body);
 }
 
 function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
@@ -2263,41 +2276,93 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   // un arco HORIZONTAL debajo del hub Eco — un anillo completo dejaba (con 2
   // carpetas) una arriba y otra abajo; horizontal se lee mejor al primer
   // acomodo. El user puede arrastrar la vista después.
-  // --- Zoom de la vista (persistido en localStorage) ---
-  // El zoom no escala el grupo SVG: multiplica los radios de las órbitas, así
-  // aumenta/reduce la SEPARACIÓN entre nodos sin agrandar círculos ni texto.
-  // Por eso se declara acá arriba, antes del cálculo de posiciones.
-  const ZOOM_KEY = 'eco.graph.zoom';
+  // --- Controles de vista independientes, todos persistidos ---
+  // SEPARACIÓN (no escala el grupo SVG — multiplica radios de órbita, así
+  // cambia la distancia entre nodos sin agrandar círculos ni texto). Dos
+  // controles separados, ambos hasta 600%:
+  //   · `spreadNodes` (eco.graph.spread_nodes): separación entre los agentes
+  //     y su nodo de carpeta (en modo plano, agentes ↔ Eco).
+  //   · `spreadWs` (eco.graph.spread_ws): separación entre los nodos de
+  //     carpeta y el hub Eco.
+  // ZOOM VISUAL (`viewScale` / eco.graph.scale): un `scale()` sobre todo el
+  // grupo paneable — agranda/achica TODA la vista (nodos, texto, líneas).
+  // Se declaran acá arriba porque entran en el cálculo de posiciones.
   const ZOOM_MIN = 0.4;
-  const ZOOM_MAX = 2.4;
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const [zoom, setZoomState] = useState<number>(() => {
+  const SPREAD_MAX = 6;    // separación: hasta 600%
+  const SCALE_MAX = 2.4;   // zoom visual: hasta 240%
+  const clamp = (v: number, max: number) =>
+    Math.min(max, Math.max(ZOOM_MIN, Math.round(v * 100) / 100));
+  const loadZoom = (key: string, max: number) => {
     try {
-      const raw = window.localStorage.getItem(ZOOM_KEY);
+      const raw = window.localStorage.getItem(key);
       const v = raw ? parseFloat(raw) : 1;
-      return Number.isFinite(v) ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v)) : 1;
+      return Number.isFinite(v) ? clamp(v, max) : 1;
     } catch { return 1; }
-  });
+  };
+  const makeSetter = (key: string, max: number, set: (fn: (z: number) => number) => void) =>
+    (next: number | ((z: number) => number)) => {
+      set((prev) => {
+        const v = clamp(typeof next === 'function' ? next(prev) : next, max);
+        try { window.localStorage.setItem(key, String(v)); } catch { /* noop */ }
+        return v;
+      });
+    };
+
+  const SPREAD_NODES_KEY = 'eco.graph.spread_nodes';
+  const SPREAD_WS_KEY = 'eco.graph.spread_ws';
+  const SCALE_KEY = 'eco.graph.scale';
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [spreadNodes, setSpreadNodesState] = useState<number>(() => loadZoom(SPREAD_NODES_KEY, SPREAD_MAX));
+  const [spreadWs, setSpreadWsState] = useState<number>(() => loadZoom(SPREAD_WS_KEY, SPREAD_MAX));
+  const [viewScale, setViewScaleState] = useState<number>(() => loadZoom(SCALE_KEY, SCALE_MAX));
   // Escritura inline (no useEffect) — mismo patrón que el zoom del BrowserPanel,
   // evita timing raro con HMR/unmount.
-  const setZoom = (next: number | ((z: number) => number)) => {
-    setZoomState((prev) => {
-      const raw = typeof next === 'function' ? next(prev) : next;
-      const v = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(raw * 100) / 100));
-      try { window.localStorage.setItem(ZOOM_KEY, String(v)); } catch { /* noop */ }
-      return v;
-    });
+  const setSpreadNodes = makeSetter(SPREAD_NODES_KEY, SPREAD_MAX, setSpreadNodesState);
+  const setSpreadWs = makeSetter(SPREAD_WS_KEY, SPREAD_MAX, setSpreadWsState);
+  const setViewScale = makeSetter(SCALE_KEY, SCALE_MAX, setViewScaleState);
+
+  // --- Offset manual por nodo de workspace (persistido) ---
+  // El user puede arrastrar el nodo de una carpeta a donde quiera; sus agentes
+  // se mueven con él (sus posiciones se calculan relativas a ws.x/ws.y). El
+  // offset vive en coords del grupo (sin escalar) — al arrastrar dividimos el
+  // delta de pantalla por `viewScale`. Se declara acá arriba porque entra en
+  // el cálculo de posiciones de los nodos de workspace.
+  const WS_OFFSETS_KEY = 'eco.graph.ws_offsets';
+  const [wsOffsets, setWsOffsets] = useState<Record<string, { dx: number; dy: number }>>(() => {
+    try {
+      const raw = window.localStorage.getItem(WS_OFFSETS_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch { return {}; }
+  });
+  const persistWsOffsets = (v: Record<string, { dx: number; dy: number }>) => {
+    try { window.localStorage.setItem(WS_OFFSETS_KEY, JSON.stringify(v)); } catch { /* noop */ }
+  };
+
+  // --- Offset manual por nodo de agente (persistido) ---
+  // Igual que los workspace: el user puede arrastrar un agente a donde quiera.
+  // El offset se suma a la posición calculada por la órbita.
+  const AGENT_OFFSETS_KEY = 'eco.graph.agent_offsets';
+  const [agentOffsets, setAgentOffsets] = useState<Record<string, { dx: number; dy: number }>>(() => {
+    try {
+      const raw = window.localStorage.getItem(AGENT_OFFSETS_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch { return {}; }
+  });
+  const persistAgentOffsets = (v: Record<string, { dx: number; dy: number }>) => {
+    try { window.localStorage.setItem(AGENT_OFFSETS_KEY, JSON.stringify(v)); } catch { /* noop */ }
   };
 
   const WS_NODE_R = 26;
   // El radio del anillo de carpetas se calcula según cuántas carpetas hay:
   // más carpetas → anillo más grande para que el arco horizontal no se
-  // amontone. Tope al 46% del lado menor del canvas. El zoom multiplica la
-  // separación (no escala los nodos): zoom in → más espacio entre nodos.
+  // amontone. Tope al 46% del lado menor del canvas. `spreadWs` multiplica
+  // esta separación (carpetas ↔ Eco).
   const wsOrbitR = Math.min(
     Math.min(W, H) * 0.46,
     Math.max(170, 110 + wsGroups.length * 42),
-  ) * zoom;
+  ) * spreadWs;
   const wsNodes = hierarchical
     ? wsGroups.map((g, i) => {
         const N = wsGroups.length;
@@ -2306,12 +2371,14 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
         const angle = N === 1
           ? Math.PI / 2
           : aStart + (i / (N - 1)) * (aEnd - aStart);
+        // Offset manual del user (si arrastró este nodo de carpeta).
+        const off = wsOffsets[g.key] ?? { dx: 0, dy: 0 };
         return {
           ...g,
           angle,
           angleDeg: (angle * 180) / Math.PI,
-          x: cx + Math.cos(angle) * wsOrbitR,
-          y: cy + Math.sin(angle) * wsOrbitR * tilt,
+          x: cx + Math.cos(angle) * wsOrbitR + off.dx,
+          y: cy + Math.sin(angle) * wsOrbitR * tilt + off.dy,
           active: g.items.some((b) => nodeFlags(b).isActive),
         };
       })
@@ -2327,14 +2394,15 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     const orbitBaseR = Math.max(88, 165 - cnt * 14);
     const orbitSpacing = Math.max(34, 60 - cnt * 5);
     bubbles.forEach((b, i) => {
-      const orbitR = (orbitBaseR + i * orbitSpacing) * zoom;
+      const orbitR = (orbitBaseR + i * orbitSpacing) * spreadNodes;
       const phaseDeg = (i * 67) % 360;
       const f = nodeFlags(b);
+      const aoff = agentOffsets[b.id] ?? { dx: 0, dy: 0 };
       nodes.push({
         ...b, ...f,
         parentX: cx, parentY: cy, parentR: 34,
-        x: cx + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
-        y: cy + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
+        x: cx + Math.cos((phaseDeg * Math.PI) / 180) * orbitR + aoff.dx,
+        y: cy + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt + aoff.dy,
         size: 22 + (f.state === 'running' ? 8 : 0),
       });
     });
@@ -2352,13 +2420,14 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
         const phaseDeg = m === 1
           ? ws.angleDeg
           : ws.angleDeg - arcSpan / 2 + (j / (m - 1)) * arcSpan;
-        const orbitR = (miniBaseR + (j % 2) * 28) * zoom;
+        const orbitR = (miniBaseR + (j % 2) * 28) * spreadNodes;
         const f = nodeFlags(b);
+        const aoff = agentOffsets[b.id] ?? { dx: 0, dy: 0 };
         nodes.push({
           ...b, ...f,
           parentX: ws.x, parentY: ws.y, parentR: WS_NODE_R,
-          x: ws.x + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
-          y: ws.y + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
+          x: ws.x + Math.cos((phaseDeg * Math.PI) / 180) * orbitR + aoff.dx,
+          y: ws.y + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt + aoff.dy,
           size: 22 + (f.state === 'running' ? 8 : 0),
         });
       });
@@ -2373,14 +2442,61 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+
+  // --- Drag manual de nodos de workspace y de agentes ---
+  const [wsDragging, setWsDragging] = useState<string | null>(null);
+  const wsDragRef = useRef<{ key: string; sx: number; sy: number; dx0: number; dy0: number } | null>(null);
+  const [agentDragging, setAgentDragging] = useState<string | null>(null);
+  const agentDragRef = useRef<{ id: string; sx: number; sy: number; dx0: number; dy0: number; moved: boolean } | null>(null);
+  // Tras un drag real de agente, suprimimos el click que dispara el mouseup
+  // para no abrir el agente sin querer.
+  const agentClickSuppressedRef = useRef(false);
+  // Ref siempre-actual de viewScale — el listener de mousemove se registra una
+  // sola vez y necesita el valor vigente para convertir px de pantalla a
+  // unidades del grupo escalado.
+  const viewScaleRef = useRef(viewScale);
+  viewScaleRef.current = viewScale;
+
   useEffect(() => {
     function onMove(e: MouseEvent) {
       const d = dragRef.current;
-      if (!d) return;
-      setPan({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) });
+      if (d) {
+        setPan({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) });
+        return;
+      }
+      const s = viewScaleRef.current || 1;
+      const w = wsDragRef.current;
+      if (w) {
+        const dx = w.dx0 + (e.clientX - w.sx) / s;
+        const dy = w.dy0 + (e.clientY - w.sy) / s;
+        setWsOffsets((prev) => ({ ...prev, [w.key]: { dx, dy } }));
+        return;
+      }
+      const a = agentDragRef.current;
+      if (a) {
+        if (Math.hypot(e.clientX - a.sx, e.clientY - a.sy) > 4) a.moved = true;
+        const dx = a.dx0 + (e.clientX - a.sx) / s;
+        const dy = a.dy0 + (e.clientY - a.sy) / s;
+        setAgentOffsets((prev) => ({ ...prev, [a.id]: { dx, dy } }));
+      }
     }
     function onUp() {
       if (dragRef.current) { dragRef.current = null; setDragging(false); }
+      if (wsDragRef.current) {
+        wsDragRef.current = null;
+        setWsDragging(null);
+        // Persistimos al soltar (no en cada move — evita escrituras masivas).
+        setWsOffsets((cur) => { persistWsOffsets(cur); return cur; });
+      }
+      if (agentDragRef.current) {
+        const moved = agentDragRef.current.moved;
+        agentDragRef.current = null;
+        setAgentDragging(null);
+        if (moved) {
+          agentClickSuppressedRef.current = true;
+          setAgentOffsets((cur) => { persistAgentOffsets(cur); return cur; });
+        }
+      }
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -2393,15 +2509,28 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
     setDragging(true);
   }
+  function startWsDrag(key: string, e: ReactMouseEvent) {
+    e.stopPropagation();
+    const cur = wsOffsets[key] ?? { dx: 0, dy: 0 };
+    wsDragRef.current = { key, sx: e.clientX, sy: e.clientY, dx0: cur.dx, dy0: cur.dy };
+    setWsDragging(key);
+  }
+  function startAgentDrag(id: string, e: ReactMouseEvent) {
+    e.stopPropagation();
+    const cur = agentOffsets[id] ?? { dx: 0, dy: 0 };
+    agentDragRef.current = { id, sx: e.clientX, sy: e.clientY, dx0: cur.dx, dy0: cur.dy, moved: false };
+    setAgentDragging(id);
+  }
 
-  // Zoom con la rueda del mouse sobre el grafo. Listener no-pasivo para poder
-  // hacer preventDefault y que la página no scrollee.
+  // Zoom con la rueda/pinch del mouse sobre el grafo → zoom visual de toda la
+  // vista (`viewScale`), no la separación de nodos. Listener no-pasivo para
+  // poder hacer preventDefault y que la página no scrollee.
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      setZoom((z) => z * (1 - e.deltaY * 0.0015));
+      setViewScale((z) => z * (1 - e.deltaY * 0.0015));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -2412,13 +2541,54 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     background: 'transparent', border: 0, color: t.text1,
     cursor: 'pointer', fontFamily: t.fontSans,
   };
+  const pillStyle: CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 2,
+    padding: 3, borderRadius: 999,
+    background: t.bg2, border: `1px solid ${t.glassBorder}`,
+    boxShadow: t.shadowMd,
+  };
+  const pillIconStyle: CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 22, height: 26, color: t.text3, flexShrink: 0,
+  };
+  const pctBtnStyle: CSSProperties = {
+    ...zoomBtnStyle, width: 'auto', minWidth: 42, padding: '0 8px',
+    fontSize: 11, fontVariantNumeric: 'tabular-nums',
+  };
+  const viewBtnStyle: CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '5px 10px', borderRadius: 999,
+    background: t.bg2, border: `1px solid ${t.glassBorder}`,
+    color: t.text1, fontFamily: t.fontSans, fontSize: 11,
+    cursor: 'pointer', boxShadow: t.shadowMd, whiteSpace: 'nowrap',
+  };
 
-  return (
-    <Glass radius={20} style={{
-      position: 'relative',
-      // Altura responsive — 92vh para que el modelo aproveche casi toda la
-      // ventana, con tope a 1600px para pantallas muy altas. Mínimo 520px.
-      height: 'min(92vh, 1600px)', minHeight: 520,
+  // --- Pantalla completa de la vista de nodos ---
+  // "Fake fullscreen" con position:fixed — funciona igual en web y Electron,
+  // y no depende de la Fullscreen API. Esc sale. El estado se persiste, así
+  // que si dejaste la vista en full, vuelve en full. Cuando está en full la
+  // vista se renderiza vía portal a <body> para escapar de los stacking
+  // contexts de los ancestros — sin esto el dock (fixed) quedaba por encima.
+  const FULL_KEY = 'eco.graph.fullscreen';
+  const [isFull, setIsFull] = useState<boolean>(() => {
+    try { return window.localStorage.getItem(FULL_KEY) === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(FULL_KEY, isFull ? '1' : '0'); } catch { /* noop */ }
+  }, [isFull]);
+  useEffect(() => {
+    if (!isFull) return;
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setIsFull(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFull]);
+
+  const graph = (
+    <Glass radius={isFull ? 0 : 20} style={{
+      position: isFull ? 'fixed' : 'relative',
+      ...(isFull
+        ? { inset: 0, height: '100vh', width: '100vw', zIndex: 9000 }
+        : { height: 'min(92vh, 1600px)', minHeight: 520 }),
       padding: 0, overflow: 'hidden',
     }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }}/>
@@ -2506,11 +2676,11 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             las elipses de fondo, dejando solo enlaces vivos núcleo→electrón.) */}
 
         {/* Grupo paneable — glow + hub + nodos de workspace + electrones +
-            enlaces. La grilla y las partículas quedan fijas como fondo. El
-            zoom NO escala este grupo: actúa sobre los radios de las órbitas,
-            así aumenta/reduce la separación entre nodos sin agrandar los
-            círculos ni el texto. */}
-        <g transform={`translate(${pan.x},${pan.y})`}>
+            enlaces. La grilla y las partículas quedan fijas como fondo.
+            `pan` desplaza; `viewScale` hace zoom visual de TODA la vista
+            (escala alrededor del centro del canvas). La separación entre
+            nodos es otro control aparte (`zoom`, sobre los radios). */}
+        <g transform={`translate(${pan.x},${pan.y}) translate(${cx},${cy}) scale(${viewScale}) translate(${-cx},${-cy})`}>
         {/* Glow radial del centro — se mueve junto con el hub Eco al panear. */}
         <motion.circle
           cx={cx} cy={cy} r={Math.min(W, H) * 0.5} fill="url(#eco-glow)"
@@ -2670,7 +2840,9 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
         {/* Nodos de workspace — un círculo por carpeta, con glifo de folder
             y el nombre de la carpeta. Solo en modo jerárquico (2+ proyectos). */}
         {hierarchical && wsNodes.map((ws) => (
-          <g key={'ws-node-' + ws.key} transform={`translate(${ws.x},${ws.y})`}>
+          <g key={'ws-node-' + ws.key} transform={`translate(${ws.x},${ws.y})`}
+            onMouseDown={(e) => startWsDrag(ws.key, e)}
+            style={{ cursor: wsDragging === ws.key ? 'grabbing' : 'grab' }}>
             {ws.active && (
               <motion.circle cx={0} cy={0} r={WS_NODE_R}
                 fill="none" stroke={t.accent} strokeWidth={1.4}
@@ -2726,10 +2898,18 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           return (
             <g key={n.id}
               transform={`translate(${n.x},${n.y})`}
-              style={{ cursor: 'pointer' }}
+              style={{ cursor: agentDragging === n.id ? 'grabbing' : 'pointer' }}
               onMouseEnter={() => setHover(n.id)}
               onMouseLeave={() => setHover(null)}
-              onClick={() => onOpenAgent(n.id)}>
+              onMouseDown={(e) => startAgentDrag(n.id, e)}
+              onClick={() => {
+                // Si venimos de un drag real, no abrimos el agente.
+                if (agentClickSuppressedRef.current) {
+                  agentClickSuppressedRef.current = false;
+                  return;
+                }
+                onOpenAgent(n.id);
+              }}>
               {/* Wobble cuántico — micromovimiento local */}
               <animateTransform
                 attributeName="transform"
@@ -2808,56 +2988,158 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
         </g>
       </svg>
 
-      {(pan.x !== 0 || pan.y !== 0) && (
-        <button
-          type="button"
-          onClick={() => setPan({ x: 0, y: 0 })}
-          title={tr('graph.recenter')}
-          style={{
-            position: 'absolute', top: 12, left: 16,
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '5px 10px', borderRadius: 999,
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            color: t.text1, fontFamily: t.fontSans, fontSize: 11,
-            cursor: 'pointer', boxShadow: t.shadowMd,
-          }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3"/>
-          </svg>
-          {tr('graph.recenter')}
-        </button>
+      {/* Botones de vista (top-left):
+          · Centrar vista — devuelve el pan al centro (no toca la disposición).
+          · Restablecer disposición — además limpia los offsets manuales de
+            nodos de workspace y de agentes. */}
+      {(pan.x !== 0 || pan.y !== 0
+        || Object.keys(wsOffsets).length > 0
+        || Object.keys(agentOffsets).length > 0) && (
+        <div style={{
+          position: 'absolute', top: 12, left: 16,
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
+        }}>
+          {(pan.x !== 0 || pan.y !== 0) && (
+            <button type="button"
+              onClick={() => setPan({ x: 0, y: 0 })}
+              title={tr('graph.recenter')} style={viewBtnStyle}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3"/>
+              </svg>
+              {tr('graph.recenter')}
+            </button>
+          )}
+          {(Object.keys(wsOffsets).length > 0 || Object.keys(agentOffsets).length > 0) && (
+            <button type="button"
+              onClick={() => {
+                setPan({ x: 0, y: 0 });
+                setWsOffsets({}); persistWsOffsets({});
+                setAgentOffsets({}); persistAgentOffsets({});
+              }}
+              title={tr('graph.reset_layout')} style={viewBtnStyle}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 1 2.6 6.3 M3 18v-4h4"/>
+              </svg>
+              {tr('graph.reset_layout')}
+            </button>
+          )}
+        </div>
       )}
 
-      {/* Controles de zoom — el nivel se persiste en localStorage. */}
+      {/* Pantalla completa — esquina inferior derecha. */}
+      <button
+        type="button"
+        onClick={() => setIsFull((v) => !v)}
+        title={tr(isFull ? 'graph.exit_fullscreen' : 'graph.fullscreen')}
+        style={{
+          position: 'absolute', bottom: 12, right: 16,
+          width: 30, height: 30, borderRadius: 999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: t.bg2, border: `1px solid ${t.glassBorder}`,
+          color: t.text1, cursor: 'pointer', boxShadow: t.shadowMd,
+        }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {isFull
+            ? <path d="M8 3v3a2 2 0 0 1-2 2H3 M21 8h-3a2 2 0 0 1-2-2V3 M3 16h3a2 2 0 0 1 2 2v3 M16 21v-3a2 2 0 0 1 2-2h3"/>
+            : <path d="M8 3H5a2 2 0 0 0-2 2v3 M21 8V5a2 2 0 0 0-2-2h-3 M3 16v3a2 2 0 0 0 2 2h3 M16 21h3a2 2 0 0 0 2-2v-3"/>}
+        </svg>
+      </button>
+
+      {/* Controles de vista — separación de nodos, separación de carpetas y
+          zoom visual; los tres independientes y persistidos. */}
       <div style={{
         position: 'absolute', bottom: 12, left: 16,
-        display: 'flex', alignItems: 'center', gap: 2,
-        padding: 3, borderRadius: 999,
-        background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        boxShadow: t.shadowMd,
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
       }}>
-        <button type="button" onClick={() => setZoom((z) => z - 0.2)}
-          title={tr('graph.zoom_out')} style={zoomBtnStyle}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M5 12h14"/>
-          </svg>
-        </button>
-        <button type="button" onClick={() => setZoom(1)}
-          title={tr('graph.zoom_reset')}
-          style={{ ...zoomBtnStyle, width: 'auto', minWidth: 42, padding: '0 8px',
-            fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>
-          {Math.round(zoom * 100)}%
-        </button>
-        <button type="button" onClick={() => setZoom((z) => z + 0.2)}
-          title={tr('graph.zoom_in')} style={zoomBtnStyle}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14"/>
-          </svg>
-        </button>
+        {/* Separación agentes ↔ carpeta (en modo plano, agentes ↔ Eco) */}
+        <div style={pillStyle}>
+          <span style={pillIconStyle} title={tr('graph.spread_nodes')}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 12h20 M6 8l-4 4 4 4 M18 8l4 4-4 4"/>
+            </svg>
+          </span>
+          <button type="button" onClick={() => setSpreadNodes((z) => z - 0.2)}
+            title={tr('graph.spread_less')} style={zoomBtnStyle}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M5 12h14"/>
+            </svg>
+          </button>
+          <button type="button" onClick={() => setSpreadNodes(1)}
+            title={tr('graph.spread_reset')} style={pctBtnStyle}>
+            {Math.round(spreadNodes * 100)}%
+          </button>
+          <button type="button" onClick={() => setSpreadNodes((z) => z + 0.2)}
+            title={tr('graph.spread_more')} style={zoomBtnStyle}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </button>
+        </div>
+        {/* Separación carpetas ↔ Eco — solo en modo jerárquico (2+ carpetas) */}
+        {hierarchical && (
+          <div style={pillStyle}>
+            <span style={pillIconStyle} title={tr('graph.spread_ws')}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M0,-8 L9,-3.5 L0,1 L-9,-3.5 Z M-9,0 L0,4.5 L9,0 M-9,3.5 L0,8 L9,3.5"
+                  transform="translate(12 12)"/>
+              </svg>
+            </span>
+            <button type="button" onClick={() => setSpreadWs((z) => z - 0.2)}
+              title={tr('graph.spread_less')} style={zoomBtnStyle}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                <path d="M5 12h14"/>
+              </svg>
+            </button>
+            <button type="button" onClick={() => setSpreadWs(1)}
+              title={tr('graph.spread_reset')} style={pctBtnStyle}>
+              {Math.round(spreadWs * 100)}%
+            </button>
+            <button type="button" onClick={() => setSpreadWs((z) => z + 0.2)}
+              title={tr('graph.spread_more')} style={zoomBtnStyle}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                <path d="M12 5v14M5 12h14"/>
+              </svg>
+            </button>
+          </div>
+        )}
+        {/* Zoom visual de toda la vista */}
+        <div style={pillStyle}>
+          <span style={pillIconStyle} title={tr('graph.view_zoom')}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="11" cy="11" r="7"/>
+              <path d="M21 21l-4.3-4.3"/>
+            </svg>
+          </span>
+          <button type="button" onClick={() => setViewScale((z) => z - 0.2)}
+            title={tr('graph.zoom_out')} style={zoomBtnStyle}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M5 12h14"/>
+            </svg>
+          </button>
+          <button type="button" onClick={() => setViewScale(1)}
+            title={tr('graph.zoom_reset')} style={pctBtnStyle}>
+            {Math.round(viewScale * 100)}%
+          </button>
+          <button type="button" onClick={() => setViewScale((z) => z + 0.2)}
+            title={tr('graph.zoom_in')} style={zoomBtnStyle}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div style={{
@@ -2877,6 +3159,11 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
       </div>
     </Glass>
   );
+
+  // En pantalla completa portaleamos a <body> para escapar de los stacking
+  // contexts de los ancestros (el Dashboard vive anidado) — así la vista
+  // cubre todo, incluido el dock.
+  return isFull ? createPortal(graph, document.body) : graph;
 }
 
 // CommandBar — actualmente no se monta en el Dashboard (la input/mic vive
