@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
 import { stateColor, type AgentState } from '@/design/tokens';
@@ -23,10 +23,36 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
   // siempre desde cualquier vista).
   if (bubbles.length === 0 && !onGoHome) return null;
 
-  const ordered = [...bubbles].sort((a, b) => {
+  const sortFn = (a: Bubble, b: Bubble) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     return b.updatedAt - a.updatedAt;
-  });
+  };
+  const ordered = [...bubbles].sort(sortFn);
+
+  // Si hay más de un workspace en uso, agrupamos los iconos del dock por
+  // carpeta — clusters separados por un divisor. Con una sola carpeta es una
+  // lista plana (un divisor sería ruido).
+  const wsGroups = (() => {
+    const map = new Map<string, Bubble[]>();
+    for (const b of bubbles) {
+      const key = b.workspace || '__none__';
+      const arr = map.get(key);
+      if (arr) arr.push(b);
+      else map.set(key, [b]);
+    }
+    return [...map.entries()].map(([key, items]) => ({
+      key,
+      items: [...items].sort(sortFn),
+    }));
+  })();
+  const grouped = wsGroups.length > 1;
+
+  const divider = (
+    <span style={{
+      width: 1, height: 44, alignSelf: 'center',
+      background: t.glassBorder, margin: '0 6px',
+    }}/>
+  );
 
   return (
     <motion.div
@@ -75,26 +101,44 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
         {onGoHome && (
           <>
             <HomeDockIcon active={!!atHome} onClick={onGoHome}/>
-            {bubbles.length > 0 && (
-              <span style={{
-                width: 1, height: 44, alignSelf: 'center',
-                background: t.glassBorder,
-                margin: '0 6px',
-              }}/>
-            )}
+            {bubbles.length > 0 && divider}
           </>
         )}
-        <AnimatePresence initial={false}>
-          {ordered.map((b, i) => (
-            <DockIcon
-              key={b.id}
-              bubble={b}
-              index={i}
-              active={b.id === activeBubbleId}
-              onClick={() => onOpenAgent(b.id)}
-            />
-          ))}
-        </AnimatePresence>
+        {grouped ? (
+          wsGroups.map((g, gi) => (
+            <Fragment key={g.key}>
+              {gi > 0 && divider}
+              <div style={{
+                display: 'flex', flexDirection: 'row',
+                alignItems: 'flex-end', gap: 4,
+              }}>
+                <AnimatePresence initial={false}>
+                  {g.items.map((b, i) => (
+                    <DockIcon
+                      key={b.id}
+                      bubble={b}
+                      index={i}
+                      active={b.id === activeBubbleId}
+                      onClick={() => onOpenAgent(b.id)}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            </Fragment>
+          ))
+        ) : (
+          <AnimatePresence initial={false}>
+            {ordered.map((b, i) => (
+              <DockIcon
+                key={b.id}
+                bubble={b}
+                index={i}
+                active={b.id === activeBubbleId}
+                onClick={() => onOpenAgent(b.id)}
+              />
+            ))}
+          </AnimatePresence>
+        )}
       </div>
     </motion.div>
   );

@@ -149,47 +149,16 @@ export function Dashboard(props: Props) {
         }>{tr('dash.section.agents')}</SectionLabel>
 
         {view === 'grid' ? (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: 14,
-          }}>
-            <AnimatePresence initial={false} mode="popLayout">
-              {bubbles.map((b, i) => (
-                <motion.div
-                  key={b.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.92, y: 12 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.94, y: -8 }}
-                  transition={{
-                    type: 'spring', stiffness: 320, damping: 28,
-                    delay: Math.min(i * 0.03, 0.25),
-                  }}
-                  whileHover={{ y: -2 }}
-                >
-                  <AgentBubble
-                    bubble={b}
-                    workspaces={availableWorkspaces}
-                    onClick={() => onOpenAgent(b.id)}
-                    onRename={(title) => onRename(b.id, title)}
-                    onRemove={() => onRemove(b.id)}
-                    onChangeWorkspace={(ws) => onChangeWorkspace(b.id, ws)}
-                    onSetCategory={(catId) => onSetCategory(b.id, catId)}
-                  />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            <motion.div
-              layout
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: 'spring', stiffness: 280, damping: 26, delay: 0.1 }}
-              whileHover={{ y: -2 }}
-            >
-              <NewAgentCard onCreate={onCreateAgent} workspaces={availableWorkspaces}/>
-            </motion.div>
-          </div>
+          <GridView
+            bubbles={bubbles}
+            workspaces={availableWorkspaces}
+            onOpenAgent={onOpenAgent}
+            onRename={onRename}
+            onRemove={onRemove}
+            onChangeWorkspace={onChangeWorkspace}
+            onSetCategory={onSetCategory}
+            onCreateAgent={onCreateAgent}
+          />
         ) : view === 'kanban' ? (
           <KanbanView
             bubbles={bubbles}
@@ -345,13 +314,15 @@ function LiveAgentsCard({ bubbles }: { bubbles: Bubble[] }) {
         {errors > 0 && <div style={{ width: `${pct(errors)}%`, background: t.err }}/>}
         {idle > 0 && <div style={{ width: `${pct(idle)}%`, background: t.text3, opacity: 0.4 }}/>}
       </div>
+      {/* Solo mostramos los conteos que aportan info — un "● 0" no sirve. */}
       <div style={{
         display: 'flex', gap: 10, marginTop: 7,
         fontSize: 10.5, color: t.text2, fontFamily: t.fontMono,
       }}>
-        <span><span style={{ color: t.ok }}>●</span> {running}</span>
-        <span><span style={{ color: t.warn }}>●</span> {waiting}</span>
+        {running > 0 && <span><span style={{ color: t.ok }}>●</span> {running}</span>}
+        {waiting > 0 && <span><span style={{ color: t.warn }}>●</span> {waiting}</span>}
         {errors > 0 && <span><span style={{ color: t.err }}>●</span> {errors}</span>}
+        {idle > 0 && <span><span style={{ color: t.text3 }}>●</span> {idle}</span>}
       </div>
     </CardShell>
   );
@@ -362,9 +333,14 @@ function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
   const tr = useT();
 
   // ─── Counts en vivo de cada subsistema ──────────────────────────────────
+  // Todos filtran por burbujas vivas (`liveIds`) y reflejan estado ACTIVO en
+  // tiempo real — mismo criterio que los satélites de la vista de nodos.
+  const liveIds = new Set(bubbles.map((b) => b.id));
 
-  // Terminales: PTYs abiertos.
-  const ptys = bubbles.filter((b) => b.ptyOpen).length;
+  // Terminales: PTYs que están procesando algo ahora mismo (no solo abiertos —
+  // un shell idle no es un recurso "en uso"). Set vivo de usePtyBusyNotifier.
+  const busyPtyIds = useBusyBubbleIds();
+  const ptys = [...busyPtyIds].filter((id) => liveIds.has(id)).length;
 
   // Dev servers: escuchamos eco:dev_status para mantener un Map por bubble.
   // Seed inicial con /dev/active para no perder estado al montar el dashboard
@@ -399,7 +375,9 @@ function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
       });
     });
   }, []);
-  const servers = Object.values(serverRoles).reduce((sum, s) => sum + s.size, 0);
+  const servers = Object.entries(serverRoles)
+    .filter(([id]) => liveIds.has(id))
+    .reduce((sum, [, s]) => sum + s.size, 0);
 
   // Navegadores con URL: leemos localStorage + escuchamos eco:browser_url_changed
   // para vivos updates sin re-leer todo el storage en cada render.
@@ -423,7 +401,6 @@ function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
   }, []);
   // Filtramos por bubbles vivas — si una se cerró, su entry en el set queda
   // huérfana hasta el siguiente unload.
-  const liveIds = new Set(bubbles.map((b) => b.id));
   const browsers = [...browsersSet].filter((id) => liveIds.has(id)).length;
 
   // Archivos modificados: comparte cache con FilesPanel y el Dashboard.
@@ -508,6 +485,7 @@ function SystemStatusCard() {
   // Estados básicos — backend siempre OK (si estás viendo esto, está vivo).
   const [apiKey, setApiKey] = useState<'ok' | 'missing' | 'invalid'>('missing');
   const [listenerUp, setListenerUp] = useState<boolean>(false);
+  const [obsidianActive, setObsidianActive] = useState<boolean>(false);
   useEffect(() => {
     let cancel = false;
     apiFetch('/config/api-key').then(async (r) => {
@@ -524,6 +502,12 @@ function SystemStatusCard() {
       const data = await r.json().catch(() => ({}));
       setListenerUp(!!data?.listener?.running);
     }).catch(() => { /* noop */ });
+    // Obsidian: activo = configurado + habilitado.
+    apiFetch('/integrations/obsidian/status').then(async (r) => {
+      if (cancel || !r.ok) return;
+      const data = await r.json().catch(() => ({}));
+      setObsidianActive(!!(data?.configured && data?.enabled));
+    }).catch(() => { /* noop */ });
     return () => { cancel = true; };
   }, []);
 
@@ -531,6 +515,8 @@ function SystemStatusCard() {
     { label: tr('dash.card.sys.backend'),  color: t.ok },
     { label: tr('dash.card.sys.apikey'),   color: apiKey === 'ok' ? t.ok : (apiKey === 'invalid' ? t.err : t.warn) },
     { label: tr('dash.card.sys.listener'), color: listenerUp ? t.ok : t.text3 },
+    // Obsidian solo aparece cuando está activo.
+    ...(obsidianActive ? [{ label: tr('dash.card.sys.obsidian'), color: t.ok }] : []),
   ];
 
   return (
@@ -1555,6 +1541,130 @@ function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
     color: t.text1, fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
     textAlign: 'left',
   };
+}
+
+// ──────────────────── Vista Grid ───────────────────────────────────────────
+// Cards de agentes. Si hay más de un workspace en uso, se agrupan por carpeta
+// con un header por grupo; con una sola carpeta es un grid plano (un header
+// sería ruido).
+function GridView({
+  bubbles, workspaces, onOpenAgent, onRename, onRemove,
+  onChangeWorkspace, onSetCategory, onCreateAgent,
+}: {
+  bubbles: Bubble[];
+  workspaces: string[];
+  onOpenAgent: (id: string) => void;
+  onRename: (id: string, title: string) => void;
+  onRemove: (id: string) => void;
+  onChangeWorkspace: (id: string, workspace: string) => void;
+  onSetCategory: (id: string, categoryId: string | undefined) => void;
+  onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
+}) {
+  const t = useTokens();
+
+  const groups = (() => {
+    const map = new Map<string, Bubble[]>();
+    for (const b of bubbles) {
+      const key = b.workspace || '__none__';
+      const arr = map.get(key);
+      if (arr) arr.push(b);
+      else map.set(key, [b]);
+    }
+    return [...map.entries()].map(([key, items]) => ({
+      key,
+      label: key === '__none__'
+        ? 'Sin carpeta'
+        : (key.split('/').filter(Boolean).pop() || key),
+      path: key === '__none__' ? '' : key,
+      items,
+    }));
+  })();
+  const grouped = groups.length > 1;
+
+  const gridStyle: CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: 14,
+  };
+
+  const renderCard = (b: Bubble, i: number) => (
+    <motion.div
+      key={b.id}
+      layout
+      initial={{ opacity: 0, scale: 0.92, y: 12 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.94, y: -8 }}
+      transition={{
+        type: 'spring', stiffness: 320, damping: 28,
+        delay: Math.min(i * 0.03, 0.25),
+      }}
+      whileHover={{ y: -2 }}
+    >
+      <AgentBubble
+        bubble={b}
+        workspaces={workspaces}
+        onClick={() => onOpenAgent(b.id)}
+        onRename={(title) => onRename(b.id, title)}
+        onRemove={() => onRemove(b.id)}
+        onChangeWorkspace={(ws) => onChangeWorkspace(b.id, ws)}
+        onSetCategory={(catId) => onSetCategory(b.id, catId)}
+      />
+    </motion.div>
+  );
+
+  const newCard = (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.92 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 280, damping: 26, delay: 0.1 }}
+      whileHover={{ y: -2 }}
+    >
+      <NewAgentCard onCreate={onCreateAgent} workspaces={workspaces}/>
+    </motion.div>
+  );
+
+  if (!grouped) {
+    return (
+      <div style={gridStyle}>
+        <AnimatePresence initial={false} mode="popLayout">
+          {bubbles.map(renderCard)}
+        </AnimatePresence>
+        {newCard}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {groups.map((g) => (
+        <div key={g.key}>
+          <div style={{
+            display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10,
+          }}>
+            <IconLayers size={13} strokeWidth={2}/>
+            <span style={{
+              fontFamily: t.fontSans, fontSize: 13, fontWeight: 600, color: t.text0,
+            }}>{g.label}</span>
+            {g.path && (
+              <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>
+                {g.path}
+              </span>
+            )}
+            <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>
+              · {g.items.length}
+            </span>
+          </div>
+          <div style={gridStyle}>
+            <AnimatePresence initial={false} mode="popLayout">
+              {g.items.map(renderCard)}
+            </AnimatePresence>
+          </div>
+        </div>
+      ))}
+      <div style={gridStyle}>{newCard}</div>
+    </div>
+  );
 }
 
 // ──────────────────── Vista Kanban ─────────────────────────────────────────

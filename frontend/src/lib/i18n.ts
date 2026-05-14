@@ -159,7 +159,7 @@ const DICT = {
   'dash.card.live.title':     { es: 'Agentes en vivo', en: 'Live agents' },
 
   'dash.card.res.title':      { es: 'Recursos en uso', en: 'Open resources' },
-  'dash.card.res.ptys':       { es: 'Terminales', en: 'Terminals' },
+  'dash.card.res.ptys':       { es: 'Terminales activas', en: 'Active terminals' },
   'dash.card.res.servers':    { es: 'Dev servers', en: 'Dev servers' },
   'dash.card.res.browsers':   { es: 'Navegadores', en: 'Browsers' },
   'dash.card.res.files':      { es: 'Archivos modificados', en: 'Modified files' },
@@ -171,6 +171,7 @@ const DICT = {
   'dash.card.sys.backend':    { es: 'Backend Eco', en: 'Eco backend' },
   'dash.card.sys.apikey':     { es: 'API key Claude', en: 'Claude API key' },
   'dash.card.sys.listener':   { es: 'Listener de voz', en: 'Voice listener' },
+  'dash.card.sys.obsidian':   { es: 'Obsidian', en: 'Obsidian' },
 
   'dash.section.agents': { es: 'Agentes', en: 'Agents' },
   'dash.new_bubble': { es: 'Nuevo agente', en: 'New agent' },
