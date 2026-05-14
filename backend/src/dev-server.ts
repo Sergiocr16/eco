@@ -39,6 +39,11 @@ type Session = {
   command: string;
   port: number;
   url: string;
+  // Puerto que INYECTAMOS por env (PORT, SERVER_PORT, etc.). Si el proyecto
+  // bindea uno distinto (config con puerto hardcoded que ignora env),
+  // `maybeUpdatePortFromLog` detecta el mismatch y disparamos el repair —
+  // así el primer server tampoco se queda con el puerto del código.
+  injectedPort: number;
   proc: ChildProcess | null;
   // Process group ID. Cuando spawneamos con `detached: true`, el child se
   // convierte en el líder de su propio process group y su pgid === proc.pid.
@@ -127,6 +132,7 @@ function restoreSessions(): void {
         bubbleId: p.bubbleId, role: p.role,
         workspace: p.workspace, command: p.command,
         port: p.port, url: p.url,
+        injectedPort: p.port,  // re-adoptado: ya está corriendo, no re-verificamos
         proc: null,            // no podemos re-attachar stdout
         pgid: p.pgid,
         status: 'running',     // está vivo según el pgid
@@ -339,21 +345,35 @@ const PORT_FROM_LOG: RegExp[] = [
 ];
 
 /** @returns true si detectó un puerto distinto al actual y actualizó la
- *  session. Caller debería re-broadcast si la session ya estaba running. */
-function maybeUpdatePortFromLog(s: Session, text: string): boolean {
+ *  session. Devuelve el puerto real detectado (o null si no detectó nada).
+ *  Caller decide: re-broadcast si la session ya estaba running, y disparar
+ *  el repair si el puerto real ≠ el inyectado. */
+// Códigos ANSI (color, cursor, etc.). browser-sync / gulp / vite colorean
+// el URL del log — sin strippear esto, `Local:\s+https?` se rompe porque
+// hay un `\x1b[36m` entre el espacio y el `http`.
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
+
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '');
+}
+
+function maybeUpdatePortFromLog(s: Session, text: string): { realPort: number; changed: boolean } | null {
+  // `text` ya viene sin ANSI desde onData.
   for (const re of PORT_FROM_LOG) {
     const m = text.match(re);
     if (!m) continue;
     const realPort = Number(m[1]);
-    if (!realPort || realPort < 1 || realPort > 65535) return false;
-    if (realPort === s.port) return false;
-    // El proyecto bindeó un puerto distinto al inyectado. Sincronizamos.
+    if (!realPort || realPort < 1 || realPort > 65535) return null;
+    if (realPort === s.port) return { realPort, changed: false };
+    // El proyecto bindeó un puerto distinto al actual de la session.
+    // Sincronizamos s.port para que el BrowserPanel apunte bien.
     s.port = realPort;
     s.url = `http://127.0.0.1:${realPort}`;
     markAssigned(realPort);
-    return true;
+    return { realPort, changed: true };
   }
-  return false;
+  return null;
 }
 
 /** Llama a `claude -p` para que infiera el comando del dev server. */
@@ -499,10 +519,14 @@ async function retryWithNewPort(s: Session) {
   const repair = repairPortHardcode(s.workspace, s.command, s.output);
   if (repair.ok) s.command = repair.command;
 
-  // 3) Asignar nuevo puerto libre.
+  // 3) Asignar nuevo puerto libre. Actualizamos injectedPort también para
+  //    que la próxima verificación (real port vs injected) compare contra
+  //    el puerto nuevo — si el config quedó bien parcheado, real ===
+  //    injectedPort y no se vuelve a disparar el repair.
   try {
     const newPort = await findFreePort();
     s.port = newPort;
+    s.injectedPort = newPort;
     s.url = `http://127.0.0.1:${newPort}`;
     appendOutput(s, `[eco] Reintentando con puerto ${newPort}: ${s.command}\n`);
   } catch {
@@ -642,26 +666,45 @@ function spawnSession(s: Session) {
 
   let conflictTriggered = false;
   const onData = (data: Buffer) => {
-    const text = data.toString('utf-8');
-    appendOutput(s, text);
-    // SIEMPRE chequeamos el puerto real ANTES de marcar `running`. Si el
-    // proyecto bindeó un puerto distinto al inyectado (ej. Vite con
-    // strictPort, o un script con puerto hardcoded), `maybeUpdatePortFromLog`
-    // actualiza s.port y s.url. Si la session ya estaba `running` y el
-    // puerto cambió (ej. Vite imprime "Local: ..." DESPUÉS del "ready"),
-    // re-broadcast para que el BrowserPanel y el frontend-slot en dual
-    // mode re-sincronicen al puerto real.
-    const portChanged = maybeUpdatePortFromLog(s, text);
+    const raw = data.toString('utf-8');
+    appendOutput(s, raw);  // al buffer/log van los colores ANSI intactos
+    // Para los matches (puerto, ready, conflicto) usamos texto SIN ANSI —
+    // browser-sync/gulp/vite colorean el URL y eso rompe los regex.
+    const text = stripAnsi(raw);
+    // Chequeamos el puerto real que el proyecto bindeó (del log).
+    const detected = maybeUpdatePortFromLog(s, text);
+
+    // ─── Caso clave: el proyecto bindeó un puerto distinto al que
+    // INYECTAMOS por env (`s.injectedPort`). Esto significa que el config
+    // hardcodea el puerto y NO respeta `process.env.PORT`. Pasa típicamente
+    // con el PRIMER server: no hay EADDRINUSE (el puerto hardcoded está
+    // libre) así que el flujo de conflicto nunca se disparaba — el server
+    // quedaba en el puerto del código en vez del random asignado.
+    // Disparamos el repair igual: Claude parchea el config para leer
+    // process.env.PORT y reintentamos con el puerto random. Así TODOS los
+    // servers (1ro, 2do, ...) terminan en su puerto único asignado.
+    if (
+      !conflictTriggered &&
+      detected &&
+      s.injectedPort > 0 &&
+      detected.realPort !== s.injectedPort &&
+      (s.status === 'starting' || s.status === 'running')
+    ) {
+      conflictTriggered = true;
+      appendOutput(s, `\n[eco] El server bindeó el puerto ${detected.realPort} en vez del asignado ${s.injectedPort} — el config ignora process.env.PORT. Parcheando…\n`);
+      void retryWithNewPort(s);
+      return;
+    }
+
     if (s.status === 'starting' && READY_RE.test(text)) {
       s.status = 'running';
       broadcastStatus(s);
       return;
     }
-    if (portChanged && s.status === 'running') {
+    if (detected?.changed && s.status === 'running') {
       broadcastStatus(s);
     }
-    // Conflicto de puerto detectado en starting → auto-retry una vez con
-    // nuevo puerto + edits via Claude.
+    // Conflicto de puerto explícito (EADDRINUSE) → auto-retry.
     if (!conflictTriggered && (s.status === 'starting' || s.status === 'running') && PORT_CONFLICT_RE.test(text)) {
       conflictTriggered = true;
       void retryWithNewPort(s);
@@ -716,6 +759,7 @@ export async function startDevServer(
   const s: Session = existing ?? {
     bubbleId, role, workspace, command: cmd, port,
     url: `http://127.0.0.1:${port}`,
+    injectedPort: port,
     proc: null, pgid: null, status: 'idle', output: '',
     startedAt: null, exitCode: null, exitedAt: null,
     retries: 0,
@@ -723,6 +767,7 @@ export async function startDevServer(
   s.role = role;
   s.command = cmd;
   s.port = port;
+  s.injectedPort = port;  // el puerto que vamos a inyectar por env
   s.url = `http://127.0.0.1:${port}`;
   // Reseteamos el contador de retries en cada start manual del usuario.
   s.retries = 0;
@@ -966,6 +1011,7 @@ export async function runSkillAction(
   if (!existing) {
     existing = {
       bubbleId, role: 'main', workspace, command: `/${skill} ${action}`, port: 0, url: '',
+      injectedPort: 0,
       proc: null, pgid: null, status: 'idle', output: '',
       startedAt: null, exitCode: null, exitedAt: null,
       retries: 0, skill,

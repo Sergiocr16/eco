@@ -26,7 +26,7 @@ import {
   IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
   IconCheck, IconX, IconBolt, IconBranch,
-  IconEdit, IconFolder, IconTrash, IconCopy,
+  IconAgent, IconFolder, IconTrash, IconCopy,
   type IconProps,
 } from '@/design/icons';
 import type { Bubble, Message, ToolCall } from '@/lib/types';
@@ -87,7 +87,7 @@ function HeaderMenu({
         display: 'flex', flexDirection: 'column',
       }}>
       <button type="button" onClick={onRename} style={menuItemStyleAt(t)}>
-        <IconEdit size={12}/> {tr('detail.menu.rename')}
+        <IconAgent size={13}/> {tr('detail.menu.rename')}
       </button>
       <button type="button" onClick={() => setWsOpen((v) => !v)} style={menuItemStyleAt(t)}>
         <IconFolder size={12}/>
@@ -363,6 +363,7 @@ export function AgentDetail({
           onSend={onSend}
           onInterrupt={onInterrupt}
           onGoTab={(target) => setTab(target)}
+          onRename={onRename}
         />
       </div>
     </div>
@@ -2310,13 +2311,14 @@ function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubb
 }
 
 function AgentSidebar({
-  bubble, filesChangedCount, onSend, onInterrupt, onGoTab,
+  bubble, filesChangedCount, onSend, onInterrupt, onGoTab, onRename,
 }: {
   bubble: Bubble;
   filesChangedCount: number;
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onGoTab: (tab: Tab) => void;
+  onRename: (title: string) => void;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -2470,7 +2472,11 @@ function AgentSidebar({
                 </div>
               )}
               <CurrentPrBanner workspace={bubble.workspace} bubbleId={bubble.id}/>
-              <BranchPicker workspace={bubble.workspace} bubbleId={bubble.id}/>
+              <BranchPicker
+                workspace={bubble.workspace}
+                bubbleId={bubble.id}
+                onRenameAgent={(name) => onRename(name)}
+              />
               <PullRequestsList workspace={bubble.workspace} bubbleId={bubble.id}/>
               <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
               <PushButton bubbleId={bubble.id} workspace={bubble.workspace}/>

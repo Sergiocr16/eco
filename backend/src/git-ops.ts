@@ -137,6 +137,23 @@ function listDirtyFiles(workspace: string): string[] {
   return r.stdout.split('\n').map((l) => l.slice(3).trim()).filter(Boolean).slice(0, 50);
 }
 
+// Si el worktree estaba en una rama auto-creada `eco/<id>` y el user cambió
+// a otra rama, esa `eco/<id>` queda huérfana. La limpiamos:
+//  - mode 'discard' → `git branch -D` (force): el user descartó los cambios,
+//    se borra entera aunque tuviera commits.
+//  - 'plain' / 'carry' → `git branch -d` (safe): git solo la borra si está
+//    fully-merged / sin commits propios. Si tiene trabajo, la conserva.
+// Best-effort: cualquier error se ignora (la rama puede no existir, estar
+// checked-out en otro worktree, etc.).
+function maybeCleanupEcoBranch(workspace: string, prevBranch: string, mode: CheckoutMode): void {
+  if (!prevBranch || !/^eco\//.test(prevBranch)) return;
+  // No borrar si el checkout fue no-op (seguimos en la misma rama).
+  const cur = git(['rev-parse', '--abbrev-ref', 'HEAD'], workspace);
+  if (cur.ok && cur.stdout.trim() === prevBranch) return;
+  const flag = mode === 'discard' ? '-D' : '-d';
+  git(['branch', flag, prevBranch], workspace);
+}
+
 export function checkoutBranch(
   workspace: string,
   branch: string,
@@ -145,6 +162,11 @@ export function checkoutBranch(
 ): GitActionResult {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
   if (!branch || /[\s'"`;|&$<>()\\]/.test(branch)) return { ok: false, error: 'Nombre de rama inválido' };
+
+  // Rama actual ANTES del checkout — para limpiar la `eco/<id>` huérfana
+  // si el user se mueve a otra rama.
+  const prevBranchR = git(['rev-parse', '--abbrev-ref', 'HEAD'], workspace);
+  const prevBranch = prevBranchR.ok ? prevBranchR.stdout.trim() : '';
 
   // Si pedimos checkout de un branch remoto sin crear local, hacemos `checkout -t`
   // que crea un local trackeando el remoto.
@@ -167,6 +189,7 @@ export function checkoutBranch(
       const msg = (r.stderr || r.stdout).trim() || 'checkout falló';
       return { ok: false, error: msg.slice(0, 600) };
     }
+    maybeCleanupEcoBranch(workspace, prevBranch, mode);
     return { ok: true, message: r.stdout.trim() || `Cambiado a «${branch}» (cambios descartados)` };
   }
 
@@ -189,13 +212,16 @@ export function checkoutBranch(
       const pop = git(['stash', 'pop'], workspace);
       if (!pop.ok) {
         // Conflictos al popear: cambio de rama OK pero hay merge conflicts.
+        // NO limpiamos la rama vieja — el user todavía tiene que resolver.
         return {
           ok: true,
           message: `Cambiado a «${branch}». Conflictos al traer cambios — resolvelos manualmente (git stash list).`,
         };
       }
+      maybeCleanupEcoBranch(workspace, prevBranch, mode);
       return { ok: true, message: `Cambiado a «${branch}» con tus cambios traídos.` };
     }
+    maybeCleanupEcoBranch(workspace, prevBranch, mode);
     return { ok: true, message: co.stdout.trim() || `Cambiado a «${branch}»` };
   }
 
@@ -235,6 +261,7 @@ export function checkoutBranch(
       return { ok: false, error: msg.slice(0, 600) };
     }
   }
+  maybeCleanupEcoBranch(workspace, prevBranch, mode);
   return { ok: true, message: r.stdout.trim() || `Cambiado a «${branch}»` };
 }
 
@@ -663,7 +690,14 @@ export type PullRequestsResult =
   | { ok: false; error: string; code?: string };
 
 function ghAvailable(): boolean {
-  const r = spawnSync('gh', ['--version'], { timeout: 3_000, encoding: 'utf-8' });
+  // env: buildSafeEnv → PATH augmentado con /opt/homebrew/bin etc., así
+  // `gh` se encuentra aunque Electron se haya lanzado desde Finder (que no
+  // hereda el PATH del shell del user).
+  const r = spawnSync('gh', ['--version'], {
+    timeout: 3_000,
+    encoding: 'utf-8',
+    env: buildSafeEnv({}),
+  });
   return r.status === 0;
 }
 

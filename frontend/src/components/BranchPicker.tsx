@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
 import { Glass } from '@/design/primitives';
-import { IconBranch, IconSearch, IconX, IconCheck, IconResume, IconEdit } from '@/design/icons';
+import { IconBranch, IconSearch, IconX, IconCheck, IconResume, IconEdit, IconAgent } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 
@@ -27,9 +27,12 @@ type BranchListResult = {
 type Props = {
   workspace: string;
   bubbleId: string;
+  // Renombra el AGENTE (la burbuja) — distinto de renombrar la rama git.
+  // Lo usa el botón "usar nombre de la rama como nombre del agente".
+  onRenameAgent?: (name: string) => void;
 };
 
-export function BranchPicker({ workspace, bubbleId }: Props) {
+export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
   const t = useTokens();
   const [data, setData] = useState<BranchListResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -279,18 +282,39 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
             )}
           </button>
           {!noRepo && currentBranch && (
-            <button
-              type="button"
-              onClick={() => { setNewName(currentBranch); setRenaming(true); }}
-              title="Renombrar rama actual"
-              style={{
-                width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
-                background: 'transparent', color: t.text3, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-              <IconEdit size={11}/>
-            </button>
+            <>
+              {/* Renombrar el AGENTE con el nombre de la rama actual. Útil
+                  para que el título de la burbuja matchee su branch sin
+                  tipear. Distinto del lápiz de al lado (renombra la rama). */}
+              {onRenameAgent && (
+                <button
+                  type="button"
+                  onClick={() => onRenameAgent(currentBranch)}
+                  title={`Renombrar el agente a «${currentBranch}»`}
+                  style={{
+                    width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
+                    background: 'transparent', color: t.text3, cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = t.accent; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = t.text3; }}>
+                  <IconAgent size={12}/>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { setNewName(currentBranch); setRenaming(true); }}
+                title="Renombrar rama actual"
+                style={{
+                  width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
+                  background: 'transparent', color: t.text3, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                <IconEdit size={11}/>
+              </button>
+            </>
           )}
         </div>
       )}

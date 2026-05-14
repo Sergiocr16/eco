@@ -100,6 +100,18 @@ export const IconKey = (p: IconProps) => (
 export const IconUser = (p: IconProps) => (
   <Base {...p}><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/></Base>
 );
+// Robot — representa un "agente" (burbuja de Claude). Usado en botones de
+// crear / renombrar agente para distinguirlos de acciones sobre git/archivos.
+export const IconAgent = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="5" y="9" width="14" height="10" rx="3"/>
+    <path d="M12 9V5"/>
+    <circle cx="12" cy="3.5" r="1.5"/>
+    <circle cx="9.5" cy="14" r="1"/>
+    <circle cx="14.5" cy="14" r="1"/>
+    <path d="M3 13v2M21 13v2"/>
+  </Base>
+);
 export const IconLock = (p: IconProps) => (
   <Base {...p}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></Base>
 );

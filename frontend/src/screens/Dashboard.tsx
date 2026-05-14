@@ -6,9 +6,9 @@ import {
   Glass, glassEffect, IconBtn, StatusDot, Pill, Kbd, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import {
-  IconWave, IconMic, IconSend, IconPlus, IconGrid, IconGraph, IconExt, IconColumns,
-  IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck,
-  IconClock, IconAlert, IconZap, IconCpu, IconEdit, IconTrash,
+  IconWave, IconMic, IconSend, IconGrid, IconGraph, IconExt, IconColumns,
+  IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck, IconAgent,
+  IconClock, IconAlert, IconZap, IconCpu, IconTrash,
   IconGlobe, IconLayers, IconShield, IconFile, IconCommand, type IconProps,
 } from '@/design/icons';
 import type { Bubble, VoiceState } from '@/lib/types';
@@ -912,7 +912,7 @@ function NameAgentDialog({
             background: t.accentFaint, color: t.accent,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <IconPlus size={17} strokeWidth={2.4}/>
+            <IconAgent size={18} strokeWidth={2}/>
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>
@@ -1105,7 +1105,7 @@ function CreateAgentButton({
           cursor: 'pointer',
           boxShadow: `0 0 12px ${t.accentGlow}`,
         }}>
-        <IconPlus size={13} strokeWidth={2.5}/>
+        <IconAgent size={14} strokeWidth={2}/>
         {tr('dash.bubble.new')}
       </button>
       {dialog}
@@ -1201,7 +1201,7 @@ function NewAgentCard({
           background: t.bg3, display: 'flex', alignItems: 'center', justifyContent: 'center',
           border: `1px solid ${t.glassBorder}`, color: t.accent,
         }}>
-          <IconPlus size={22}/>
+          <IconAgent size={22} strokeWidth={1.8}/>
         </div>
         <div style={{ fontSize: 12.5, color: t.text2 }}>{tr('dash.bubble.name_label')}</div>
         <input
@@ -1372,7 +1372,7 @@ function NewAgentCard({
         background: t.bg3, display: 'flex', alignItems: 'center', justifyContent: 'center',
         border: `1px solid ${t.glassBorder}`,
       }}>
-        <IconPlus size={22}/>
+        <IconAgent size={22} strokeWidth={1.8}/>
       </div>
       <div style={{ fontSize: 13, fontWeight: 500 }}>{tr('dash.new_bubble')}</div>
       <div style={{ fontSize: 11, color: t.text3 }} dangerouslySetInnerHTML={{ __html: tr('dash.new_bubble_hint') }}/>
@@ -1475,7 +1475,7 @@ function BubbleMenu({
       }}
     >
       <button type="button" onClick={onRename} style={menuItemStyle(t)}>
-        <IconEdit size={12}/> {tr('menu.rename')}
+        <IconAgent size={13}/> {tr('menu.rename')}
       </button>
       <button type="button" onClick={onRemove} style={{ ...menuItemStyle(t), color: t.err }}>
         <IconTrash size={12}/> {tr('menu.close_bubble')}
@@ -1647,7 +1647,7 @@ function KanbanView({
                   borderRadius: 10, background: 'transparent', cursor: 'pointer',
                   color: t.text2, fontFamily: t.fontSans, fontSize: 11.5,
                 }}>
-                <IconPlus size={12}/> {tr('dash.new_bubble')}
+                <IconAgent size={13} strokeWidth={2}/> {tr('dash.new_bubble')}
               </button>
             )}
           </motion.div>

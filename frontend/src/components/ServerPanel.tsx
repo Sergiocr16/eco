@@ -720,8 +720,18 @@ function PanelHeader({
                   <button
                     type="button"
                     onClick={() => {
-                      ecoEmit('eco:browser_navigate', { bubbleId, url: s.url });
+                      // Orden importa: PRIMERO cambiamos de tab para que el
+                      // BrowserPanel monte (KeepAliveBrowser lo monta al
+                      // volverse visible). DESPUÉS, con un delay, emitimos
+                      // el navigate — si lo emitimos antes, el BrowserPanel
+                      // todavía no registró su listener `eco:browser_navigate`
+                      // y el evento se pierde (bug del "primer click no abre
+                      // el URL, el segundo sí").
                       ecoEmit('eco:switch_tab', { tab: 'browser' });
+                      const url = s.url;
+                      window.setTimeout(() => {
+                        ecoEmit('eco:browser_navigate', { bubbleId, url });
+                      }, 120);
                     }}
                     title="Abrir en el navegador de Eco (tab Navegador)"
                     style={{
