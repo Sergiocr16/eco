@@ -1843,9 +1843,12 @@ function FeatureGrid() {
     { icon: IconGlobe,    title: tr('settings.about.feat.browser.title'),  body: tr('settings.about.feat.browser.body') },
     { icon: IconCpu,      title: tr('settings.about.feat.server.title'),   body: tr('settings.about.feat.server.body') },
     { icon: IconFolder,   title: tr('settings.about.feat.git.title'),      body: tr('settings.about.feat.git.body') },
+    { icon: IconCheck,    title: tr('settings.about.feat.review.title'),   body: tr('settings.about.feat.review.body') },
     { icon: IconMic,      title: tr('settings.about.feat.voice.title'),    body: tr('settings.about.feat.voice.body') },
     { icon: IconLayers,   title: tr('settings.about.feat.obsidian.title'), body: tr('settings.about.feat.obsidian.body') },
     { icon: IconBolt,     title: tr('settings.about.feat.skills.title'),   body: tr('settings.about.feat.skills.body') },
+    { icon: IconSettings, title: tr('settings.about.feat.themes.title'),   body: tr('settings.about.feat.themes.body') },
+    { icon: IconTrash,    title: tr('settings.about.feat.cleanup.title'),  body: tr('settings.about.feat.cleanup.body') },
   ];
   return (
     <div style={{

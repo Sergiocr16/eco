@@ -1,8 +1,8 @@
 # Eco
 
-Asistente personal para Mac, Windows y Linux. Voz, archivos, código, git
-y navegador integrados — 100% local. Distribuido como **app nativa**
-(.dmg / .exe / .AppImage) vía Electron 33.
+Asistente personal para macOS Apple Silicon (`arm64`). Voz, archivos,
+código, git y navegador integrados — 100% local. Distribuido como
+**app nativa** (`.dmg`) vía Electron 33.
 
 ```
         ╭───────────────────────────────────────╮
@@ -25,18 +25,38 @@ y navegador integrados — 100% local. Distribuido como **app nativa**
 ```
 
 **Qué es**: un orquestador de conversaciones con Claude Code SDK. Cada
-conversación es una "agente" independiente con su propio sessionId, un
-**worktree git aislado**, terminal real con PTY, archivos modificados,
-plan, y branches del repo. Voz siempre activa con dispatcher por prefijo:
-`Eco <comando>` ejecuta acción del sistema (parser local tolerante a
-sinónimos y rellenos); sin `Eco` adelante el texto va al agente de la
-agente activa, o al PTY si estás en la pestaña Shell.
+agente es una "burbuja" independiente con su propio sessionId, un
+**worktree git aislado** (desde la rama base que elijas), terminal real
+con PTY, dev server con puerto único y navegador con **partition propia**
+(cookies/localStorage NO se cruzan entre agentes). Voz siempre activa
+con dispatcher por prefijo: `Eco <comando>` ejecuta acción del sistema
+(parser local tolerante a sinónimos y rellenos); sin `Eco` adelante el
+texto va al agente activo, o al PTY si estás en la pestaña Shell.
 
 **Aislamiento por agente**: cuando trabajás sobre un repo git, cada
 agente crea automáticamente su propio `git worktree` en
-`~/.eco/worktrees/<bubbleId>` sobre una rama `eco/<short>`. Dos agentes
-tocando el mismo repo nunca se pisan. La rama queda viva al cerrar la
-agente para que puedas mergear o revisar.
+`~/.eco/worktrees/<bubbleId>` sobre una rama `eco/<short>`. La rama
+base se elige al crear el agente (favoritos configurables por workspace).
+Dos agentes tocando el mismo repo nunca se pisan: cada uno tiene su
+puerto de dev server (auto-asignado serializado, sin race conditions),
+su browser session aislado, y su terminal. Al cerrar el agente, se borra
+el worktree y la rama `eco/<short>` (doble confirmación si hay cambios
+sin commitear).
+
+**Multi-detail keep-alive**: cambiar entre agentes A → B → A no recarga
+nada. Cada agente abierto mantiene su árbol de paneles vivo (webview,
+PTY, chat, server, files, todo). El cleanup se dispara solo al cerrar el
+agente explícitamente.
+
+**Review estilo Cursor**: el agente edita libremente al worktree, vos
+revisás los diffs después con dots ámbar/verde por archivo, aceptás/
+rechazás por hunk o por archivo inline. Banner persistente con
+pendientes. Toggle opt-in en Settings → General.
+
+**Git integrado**: branch picker, commit con IA (preview editable),
+push, pull/fetch, lista de PRs con checkout, banner del PR actual con
+merge/close. La sección Git en la sidebar muestra de qué rama salió el
+worktree y se refresca sola al cambiar de branch.
 
 **Privacidad**: el audio nunca sale de tu máquina. STT y wake word corren
 locales (faster-whisper + openwakeword). TTS también es local (Piper).
@@ -52,6 +72,14 @@ frontend (resistente a desfase entre versiones).
 palabras + opcional foto de perfil. La cuenta vive en `~/.eco/user.json`
 con argon2id y chmod 600. Sin servidor externo, sin Firebase. Bloquear /
 cerrar sesión / eliminar usuario desde el menú de cuenta.
+
+**Personalización**: **35 temas** (los clásicos + extravagantes:
+Vaporwave, Aurora Boreal, Volcán, Galaxia, Matrix, Atardecer, Bubblegum,
+Neon Night, Acid Yellow, Blood Moon, Mostaza, Cherry Bomb, Sakura,
+Esmeralda, Real, Carbón) y **26 accent hues** (Mint, Rojo sangre,
+Ladrillo, Coral, Ámbar, Naranja, Amarillo, Dorado, Mostaza, Verde lima,
+Esmeralda, Verde, Verde agua, Turquesa, Cian eléctrico, Cielo, Azul
+real, Azul, Índigo, Lavanda, Púrpura, Violeta, Fucsia, Magenta, Rosa).
 
 **App nativa**: empaquetable como `.dmg` para macOS Apple Silicon
 (arm64) con `npm run dmg`. Electron 33 spawnea el backend Node como
