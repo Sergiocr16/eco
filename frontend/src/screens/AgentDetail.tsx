@@ -1381,7 +1381,13 @@ async function runSkillInTerminal(opts: {
   return r;
 }
 
-function SkillsCard({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
+function SkillsCard({
+  bubbleId, workspace, onSend,
+}: {
+  bubbleId: string;
+  workspace: string;
+  onSend: (text: string) => void;
+}) {
   const t = useTokens();
   const { skills } = useSkills(workspace);
   const { isFav, toggle: toggleFav } = useSkillFavorites();
@@ -1395,20 +1401,26 @@ function SkillsCard({ bubbleId, workspace }: { bubbleId: string; workspace: stri
     [skills, isFav],
   );
 
+  // Al click de un skill: lo escribimos al PTY del agente como
+  // `/skill-name\r` para que Claude CLI lo ejecute (assumiendo que el user
+  // tiene `claude` corriendo en la terminal del bubble). Después salta a la
+  // pestaña Terminal para ver la respuesta.
   async function run(skill: SkillInfo) {
     setBusy(skill.name); setErr(null);
     const r = await runSkillInTerminal({ bubbleId, workspace, skill });
     setBusy(null);
     if (!r.ok) setErr(r.error);
   }
+  void onSend; // prop conservada por si en el futuro hay flow chat-based
 
   return (
     <div>
+      {/* SkillsPicker en la esquina sup-derecha — el título "Skills" lo
+          aporta la CollapsibleSection wrapper. */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
         marginBottom: 8,
       }}>
-        <SectionLabel>Skills</SectionLabel>
         <SkillsPicker
           workspace={workspace}
           onRun={(skill) => void run(skill)}
@@ -1416,20 +1428,31 @@ function SkillsCard({ bubbleId, workspace }: { bubbleId: string; workspace: stri
       </div>
       {favSkills.length === 0 ? (
         <div style={{
-          padding: 10, borderRadius: 10,
-          background: t.bg2, border: `1px dashed ${t.glassBorder}`,
+          padding: '12px 14px', borderRadius: 12,
+          background: `linear-gradient(135deg, ${t.accentFaint} 0%, ${t.bg2} 100%)`,
+          border: `1px dashed ${t.glassBorder}`,
           fontSize: 11, color: t.text2, lineHeight: 1.5,
+          display: 'flex', alignItems: 'flex-start', gap: 10,
         }}>
-          Marcá tus skills favoritos con la <span style={{ color: t.warn }}>★</span> en el picker
-          para acceso rápido desde acá.
+          <div style={{
+            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+            background: t.bg3, color: t.warn,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 14,
+          }}>★</div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: t.text0, marginBottom: 2 }}>
+              Sin favoritos aún
+            </div>
+            <div>Abrí el picker (botón arriba a la derecha) y marcá con <span style={{ color: t.warn }}>★</span> los skills que usás seguido.</div>
+          </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {favSkills.map((s) => {
             const running = busy === s.name;
+            const desc = s.description?.trim();
             return (
-              // <div role="button"> en lugar de <button>: el chip tiene otro
-              // <button> adentro (×) y los browsers no permiten button anidado.
               <div
                 key={skillIdOf(s)}
                 role="button"
@@ -1442,31 +1465,91 @@ function SkillsCard({ bubbleId, workspace }: { bubbleId: string; workspace: stri
                 }}
                 title={`Ejecuta /${s.name} en la terminal`}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '8px 10px', borderRadius: 9,
+                  position: 'relative',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 12px 10px 14px',
+                  borderRadius: 12,
                   border: `1px solid ${running ? t.accent : t.glassBorder}`,
                   background: running ? t.accentFaint : t.bg2,
-                  color: t.text0, cursor: busy ? 'wait' : 'pointer',
+                  color: t.text0,
+                  cursor: busy ? 'wait' : 'pointer',
                   textAlign: 'left',
                   opacity: busy && !running ? 0.5 : 1,
-                  transition: 'background 120ms',
+                  overflow: 'hidden',
+                  transition: 'background 140ms, border-color 140ms, transform 140ms',
                 }}
-                onMouseEnter={(e) => { if (!busy) e.currentTarget.style.background = t.bg3; }}
-                onMouseLeave={(e) => { if (!busy) e.currentTarget.style.background = t.bg2; }}>
-                <span style={{ color: t.warn, fontSize: 11 }}>★</span>
-                <code style={{
-                  fontFamily: t.fontMono, fontSize: 12, color: running ? t.accent : t.text0,
-                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  fontWeight: 500,
-                }}>/{s.name}</code>
+                onMouseEnter={(e) => {
+                  if (!busy) {
+                    e.currentTarget.style.background = t.bg3;
+                    e.currentTarget.style.borderColor = t.accentDim;
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!busy) {
+                    e.currentTarget.style.background = running ? t.accentFaint : t.bg2;
+                    e.currentTarget.style.borderColor = running ? t.accent : t.glassBorder;
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }
+                }}>
+                {/* Barra accent a la izquierda */}
+                <div style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0, width: 3,
+                  background: running ? t.accent : `linear-gradient(180deg, ${t.warn} 0%, ${t.accent} 100%)`,
+                  opacity: running ? 1 : 0.7,
+                }}/>
+                {/* Icono */}
+                <div style={{
+                  width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                  background: running ? t.accent : t.bg3,
+                  color: running ? t.accentOn : t.warn,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, fontWeight: 600,
+                  transition: 'background 140ms',
+                }}>
+                  {running ? (
+                    <span style={{
+                      width: 10, height: 10, borderRadius: '50%',
+                      border: `2px solid ${t.accentOn}`,
+                      borderTopColor: 'transparent',
+                      animation: 'eco-spin 0.7s linear infinite',
+                    }}/>
+                  ) : '★'}
+                </div>
+                {/* Info — nombre + descripción */}
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <code style={{
+                    fontFamily: t.fontMono, fontSize: 12.5,
+                    fontWeight: 600,
+                    color: running ? t.accent : t.text0,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>/{s.name}</code>
+                  {desc && (
+                    <div style={{
+                      fontSize: 10.5, color: t.text2, lineHeight: 1.4,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{desc}</div>
+                  )}
+                </div>
+                {/* Quitar de favoritos */}
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); toggleFav(skillIdOf(s)); }}
                   title="Quitar de favoritos"
                   style={{
-                    width: 20, height: 20, padding: 0, border: 0, borderRadius: 4,
+                    width: 22, height: 22, padding: 0, border: 0, borderRadius: 6,
                     background: 'transparent', color: t.text3, cursor: 'pointer',
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 14, lineHeight: 1,
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = `color-mix(in oklch, ${t.err} 15%, transparent)`;
+                    e.currentTarget.style.color = t.err;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = t.text3;
                   }}>×</button>
               </div>
             );
@@ -2343,7 +2426,14 @@ function AgentSidebar({
   const renderSection = (id: SectionId): ReactNode => {
     switch (id) {
       case 'skills':
-        return <SkillsCard key="skills" bubbleId={bubble.id} workspace={bubble.workspace}/>;
+        return (
+          <CollapsibleSection key="skills" id="skills"
+            title="Skills"
+            collapsed={sectionCollapse.isCollapsed('skills')}
+            onToggle={() => sectionCollapse.toggle('skills')}>
+            <SkillsCard bubbleId={bubble.id} workspace={bubble.workspace} onSend={onSend}/>
+          </CollapsibleSection>
+        );
 
       case 'quick':
         return (

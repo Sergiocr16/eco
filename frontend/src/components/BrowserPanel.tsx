@@ -509,6 +509,10 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
               <SmartBrowserView
                 ref={smartRef}
                 src={url}
+                // Partition única por agente — cookies/localStorage del sitio
+                // embebido no se cruzan entre bubbles. Sin esto, login en un
+                // agente loguea en todos.
+                partition={`persist:eco-${bubbleId}`}
                 onNavigate={(u) => setUrl(u)}
                 onLoadFail={() => setLoadFailed(true)}
                 onLoadSuccess={() => setLoadFailed(false)}

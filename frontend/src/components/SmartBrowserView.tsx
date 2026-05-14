@@ -28,6 +28,14 @@ export type SmartBrowserProps = {
   onNavigate?: (url: string) => void;
   onLoadFail?: (errorCode: number, errorDescription: string) => void;
   onLoadSuccess?: () => void;
+  /**
+   * Partition de Electron para aislar cookies, localStorage, IndexedDB, etc.
+   * Cada agente debe pasar una partition única (ej. `persist:eco-${bubbleId}`)
+   * para que la sesión de un sitio en un agente no se cruce con otro. Sin
+   * esto, dos agentes con el browser apuntando al mismo sitio comparten
+   * cookies — log in en uno te loguea en todos.
+   */
+  partition?: string;
 };
 
 type ElectronWebview = HTMLElement & {
@@ -47,7 +55,7 @@ type ElectronWebview = HTMLElement & {
 
 export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps>(
   function SmartBrowserView(
-    { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess },
+    { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess, partition },
     handleRef,
   ) {
     const useWebview = canEmbedArbitrarySites();
@@ -108,7 +116,10 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
 
       const wv = document.createElement('webview') as ElectronWebview;
       wv.setAttribute('allowpopups', '');
-      wv.setAttribute('partition', 'persist:eco-browser');
+      // Partition por agente: aisla cookies / localStorage / IndexedDB para
+      // que dos agentes apuntando al mismo sitio no compartan sesión. Si el
+      // caller no pasa una, caemos a la histórica `persist:eco-browser`.
+      wv.setAttribute('partition', partition || 'persist:eco-browser');
       wv.setAttribute('useragent',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
         '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

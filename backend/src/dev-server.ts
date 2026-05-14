@@ -264,8 +264,10 @@ async function ensurePortFree(port: number, pgid: number | null): Promise<{ ok: 
   return { ok: false, pids: pidsHoldingPort(port) };
 }
 
-/** Reserva un puerto libre pidiéndole al OS uno random (puerto 0). */
-async function findFreePort(): Promise<number> {
+/** Probe un puerto libre con `listen(0)` + close. NO usar directo — la
+ *  ventana entre close() y el spawn deja race condition: dos llamadas
+ *  consecutivas pueden devolver el mismo puerto si suceden en ms. */
+async function probePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.unref();
@@ -276,6 +278,82 @@ async function findFreePort(): Promise<number> {
       server.close(() => resolve(port));
     });
   });
+}
+
+// Mutex para serializar las llamadas a `findFreePort` + cache de puertos
+// recién entregados (TTL 30s). Sin esto, dos agentes que arrancan en
+// paralelo pueden recibir el mismo puerto.
+let portMutex: Promise<void> = Promise.resolve();
+const recentlyAssigned = new Map<number, NodeJS.Timeout>();
+
+function markAssigned(port: number) {
+  const prev = recentlyAssigned.get(port);
+  if (prev) clearTimeout(prev);
+  const t = setTimeout(() => recentlyAssigned.delete(port), 30_000);
+  t.unref?.();
+  recentlyAssigned.set(port, t);
+}
+
+/** Reserva un puerto libre serialized — múltiples agentes nunca obtienen
+ *  el mismo. Internamente prueba hasta 10 veces si el OS devuelve un puerto
+ *  que ya fue asignado recientemente. */
+async function findFreePort(): Promise<number> {
+  // Encadenamos al mutex anterior — si hay 3 calls concurrentes, corren
+  // en serie. El "release" del próximo es lo que devolvemos por await.
+  let release: () => void = () => { /* noop */ };
+  const next = new Promise<void>((res) => { release = res; });
+  const prev = portMutex;
+  portMutex = portMutex.then(() => next);
+  await prev;
+  try {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const port = await probePort();
+      if (recentlyAssigned.has(port)) continue;
+      markAssigned(port);
+      return port;
+    }
+    // Fallback: si después de 10 intentos seguimos chocando con cache,
+    // devolvemos el último igual y dejamos que la lógica de retry maneje.
+    const fallback = await probePort();
+    markAssigned(fallback);
+    return fallback;
+  } finally {
+    release();
+  }
+}
+
+// Patrones que extraen el puerto REAL del log del dev server, cuando el
+// proyecto bindea un puerto distinto al inyectado (ej. ignora `$PORT`,
+// hace auto-retry interno, lee de su propio config). Si detectamos un
+// puerto diferente al esperado, sincronizamos `s.port` y re-emitimos
+// `dev_status` para que el BrowserPanel apunte al correcto.
+const PORT_FROM_LOG: RegExp[] = [
+  /Local:\s+https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})/i,
+  /(?:listening on|started server on|server (?:started|running) on)\s+(?:port\s+)?(\d{2,5})/i,
+  /now available on\s+https?:\/\/[^:]+:(\d{2,5})/i,
+  /Tomcat (?:initialized|started) (?:with port\(s\):\s+|on port[s]?\s+)(\d{2,5})/i,
+  /external:\s+https?:\/\/[^:]+:(\d{2,5})/i,
+  /\[Browsersync\].*?https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})/i,
+  /webpack.*?compiled.*?https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})/i,
+  /vite\s+v[\d.]+\s+ready[\s\S]{0,80}?(?:Local|local):\s+https?:\/\/[^:]+:(\d{2,5})/i,
+];
+
+/** @returns true si detectó un puerto distinto al actual y actualizó la
+ *  session. Caller debería re-broadcast si la session ya estaba running. */
+function maybeUpdatePortFromLog(s: Session, text: string): boolean {
+  for (const re of PORT_FROM_LOG) {
+    const m = text.match(re);
+    if (!m) continue;
+    const realPort = Number(m[1]);
+    if (!realPort || realPort < 1 || realPort > 65535) return false;
+    if (realPort === s.port) return false;
+    // El proyecto bindeó un puerto distinto al inyectado. Sincronizamos.
+    s.port = realPort;
+    s.url = `http://127.0.0.1:${realPort}`;
+    markAssigned(realPort);
+    return true;
+  }
+  return false;
 }
 
 /** Llama a `claude -p` para que infiera el comando del dev server. */
@@ -566,10 +644,21 @@ function spawnSession(s: Session) {
   const onData = (data: Buffer) => {
     const text = data.toString('utf-8');
     appendOutput(s, text);
+    // SIEMPRE chequeamos el puerto real ANTES de marcar `running`. Si el
+    // proyecto bindeó un puerto distinto al inyectado (ej. Vite con
+    // strictPort, o un script con puerto hardcoded), `maybeUpdatePortFromLog`
+    // actualiza s.port y s.url. Si la session ya estaba `running` y el
+    // puerto cambió (ej. Vite imprime "Local: ..." DESPUÉS del "ready"),
+    // re-broadcast para que el BrowserPanel y el frontend-slot en dual
+    // mode re-sincronicen al puerto real.
+    const portChanged = maybeUpdatePortFromLog(s, text);
     if (s.status === 'starting' && READY_RE.test(text)) {
       s.status = 'running';
       broadcastStatus(s);
       return;
+    }
+    if (portChanged && s.status === 'running') {
+      broadcastStatus(s);
     }
     // Conflicto de puerto detectado en starting → auto-retry una vez con
     // nuevo puerto + edits via Claude.

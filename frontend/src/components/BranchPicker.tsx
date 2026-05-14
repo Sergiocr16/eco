@@ -5,7 +5,7 @@ import { useTokens } from '@/design/theme';
 import { Glass } from '@/design/primitives';
 import { IconBranch, IconSearch, IconX, IconCheck, IconResume, IconEdit } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
-import { on as ecoOn } from '@/lib/eco-bus';
+import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 
 type BranchInfo = {
   name: string;
@@ -137,6 +137,11 @@ export function BranchPicker({ workspace, bubbleId }: Props) {
       if (d.ok) {
         setActionMsg({ kind: 'ok', text: d.message || 'OK' });
         await refresh();
+        // Notificamos a CurrentPrBanner + PullRequestsList + FilesPanel etc.
+        // que el estado git cambió: rama nueva implica posiblemente otro PR
+        // asociado y otra lista de cambios. Sin esto, el banner del PR no se
+        // refresca hasta que el user colapse/expanda la sección Git.
+        ecoEmit('eco:git_refresh', { bubbleId });
       } else if (action === 'checkout' && d.code === 'checkout.dirty_working_tree' && branch) {
         // No mostramos el error: abrimos el diálogo para que el user decida.
         setDirtyPrompt({

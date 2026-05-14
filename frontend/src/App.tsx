@@ -74,6 +74,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
+  // IDs de bubbles "visitadas" — mantenemos un AgentDetail montado por cada
+  // una para que al volver entre ellas el webview, PTY, chat, etc. NO se
+  // recreen. Solo el detailBubbleId es visible; las demás van a display:none.
+  const [visitedBubbleIds, setVisitedBubbleIds] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<FeedbackPayload | null>(null);
   const [overlay, setOverlay] = useState<'status' | 'help' | null>(null);
   const [wsPickerForBubble, setWsPickerForBubble] = useState<string | null>(null);
@@ -497,6 +501,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
 
   function handleOpenAgent(id: string) {
     setDetailBubbleId(id);
+    // Mantenemos esta bubble en el set de "visitadas" para que su
+    // AgentDetail viva más allá del bubble switch.
+    setVisitedBubbleIds((prev) => prev.includes(id) ? prev : [...prev, id]);
     bubbles.focusBubble(id);
     setScreen('detail');
     // Solo arrancamos el mic al entrar si el user no lo apagó explícitamente.
@@ -530,6 +537,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       return;
     }
     bubbles.removeBubble(id);
+    setVisitedBubbleIds((prev) => prev.filter((x) => x !== id));
     if (detailBubbleId === id) setDetailBubbleId(null);
     opts?.afterClose?.();
   }
@@ -539,6 +547,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     const id = confirmCloseId;
     setConfirmCloseId(null);
     bubbles.removeBubble(id);
+    setVisitedBubbleIds((prev) => prev.filter((x) => x !== id));
     if (detailBubbleId === id) {
       setDetailBubbleId(null);
       handleBackFromDetail();
@@ -660,32 +669,50 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         />
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           <ScreenError error={socket.error}/>
-                {/* AgentDetail se mantiene montada con display:none al navegar
-                    a otro screen para preservar terminal, chat, browser, etc.
-                    Solo se desmonta cuando la burbuja se cierra. */}
-                {detailBubble && (
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    display: screen === 'detail' ? 'flex' : 'none',
-                    flexDirection: 'column',
-                  }}>
-                    <AgentDetail
-                      bubble={detailBubble}
-                      workspaces={workspacesHook.list.workspaces}
-                      onBack={handleBackFromDetail}
-                      onSend={handleAgentDetailSend}
-                      onInterrupt={socket.interrupt}
-                      onRename={(title) => bubbles.renameBubble(detailBubble.id, title)}
-                      onClose={() => {
-                        requestCloseBubble(detailBubble.id, { afterClose: handleBackFromDetail });
-                      }}
-                      onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(detailBubble.id, ws)}
-                      onMicToggle={handleMicToggle}
-                      listening={voice.state === 'listening'}
-                      voiceInterim={voice.interimText}
-                    />
-                  </div>
-                )}
+                {/* Una AgentDetail por bubble visitada. Cada una mantiene
+                    su propio state (webview, PTY, chat, server, files, etc.)
+                    porque tienen `key={bubble.id}` única y nunca se
+                    desmontan al cambiar entre bubbles — solo la activa
+                    aparece con display:flex; las demás quedan vivas con
+                    display:none.
+
+                    Esto resuelve dos problemas a la vez:
+                    1. Cambiar de bubble A → B → A NO recarga el browser
+                       ni reconecta el PTY de A (su tree sigue vivo).
+                    2. State de panels no se cruza entre bubbles (cada
+                       AgentDetail tiene su propio mount/useState).
+
+                    Se desmontan solo cuando la bubble se cierra
+                    (requestCloseBubble / confirmCloseNow limpian
+                    `visitedBubbleIds`). */}
+                {visitedBubbleIds.map((id) => {
+                  const b = bubbles.bubbles.find((x) => x.id === id);
+                  if (!b) return null;
+                  const isActive = id === detailBubbleId && screen === 'detail';
+                  return (
+                    <div key={id} style={{
+                      position: 'absolute', inset: 0,
+                      display: isActive ? 'flex' : 'none',
+                      flexDirection: 'column',
+                    }}>
+                      <AgentDetail
+                        bubble={b}
+                        workspaces={workspacesHook.list.workspaces}
+                        onBack={handleBackFromDetail}
+                        onSend={handleAgentDetailSend}
+                        onInterrupt={socket.interrupt}
+                        onRename={(title) => bubbles.renameBubble(b.id, title)}
+                        onClose={() => {
+                          requestCloseBubble(b.id, { afterClose: handleBackFromDetail });
+                        }}
+                        onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(b.id, ws)}
+                        onMicToggle={handleMicToggle}
+                        listening={voice.state === 'listening'}
+                        voiceInterim={voice.interimText}
+                      />
+                    </div>
+                  );
+                })}
                 {screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles}/>
                 ) : screen === 'settings' ? (

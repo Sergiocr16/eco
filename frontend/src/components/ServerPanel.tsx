@@ -252,16 +252,38 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
     }
   }
 
+  // Guard sincrónico contra doble-click: el setState de actionBusy es async,
+  // pero el onClick del botón se ejecuta antes del próximo render. Si el user
+  // clickea rápido dos veces, ambas invocaciones pueden pasar el check del
+  // disabled (que viene del state, atrasado). Este ref bloquea al instante.
+  const actionInFlightRef = useRef<Record<SlotRole, boolean>>({
+    main: false, frontend: false, backend: false,
+  });
+
   async function runActionForRole(role: SlotRole, action: 'up' | 'down' | 'restart') {
+    if (actionInFlightRef.current[role]) return;  // doble-click guard
+    actionInFlightRef.current[role] = true;
+    // Update optimista del status para feedback inmediato. El stream
+    // `dev_status` lo va a sobreescribir con el estado real (running/stopped/error)
+    // cuando el backend confirme — pero mientras tanto el user ve que SU click
+    // se procesó.
+    const optimisticStatus: Status | undefined =
+      action === 'up' ? 'starting'
+      : action === 'down' ? 'stopped'
+      : 'starting'; // restart: lo tratamos como starting hasta que confirme
     updateSlot(role, {
       actionError: null,
       actionBusy: action === 'up' ? 'start' : action === 'down' ? 'stop' : 'restart',
+      ...(optimisticStatus ? { status: optimisticStatus } : {}),
     });
     try {
       let r: Response;
       if (action === 'up') {
         const cmd = cmdFor(role);
-        if (!cmd.trim()) { updateSlot(role, { actionError: 'Definí el comando para iniciar.', actionBusy: null }); return; }
+        if (!cmd.trim()) {
+          updateSlot(role, { actionError: 'Definí el comando para iniciar.', actionBusy: null, status: 'idle' });
+          return;
+        }
         r = await postWithRetry('/dev/start', { workspace, bubbleId, command: cmd, role });
       } else if (action === 'down') {
         r = await postWithRetry('/dev/stop', { bubbleId, role });
@@ -281,8 +303,10 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
       } else {
         updateSlot(role, { actionError: msg });
       }
+    } finally {
+      updateSlot(role, { actionBusy: null });
+      actionInFlightRef.current[role] = false;
     }
-    updateSlot(role, { actionBusy: null });
   }
 
   // Espera a que el slot `role` reporte status=running, o falle. Resuelve
@@ -350,19 +374,25 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
             const startLabel = 'Iniciar servidor';
             const restartLabel = 'Reiniciar servidor';
             const stopLabel = 'Detener servidor';
+            // Identificamos cuál es la acción en curso (si la hay) para
+            // mostrar "Iniciando…/Reiniciando…/Deteniendo…" en el botón
+            // correcto en vez de "Trabajando…" en el primero solo.
+            const busyAction = activeRoles
+              .map((r) => slots[r].actionBusy)
+              .find(Boolean) as 'start' | 'stop' | 'restart' | undefined;
             return (
               <>
                 <Btn kind="primary" size="md" onClick={() => void runAllAction('up')}
                   disabled={anyBusy || anyRunning} icon={IconPlay}>
-                  {anyBusy ? 'Trabajando…' : startLabel}
+                  {busyAction === 'start' ? 'Iniciando…' : startLabel}
                 </Btn>
                 <Btn kind="secondary" size="md" onClick={() => void runAllAction('restart')}
                   disabled={anyBusy} icon={IconResume}>
-                  {restartLabel}
+                  {busyAction === 'restart' ? 'Reiniciando…' : restartLabel}
                 </Btn>
                 <Btn kind="danger" size="md" onClick={() => void runAllAction('down')}
                   disabled={anyBusy || !anyStoppable} icon={IconStop}>
-                  {stopLabel}
+                  {busyAction === 'stop' ? 'Deteniendo…' : stopLabel}
                 </Btn>
               </>
             );
