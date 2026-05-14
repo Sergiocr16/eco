@@ -32,13 +32,35 @@ function parseAllowedOrigins(): string[] {
   // el renderer desde su mismo origen — hay que aceptarlo automáticamente.
   const host = process.env.ECO_HOST ?? '127.0.0.1';
   const port = process.env.ECO_PORT ?? '7000';
+  const scheme = process.env.ECO_TLS_CERT && process.env.ECO_TLS_KEY ? 'https' : 'http';
   const ownOrigins = [
-    `http://${host}:${port}`,
-    `http://localhost:${port}`,
+    `${scheme}://${host}:${port}`,
+    `${scheme}://localhost:${port}`,
   ];
   const raw = process.env.ECO_ALLOWED_ORIGINS;
   const userList = raw ? raw.split(',').map((o) => o.trim()).filter(Boolean) : def;
-  return Array.from(new Set([...userList, ...ownOrigins]));
+  const extraRaw = process.env.ECO_EXTRA_ORIGINS;
+  const extra = extraRaw ? extraRaw.split(',').map((o) => o.trim()).filter(Boolean) : [];
+  return Array.from(new Set([...userList, ...ownOrigins, ...extra]));
+}
+
+function parseAllowedHostnames(): string[] {
+  const def = ['127.0.0.1', 'localhost', '[::1]'];
+  const raw = process.env.ECO_ALLOWED_HOSTS;
+  if (!raw) return def;
+  const list = raw.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+  return Array.from(new Set([...def, ...list]));
+}
+
+function parseTlsConfig(): { certPath: string; keyPath: string } | null {
+  const certPath = process.env.ECO_TLS_CERT?.trim();
+  const keyPath = process.env.ECO_TLS_KEY?.trim();
+  if (!certPath || !keyPath) return null;
+  if (!existsSync(certPath) || !existsSync(keyPath)) {
+    console.warn(`⚠️  ECO_TLS_CERT/KEY apuntan a archivos inexistentes — usando HTTP`);
+    return null;
+  }
+  return { certPath, keyPath };
 }
 
 function safeRealpath(target: string): string | null {
@@ -70,6 +92,8 @@ export const config = {
     return readApiKey() ?? undefined;
   },
   allowedOrigins: parseAllowedOrigins(),
+  allowedHostnames: parseAllowedHostnames(),
+  tls: parseTlsConfig(),
   maxPromptsPerMinute: Number(process.env.ECO_RATE_LIMIT ?? 10),
   maxPromptBytes: Number(process.env.ECO_MAX_PROMPT_BYTES ?? 50_000),
   maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 12),

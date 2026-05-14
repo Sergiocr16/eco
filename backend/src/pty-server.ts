@@ -1,5 +1,8 @@
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { Server } from 'node:http';
+import type { Server as HttpServer } from 'node:http';
+import type { Server as HttpsServer } from 'node:https';
+
+type Server = HttpServer | HttpsServer;
 import { spawn as ptySpawn, type IPty } from 'node-pty';
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
@@ -12,7 +15,8 @@ import { ensureWorktree } from './worktree-manager.js';
 function hostAllowed(host: string | undefined): boolean {
   if (!host) return false;
   const hostname = host.split(':')[0]?.toLowerCase();
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
+  if (!hostname) return false;
+  return config.allowedHostnames.includes(hostname);
 }
 
 function defaultShell(): string {

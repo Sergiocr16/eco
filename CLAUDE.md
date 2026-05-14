@@ -22,6 +22,7 @@ Guía operativa para que cualquier agente que abra el repo pueda tomar el proyec
 16. [Cosas removidas que NO hay que restaurar](#removido)
 17. [Caps de memoria que NO hay que aflojar](#memcaps)
 18. [Pre-flight antes de cualquier PR](#preflight)
+19. [Modo server LAN (Linux/Raspberry Pi)](#server-mode)
 
 ---
 
@@ -903,6 +904,92 @@ Tests rápidos de smoke. Si alguno falla, el PR no está listo.
 10. **Persistencia dev server**: con un server corriendo, matar el backend → `~/.eco/dev-sessions.json` tiene la entrada → relanzar backend → server aparece como running
 
 Si pasa los 10, sigue al siguiente paso (commit/push si Sergio lo autoriza).
+
+---
+
+<a id="server-mode"></a>
+## 19. Modo server LAN (Linux/Raspberry Pi)
+
+Eco corre como server en una máquina Linux (típicamente RPi en la tailnet de Sergio) y se accede desde otros dispositivos con un navegador Chrome. **Esto NO afecta al `.dmg` Mac** — todo el modo server está gated por env vars que `electron/main.cjs` no setea.
+
+### Por qué hace falta HTTPS
+
+`getUserMedia` + Web Speech API requieren **contexto seguro** desde origen remoto. HTTP plano sólo funciona en `localhost`. Sin TLS, el botón de voz queda muerto desde otros dispositivos aunque accedan con Chrome.
+
+### Env vars del modo server
+
+| Env | Default | Para qué |
+|---|---|---|
+| `ECO_HOST` | `127.0.0.1` | IP a la que bindea el backend. En LAN: `0.0.0.0` o la IP de `tailscale0`. |
+| `ECO_TLS_CERT` | — | Path al cert PEM (si está, levanta HTTPS en vez de HTTP). |
+| `ECO_TLS_KEY` | — | Path a la key PEM. Si falta cualquiera de los dos, cae a HTTP con warning. |
+| `ECO_ALLOWED_HOSTS` | `127.0.0.1,localhost,[::1]` | CSV de hostnames aceptados en el header `Host`. Default queda — la lista del env se **agrega**, no reemplaza. |
+| `ECO_EXTRA_ORIGINS` | — | CSV de orígenes adicionales aceptados por CORS. Ej. `https://pi.tailnet.ts.net`. |
+| `ECO_VITE_HOST` | `127.0.0.1` | IP a la que bindea Vite (sólo importa en `npm run web`; el `.dmg` no usa Vite). |
+
+### Setup recomendado: Tailscale + cert nativo
+
+Tailscale provee certs HTTPS válidos para tu tailnet sin tocar Let's Encrypt:
+
+```bash
+# 1. En la Pi: habilitar HTTPS en el tailnet (una sola vez, vía admin console)
+#    https://login.tailscale.com/admin/dns → "Enable HTTPS"
+
+# 2. Generar cert
+sudo tailscale cert pi.<tailnet>.ts.net
+# Output: pi.<tailnet>.ts.net.crt + pi.<tailnet>.ts.net.key en el cwd
+
+# 3. Lanzar Eco
+ECO_HOST=0.0.0.0 \
+ECO_TLS_CERT=/abs/path/pi.<tailnet>.ts.net.crt \
+ECO_TLS_KEY=/abs/path/pi.<tailnet>.ts.net.key \
+ECO_ALLOWED_HOSTS=pi.<tailnet>.ts.net \
+ECO_EXTRA_ORIGINS=https://pi.<tailnet>.ts.net \
+ECO_VITE_HOST=0.0.0.0 \
+npm run web
+```
+
+Desde otro device en la tailnet abrís `https://pi.<tailnet>.ts.net:5173` (en dev) o `:7050` (si servís el bundle estático desde backend).
+
+`0.0.0.0` en `ECO_HOST` está OK acá porque Tailscale ya aísla — sólo dispositivos en tu tailnet ven la Pi. Si querés más estricto, ponés la IP de `tailscale0` en lugar de `0.0.0.0`.
+
+### Plan B: LAN cruda + self-signed
+
+Sin Tailscale, generás un cert local con `mkcert` y aceptás el warning una vez por device:
+
+```bash
+mkcert -install
+mkcert pi.local 192.168.x.x
+ECO_HOST=0.0.0.0 ECO_TLS_CERT=./pi.local+1.pem ECO_TLS_KEY=./pi.local+1-key.pem \
+  ECO_ALLOWED_HOSTS=pi.local,192.168.x.x \
+  ECO_EXTRA_ORIGINS=https://pi.local:5173,https://192.168.x.x:5173 \
+  ECO_VITE_HOST=0.0.0.0 \
+  npm run web
+```
+
+### Lo que cambia adentro del código
+
+- `backend/src/config.ts` — `tls` getter (lee certs), `allowedHostnames`, `ECO_EXTRA_ORIGINS` se mergea.
+- `backend/src/index.ts` — `createSecureServer` cuando hay TLS, host check usa `config.allowedHostnames`.
+- `backend/src/ws-server.ts` + `pty-server.ts` — tipo `Server` acepta `http.Server | https.Server`, `hostAllowed` usa config.
+- `frontend/vite.config.ts` — `server.host` viene de `ECO_VITE_HOST`.
+
+Cuando hay TLS los WS pasan a `wss://` automáticamente (heredan el server).
+
+### Limitaciones de la Pi (RPi 4 8GB)
+
+- **STT on-device**: no hay equivalente de `SFSpeechRecognizer` en Linux. El cliente usa Web Speech (Chrome → API key de Google). En la Pi misma no podés grabar voz; **siempre desde el browser cliente remoto**.
+- **macOS `say`** TTS: irrelevante en Linux. Piper (ONNX) y browser SpeechSynthesis sí funcionan.
+- **SD card** es el cuello de botella. Para correr 2-3 instancias Aditum simultáneas (Spring Boot + gulp) considerá SSD USB3 — Maven/gradle/node_modules en SD castiga.
+- **claude CLI** tiene que estar instalado y autenticado en la Pi (`@anthropic-ai/claude-code`).
+
+### Pre-flight extra en modo server
+
+Sumar a los 10 del [Pre-flight](#preflight):
+
+11. Acceso remoto: desde otro device → `https://pi.<tailnet>.ts.net:5173` carga login y autentica.
+12. Mic remoto: el botón de voz dispara el prompt de mic del navegador remoto; tras autorizar, "Eco terminal" cambia tab.
+13. `.dmg` Mac: build limpio en Mac (con las nuevas envs **ausentes**) sigue idéntico — log dice `HTTP: http://127.0.0.1:7100`, no `HTTPS`.
 
 ---
 

@@ -1,5 +1,8 @@
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { IncomingMessage, Server } from 'node:http';
+import type { IncomingMessage, Server as HttpServer } from 'node:http';
+import type { Server as HttpsServer } from 'node:https';
+
+type Server = HttpServer | HttpsServer;
 import { runAgent } from './agent.js';
 import { ClientMessageSchema, type ServerMessage } from './protocol.js';
 import { config } from './config.js';
@@ -12,7 +15,8 @@ const globalPromptTimestamps: number[] = [];
 function hostAllowed(host: string | undefined): boolean {
   if (!host) return false;
   const hostname = host.split(':')[0]?.toLowerCase();
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
+  if (!hostname) return false;
+  return config.allowedHostnames.includes(hostname);
 }
 
 let broadcastFn: ((msg: ServerMessage) => void) | null = null;

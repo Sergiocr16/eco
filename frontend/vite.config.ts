@@ -38,9 +38,12 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
-    host: '127.0.0.1',
+    port: Number(process.env.ECO_VITE_PORT ?? 5173),
+    host: process.env.ECO_VITE_HOST ?? '127.0.0.1',
     strictPort: true,
+    allowedHosts: process.env.ECO_VITE_ALLOWED_HOSTS
+      ? process.env.ECO_VITE_ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean)
+      : undefined,
     proxy: {
       '/ws/pty': { target: WS_TARGET, ws: true, changeOrigin: false },
       '/ws': { target: WS_TARGET, ws: true, changeOrigin: false },

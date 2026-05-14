@@ -1,8 +1,9 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { createServer } from 'node:http';
-import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync, readFileSync } from 'node:fs';
 import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -78,7 +79,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const host = req.headers.host;
   if (!host) return errResponse(res, 403, 'http.host_required', 'Host header requerido');
   const hostname = host.split(':')[0]?.toLowerCase();
-  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '[::1]') {
+  if (!hostname || !config.allowedHostnames.includes(hostname)) {
     return errResponse(res, 403, 'http.host_forbidden', 'Host no permitido');
   }
   next();
@@ -917,14 +918,24 @@ if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
   });
 }
 
-const server = createServer(app);
+const server = config.tls
+  ? createHttpsServer(
+      {
+        cert: readFileSync(config.tls.certPath),
+        key: readFileSync(config.tls.keyPath),
+      },
+      app,
+    )
+  : createHttpServer(app);
+const scheme = config.tls ? 'https' : 'http';
+const wsScheme = config.tls ? 'wss' : 'ws';
 attachWebSocket(server, authToken);
 attachPtyServer(server, authToken);
 
 server.listen(config.port, config.host, () => {
   console.log(`\n🟢 Eco backend listo`);
-  console.log(`   HTTP:      http://${config.host}:${config.port}`);
-  console.log(`   WebSocket: ws://${config.host}:${config.port}/ws`);
+  console.log(`   ${scheme.toUpperCase()}:      ${scheme}://${config.host}:${config.port}`);
+  console.log(`   WebSocket: ${wsScheme}://${config.host}:${config.port}/ws`);
   console.log(`   Workspaces: ${config.workspaces.join(', ')}`);
   console.log(`   Modelo:    ${config.model}`);
   console.log(`   Orígenes:  ${config.allowedOrigins.join(', ')}`);
