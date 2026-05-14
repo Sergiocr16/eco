@@ -11,6 +11,7 @@ import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
 import { usePtyBusyTracker } from './hooks/usePtyBusyNotifier';
+import { peekHasFiles } from './hooks/useGitChanges';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
@@ -82,6 +83,11 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const [overlay, setOverlay] = useState<'status' | 'help' | null>(null);
   const [wsPickerForBubble, setWsPickerForBubble] = useState<string | null>(null);
   const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
+  // Razón por la cual pedimos confirmación antes de cerrar — afecta el mensaje
+  // del modal. 'busy' = Claude trabajando; 'dirty' = worktree con cambios sin
+  // commitear. Puede ser ambas a la vez (priorizamos 'dirty' en el mensaje
+  // porque tiene más impacto: perder código vs. interrumpir un prompt).
+  const [confirmCloseReason, setConfirmCloseReason] = useState<'busy' | 'dirty' | 'both'>('busy');
   const [showOnboarding, setShowOnboarding] = useState<boolean>(() => !hasOnboarded());
 
   const workspacesHook = useWorkspaces();
@@ -532,7 +538,15 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   }
 
   function requestCloseBubble(id: string, opts?: { afterClose?: () => void }) {
-    if (bubbleIsBusy(id)) {
+    const b = bubbles.bubbles.find((x) => x.id === id);
+    const busy = bubbleIsBusy(id);
+    // Detectamos worktree "sucio" (archivos modificados sin commitear) usando
+    // el cache compartido de `useGitChanges`. Si la bubble nunca abrió la
+    // FilesPanel ni nadie polleó esta workspace, el peek devuelve undefined
+    // — en ese caso tratamos como limpio (no hay evidencia de cambios).
+    const dirty = !!(b?.workspace && peekHasFiles(b.workspace, id));
+    if (busy || dirty) {
+      setConfirmCloseReason(busy && dirty ? 'both' : busy ? 'busy' : 'dirty');
       setConfirmCloseId(id);
       return;
     }
@@ -744,6 +758,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
 
       <ConfirmCloseBubble
         bubble={confirmCloseId ? bubbles.bubbles.find((b) => b.id === confirmCloseId) ?? null : null}
+        reason={confirmCloseReason}
         onCancel={() => setConfirmCloseId(null)}
         onConfirm={confirmCloseNow}
       />
@@ -902,27 +917,42 @@ function relTime(ts: number): string {
 }
 
 function ConfirmCloseBubble({
-  bubble, onCancel, onConfirm,
+  bubble, reason, onCancel, onConfirm,
 }: {
   bubble: Bubble | null;
+  reason: 'busy' | 'dirty' | 'both';
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const t = useTokens();
+  // Doble confirmación: el primer click pide la confirmación EXTRA — el user
+  // tiene que volver a clickear para perder de verdad. Reset cuando el
+  // bubble/reason cambia.
+  const [reConfirm, setReConfirm] = useState(false);
+  useEffect(() => { setReConfirm(false); }, [bubble?.id, reason]);
   useEffect(() => {
     if (!bubble) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
-      else if (e.key === 'Enter') onConfirm();
+      // Enter ya no auto-confirma: el user debe clickear el botón
+      // expresamente, dos veces si hay reason dirty/both.
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [bubble, onCancel, onConfirm]);
+  }, [bubble, onCancel]);
   if (!bubble) return null;
-  const reason = bubble.status === 'thinking' ? 'pensando'
+  const busyLabel = bubble.status === 'thinking' ? 'pensando'
     : bubble.status === 'executing' ? 'ejecutando'
     : bubble.status === 'running' ? 'corriendo'
     : 'con shell abierta';
+  const heading = reason === 'dirty'
+    ? `¿Cerrar «${bubble.title}» con cambios sin commitear?`
+    : `¿Cerrar «${bubble.title}»?`;
+  const body = reason === 'dirty'
+    ? 'El worktree de esta burbuja tiene archivos modificados sin commitear. Al cerrar, el worktree se BORRA y los cambios se pierden. La rama git queda viva en el repo padre.'
+    : reason === 'both'
+      ? `La burbuja está ${busyLabel} Y tiene archivos modificados sin commitear. Al cerrar se interrumpe el trabajo en curso, el worktree se BORRA y los cambios se pierden.`
+      : `La burbuja está ${busyLabel}. Si la cerrás ahora, se interrumpe el trabajo en curso y se libera su worktree.`;
   return (
     <div
       onClick={onCancel}
@@ -944,10 +974,9 @@ function ConfirmCloseBubble({
         }}>
         <h2 style={{
           margin: 0, fontSize: 17, fontWeight: 600, color: t.text0, letterSpacing: -0.3,
-        }}>¿Cerrar «{bubble.title}»?</h2>
+        }}>{heading}</h2>
         <p style={{ margin: '8px 0 18px', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
-          La burbuja está {reason}. Si la cerrás ahora, se interrumpe el trabajo
-          en curso y se libera su worktree.
+          {body}
         </p>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button
@@ -962,14 +991,18 @@ function ConfirmCloseBubble({
             }}>Cancelar</button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => {
+              if (!reConfirm) { setReConfirm(true); return; }
+              onConfirm();
+            }}
             style={{
               padding: '8px 14px', borderRadius: 10,
               background: t.err, color: t.accentOn,
               border: 0, cursor: 'pointer',
               fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-              boxShadow: `0 0 18px color-mix(in oklch, ${t.err} 30%, transparent)`,
-            }}>Cerrar igual</button>
+              boxShadow: `0 0 18px color-mix(in oklch, ${t.err} ${reConfirm ? 60 : 30}%, transparent)`,
+              animation: reConfirm ? 'eco-shimmer 0.9s ease-in-out infinite' : undefined,
+            }}>{reConfirm ? '⚠️  Click otra vez para confirmar' : 'Cerrar igual'}</button>
         </div>
       </div>
     </div>

@@ -32,7 +32,14 @@ type PtySession = {
   cwd: string;
   buffer: string;
   exited: boolean;
-  // WS actualmente conectado al PTY (puede ser null si el usuario salió de la burbuja).
+  // Set de WS clients atachados — multicast. Antes había un solo `activeWs`
+  // que expulsaba al anterior al conectar uno nuevo, lo que rompía el flujo
+  // de "skill click" cuando RealTerminal ya tenía su WS abierta: writeToBubblePty
+  // abría otra y la primera se cerraba sin recibir más output. Ahora ambas
+  // reciben el stream a la vez.
+  clients: Set<WebSocket>;
+  // Legacy/compat — el último WS en conectarse. Algunos lugares todavía
+  // lo consultan; lo conservamos pero ya no es exclusivo.
   activeWs: WebSocket | null;
   // Listeners de node-pty, registrados una sola vez por sesión.
   unsubData?: { dispose: () => void };
@@ -189,11 +196,11 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     // ─── Reattach a una sesión existente ───────────────────────────────
     const existing = bubbleId ? sessions.get(bubbleId) : undefined;
     if (existing && !existing.exited) {
-      // Desconectar al WS anterior (si lo hay) — un PTY a la vez por simplicidad.
-      if (existing.activeWs && existing.activeWs !== ws) {
-        try { existing.activeWs.close(1000, 'replaced_by_new_client'); } catch { /* noop */ }
-      }
-      existing.activeWs = ws;
+      // Multicast: agregamos el WS al set de clients. NO expulsamos al
+      // anterior — varios clients pueden recibir el stream a la vez (ej.
+      // RealTerminal + writeToBubblePty que dispara un skill).
+      existing.clients.add(ws);
+      existing.activeWs = ws;  // legacy ref — último que se conectó
 
       // Ajustar dimensiones al cliente actual.
       try { existing.pty.resize(cols, rows); } catch { /* noop */ }
@@ -235,6 +242,7 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
       buffer: '',
       exited: false,
       activeWs: ws,
+      clients: new Set([ws]),
       lastOutputAt: Date.now(),
       busy: false,
     };
@@ -243,17 +251,26 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
       broadcastPtyStatus(bubbleId, true);
     }
 
+    // Multicast helpers: enviar a TODOS los clients atachados a la session.
+    const broadcastToClients = (msg: Record<string, unknown>) => {
+      for (const c of session.clients) {
+        try { sendJson(c, msg); } catch { /* noop */ }
+      }
+    };
+
     // node-pty listeners (registrados una sola vez, no se desuscriben al cambiar de WS).
     session.unsubData = pty.onData((data) => {
       appendBuffer(session, data);
       markBusy(session);
-      sendJson(session.activeWs, { type: 'data', data });
+      broadcastToClients({ type: 'data', data });
     });
     startIdleScanner();
     session.unsubExit = pty.onExit(({ exitCode, signal }) => {
       session.exited = true;
-      sendJson(session.activeWs, { type: 'exit', code: exitCode, signal });
-      try { session.activeWs?.close(1000, 'pty_exited'); } catch { /* noop */ }
+      broadcastToClients({ type: 'exit', code: exitCode, signal });
+      for (const c of session.clients) {
+        try { c.close(1000, 'pty_exited'); } catch { /* noop */ }
+      }
       if (bubbleId) {
         sessions.delete(bubbleId);
         broadcastPtyStatus(bubbleId, false);
@@ -293,7 +310,7 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
 
     const detach = () => {
       // No matamos el PTY: queda corriendo y vamos buffereando el output.
-      // Solo limpiamos la referencia al WS si este era el activo.
+      session.clients.delete(ws);
       if (session.activeWs === ws) session.activeWs = null;
     };
     ws.on('close', detach);

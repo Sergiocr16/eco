@@ -110,21 +110,48 @@ export function ensureWorktree(
 }
 
 /**
- * Borra el worktree de una burbuja. El branch se preserva (puede tener trabajo
- * útil). Devuelve true si se borró algo.
+ * Borra el worktree de una burbuja Y la rama `eco/<id>` asociada. La rama
+ * también se elimina con `-D` (force) para que no aparezca en `git branch`
+ * ni en `git fetch` de otros agentes apuntando al mismo repo. Si querés
+ * conservar la rama, hacele merge/push antes de cerrar la burbuja.
  */
 export function removeWorktree(bubbleId: string): boolean {
   const path = worktrees.get(bubbleId);
   if (!path) return false;
   worktrees.delete(bubbleId);
-  if (!existsSync(path)) return true;
+  // Calcular el nombre de la rama que creamos al spawnear el worktree.
+  const branch = `eco/${shortId(bubbleId)}`;
+  if (!existsSync(path)) {
+    // El worktree dir ya no está pero la rama puede seguir viva si el user
+    // borró el dir manualmente. Intentamos limpiar la rama de todos modos.
+    tryDeleteBranchFromAnyRepo(branch);
+    return true;
+  }
   // Necesitamos el repo padre para correr `worktree remove`. Lo descubrimos
   // preguntando al propio worktree por su `common dir`.
   const common = runGit(['rev-parse', '--git-common-dir'], path, 3_000);
   if (!common.ok) return false;
   const repoDir = common.stdout.trim().replace(/\.git\/?$/, '').replace(/\.git$/, '');
   const r = runGit(['worktree', 'remove', path, '--force'], repoDir);
-  return r.ok;
+  if (!r.ok) return false;
+  // `git worktree remove` no borra la rama — la mata acá explícitamente.
+  runGit(['branch', '-D', branch], repoDir, 3_000);
+  return true;
+}
+
+// Helper: intenta borrar una rama eco/<id> sin saber el repo padre. Usado
+// cuando el worktree dir ya no existe (caso edge: user lo eliminó a mano).
+function tryDeleteBranchFromAnyRepo(branch: string): void {
+  // Sin worktree dir no tenemos el repo padre fácil. Recorremos los
+  // workspaces conocidos (todos los worktrees vivos) buscando el repo
+  // common-dir y intentando el delete ahí.
+  for (const [, p] of worktrees) {
+    const common = runGit(['rev-parse', '--git-common-dir'], p, 3_000);
+    if (!common.ok) continue;
+    const repoDir = common.stdout.trim().replace(/\.git\/?$/, '').replace(/\.git$/, '');
+    const r = runGit(['branch', '-D', branch], repoDir, 3_000);
+    if (r.ok) return;
+  }
 }
 
 /** Retorna el worktree de una burbuja si existe. */
