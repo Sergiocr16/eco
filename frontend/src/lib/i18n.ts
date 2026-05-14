@@ -564,6 +564,12 @@ const DICT = {
 
   // ─────────────────────────── Graph view
   'graph.legend.nodes': { es: '{{n}} nodos conectados a Eco', en: '{{n}} nodes connected to Eco' },
+  'graph.ws.agents_one': { es: '{{n}} agente', en: '{{n}} agent' },
+  'graph.ws.agents_many': { es: '{{n}} agentes', en: '{{n}} agents' },
+  'graph.recenter': { es: 'Centrar vista', en: 'Recenter view' },
+  'graph.zoom_in': { es: 'Acercar', en: 'Zoom in' },
+  'graph.zoom_out': { es: 'Alejar', en: 'Zoom out' },
+  'graph.zoom_reset': { es: 'Restablecer zoom', en: 'Reset zoom' },
 
   // ─────────────────────────── Rail
   'rail.cli.label': { es: 'Claude CLI', en: 'Claude CLI' },

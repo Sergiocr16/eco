@@ -257,6 +257,8 @@ eco.dev.presets.hidden                   ← built-ins ocultados
 eco.remote.<bubbleId>                    ← slug si remote control activo
 eco.skills.favorites                     ← favoritos del SkillsCard
 eco.bubbles                              ← state global de burbujas (id, title, workspace, messages, …)
+eco.categories                           ← categorías configurables (id, name, color)
+eco.graph.zoom                           ← nivel de zoom de la vista de nodos del Dashboard
 ```
 
 ### Auto-allowlist de orígenes (backend)

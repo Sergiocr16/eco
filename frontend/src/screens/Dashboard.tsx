@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { apiFetch } from '@/lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
@@ -2093,21 +2093,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   const cx = W / 2, cy = H / 2;
   // TILT del plano orbital. 1 = sin tilt (círculos). <1 = elipse achatada
   // verticalmente = vista en perspectiva 3D (sistema solar visto de costado).
-  const tilt = 0.45;
-  // Anillos orbitales: cada agente vive en SU PROPIO anillo. Cuando hay
-  // pocos agentes, expandimos los anillos para que ocupen mejor el canvas
-  // y no se vean apretados contra el hub Eco. A más agentes, más juntos.
-  const n = Math.max(1, bubbles.length);
-  const orbitBaseR =
-    n <= 2 ? 160 :
-    n <= 4 ? 120 :
-    n <= 6 ? 100 :
-    80;
-  const orbitSpacing =
-    n <= 2 ? 60 :
-    n <= 4 ? 44 :
-    n <= 6 ? 36 :
-    32;
+  const tilt = 0.62;
   const busyIds = useBusyBubbleIds();
   // hasFiles real basado en `git status` (no heurística sobre history de
   // tool calls del agente). Comparte cache con la FilesPanel — el dot ámbar
@@ -2115,14 +2101,9 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   const hasFilesMap = useBubbleHasFilesMap(
     bubbles.map((b) => ({ id: b.id, workspace: b.workspace || '' })),
   );
-  const nodes = bubbles.map((b, i) => {
-    const orbitIdx = i;
-    const orbitR = orbitBaseR + orbitIdx * orbitSpacing;
-    // Período: planetas más alejados giran más lento (T ∝ R^1.5 aprox Kepler).
-    // Base 12s para el más cercano, hasta ~28s para los lejanos.
-    const period = 12 + orbitIdx * 2.5;
-    // Fase inicial — distribuye los planetas para que no arranquen alineados.
-    const phaseDeg = (i * 67) % 360;
+
+  // Flags de estado/recursos de un agente — compartido por ambos layouts.
+  function nodeFlags(b: Bubble) {
     const state = (b.status as AgentState) || 'idle';
     const hasChat = b.messages.length > 0;
     const hasPty = !!b.ptyOpen;
@@ -2131,30 +2112,196 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     try { hasBrowser = !!window.localStorage.getItem(`eco.browser.url.${b.id}`); } catch { /* noop */ }
     const hasRemote = !!remoteByBubble[b.id];
     // hasFiles real: viene de `git status` via `useBubbleHasFilesMap`.
-    // Si el cache aún no tiene entry para esta burbuja (primer poll en curso)
-    // devuelve undefined → false. Es OK que tarde 1-2s en aparecer el
-    // satélite naranja la primera vez — preferible a un falso positivo
-    // permanente basado en history.
     const hasFiles = hasFilesMap.get(b.id) ?? false;
-    // "Activo" para el bond/electrón = el agente está EJECUTANDO algo ahora
-    // mismo: Claude procesando o PTY con output. Tener un server up, un
-    // browser abierto o archivos modificados son estados pasivos — los
-    // satélites alrededor del electrón ya los indican; el electrón solo
-    // pulsa cuando hay trabajo "vivo".
+    // "Activo" = el agente está EJECUTANDO algo ahora mismo: Claude procesando
+    // o PTY con output. Server up / browser abierto / archivos modificados son
+    // estados pasivos — los satélites ya los indican.
     const claudeBusy = state === 'thinking' || state === 'executing' || state === 'running' || state === 'pending';
     const ptyBusy = busyIds.has(b.id);
     const isActive = claudeBusy || ptyBusy;
-    return {
-      ...b, state,
-      orbitR, period, phaseDeg,
-      // Posición estática para las líneas iniciales (las línea/connection ya
-      // no aplica con órbitas — usamos un anillo en su lugar).
-      x: cx + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
-      y: cy + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
-      size: 22 + (state === 'running' ? 8 : 0),
-      hasChat, hasPty, hasServer, hasBrowser, hasRemote, hasFiles, isActive,
-    };
+    return { state, hasChat, hasPty, hasServer, hasBrowser, hasRemote, hasFiles, isActive };
+  }
+  type GraphNode = Bubble & ReturnType<typeof nodeFlags> & {
+    x: number; y: number; size: number;
+    parentX: number; parentY: number; parentR: number;
+  };
+
+  // --- Agrupación por workspace ---
+  // El dashboard se organiza jerárquicamente: el hub Eco conecta a un nodo
+  // por carpeta/workspace, y de cada nodo de carpeta salen sus agentes.
+  // Excepción: si solo hay UN workspace, los agentes salen directo del hub
+  // Eco (sin nodo intermedio) — no aporta nada con un solo proyecto.
+  const wsGroups: Array<{ key: string; label: string; items: Bubble[] }> = (() => {
+    const map = new Map<string, Bubble[]>();
+    for (const b of bubbles) {
+      const key = b.workspace || '__none__';
+      const arr = map.get(key);
+      if (arr) arr.push(b);
+      else map.set(key, [b]);
+    }
+    return [...map.entries()].map(([key, items]) => ({
+      key,
+      label: key === '__none__'
+        ? 'Sin carpeta'
+        : (key.split('/').filter(Boolean).pop() || key),
+      items,
+    }));
+  })();
+  const hierarchical = wsGroups.length > 1;
+
+  // Nodos de workspace (solo en modo jerárquico). Por defecto se reparten en
+  // un arco HORIZONTAL debajo del hub Eco — un anillo completo dejaba (con 2
+  // carpetas) una arriba y otra abajo; horizontal se lee mejor al primer
+  // acomodo. El user puede arrastrar la vista después.
+  // --- Zoom de la vista (persistido en localStorage) ---
+  // El zoom no escala el grupo SVG: multiplica los radios de las órbitas, así
+  // aumenta/reduce la SEPARACIÓN entre nodos sin agrandar círculos ni texto.
+  // Por eso se declara acá arriba, antes del cálculo de posiciones.
+  const ZOOM_KEY = 'eco.graph.zoom';
+  const ZOOM_MIN = 0.4;
+  const ZOOM_MAX = 2.4;
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [zoom, setZoomState] = useState<number>(() => {
+    try {
+      const raw = window.localStorage.getItem(ZOOM_KEY);
+      const v = raw ? parseFloat(raw) : 1;
+      return Number.isFinite(v) ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v)) : 1;
+    } catch { return 1; }
   });
+  // Escritura inline (no useEffect) — mismo patrón que el zoom del BrowserPanel,
+  // evita timing raro con HMR/unmount.
+  const setZoom = (next: number | ((z: number) => number)) => {
+    setZoomState((prev) => {
+      const raw = typeof next === 'function' ? next(prev) : next;
+      const v = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(raw * 100) / 100));
+      try { window.localStorage.setItem(ZOOM_KEY, String(v)); } catch { /* noop */ }
+      return v;
+    });
+  };
+
+  const WS_NODE_R = 26;
+  // El radio del anillo de carpetas se calcula según cuántas carpetas hay:
+  // más carpetas → anillo más grande para que el arco horizontal no se
+  // amontone. Tope al 46% del lado menor del canvas. El zoom multiplica la
+  // separación (no escala los nodos): zoom in → más espacio entre nodos.
+  const wsOrbitR = Math.min(
+    Math.min(W, H) * 0.46,
+    Math.max(170, 110 + wsGroups.length * 42),
+  ) * zoom;
+  const wsNodes = hierarchical
+    ? wsGroups.map((g, i) => {
+        const N = wsGroups.length;
+        const aStart = Math.PI * (175 / 180);
+        const aEnd = Math.PI * (5 / 180);
+        const angle = N === 1
+          ? Math.PI / 2
+          : aStart + (i / (N - 1)) * (aEnd - aStart);
+        return {
+          ...g,
+          angle,
+          angleDeg: (angle * 180) / Math.PI,
+          x: cx + Math.cos(angle) * wsOrbitR,
+          y: cy + Math.sin(angle) * wsOrbitR * tilt,
+          active: g.items.some((b) => nodeFlags(b).isActive),
+        };
+      })
+    : [];
+
+  const nodes: GraphNode[] = [];
+  if (!hierarchical) {
+    // Layout plano: todos los agentes orbitan el hub Eco. El radio base y el
+    // espaciado entre anillos se calculan según la cantidad de agentes en
+    // pantalla — pocos agentes → anillos más amplios para ocupar el canvas;
+    // muchos → más juntos para que el conjunto no se disperse de más.
+    const cnt = Math.max(1, bubbles.length);
+    const orbitBaseR = Math.max(88, 165 - cnt * 14);
+    const orbitSpacing = Math.max(34, 60 - cnt * 5);
+    bubbles.forEach((b, i) => {
+      const orbitR = (orbitBaseR + i * orbitSpacing) * zoom;
+      const phaseDeg = (i * 67) % 360;
+      const f = nodeFlags(b);
+      nodes.push({
+        ...b, ...f,
+        parentX: cx, parentY: cy, parentR: 34,
+        x: cx + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
+        y: cy + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
+        size: 22 + (f.state === 'running' ? 8 : 0),
+      });
+    });
+  } else {
+    // Layout jerárquico: los agentes orbitan su nodo de workspace, abriéndose
+    // en abanico hacia afuera del hub Eco para no cruzar el enlace Eco→carpeta.
+    wsNodes.forEach((ws) => {
+      const m = ws.items.length;
+      // El radio de la órbita de agentes se calcula según cuántos agentes
+      // tiene la carpeta — más agentes → órbita más amplia para que el
+      // abanico no se amontone.
+      const miniBaseR = Math.max(86, 58 + m * 17);
+      const arcSpan = Math.min(300, 70 + m * 38);
+      ws.items.forEach((b, j) => {
+        const phaseDeg = m === 1
+          ? ws.angleDeg
+          : ws.angleDeg - arcSpan / 2 + (j / (m - 1)) * arcSpan;
+        const orbitR = (miniBaseR + (j % 2) * 28) * zoom;
+        const f = nodeFlags(b);
+        nodes.push({
+          ...b, ...f,
+          parentX: ws.x, parentY: ws.y, parentR: WS_NODE_R,
+          x: ws.x + Math.cos((phaseDeg * Math.PI) / 180) * orbitR,
+          y: ws.y + Math.sin((phaseDeg * Math.PI) / 180) * orbitR * tilt,
+          size: 22 + (f.state === 'running' ? 8 : 0),
+        });
+      });
+    });
+  }
+
+  // --- Pan de la vista completa ---
+  // Click + arrastre sobre el espacio vacío (la grilla de fondo) desplaza todo
+  // el contenido del grafo. El viewBox es 1:1 con los píxeles del container
+  // (W/H se miden del container real), así que el delta de mouse en px se
+  // aplica directo como traslación en unidades del viewBox.
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const d = dragRef.current;
+      if (!d) return;
+      setPan({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) });
+    }
+    function onUp() {
+      if (dragRef.current) { dragRef.current = null; setDragging(false); }
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+  function startPan(e: ReactMouseEvent) {
+    dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
+    setDragging(true);
+  }
+
+  // Zoom con la rueda del mouse sobre el grafo. Listener no-pasivo para poder
+  // hacer preventDefault y que la página no scrollee.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom((z) => z * (1 - e.deltaY * 0.0015));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+  const zoomBtnStyle: CSSProperties = {
+    width: 26, height: 26, borderRadius: 999,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'transparent', border: 0, color: t.text1,
+    cursor: 'pointer', fontFamily: t.fontSans,
+  };
 
   return (
     <Glass radius={20} style={{
@@ -2165,7 +2312,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
       padding: 0, overflow: 'hidden',
     }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }}/>
-      <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}
+      <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMidYMid meet"
         style={{ position: 'absolute', inset: 0 }}>
         <defs>
@@ -2184,13 +2331,9 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             <feBlend in="SourceGraphic" in2="goo"/>
           </filter>
         </defs>
-        <rect width={W} height={H} fill="url(#eco-grid)"/>
-        <motion.circle
-          cx={cx} cy={cy} r={Math.min(W, H) * 0.5} fill="url(#eco-glow)"
-          animate={{ scale: [1, 1.04, 1] }}
-          transition={{ duration: 5, ease: 'easeInOut', repeat: Infinity }}
-          style={{ transformOrigin: `${cx}px ${cy}px` }}
-        />
+        <rect width={W} height={H} fill="url(#eco-grid)"
+          onMouseDown={startPan}
+          style={{ cursor: dragging ? 'grabbing' : 'grab', pointerEvents: 'all' }}/>
 
         {/* Partículas tipo "estrellas" en el fondo. Twinkleando (opacity + r)
             y drifteando muy lentamente en un loop pequeño para que se sientan
@@ -2225,7 +2368,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           // regresa al origen sin acumular drift.
           const path = `M ${x},${y} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${cp1x},${cp2y} S ${cp2x},${cp1y} ${x},${y}`;
           return (
-            <g key={'particle-' + i}>
+            <g key={'particle-' + i} style={{ pointerEvents: 'none' }}>
               <circle cx={0} cy={0} r={p.r}
                 fill={p.color}
                 style={{ filter: `drop-shadow(0 0 4px ${p.color})`, opacity: 0.5 }}>
@@ -2252,6 +2395,19 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
         {/* (Anillos orbitales removidos — el sistema se ve más limpio sin
             las elipses de fondo, dejando solo enlaces vivos núcleo→electrón.) */}
 
+        {/* Grupo paneable — glow + hub + nodos de workspace + electrones +
+            enlaces. La grilla y las partículas quedan fijas como fondo. El
+            zoom NO escala este grupo: actúa sobre los radios de las órbitas,
+            así aumenta/reduce la separación entre nodos sin agrandar los
+            círculos ni el texto. */}
+        <g transform={`translate(${pan.x},${pan.y})`}>
+        {/* Glow radial del centro — se mueve junto con el hub Eco al panear. */}
+        <motion.circle
+          cx={cx} cy={cy} r={Math.min(W, H) * 0.5} fill="url(#eco-glow)"
+          animate={{ scale: [1, 1.04, 1] }}
+          transition={{ duration: 5, ease: 'easeInOut', repeat: Infinity }}
+          style={{ transformOrigin: `${cx}px ${cy}px`, pointerEvents: 'none' }}
+        />
         {/* Hub central — respira sutil (escala el círculo de fondo) y
             emite 2 anillos expansivos cuando hay actividad en cualquier nodo. */}
         <motion.g
@@ -2289,27 +2445,68 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           eco
         </motion.text>
 
-        {/* Líneas tenues del núcleo Eco a cada electrón — "enlaces" químicos.
-            Van de BORDE a BORDE (no de centro a centro) así no se incrustan
-            dentro de los círculos. */}
+        {/* Enlaces hub Eco → nodo de workspace (solo modo jerárquico). */}
+        {hierarchical && wsNodes.map((ws) => {
+          const dx = ws.x - cx;
+          const dy = ws.y - cy;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const ECO_R = 34;
+          const gap = 2;
+          const x1 = cx + ux * (ECO_R + gap);
+          const y1 = cy + uy * (ECO_R + gap);
+          const x2 = ws.x - ux * (WS_NODE_R + gap);
+          const y2 = ws.y - uy * (WS_NODE_R + gap);
+          const stroke = ws.active ? t.accent : t.text2;
+          const opacity = ws.active ? 0.6 : 0.28;
+          const pulseDur = Math.max(1.1, Math.min(2.6, dist / 240));
+          return (
+            <g key={'ws-bond-' + ws.key}>
+              <line
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={stroke} strokeOpacity={opacity}
+                strokeWidth={ws.active ? 1.6 : 1.2}
+                strokeDasharray={ws.active ? '4 6' : '0'}
+                strokeLinecap="round"
+                style={ws.active ? {
+                  animation: 'eco-flow 1.1s linear infinite',
+                  filter: `drop-shadow(0 0 4px ${t.accent})`,
+                } : undefined}
+              />
+              {ws.active && (
+                <circle r={3} fill={t.ok}
+                  style={{ filter: `drop-shadow(0 0 6px ${t.ok})` }}>
+                  <animateMotion path={`M${x1},${y1} L${x2},${y2}`}
+                    dur={`${pulseDur}s`} repeatCount="indefinite" rotate="0"/>
+                  <animate attributeName="opacity" values="0;1;1;0"
+                    keyTimes="0;0.1;0.85;1" dur={`${pulseDur}s`} repeatCount="indefinite"/>
+                </circle>
+              )}
+            </g>
+          );
+        })}
+
+        {/* Líneas tenues del núcleo (hub Eco o nodo de workspace) a cada
+            electrón — "enlaces" químicos. Van de BORDE a BORDE (no de centro
+            a centro) así no se incrustan dentro de los círculos. */}
         {nodes.map((n) => {
           // Activo = SDK corriendo o PTY abierto (la terminal cuenta como vida).
           const isActive = n.isActive;
           const sColor = stateColor(n.state, t);
           const stroke = hover === n.id ? t.accent : (isActive ? sColor : t.text2);
           const opacity = hover === n.id ? 0.85 : (isActive ? 0.6 : 0.22);
-          // Vector unitario del centro de Eco al centro del electrón.
-          const dx = n.x - cx;
-          const dy = n.y - cy;
+          // Vector unitario del centro del padre (hub Eco o nodo de workspace)
+          // al centro del electrón.
+          const dx = n.x - n.parentX;
+          const dy = n.y - n.parentY;
           const dist = Math.max(1, Math.hypot(dx, dy));
           const ux = dx / dist;
           const uy = dy / dist;
-          // Radio del hub Eco (debe coincidir con el <circle r="34"> del hub).
-          const ECO_R = 34;
           // Margen extra para que la línea no toque exactamente el borde.
           const gap = 2;
-          const x1 = cx + ux * (ECO_R + gap);
-          const y1 = cy + uy * (ECO_R + gap);
+          const x1 = n.parentX + ux * (n.parentR + gap);
+          const y1 = n.parentY + uy * (n.parentR + gap);
           const x2 = n.x - ux * (n.size + gap);
           const y2 = n.y - uy * (n.size + gap);
           // Distancia → duración del pulso (más lejos, un poco más lento).
@@ -2359,6 +2556,42 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             </g>
           );
         })}
+
+        {/* Nodos de workspace — un círculo por carpeta, con glifo de folder
+            y el nombre de la carpeta. Solo en modo jerárquico (2+ proyectos). */}
+        {hierarchical && wsNodes.map((ws) => (
+          <g key={'ws-node-' + ws.key} transform={`translate(${ws.x},${ws.y})`}>
+            {ws.active && (
+              <motion.circle cx={0} cy={0} r={WS_NODE_R}
+                fill="none" stroke={t.accent} strokeWidth={1.4}
+                animate={{ r: [WS_NODE_R, WS_NODE_R + 14], opacity: [0.45, 0] }}
+                transition={{ duration: 2.2, ease: 'easeOut', repeat: Infinity }}/>
+            )}
+            <circle cx={0} cy={0} r={WS_NODE_R}
+              fill={t.bg1}
+              stroke={ws.active ? t.accent : t.glassBorder}
+              strokeWidth={ws.active ? 1.6 : 1}
+              strokeOpacity={ws.active ? 0.8 : 0.7}/>
+            {/* Glifo de workspace — capas apiladas (layers): un proyecto con
+                varias partes. Rombo superior + dos ecos hacia abajo. */}
+            <g fill="none" stroke={t.text1} strokeWidth={1.5}
+              strokeLinecap="round" strokeLinejoin="round">
+              <path d="M0,-8 L9,-3.5 L0,1 L-9,-3.5 Z"/>
+              <path d="M-9,0 L0,4.5 L9,0"/>
+              <path d="M-9,3.5 L0,8 L9,3.5"/>
+            </g>
+            <text x={0} y={WS_NODE_R + 15} textAnchor="middle"
+              fill={t.text1} fontFamily={t.fontSans} fontSize="11.5" fontWeight="600"
+              style={{ pointerEvents: 'none' }}>
+              {ws.label.length > 18 ? ws.label.slice(0, 18) + '…' : ws.label}
+            </text>
+            <text x={0} y={WS_NODE_R + 28} textAnchor="middle"
+              fill={t.text3} fontFamily={t.fontSans} fontSize="10"
+              style={{ pointerEvents: 'none' }}>
+              {tr(ws.items.length === 1 ? 'graph.ws.agents_one' : 'graph.ws.agents_many', { n: ws.items.length })}
+            </text>
+          </g>
+        ))}
 
         {/* Electrones — fijos en sus orbitales (como modelo de Bohr). Sin
             rotación. Wobble local muy leve para que se sientan "vivos"
@@ -2462,7 +2695,60 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             </g>
           );
         })}
+        </g>
       </svg>
+
+      {(pan.x !== 0 || pan.y !== 0) && (
+        <button
+          type="button"
+          onClick={() => setPan({ x: 0, y: 0 })}
+          title={tr('graph.recenter')}
+          style={{
+            position: 'absolute', top: 12, left: 16,
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '5px 10px', borderRadius: 999,
+            background: t.bg2, border: `1px solid ${t.glassBorder}`,
+            color: t.text1, fontFamily: t.fontSans, fontSize: 11,
+            cursor: 'pointer', boxShadow: t.shadowMd,
+          }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3"/>
+          </svg>
+          {tr('graph.recenter')}
+        </button>
+      )}
+
+      {/* Controles de zoom — el nivel se persiste en localStorage. */}
+      <div style={{
+        position: 'absolute', bottom: 12, left: 16,
+        display: 'flex', alignItems: 'center', gap: 2,
+        padding: 3, borderRadius: 999,
+        background: t.bg2, border: `1px solid ${t.glassBorder}`,
+        boxShadow: t.shadowMd,
+      }}>
+        <button type="button" onClick={() => setZoom((z) => z - 0.2)}
+          title={tr('graph.zoom_out')} style={zoomBtnStyle}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <path d="M5 12h14"/>
+          </svg>
+        </button>
+        <button type="button" onClick={() => setZoom(1)}
+          title={tr('graph.zoom_reset')}
+          style={{ ...zoomBtnStyle, width: 'auto', minWidth: 42, padding: '0 8px',
+            fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>
+          {Math.round(zoom * 100)}%
+        </button>
+        <button type="button" onClick={() => setZoom((z) => z + 0.2)}
+          title={tr('graph.zoom_in')} style={zoomBtnStyle}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
+      </div>
 
       <div style={{
         position: 'absolute', top: 12, right: 16, fontSize: 11,
@@ -2473,6 +2759,11 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           boxShadow: `0 0 6px ${t.accent}`,
         }}/>
         {tr('graph.legend.nodes', { n: bubbles.length })}
+        {hierarchical && (
+          <span style={{ color: t.text3 }}>
+            {' · '}{tr('dash.in_projects_many', { n: wsGroups.length })}
+          </span>
+        )}
       </div>
     </Glass>
   );
