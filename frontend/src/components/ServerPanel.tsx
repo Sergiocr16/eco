@@ -28,10 +28,10 @@ import { ecoToken } from '@/lib/eco-config';
 type Status = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 type SlotRole = 'main' | 'frontend' | 'backend';
 
-// Cap del buffer de logs por slot. 200 KB cubre los últimos miles de líneas
-// (xterm tiene su propio scrollback) y evita que un dev server ruidoso
-// (gulp, webpack, java) infle el heap del renderer.
-const LOGS_MAX = 200_000;
+// Cap del buffer de logs por slot. Mantenemos solo los últimos ~60 KB para
+// que un dev server ruidoso (gulp, webpack, java) no haga lagear el viewer
+// ni infle el heap del renderer. xterm tiene su propio scrollback además.
+const LOGS_MAX = 60_000;
 
 type DevStatusEvent = {
   bubbleId: string;
@@ -52,13 +52,12 @@ type SlotState = {
   status: Status;
   url: string;
   command: string;
-  logs: string;
   actionBusy: 'start' | 'stop' | 'restart' | null;
   actionError: string | null;
 };
 
 const initSlot = (): SlotState => ({
-  status: 'idle', url: '', command: '', logs: '',
+  status: 'idle', url: '', command: '',
   actionBusy: null, actionError: null,
 });
 
@@ -180,50 +179,12 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
         url: e.url ?? '',
         command: e.command ?? '',
       });
-      // Al iniciar un nuevo ciclo limpiamos los logs en pantalla — vienen
-      // frescos por el stream WS. Para 'stopped'/'error' los preservamos
-      // hasta que el user los lea o el server reinicie.
-      if (e.status === 'starting') {
-        updateSlot(role, { logs: '' });
-      }
     });
   }, [bubbleId]);
 
-  // Snapshot inicial de logs al montar — un solo GET para sembrar el viewer
-  // con lo que ya esté en el ring buffer del backend. Después, el stream WS
-  // (eco:dev_log) appendea deltas; no hay polling.
-  useEffect(() => {
-    let cancelled = false;
-    const rolesToSeed: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
-    (async () => {
-      for (const role of rolesToSeed) {
-        try {
-          const r = await apiFetch(`/dev/logs?bubbleId=${encodeURIComponent(bubbleId)}&role=${role}`);
-          if (!r.ok || cancelled) continue;
-          const text = await r.text();
-          updateSlot(role, { logs: text });
-        } catch { /* noop */ }
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bubbleId, dual]);
-
-  // Stream de log chunks por WS — reemplaza el polling cada 1.5s. El backend
-  // batchea los chunks cada ~80ms así que el handler recibe ráfagas, no caracteres.
-  // Cap en frontend: 200 KB por slot — suficiente para xterm scrollback,
-  // evita acumulación sin cota con frameworks ruidosos.
-  useEffect(() => {
-    return ecoOn('eco:dev_log', (e) => {
-      if (e.bubbleId !== bubbleId) return;
-      const role = e.role as SlotRole;
-      if (role !== 'main' && role !== 'frontend' && role !== 'backend') return;
-      setSlots((prev) => ({
-        ...prev,
-        [role]: { ...prev[role], logs: (prev[role].logs + e.chunk).slice(-LOGS_MAX) },
-      }));
-    });
-  }, [bubbleId]);
+  // El stream de logs (snapshot GET + eco:dev_log + clear-on-starting) vive
+  // dentro de cada LogsPane — así un dev server ruidoso solo re-renderiza ese
+  // panel chico, NO todo el ServerPanel (que era lo que hacía lagear la UI).
 
   // Helpers de fetch.
   async function postWithRetry(path: string, body: Record<string, unknown>): Promise<Response> {
@@ -580,7 +541,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
             }}>
               <LogsPane
                 label="Frontend"
-                logs={slots.frontend.logs}
+                role="frontend"
                 accent={t.accent}
                 minimized={minFront}
                 onToggle={() => setMin('frontend', !minFront)}
@@ -597,7 +558,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
             }}>
               <LogsPane
                 label="Backend"
-                logs={slots.backend.logs}
+                role="backend"
                 accent={t.warn}
                 minimized={minBack}
                 onToggle={() => setMin('backend', !minBack)}
@@ -608,18 +569,16 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
             </div>
           </div>
         ) : (
-          slots.main.logs && (
-            <div style={{ marginTop: 16 }}>
-              <LogsPane
-                label="Logs"
-                logs={slots.main.logs}
-                accent={t.accent}
-                bubbleId={bubbleId}
-                workspace={workspace}
-                logSource="server"
-              />
-            </div>
-          )
+          <div style={{ marginTop: 16 }}>
+            <LogsPane
+              label="Logs"
+              role="main"
+              accent={t.accent}
+              bubbleId={bubbleId}
+              workspace={workspace}
+              logSource="server"
+            />
+          </div>
         )}
       </div>
     </div>
@@ -1020,20 +979,54 @@ function PresetMenu({
 }
 
 function LogsPane({
-  label, logs, accent, minimized, onToggle,
+  label, role, accent, minimized, onToggle,
   bubbleId, workspace, logSource,
 }: {
   label: string;
-  logs: string;
+  role: SlotRole;
   accent: string;
   minimized?: boolean;
   onToggle?: () => void;
-  bubbleId?: string;
+  bubbleId: string;
   workspace?: string;
   // Etiqueta usada en el prompt enviado a Claude para que sepa de qué pane vino.
   logSource?: 'frontend' | 'backend' | 'server';
 }) {
   const t = useTokens();
+  // El buffer de logs vive ACÁ (no en el ServerPanel) — así un dev server
+  // ruidoso solo re-renderiza este panel chico, no todo el ServerPanel.
+  const [logs, setLogs] = useState('');
+
+  // Snapshot inicial: un GET al ring buffer del backend al montar.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch(`/dev/logs?bubbleId=${encodeURIComponent(bubbleId)}&role=${role}`);
+        if (!r.ok || cancelled) return;
+        const text = await r.text();
+        setLogs(text.slice(-LOGS_MAX));
+      } catch { /* noop */ }
+    })();
+    return () => { cancelled = true; };
+  }, [bubbleId, role]);
+
+  // Stream de chunks por WS (batcheado ~80ms en el backend).
+  useEffect(() => {
+    return ecoOn('eco:dev_log', (e) => {
+      if (e.bubbleId !== bubbleId || e.role !== role) return;
+      setLogs((prev) => (prev + e.chunk).slice(-LOGS_MAX));
+    });
+  }, [bubbleId, role]);
+
+  // Al (re)iniciar el server limpiamos la pantalla — los logs vienen frescos.
+  useEffect(() => {
+    return ecoOn('eco:dev_status', (e) => {
+      if (e.bubbleId !== bubbleId || (e.role ?? 'main') !== role) return;
+      if (e.status === 'starting') setLogs('');
+    });
+  }, [bubbleId, role]);
+
   return (
     <div style={{
       borderRadius: 10, overflow: 'hidden',
@@ -1060,6 +1053,22 @@ function LogsPane({
         <span style={{ marginLeft: 'auto', fontSize: 10, color: t.text3, fontFamily: t.fontMono }}>
           {logs.length.toLocaleString()} chars
         </span>
+        {logs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setLogs('')}
+            title="Borrar consola"
+            style={{
+              width: 22, height: 22, borderRadius: 5, border: 0,
+              background: 'transparent', color: t.text2, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; e.currentTarget.style.color = t.err; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}>
+            <IconTrash size={11}/>
+          </button>
+        )}
         {onToggle && (
           <button
             type="button"
@@ -1126,7 +1135,7 @@ function TerminalLogs({
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 11.5,
       lineHeight: 1.3,
-      scrollback: 3000,
+      scrollback: 1500,
       allowTransparency: false,
       theme: {
         background: TERMINAL_BG,
@@ -1152,6 +1161,9 @@ function TerminalLogs({
 
     const ro = new ResizeObserver(() => {
       try { fit.fit(); } catch { /* noop */ }
+      // Al volver a entrar a la pestaña Server el contenedor pasa de oculto a
+      // visible → dispara resize → reajustamos y bajamos el scroll al final.
+      try { term.scrollToBottom(); } catch { /* noop */ }
     });
     ro.observe(container);
 
@@ -1170,12 +1182,15 @@ function TerminalLogs({
     const term = termRef.current;
     if (!term) return;
     const prevLen = lastLenRef.current;
+    // El scroll va en el callback de write() — write() es asíncrono, así que
+    // scrollear síncrono justo después usaba el buffer viejo y no bajaba.
+    const toBottom = () => { try { term.scrollToBottom(); } catch { /* noop */ } };
     if (logs.length < prevLen) {
       term.clear();
-      if (logs) term.write(logs);
+      if (logs) term.write(logs, toBottom); else toBottom();
       lastLenRef.current = logs.length;
     } else if (logs.length > prevLen) {
-      term.write(logs.slice(prevLen));
+      term.write(logs.slice(prevLen), toBottom);
       lastLenRef.current = logs.length;
     }
   }, [logs]);
