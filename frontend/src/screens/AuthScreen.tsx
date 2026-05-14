@@ -835,7 +835,7 @@ function FormError({ children }: { children: React.ReactNode }) {
   const t = useTokens();
   return (
     <div style={{
-      marginTop: -2, marginBottom: 8, fontSize: 12, color: t.err,
+      marginTop: 12, marginBottom: 8, fontSize: 12, color: t.err,
       padding: '8px 12px', textAlign: 'left',
       background: `color-mix(in oklch, ${t.err} 8%, transparent)`,
       border: `1px solid color-mix(in oklch, ${t.err} 30%, transparent)`,

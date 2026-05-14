@@ -4,7 +4,13 @@ export type ThemeMode =
   | 'sepia' | 'slate' | 'dracula' | 'rose-pine'
   | 'catppuccin-mocha' | 'catppuccin-latte'
   | 'pink' | 'cyberpunk' | 'synthwave' | 'forest' | 'ocean' | 'coffee'
-  | 'lavender' | 'monokai' | 'baby-pink';
+  | 'lavender' | 'monokai' | 'baby-pink'
+  // Nuevos extravagantes
+  | 'vaporwave' | 'aurora' | 'volcano' | 'galaxy' | 'matrix' | 'sunset'
+  | 'bubblegum' | 'neon-night'
+  // Más extravagantes (amarillos, rojos, otros)
+  | 'acid-yellow' | 'blood-moon' | 'mustard' | 'cherry-bomb' | 'sakura'
+  | 'emerald' | 'royal' | 'carbon';
 
 export type EffectiveThemeMode = Exclude<ThemeMode, 'system'>;
 
@@ -559,6 +565,344 @@ const MONOKAI_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accent
   desktopBg: '#1e1f1a',
 };
 
+// ─── Temas extravagantes nuevos ───────────────────────────────────────────
+
+// Vaporwave — pastel cyan/magenta/violeta, estética 80s synthwave dreamy.
+const VAPORWAVE_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#1a0e2e',
+  bg1: '#2d1b4e',
+  bg2: 'rgba(255, 0, 200, 0.06)',
+  bg3: 'rgba(0, 255, 240, 0.08)',
+  bg4: 'rgba(255, 100, 220, 0.12)',
+  glassBg: 'rgba(26, 14, 46, 0.78)',
+  glassBorder: 'rgba(255, 100, 220, 0.18)',
+  glassBorderHi: 'rgba(0, 255, 240, 0.35)',
+  text0: '#ffe8ff',
+  text1: '#d8b8ff',
+  text2: '#9a7ec8',
+  text3: '#6a5598',
+  chromeBg: 'rgba(26, 14, 46, 0.88)',
+  windowBg: '#1a0e2e',
+  windowBorder: 'rgba(255, 100, 220, 0.20)',
+  desktopBg: '#0e0620',
+};
+
+// Aurora — verdes/azules glaciares con violeta sutil, como auroras boreales.
+const AURORA_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#0a1822',
+  bg1: '#142838',
+  bg2: 'rgba(0, 255, 180, 0.06)',
+  bg3: 'rgba(100, 200, 255, 0.08)',
+  bg4: 'rgba(160, 100, 255, 0.10)',
+  glassBg: 'rgba(10, 24, 34, 0.80)',
+  glassBorder: 'rgba(100, 220, 255, 0.16)',
+  glassBorderHi: 'rgba(150, 255, 200, 0.30)',
+  text0: '#e0f8ff',
+  text1: '#b8e0d8',
+  text2: '#7a9aa0',
+  text3: '#506872',
+  chromeBg: 'rgba(10, 24, 34, 0.90)',
+  windowBg: '#0a1822',
+  windowBorder: 'rgba(100, 220, 255, 0.18)',
+  desktopBg: '#040d14',
+};
+
+// Volcano — negro absoluto con lava naranja/rojo brillante.
+const VOLCANO_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#0a0202',
+  bg1: '#1f0a04',
+  bg2: 'rgba(255, 80, 0, 0.06)',
+  bg3: 'rgba(255, 140, 50, 0.10)',
+  bg4: 'rgba(255, 200, 100, 0.12)',
+  glassBg: 'rgba(10, 2, 2, 0.85)',
+  glassBorder: 'rgba(255, 100, 30, 0.22)',
+  glassBorderHi: 'rgba(255, 200, 80, 0.40)',
+  text0: '#fff5e8',
+  text1: '#ffd0a0',
+  text2: '#c89070',
+  text3: '#8a5a44',
+  chromeBg: 'rgba(10, 2, 2, 0.92)',
+  windowBg: '#0a0202',
+  windowBorder: 'rgba(255, 100, 30, 0.25)',
+  desktopBg: '#050101',
+};
+
+// Galaxy — púrpura espacial profundo con vibe cosmos.
+const GALAXY_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#0a0418',
+  bg1: '#1a0a38',
+  bg2: 'rgba(180, 130, 255, 0.06)',
+  bg3: 'rgba(120, 80, 255, 0.10)',
+  bg4: 'rgba(220, 180, 255, 0.12)',
+  glassBg: 'rgba(10, 4, 24, 0.85)',
+  glassBorder: 'rgba(160, 110, 255, 0.20)',
+  glassBorderHi: 'rgba(220, 180, 255, 0.36)',
+  text0: '#f0e8ff',
+  text1: '#c8b8ff',
+  text2: '#8878c8',
+  text3: '#584878',
+  chromeBg: 'rgba(10, 4, 24, 0.92)',
+  windowBg: '#0a0418',
+  windowBorder: 'rgba(160, 110, 255, 0.22)',
+  desktopBg: '#04020e',
+};
+
+// Matrix — negro puro + verde fosforescente estilo hacker.
+const MATRIX_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#000000',
+  bg1: '#001a08',
+  bg2: 'rgba(0, 255, 80, 0.05)',
+  bg3: 'rgba(0, 255, 120, 0.10)',
+  bg4: 'rgba(80, 255, 100, 0.14)',
+  glassBg: 'rgba(0, 0, 0, 0.90)',
+  glassBorder: 'rgba(0, 255, 100, 0.20)',
+  glassBorderHi: 'rgba(80, 255, 120, 0.45)',
+  text0: '#d0ffd0',
+  text1: '#80ff90',
+  text2: '#40a060',
+  text3: '#206040',
+  chromeBg: 'rgba(0, 0, 0, 0.96)',
+  windowBg: '#000000',
+  windowBorder: 'rgba(0, 255, 100, 0.25)',
+  desktopBg: '#000000',
+};
+
+// Sunset — naranja/rosa/durazno cálido. Vibe atardecer tropical.
+const SUNSET_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#2a0e18',
+  bg1: '#4a1828',
+  bg2: 'rgba(255, 140, 100, 0.08)',
+  bg3: 'rgba(255, 180, 120, 0.12)',
+  bg4: 'rgba(255, 200, 150, 0.16)',
+  glassBg: 'rgba(42, 14, 24, 0.80)',
+  glassBorder: 'rgba(255, 150, 120, 0.20)',
+  glassBorderHi: 'rgba(255, 200, 150, 0.40)',
+  text0: '#fff0e8',
+  text1: '#ffc8b0',
+  text2: '#d09078',
+  text3: '#8a604c',
+  chromeBg: 'rgba(42, 14, 24, 0.90)',
+  windowBg: '#2a0e18',
+  windowBorder: 'rgba(255, 150, 120, 0.22)',
+  desktopBg: '#1a0810',
+};
+
+// Bubblegum — rosa chicle + cyan caramelo. Light theme dulce.
+const BUBBLEGUM_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#fff0f8',
+  bg1: '#ffe0f0',
+  bg2: 'rgba(255, 100, 180, 0.08)',
+  bg3: 'rgba(0, 200, 220, 0.10)',
+  bg4: 'rgba(255, 150, 200, 0.14)',
+  glassBg: 'rgba(255, 240, 248, 0.86)',
+  glassBorder: 'rgba(255, 120, 180, 0.22)',
+  glassBorderHi: 'rgba(0, 200, 220, 0.40)',
+  text0: '#4a1840',
+  text1: '#7a3060',
+  text2: '#a85894',
+  text3: '#c890b8',
+  chromeBg: 'rgba(255, 240, 248, 0.94)',
+  windowBg: '#fff0f8',
+  windowBorder: 'rgba(255, 120, 180, 0.24)',
+  desktopBg: '#ffe8f4',
+};
+
+// Acid Yellow — fondo oscuro con amarillo fluo eléctrico.
+const ACID_YELLOW_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#161200',
+  bg1: '#2a2008',
+  bg2: 'rgba(255, 240, 0, 0.07)',
+  bg3: 'rgba(255, 240, 0, 0.12)',
+  bg4: 'rgba(255, 255, 100, 0.16)',
+  glassBg: 'rgba(22, 18, 0, 0.85)',
+  glassBorder: 'rgba(255, 240, 0, 0.22)',
+  glassBorderHi: 'rgba(255, 255, 100, 0.45)',
+  text0: '#fffce0',
+  text1: '#e8d870',
+  text2: '#a09040',
+  text3: '#605820',
+  chromeBg: 'rgba(22, 18, 0, 0.92)',
+  windowBg: '#161200',
+  windowBorder: 'rgba(255, 240, 0, 0.25)',
+  desktopBg: '#0c0900',
+};
+
+// Blood Moon — fondo casi negro con rojo sangre carmesí brillante.
+const BLOOD_MOON_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#0c0204',
+  bg1: '#280608',
+  bg2: 'rgba(255, 30, 50, 0.07)',
+  bg3: 'rgba(255, 60, 80, 0.12)',
+  bg4: 'rgba(255, 100, 120, 0.16)',
+  glassBg: 'rgba(12, 2, 4, 0.88)',
+  glassBorder: 'rgba(255, 40, 60, 0.22)',
+  glassBorderHi: 'rgba(255, 100, 120, 0.45)',
+  text0: '#ffe0e0',
+  text1: '#ffa0a8',
+  text2: '#c06868',
+  text3: '#7a3030',
+  chromeBg: 'rgba(12, 2, 4, 0.94)',
+  windowBg: '#0c0204',
+  windowBorder: 'rgba(255, 40, 60, 0.25)',
+  desktopBg: '#060102',
+};
+
+// Mustard — warm dark yellow/olive. Vintage academic.
+const MUSTARD_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#1a1408',
+  bg1: '#2e2412',
+  bg2: 'rgba(220, 180, 50, 0.06)',
+  bg3: 'rgba(220, 180, 50, 0.10)',
+  bg4: 'rgba(240, 200, 80, 0.14)',
+  glassBg: 'rgba(26, 20, 8, 0.84)',
+  glassBorder: 'rgba(220, 180, 50, 0.20)',
+  glassBorderHi: 'rgba(240, 200, 80, 0.38)',
+  text0: '#fff0c8',
+  text1: '#e0c870',
+  text2: '#a08838',
+  text3: '#604820',
+  chromeBg: 'rgba(26, 20, 8, 0.92)',
+  windowBg: '#1a1408',
+  windowBorder: 'rgba(220, 180, 50, 0.22)',
+  desktopBg: '#100c04',
+};
+
+// Cherry Bomb — pink-red neón vibrante, fondo casi negro.
+const CHERRY_BOMB_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#100208',
+  bg1: '#2a0818',
+  bg2: 'rgba(255, 30, 100, 0.08)',
+  bg3: 'rgba(255, 80, 140, 0.12)',
+  bg4: 'rgba(255, 150, 180, 0.16)',
+  glassBg: 'rgba(16, 2, 8, 0.88)',
+  glassBorder: 'rgba(255, 50, 110, 0.24)',
+  glassBorderHi: 'rgba(255, 150, 180, 0.45)',
+  text0: '#ffe0ec',
+  text1: '#ffa8c4',
+  text2: '#c06888',
+  text3: '#783050',
+  chromeBg: 'rgba(16, 2, 8, 0.94)',
+  windowBg: '#100208',
+  windowBorder: 'rgba(255, 50, 110, 0.28)',
+  desktopBg: '#080104',
+};
+
+// Sakura — light theme con pétalos rosa pastel. Delicado y limpio.
+const SAKURA_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#fff5f8',
+  bg1: '#ffe8ee',
+  bg2: 'rgba(255, 120, 160, 0.06)',
+  bg3: 'rgba(200, 100, 140, 0.08)',
+  bg4: 'rgba(255, 150, 180, 0.12)',
+  glassBg: 'rgba(255, 245, 248, 0.88)',
+  glassBorder: 'rgba(255, 140, 170, 0.20)',
+  glassBorderHi: 'rgba(200, 100, 140, 0.38)',
+  text0: '#502838',
+  text1: '#784858',
+  text2: '#a87088',
+  text3: '#c898a8',
+  chromeBg: 'rgba(255, 245, 248, 0.94)',
+  windowBg: '#fff5f8',
+  windowBorder: 'rgba(255, 140, 170, 0.22)',
+  desktopBg: '#ffeef2',
+};
+
+// Emerald City — verde profundo esmeralda con vibe Wizard of Oz.
+const EMERALD_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#041810',
+  bg1: '#082c20',
+  bg2: 'rgba(0, 220, 140, 0.06)',
+  bg3: 'rgba(0, 220, 140, 0.10)',
+  bg4: 'rgba(80, 255, 180, 0.14)',
+  glassBg: 'rgba(4, 24, 16, 0.84)',
+  glassBorder: 'rgba(0, 220, 140, 0.22)',
+  glassBorderHi: 'rgba(80, 255, 180, 0.40)',
+  text0: '#e0fff0',
+  text1: '#a0d8c0',
+  text2: '#609080',
+  text3: '#385850',
+  chromeBg: 'rgba(4, 24, 16, 0.92)',
+  windowBg: '#041810',
+  windowBorder: 'rgba(0, 220, 140, 0.25)',
+  desktopBg: '#020e08',
+};
+
+// Royal — púrpura real profundo con dorado sutil. Lujo.
+const ROYAL_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#0e0420',
+  bg1: '#1c0a3a',
+  bg2: 'rgba(200, 160, 60, 0.06)',
+  bg3: 'rgba(140, 100, 220, 0.10)',
+  bg4: 'rgba(240, 200, 100, 0.12)',
+  glassBg: 'rgba(14, 4, 32, 0.86)',
+  glassBorder: 'rgba(200, 160, 60, 0.22)',
+  glassBorderHi: 'rgba(140, 100, 220, 0.40)',
+  text0: '#f0e0ff',
+  text1: '#d0b890',
+  text2: '#988068',
+  text3: '#605040',
+  chromeBg: 'rgba(14, 4, 32, 0.94)',
+  windowBg: '#0e0420',
+  windowBorder: 'rgba(200, 160, 60, 0.25)',
+  desktopBg: '#080214',
+};
+
+// Carbon — gris oscuro industrial, casi negro con sutiles tonos azules.
+const CARBON_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#0e1014',
+  bg1: '#1a1d23',
+  bg2: 'rgba(160, 180, 200, 0.06)',
+  bg3: 'rgba(160, 180, 200, 0.09)',
+  bg4: 'rgba(200, 220, 240, 0.12)',
+  glassBg: 'rgba(14, 16, 20, 0.86)',
+  glassBorder: 'rgba(180, 200, 220, 0.14)',
+  glassBorderHi: 'rgba(200, 220, 240, 0.30)',
+  text0: '#e8eef4',
+  text1: '#a8b8c8',
+  text2: '#6878a0',
+  text3: '#404858',
+  chromeBg: 'rgba(14, 16, 20, 0.94)',
+  windowBg: '#0e1014',
+  windowBorder: 'rgba(180, 200, 220, 0.16)',
+  desktopBg: '#07090c',
+};
+
+// Neon Night — púrpura oscuro con magenta/cyan neón brillante.
+const NEON_NIGHT_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...DARK_BASE,
+  bg0: '#06000c',
+  bg1: '#150828',
+  bg2: 'rgba(255, 0, 200, 0.08)',
+  bg3: 'rgba(0, 240, 255, 0.10)',
+  bg4: 'rgba(180, 0, 255, 0.14)',
+  glassBg: 'rgba(6, 0, 12, 0.92)',
+  glassBorder: 'rgba(255, 0, 200, 0.25)',
+  glassBorderHi: 'rgba(0, 240, 255, 0.50)',
+  text0: '#ffe8ff',
+  text1: '#d8a0ff',
+  text2: '#9866c8',
+  text3: '#5a3878',
+  chromeBg: 'rgba(6, 0, 12, 0.96)',
+  windowBg: '#06000c',
+  windowBorder: 'rgba(255, 0, 200, 0.30)',
+  desktopBg: '#020006',
+};
+
 // Mapping de cada modo a su base. Mantenemos los tres originales por compat
 // y agregamos las nuevas variantes.
 const THEME_BASES: Record<EffectiveThemeMode, Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'>> = {
@@ -585,6 +929,22 @@ const THEME_BASES: Record<EffectiveThemeMode, Omit<Tokens, 'accent' | 'accentDim
   'lavender': LAVENDER_BASE,
   'monokai': MONOKAI_BASE,
   'baby-pink': BABY_PINK_BASE,
+  'vaporwave': VAPORWAVE_BASE,
+  'aurora': AURORA_BASE,
+  'volcano': VOLCANO_BASE,
+  'galaxy': GALAXY_BASE,
+  'matrix': MATRIX_BASE,
+  'sunset': SUNSET_BASE,
+  'bubblegum': BUBBLEGUM_BASE,
+  'neon-night': NEON_NIGHT_BASE,
+  'acid-yellow': ACID_YELLOW_BASE,
+  'blood-moon': BLOOD_MOON_BASE,
+  'mustard': MUSTARD_BASE,
+  'cherry-bomb': CHERRY_BOMB_BASE,
+  'sakura': SAKURA_BASE,
+  'emerald': EMERALD_BASE,
+  'royal': ROYAL_BASE,
+  'carbon': CARBON_BASE,
 };
 
 // Luminosidad del accent por tema — los oscuros usan accent claro (~76-82%),
@@ -613,6 +973,22 @@ const ACCENT_LUMINOSITY: Record<EffectiveThemeMode, number> = {
   'lavender': 56,
   'monokai': 76,
   'baby-pink': 56,
+  'vaporwave': 80,
+  'aurora': 78,
+  'volcano': 78,
+  'galaxy': 80,
+  'matrix': 78,
+  'sunset': 80,
+  'bubblegum': 56,
+  'neon-night': 82,
+  'acid-yellow': 84,
+  'blood-moon': 76,
+  'mustard': 74,
+  'cherry-bomb': 80,
+  'sakura': 58,
+  'emerald': 78,
+  'royal': 78,
+  'carbon': 76,
 };
 
 // Metadata para mostrar al usuario en el picker de Apariencia.
@@ -645,6 +1021,24 @@ export const THEME_VARIANTS: { id: EffectiveThemeMode; name: string; kind: Theme
   { id: 'synthwave',        name: 'Synthwave',       kind: 'dark',  preview: '#241734' },
   { id: 'cyberpunk',        name: 'Cyberpunk',       kind: 'dark',  preview: '#0d0221' },
   { id: 'baby-pink',        name: 'Baby Pink',       kind: 'light', preview: '#fce4ec' },
+  // Extravagantes / experimentales
+  { id: 'vaporwave',        name: 'Vaporwave',       kind: 'dark',  preview: '#1a0e2e' },
+  { id: 'aurora',           name: 'Aurora Boreal',   kind: 'dark',  preview: '#0a1822' },
+  { id: 'volcano',          name: 'Volcán',          kind: 'dark',  preview: '#0a0202' },
+  { id: 'galaxy',           name: 'Galaxia',         kind: 'dark',  preview: '#0a0418' },
+  { id: 'matrix',           name: 'Matrix',          kind: 'dark',  preview: '#000000' },
+  { id: 'sunset',           name: 'Atardecer',       kind: 'dark',  preview: '#2a0e18' },
+  { id: 'bubblegum',        name: 'Bubblegum',       kind: 'light', preview: '#fff0f8' },
+  { id: 'neon-night',       name: 'Neon Night',      kind: 'dark',  preview: '#06000c' },
+  // Amarillos, rojos y otros sin miedo
+  { id: 'acid-yellow',      name: 'Acid Yellow',     kind: 'dark',  preview: '#161200' },
+  { id: 'blood-moon',       name: 'Blood Moon',      kind: 'dark',  preview: '#0c0204' },
+  { id: 'mustard',          name: 'Mostaza',         kind: 'dark',  preview: '#1a1408' },
+  { id: 'cherry-bomb',      name: 'Cherry Bomb',     kind: 'dark',  preview: '#100208' },
+  { id: 'sakura',           name: 'Sakura',          kind: 'light', preview: '#fff5f8' },
+  { id: 'emerald',          name: 'Esmeralda',       kind: 'dark',  preview: '#041810' },
+  { id: 'royal',            name: 'Real',            kind: 'dark',  preview: '#0e0420' },
+  { id: 'carbon',           name: 'Carbón',          kind: 'dark',  preview: '#0e1014' },
 ];
 
 export function isLightTheme(mode: EffectiveThemeMode): boolean {
@@ -652,7 +1046,9 @@ export function isLightTheme(mode: EffectiveThemeMode): boolean {
     mode === 'light' ||
     mode === 'solarized-light' ||
     mode === 'sepia' ||
-    mode === 'baby-pink'
+    mode === 'baby-pink' ||
+    mode === 'bubblegum' ||
+    mode === 'sakura'
   );
 }
 
@@ -717,17 +1113,29 @@ export type VoiceState = 'idle' | 'listening' | 'thinking' | 'executing' | 'spea
 // con el vecino. Foco en colores vibrantes y "cool".
 export const ACCENT_HUES = [
   { hue: 165, name: 'Mint (Eco)' },   // el oficial
+  { hue: 5,   name: 'Rojo sangre' },
   { hue: 10,  name: 'Rojo cereza' },
+  { hue: 20,  name: 'Ladrillo' },
   { hue: 30,  name: 'Coral' },
+  { hue: 45,  name: 'Ámbar' },
   { hue: 55,  name: 'Naranja' },
+  { hue: 70,  name: 'Amarillo' },
   { hue: 85,  name: 'Dorado' },
+  { hue: 100, name: 'Mostaza' },
   { hue: 125, name: 'Verde lima' },
+  { hue: 145, name: 'Esmeralda' },
   { hue: 150, name: 'Verde' },
+  { hue: 175, name: 'Verde agua' },
   { hue: 185, name: 'Turquesa' },
+  { hue: 195, name: 'Cian eléctrico' },
   { hue: 210, name: 'Cielo' },
+  { hue: 230, name: 'Azul real' },
   { hue: 245, name: 'Azul' },
+  { hue: 260, name: 'Índigo' },
   { hue: 275, name: 'Lavanda' },
+  { hue: 285, name: 'Púrpura' },
   { hue: 295, name: 'Violeta' },
+  { hue: 315, name: 'Fucsia' },
   { hue: 325, name: 'Magenta' },
   { hue: 350, name: 'Rosa' },
 ];

@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconArrowL, IconResume, IconGlobe, IconExt, IconX } from '@/design/icons';
+import { IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconCopy, IconTerminal } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
+import { writeToBubblePty } from '@/lib/pty-bridge';
+import { ecoToken } from '@/lib/eco-config';
 
 type Props = {
   bubbleId: string;
-  // workspace queda como prop por compat con el callsite, pero ya no se usa
-  // adentro — el control del server se movió al ServerPanel.
   workspace?: string;
 };
 
@@ -44,7 +44,7 @@ function normalizeUrl(input: string): string {
 
 const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
-export function BrowserPanel({ bubbleId }: Props) {
+export function BrowserPanel({ bubbleId, workspace }: Props) {
   const t = useTokens();
   const iframeRef = useRef<HTMLIFrameElement>(null); // legacy: scrollIntoView solo
   const smartRef = useRef<SmartBrowserHandle | null>(null);
@@ -110,6 +110,50 @@ export function BrowserPanel({ bubbleId }: Props) {
   function openInOs() {
     if (!url) return;
     try { window.open(url, '_blank', 'noopener,noreferrer'); } catch { /* noop */ }
+  }
+
+  // Copia la URL actual al clipboard.
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
+  async function copyUrl() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyMsg('Copiada');
+    } catch {
+      setCopyMsg('Error al copiar');
+    }
+    setTimeout(() => setCopyMsg(null), 1500);
+  }
+
+  // Envía la URL actual al PTY del agente (donde corre claude CLI) y abre
+  // la pestaña Terminal. Solo pega la URL en el prompt — NO presiona enter,
+  // así el user puede agregar contexto antes de mandárselo a Claude.
+  // Orden: PRIMERO escribimos al PTY, DESPUÉS cambiamos de tab. Si lo
+  // hacemos al revés, la nueva RealTerminal monta y compite por la
+  // conexión, y el texto se puede perder antes de que el snapshot incluya
+  // el echo.
+  const [sendingToClaude, setSendingToClaude] = useState(false);
+  const [sendMsg, setSendMsg] = useState<string | null>(null);
+  async function sendUrlToClaude() {
+    if (!url || sendingToClaude) return;
+    if (!workspace) { setSendMsg('Sin workspace'); setTimeout(() => setSendMsg(null), 2500); return; }
+    setSendingToClaude(true);
+    setSendMsg(null);
+    const r = await writeToBubblePty({
+      bubbleId,
+      workspace,
+      text: url,
+      token: ecoToken(),
+    });
+    setSendingToClaude(false);
+    if (r.ok) {
+      setSendMsg('Pegada');
+      ecoEmit('eco:switch_tab', { tab: 'terminal' });
+      setTimeout(() => setSendMsg(null), 1800);
+    } else {
+      setSendMsg(`Error: ${r.error}`);
+      setTimeout(() => setSendMsg(null), 3500);
+    }
   }
 
   // ─── Dev server lifecycle ─────────────────────────────────────────────────
@@ -309,6 +353,29 @@ export function BrowserPanel({ bubbleId }: Props) {
             </button>
           )}
         </div>
+        {/* Pill que muestra la ruta del URL actual (todo lo que va después
+            del dominio). Actualiza automáticamente con la navegación interna
+            del webview porque `url` está sincronizado con `did-navigate`. */}
+        {(() => {
+          if (!url) return null;
+          let path = '';
+          try {
+            const u = new URL(url);
+            path = (u.pathname || '') + (u.search || '') + (u.hash || '');
+          } catch { path = ''; }
+          return (
+            <div title={url} style={{
+              padding: '2px 10px', borderRadius: 999,
+              background: t.bg2,
+              color: t.text2,
+              fontFamily: t.fontMono, fontSize: 10.5,
+              border: `1px solid ${t.glassBorder}`,
+              maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              url: <span style={{ color: t.text0 }}>{path || '/'}</span>
+            </div>
+          );
+        })()}
         <button
           type="button"
           onClick={() => go(draft)}
@@ -320,6 +387,34 @@ export function BrowserPanel({ bubbleId }: Props) {
             cursor: draft.trim() ? 'pointer' : 'not-allowed',
             opacity: draft.trim() ? 1 : 0.5,
           }}>Ir</button>
+        {/* Copiar URL actual al clipboard. */}
+        <button
+          type="button"
+          onClick={() => void copyUrl()}
+          disabled={!url}
+          title={copyMsg || (url ? `Copiar ${url}` : 'Cargá un sitio primero')}
+          style={{
+            ...navBtnStyle(t),
+            opacity: url ? 1 : 0.4,
+            color: copyMsg === 'Copiada' ? t.ok : (copyMsg ? t.err : t.text1),
+          }}>
+          <IconCopy size={12}/>
+        </button>
+        {/* Enviar URL actual al PTY de Claude y abrir la Terminal. Usamos
+            el icono de terminal en lugar de "send" porque comunica mejor
+            el destino (la URL va al shell donde corre Claude). */}
+        <button
+          type="button"
+          onClick={() => void sendUrlToClaude()}
+          disabled={!url || sendingToClaude}
+          title={sendMsg || (url ? `Enviar ${url} a Claude en la terminal` : 'Cargá un sitio primero')}
+          style={{
+            ...navBtnStyle(t),
+            opacity: url ? (sendingToClaude ? 0.6 : 1) : 0.4,
+            color: sendMsg?.startsWith('Error') ? t.err : (sendMsg ? t.ok : t.text1),
+          }}>
+          <IconTerminal size={12}/>
+        </button>
         {/* Zoom controls */}
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 2,
@@ -414,6 +509,7 @@ export function BrowserPanel({ bubbleId }: Props) {
               <SmartBrowserView
                 ref={smartRef}
                 src={url}
+                onNavigate={(u) => setUrl(u)}
                 onLoadFail={() => setLoadFailed(true)}
                 onLoadSuccess={() => setLoadFailed(false)}
               />

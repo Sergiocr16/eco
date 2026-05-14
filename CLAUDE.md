@@ -676,18 +676,51 @@ filtralos explícitamente acá. El target es `["arm64"]` solamente;
 `mac.electronLanguages = ["en", "es"]` descarta 54 packs `.lproj`
 de Electron Framework.
 
-### Reinstalar el .app
+### Reinstalar el .app — RECETA INFALIBLE
+
+**Este es el flow obligatorio cuando rebuildés un .dmg y querés ver los cambios reflejados.** Cada paso es load-bearing. Si lo salteás en orden, vas a ver la versión vieja y vas a frustrar al user.
 
 ```bash
+# 1) MATAR todas las instancias previas. `open` sobre una ya corriendo solo
+#    la trae al frente — NO recarga el bundle. Si saltás este paso, vas a
+#    pensar que el .dmg no se actualizó.
 pkill -9 -f "Eco.app" 2>/dev/null
 sleep 1
+
+# 2) BORRAR la .app instalada antes de copiar la nueva. ditto sobre una
+#    .app existente puede dejar files viejos mezclados con los nuevos.
 rm -rf /Applications/Eco.app
+
+# 3) Copiar la nueva.
 ditto release/mac-arm64/Eco.app /Applications/Eco.app
+
+# 4) Quitar el flag de quarantine de macOS.
 xattr -dr com.apple.quarantine /Applications/Eco.app
+
+# 5) Lanzar.
+open /Applications/Eco.app
+
+# 6) Si el user dice que sigue viendo el bundle viejo, es cache del
+#    renderer de Chromium. Limpiarlo (esto desloguea al user):
+rm -rf "$HOME/Library/Application Support/Eco/Cache" \
+       "$HOME/Library/Application Support/Eco/Code Cache" \
+       "$HOME/Library/Application Support/Eco/GPUCache" \
+       "$HOME/Library/Application Support/Eco/DawnGraphiteCache" \
+       "$HOME/Library/Application Support/Eco/DawnWebGPUCache" \
+       "$HOME/Library/Application Support/Eco/Service Worker"
 open /Applications/Eco.app
 ```
 
 `ditto` preserva permisos y xattrs mejor que `cp -R`. `xattr -dr com.apple.quarantine` evita que macOS marque la .app como descargada de internet.
+
+**Verificación rápida** de que el bundle instalado tiene tu cambio (cuando el user reporta "no se actualizó"):
+
+```bash
+# El minifier renombra variables — buscá strings literales únicos a tu cambio.
+grep -c '"<string-único-de-tu-cambio>"' /Applications/Eco.app/Contents/Resources/frontend/dist/assets/App-*.js
+```
+
+Si la cuenta es ≥ 1, el bundle es el correcto y el problema es cache del renderer — usar el paso 6.
 
 ### Lanzar desde terminal para ver logs
 

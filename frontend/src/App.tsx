@@ -499,8 +499,11 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     setDetailBubbleId(id);
     bubbles.focusBubble(id);
     setScreen('detail');
-    // Al entrar a una conversación, siempre asegurar que el mic esté escuchando
-    if (voice.isSupported && voice.state === 'off' && !voice.error) {
+    // Solo arrancamos el mic al entrar si el user no lo apagó explícitamente.
+    // El toggle manual del Dashboard persiste su preferencia en localStorage,
+    // así que respetamos esa decisión al cambiar de pantalla.
+    const wantsAutoListen = window.localStorage?.getItem('eco.voice.autostart') !== '0';
+    if (wantsAutoListen && voice.isSupported && voice.state === 'off' && !voice.error) {
       voice.start();
     }
   }
@@ -543,8 +546,17 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   }
 
   function handleMicToggle() {
-    if (voice.state === 'off' || voice.state === 'unsupported') voice.start();
-    else voice.stop();
+    if (voice.state === 'off' || voice.state === 'unsupported') {
+      voice.start();
+      // El user explícitamente quiere escuchar — persistimos la preferencia.
+      try { window.localStorage.setItem('eco.voice.autostart', '1'); } catch { /* noop */ }
+    } else {
+      voice.stop();
+      // El user explícitamente apagó el mic — recordamos la preferencia
+      // para no re-encenderlo automáticamente al abrir burbujas o volver al
+      // dashboard. Hasta que el user vuelva a apretar Play.
+      try { window.localStorage.setItem('eco.voice.autostart', '0'); } catch { /* noop */ }
+    }
   }
 
   function handleDashboardSend(text: string) {

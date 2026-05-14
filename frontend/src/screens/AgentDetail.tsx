@@ -2643,8 +2643,15 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Solo se muestra si Obsidian está activado y el vault existe.
-  if (!obs.enabled || !obs.vaultExists) return null;
+  // Se muestra si Obsidian está activado y hay una forma válida de guardar:
+  //  - modo builtin: el vault debe existir.
+  //  - modo custom: debe haber un comando configurado.
+  if (!obs.enabled) return null;
+  if (obs.mode === 'custom') {
+    if (!obs.customCommand.trim()) return null;
+  } else {
+    if (!obs.vaultExists) return null;
+  }
 
   async function save() {
     setBusy(true);

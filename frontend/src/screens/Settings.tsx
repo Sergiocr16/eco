@@ -24,7 +24,7 @@ type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appear
 export function Settings() {
   const t = useTokens();
   const tr = useT();
-  const [sec, setSec] = useState<Section>('voice');
+  const [sec, setSec] = useState<Section>('general');
   const sections: { id: Section; label: string; icon: (p: IconProps) => JSX.Element }[] = [
     { id: 'general', label: tr('settings.section.general'), icon: IconSettings },
     { id: 'claude', label: tr('settings.section.claude'), icon: IconKey },
@@ -1199,15 +1199,19 @@ function SectionIntegrations() {
   const tr = useT();
   const { status: obs, vaults, save: saveObs, refresh } = useObsidian();
   const [vaultDraft, setVaultDraft] = useState(obs.vaultPath);
+  const [mode, setMode] = useState<'builtin' | 'custom'>(obs.mode);
+  const [commandDraft, setCommandDraft] = useState(obs.customCommand);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => { setVaultDraft(obs.vaultPath); }, [obs.vaultPath]);
+  useEffect(() => { setMode(obs.mode); }, [obs.mode]);
+  useEffect(() => { setCommandDraft(obs.customCommand); }, [obs.customCommand]);
 
-  async function persist(enabled: boolean, vault: string) {
+  async function persist(enabled: boolean, vault: string, nextMode = mode, nextCmd = commandDraft) {
     setBusy(true);
     setMsg(null);
-    const ok = await saveObs(enabled, vault);
+    const ok = await saveObs(enabled, vault, nextMode, nextCmd);
     if (!ok) setMsg({ ok: false, text: 'No se pudo guardar' });
     else { await refresh(); setMsg({ ok: true, text: 'Guardado' }); }
     setBusy(false);
@@ -1268,13 +1272,45 @@ function SectionIntegrations() {
               )}
             </div>
 
-            {/* Vaults detectados en Obsidian. Mostramos solo si hay más de cero,
-                y resaltamos el seleccionado. */}
+            {/* Vaults detectados en Obsidian. Si la lista vino vacía,
+                mostramos un placeholder + botón Refrescar — útil cuando el
+                user instaló Obsidian o configuró un vault después de abrir
+                Eco, o si el detector falló en la primera carga (race con
+                session/backend warmup). */}
+            {vaults.length === 0 && (
+              <div style={{
+                marginBottom: 12, padding: 10, borderRadius: 10,
+                background: t.bg2, border: `1px dashed ${t.glassBorder}`,
+                fontSize: 11, color: t.text2, lineHeight: 1.5,
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <div style={{ flex: 1 }}>
+                  No se detectaron vaults de Obsidian instalados. Asegurate de tener Obsidian abierto al menos una vez,
+                  o pegá el path manualmente abajo.
+                </div>
+                <Btn kind="ghost" size="sm" onClick={() => void refresh()}>
+                  Refrescar
+                </Btn>
+              </div>
+            )}
             {vaults.length > 0 && (
               <>
-                <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 4 }}>
-                  {tr('settings.integrations.obsidian.detected_label')}
-                </label>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  marginBottom: 4,
+                }}>
+                  <label style={{ fontSize: 11, color: t.text2 }}>
+                    {tr('settings.integrations.obsidian.detected_label')}
+                  </label>
+                  <button type="button" onClick={() => void refresh()}
+                    style={{
+                      border: 0, background: 'transparent', cursor: 'pointer',
+                      color: t.text3, fontSize: 10.5, padding: '2px 6px',
+                    }}
+                    title="Volver a detectar vaults">
+                    ↻ Refrescar
+                  </button>
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
                   {vaults.map((v) => {
                     const selected = v.path === vaultDraft;
@@ -1340,12 +1376,56 @@ function SectionIntegrations() {
               )}
             </div>
 
+            {/* Modo de guardado: built-in vs custom command. */}
+            <div style={{
+              marginTop: 14, padding: 10, borderRadius: 10,
+              border: `1px solid ${t.glassBorder}`, background: t.bg2,
+            }}>
+              <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 8 }}>
+                Modo de guardado
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <ModeRow
+                  active={mode === 'builtin'}
+                  title="Built-in (PARA-lite)"
+                  desc="Eco escribe la sesión directo al vault en 10 - Projects/<repo>/Sessions/."
+                  onClick={() => setMode('builtin')}
+                  t={t}
+                />
+                <ModeRow
+                  active={mode === 'custom'}
+                  title="Comando custom"
+                  desc="Eco ejecuta tu comando con la sesión por stdin. Útil para usar tu skill global (ej: claude -p &quot;/kb&quot;)."
+                  onClick={() => setMode('custom')}
+                  t={t}
+                />
+              </div>
+              {mode === 'custom' && (
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 4 }}>
+                    Comando
+                  </label>
+                  <input
+                    value={commandDraft}
+                    onChange={(e) => setCommandDraft(e.target.value)}
+                    placeholder='claude -p "/kb"'
+                    spellCheck={false}
+                    autoCorrect="off"
+                    style={{ ...fieldStyle(t), width: '100%', fontFamily: t.fontMono, fontSize: 12 }}
+                  />
+                  <div style={{ fontSize: 10.5, color: t.text3, marginTop: 4, lineHeight: 1.5 }}>
+                    Se ejecuta con shell habilitado, cwd = workspace de la burbuja, y el markdown de la sesión se pipea por stdin.
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Toggle
-                  on={obs.enabled && validVault}
-                  onChange={(v) => { if (validVault || !v) void persist(v, obs.vaultPath); }}
-                  disabled={!validVault}
+                  on={obs.enabled && (mode === 'custom' ? !!commandDraft.trim() : validVault)}
+                  onChange={(v) => { if (mode === 'custom' ? !!commandDraft.trim() : (validVault || !v)) void persist(v, obs.vaultPath); }}
+                  disabled={mode === 'custom' ? !commandDraft.trim() : !validVault}
                 />
                 <span style={{ fontSize: 12.5, color: t.text1 }}>
                   {tr('settings.integrations.obsidian.enabled_label')}
@@ -1354,8 +1434,8 @@ function SectionIntegrations() {
               <div style={{ flex: 1 }}/>
               <Btn
                 kind="primary" size="sm"
-                onClick={() => void persist(obs.enabled, vaultDraft)}
-                disabled={busy || vaultDraft === obs.vaultPath}>
+                onClick={() => void persist(obs.enabled, vaultDraft, mode, commandDraft)}
+                disabled={busy || (vaultDraft === obs.vaultPath && mode === obs.mode && commandDraft === obs.customCommand)}>
                 {busy ? '...' : tr('common.save')}
               </Btn>
             </div>
@@ -1375,6 +1455,40 @@ function SectionIntegrations() {
         </div>
       </Glass>
     </div>
+  );
+}
+
+function ModeRow({ active, title, desc, onClick, t }: {
+  active: boolean;
+  title: string;
+  desc: string;
+  onClick: () => void;
+  t: ReturnType<typeof useTokens>;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+        padding: '8px 10px', borderRadius: 8,
+        border: `1px solid ${active ? t.accent : t.glassBorder}`,
+        background: active ? t.accentFaint : t.bg3,
+        color: t.text0, cursor: 'pointer', textAlign: 'left',
+        transition: 'all 140ms',
+      }}>
+      <span style={{
+        flexShrink: 0, marginTop: 2,
+        width: 14, height: 14, borderRadius: '50%',
+        border: `2px solid ${active ? t.accent : t.text3}`,
+        background: active ? t.accent : 'transparent',
+        boxShadow: active ? `inset 0 0 0 2px ${t.bg3}` : 'none',
+      }}/>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 500, color: t.text0 }}>{title}</div>
+        <div style={{ fontSize: 11, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>{desc}</div>
+      </div>
+    </button>
   );
 }
 

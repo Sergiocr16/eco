@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 
+export type ObsidianMode = 'builtin' | 'custom';
+
 export type ObsidianStatus = {
   configured: boolean;
   enabled: boolean;
@@ -8,6 +10,8 @@ export type ObsidianStatus = {
   vaultExists: boolean;
   hasParaStructure: boolean;
   noteCount: number;
+  mode: ObsidianMode;
+  customCommand: string;
 };
 
 const EMPTY: ObsidianStatus = {
@@ -17,6 +21,8 @@ const EMPTY: ObsidianStatus = {
   vaultExists: false,
   hasParaStructure: false,
   noteCount: 0,
+  mode: 'builtin',
+  customCommand: '',
 };
 
 export type DetectedVault = {
@@ -39,22 +45,59 @@ export function useObsidian() {
         apiFetch('/integrations/obsidian/status'),
         apiFetch('/integrations/obsidian/vaults'),
       ]);
-      if (s.ok) setStatus(await s.json() as ObsidianStatus);
+      if (s.ok) {
+        setStatus(await s.json() as ObsidianStatus);
+      } else {
+        console.warn('[useObsidian] /status no OK:', s.status);
+      }
       if (v.ok) {
         const data = await v.json() as { vaults: DetectedVault[] };
         setVaults(data.vaults ?? []);
+      } else {
+        console.warn('[useObsidian] /vaults no OK:', v.status);
       }
-    } catch { /* noop */ }
+    } catch (e) {
+      console.warn('[useObsidian] refresh failed:', e);
+    }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const save = useCallback(async (enabled: boolean, vaultPath: string) => {
+  // Si la primera llamada vino vacía (race con session/backend warmup),
+  // reintentamos una vez a los 1.5s. Sin esto, si el backend respondió
+  // 401 por session inválida al mount inicial, el user veía vaults=[]
+  // para siempre hasta navegar fuera y volver.
+  useEffect(() => {
+    if (loading) return;
+    if (vaults.length > 0) return;
+    if (status.configured) return;
+    const id = window.setTimeout(() => { void refresh(); }, 1500);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  // Re-fetch cuando la ventana vuelve a estar visible — útil si el user
+  // configuró un vault nuevo en Obsidian afuera de Eco mientras la app
+  // estaba minimizada.
+  useEffect(() => {
+    function onVis() {
+      if (document.visibilityState === 'visible') void refresh();
+    }
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [refresh]);
+
+  const save = useCallback(async (
+    enabled: boolean,
+    vaultPath: string,
+    mode: ObsidianMode = 'builtin',
+    customCommand: string = '',
+  ) => {
     const r = await apiFetch('/integrations/obsidian/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled, vaultPath }),
+      body: JSON.stringify({ enabled, vaultPath, mode, customCommand }),
     });
     const data = await r.json().catch(() => ({}));
     if (r.ok && data?.status) setStatus(data.status as ObsidianStatus);

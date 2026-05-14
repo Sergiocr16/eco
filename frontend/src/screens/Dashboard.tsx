@@ -1370,7 +1370,7 @@ function SatellitesLocal({
     { key: 'pty',     on: n.hasPty,     color: t.ok,     label: busy ? 'Procesando…' : 'Terminal', icon: SAT_ICONS.pty, pulse: busy },
     { key: 'files',   on: n.hasFiles,   color: t.warn,   label: 'Archivos modificados',  icon: SAT_ICONS.files, pulse: true },
     { key: 'server',  on: n.hasServer,  color: t.busy,   label: 'Server',                icon: SAT_ICONS.server },
-    { key: 'browser', on: n.hasBrowser, color: t.accent, label: 'Navegador',             icon: SAT_ICONS.browser },
+    { key: 'browser', on: n.hasBrowser, color: t.err,    label: 'Navegador',             icon: SAT_ICONS.browser },
     { key: 'remote',  on: n.hasRemote,  color: t.accent, label: 'Claude remote control', icon: SAT_ICONS.remote, pulse: true },
   ];
   const visible = items.filter((it) => it.on);

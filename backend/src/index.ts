@@ -751,11 +751,18 @@ app.get('/integrations/obsidian/vaults', (_req: Request, res: Response) => {
 const ObsidianConfigSchema = z.object({
   enabled: z.boolean(),
   vaultPath: z.string(),
+  mode: z.enum(['builtin', 'custom']).optional(),
+  customCommand: z.string().max(2000).optional(),
 });
 app.post('/integrations/obsidian/config', (req: Request, res: Response) => {
   const parsed = ObsidianConfigSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
-  obsidian.saveConfig(parsed.data);
+  obsidian.saveConfig({
+    enabled: parsed.data.enabled,
+    vaultPath: parsed.data.vaultPath,
+    mode: parsed.data.mode ?? 'builtin',
+    customCommand: parsed.data.customCommand ?? '',
+  });
   res.json({ ok: true, status: obsidian.status() });
 });
 

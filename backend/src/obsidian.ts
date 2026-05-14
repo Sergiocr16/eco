@@ -11,27 +11,46 @@
 // Config persistida en `~/.eco/obsidian.json` (chmod 600).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, chmodSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { dirname, join, basename } from 'node:path';
 import { homedir } from 'node:os';
 
 const CONFIG_PATH = join(homedir(), '.eco', 'obsidian.json');
 
+export type ObsidianMode = 'builtin' | 'custom';
+
 export type ObsidianConfig = {
   enabled: boolean;
   vaultPath: string;
+  /**
+   * Modo de guardado:
+   *  - 'builtin' (default): Eco escribe directo al vault con estructura
+   *    PARA-lite (10 - Projects/<repo>/Sessions/...).
+   *  - 'custom': Eco corre `customCommand` y pipea el markdown de la
+   *    sesión por stdin. Útil para usar tu propio skill global (ej.
+   *    `claude -p "/kb"` que invoca el skill /kb configurado en
+   *    ~/.claude/commands/kb.md).
+   */
+  mode: ObsidianMode;
+  /** Comando shell a ejecutar cuando mode='custom'. Ejecuta con shell
+   *  habilitado y CWD = workspace de la burbuja. La sesión se pasa por
+   *  stdin como markdown. */
+  customCommand: string;
 };
 
 export function readConfig(): ObsidianConfig {
   try {
     if (existsSync(CONFIG_PATH)) {
-      const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as ObsidianConfig;
+      const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Partial<ObsidianConfig>;
       return {
         enabled: !!raw.enabled,
         vaultPath: typeof raw.vaultPath === 'string' ? raw.vaultPath : '',
+        mode: raw.mode === 'custom' ? 'custom' : 'builtin',
+        customCommand: typeof raw.customCommand === 'string' ? raw.customCommand : '',
       };
     }
   } catch { /* noop */ }
-  return { enabled: false, vaultPath: '' };
+  return { enabled: false, vaultPath: '', mode: 'builtin', customCommand: '' };
 }
 
 export function saveConfig(cfg: ObsidianConfig): void {
@@ -48,17 +67,21 @@ export type ObsidianStatus = {
   vaultExists: boolean;      // el path existe en disco
   hasParaStructure: boolean; // existe `10 - Projects/`
   noteCount: number;         // .md files en el vault (preview de tamaño)
+  mode: ObsidianMode;
+  customCommand: string;
 };
 
 export function status(): ObsidianStatus {
   const cfg = readConfig();
   const out: ObsidianStatus = {
-    configured: !!cfg.vaultPath,
+    configured: !!cfg.vaultPath || (cfg.mode === 'custom' && !!cfg.customCommand),
     enabled: cfg.enabled,
     vaultPath: cfg.vaultPath,
     vaultExists: false,
     hasParaStructure: false,
     noteCount: 0,
+    mode: cfg.mode,
+    customCommand: cfg.customCommand,
   };
   if (!cfg.vaultPath) return out;
   try {
@@ -227,6 +250,17 @@ export type SaveSessionResult = { ok: true; path: string } | { ok: false; error:
 export function saveSession(session: SessionToSave): SaveSessionResult {
   const cfg = readConfig();
   if (!cfg.enabled) return { ok: false, error: 'Obsidian no está activado' };
+
+  const body = renderSessionMarkdown(session);
+
+  // Modo custom: spawn comando con la sesión por stdin. El user controla
+  // el comando (ej: `claude -p "/kb"` para usar su skill global).
+  if (cfg.mode === 'custom') {
+    if (!cfg.customCommand.trim()) return { ok: false, error: 'Comando custom vacío' };
+    return runCustomCommand(cfg.customCommand, body, session.workspace);
+  }
+
+  // Modo builtin: escritura directa al vault con estructura PARA-lite.
   if (!cfg.vaultPath) return { ok: false, error: 'Vault path no configurado' };
   if (!existsSync(cfg.vaultPath)) return { ok: false, error: 'Vault path no existe' };
 
@@ -250,7 +284,6 @@ export function saveSession(session: SessionToSave): SaveSessionResult {
   const fileBase = sanitizeFilename(`${dateStamp} ${hh}-${mi} ${session.title || 'Sesión'}`);
   const filePath = join(sessionsDir, `${fileBase}.md`);
 
-  const body = renderSessionMarkdown(session);
   try {
     writeFileSync(filePath, body, 'utf-8');
     return { ok: true, path: filePath };
@@ -258,6 +291,36 @@ export function saveSession(session: SessionToSave): SaveSessionResult {
     return { ok: false, error: `Error escribiendo nota: ${(e as Error).message}` };
   }
 }
+
+// Spawn shell command con `cwd` = workspace y pipea la sesión markdown
+// por stdin. Timeout 60s. Devuelve la última línea del stdout como `path`
+// (útil si el script reporta el path del archivo creado), o un mensaje
+// genérico si no.
+function runCustomCommand(command: string, stdin: string, workspace: string): SaveSessionResult {
+  // Spawn sincrónico no existe en node sin spawnSync; lo hacemos sync
+  // adoptando spawnSync para mantener la firma sync de saveSession.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
+  const cwd = workspace && existsSync(workspace) ? workspace : homedir();
+  const r = spawnSync(command, {
+    cwd,
+    input: stdin,
+    shell: true,
+    timeout: 60_000,
+    encoding: 'utf-8',
+  });
+  if (r.error) return { ok: false, error: r.error.message };
+  if (r.status !== 0) {
+    const errOut = (r.stderr || r.stdout || '').trim().slice(0, 600);
+    return { ok: false, error: errOut || `Comando salió con código ${r.status}` };
+  }
+  const out = (r.stdout || '').trim();
+  const lastLine = out.split('\n').filter(Boolean).pop() || 'Comando ejecutado';
+  return { ok: true, path: lastLine };
+}
+
+// Silenciamos el `import spawn` ya que usamos spawnSync via require.
+void spawn;
 
 function sanitizeFilename(s: string): string {
   return s.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120);
