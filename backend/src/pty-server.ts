@@ -29,6 +29,10 @@ const RING_BUFFER_MAX = 128 * 1024; // 128KB de output replayable al reconectar
 type PtySession = {
   pty: IPty;
   bubbleId: string;
+  // Identificador del terminal dentro de la burbuja. "main" = el terminal
+  // por defecto donde auto-arranca Claude CLI. Cualquier otro id = terminales
+  // extra abiertos por el user (shells planos sin auto-claude).
+  ptyId: string;
   cwd: string;
   buffer: string;
   exited: boolean;
@@ -51,7 +55,18 @@ type PtySession = {
   busy: boolean;
 };
 
+// Key compuesto: `${bubbleId}:${ptyId}` — permite varios terminales por burbuja
+// (uno "main" con Claude + N extras sin Claude). Para reattach, el WS pasa el
+// `pty` query param; por compat, default = "main".
 const sessions = new Map<string, PtySession>();
+const sessionKey = (bubbleId: string, ptyId: string) => `${bubbleId}:${ptyId}`;
+
+function hasRunningPtyForBubble(bubbleId: string): boolean {
+  for (const s of sessions.values()) {
+    if (s.bubbleId === bubbleId && !s.exited) return true;
+  }
+  return false;
+}
 
 // Threshold de inactividad para considerar que Claude terminó. Trade-off:
 // muy corto = falsos positivos durante streaming lento; muy largo = la
@@ -108,21 +123,33 @@ function sendJson(ws: WebSocket | null, obj: unknown) {
   try { ws.send(JSON.stringify(obj)); } catch { /* noop */ }
 }
 
-// Mata la sesión PTY de una burbuja (uso externo: al eliminar burbuja).
+// Mata TODAS las sesiones PTY de una burbuja (uso externo: al eliminar burbuja).
+// Itera porque ahora puede haber varias (main + extras).
 export function killBubblePty(bubbleId: string): boolean {
-  const s = sessions.get(bubbleId);
+  let killed = false;
+  for (const s of sessions.values()) {
+    if (s.bubbleId !== bubbleId) continue;
+    try { s.pty.kill(); killed = true; } catch { /* noop */ }
+  }
+  return killed;
+}
+
+// Mata UN terminal específico de una burbuja (cerrar pestaña extra).
+export function killBubbleTerminal(bubbleId: string, ptyId: string): boolean {
+  const s = sessions.get(sessionKey(bubbleId, ptyId));
   if (!s) return false;
   try { s.pty.kill(); } catch { /* noop */ }
   return true;
 }
 
 // Lista de bubbleIds con PTY corriendo — para snapshot al conectar.
+// Devuelve únicos: una burbuja con 3 terminales aparece una sola vez.
 export function runningPtyBubbleIds(): string[] {
-  const out: string[] = [];
-  for (const [id, s] of sessions) {
-    if (!s.exited) out.push(id);
+  const out = new Set<string>();
+  for (const s of sessions.values()) {
+    if (!s.exited) out.add(s.bubbleId);
   }
-  return out;
+  return [...out];
 }
 
 export function attachPtyServer(httpServer: Server, authToken: string) {
@@ -175,6 +202,12 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
   wss.on('connection', (ws: WebSocket, req) => {
     const url = new URL(req.url || '/ws/pty', 'http://localhost');
     const bubbleId = url.searchParams.get('bubble') ?? '';
+    // ptyId default = "main" para compat con writeToBubblePty (skill click,
+    // remote control, etc.) que no especifica `pty` y esperan hablarle al
+    // shell donde corre Claude.
+    const rawPtyId = url.searchParams.get('pty') ?? '';
+    const ptyId = sanitizePtyId(rawPtyId) || 'main';
+    const noClaude = url.searchParams.get('noClaude') === '1';
     const requestedWs = url.searchParams.get('workspace') ?? '';
     // Si la burbuja tiene workspace git, su shell vive dentro del worktree.
     const isolated = (bubbleId && requestedWs && isAllowedWorkspace(requestedWs))
@@ -194,7 +227,7 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     const rows = clampInt(url.searchParams.get('rows'), 6, 200, 30);
 
     // ─── Reattach a una sesión existente ───────────────────────────────
-    const existing = bubbleId ? sessions.get(bubbleId) : undefined;
+    const existing = bubbleId ? sessions.get(sessionKey(bubbleId, ptyId)) : undefined;
     if (existing && !existing.exited) {
       // Multicast: agregamos el WS al set de clients. NO expulsamos al
       // anterior — varios clients pueden recibir el stream a la vez (ej.
@@ -238,6 +271,7 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     const session: PtySession = {
       pty,
       bubbleId,
+      ptyId,
       cwd,
       buffer: '',
       exited: false,
@@ -247,8 +281,11 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
       busy: false,
     };
     if (bubbleId) {
-      sessions.set(bubbleId, session);
-      broadcastPtyStatus(bubbleId, true);
+      const wasFirst = !hasRunningPtyForBubble(bubbleId);
+      sessions.set(sessionKey(bubbleId, ptyId), session);
+      // pty_status es por-burbuja (no por-terminal): solo broadcast true en
+      // el primer spawn; los terminales extra no cambian el estado del dot.
+      if (wasFirst) broadcastPtyStatus(bubbleId, true);
     }
 
     // Multicast helpers: enviar a TODOS los clients atachados a la session.
@@ -272,8 +309,12 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
         try { c.close(1000, 'pty_exited'); } catch { /* noop */ }
       }
       if (bubbleId) {
-        sessions.delete(bubbleId);
-        broadcastPtyStatus(bubbleId, false);
+        sessions.delete(sessionKey(bubbleId, ptyId));
+        // Solo broadcast false cuando se cierra el ÚLTIMO terminal de la
+        // burbuja (los extras saliendo no apagan el indicador de Claude).
+        if (!hasRunningPtyForBubble(bubbleId)) {
+          broadcastPtyStatus(bubbleId, false);
+        }
       }
     });
 
@@ -281,10 +322,12 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     attachWsHandlers(ws, session);
 
     // Auto-launch de Claude Code en cada PTY nuevo (no en reattaches).
+    // Skip si el cliente pidió noClaude=1 (terminales extra del user) o si
+    // ECO_PTY_AUTOCLAUDE=0 a nivel global.
     // Escribimos el comando con un pequeño delay para que zsh termine de imprimir
     // su prompt inicial primero — sino la entrada se pierde.
     // El usuario puede salir con `exit` o Ctrl-D y vuelve al shell normal.
-    const autoClaude = process.env.ECO_PTY_AUTOCLAUDE !== '0';
+    const autoClaude = !noClaude && process.env.ECO_PTY_AUTOCLAUDE !== '0';
     if (autoClaude) {
       setTimeout(() => {
         if (session.exited) return;
@@ -318,6 +361,12 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
   }
 
   return wss;
+}
+
+// Solo letras, números, guiones y guiones bajos. Evita que un ptyId malicioso
+// rompa el key compuesto (`:`) o el log. Trunca a 32 chars.
+function sanitizePtyId(raw: string): string {
+  return (raw || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
 }
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {

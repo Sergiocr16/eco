@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace } from './config.js';
 import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
-import { attachPtyServer, killBubblePty } from './pty-server.js';
+import { attachPtyServer, killBubblePty, killBubbleTerminal } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
 import * as devServer from './dev-server.js';
@@ -836,6 +836,16 @@ app.post('/pty/kill', async (req: Request, res: Response) => {
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
   const r = await closeBubbleResources(bubbleId);
   res.json({ ok: true, ...r });
+});
+
+// Cierra UN terminal específico de una burbuja (pestaña extra abierta por el
+// user). NO toca dev servers ni worktree — solo mata ese PTY.
+app.post('/pty/kill-terminal', (req: Request, res: Response) => {
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  const ptyId = typeof req.body?.ptyId === 'string' ? req.body.ptyId : '';
+  if (!bubbleId || !ptyId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId y ptyId requeridos');
+  const killed = killBubbleTerminal(bubbleId, ptyId);
+  res.json({ ok: true, killed });
 });
 
 // Alias semánticamente más claro de /pty/kill: el frontend lo llama al cerrar

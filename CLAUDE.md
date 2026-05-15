@@ -244,6 +244,8 @@ eco.session                              ← session token (X-Eco-Session header
 eco.voice.autostart                      ← '0' para deshabilitar auto-listen
 eco.tts.enabled / voice / rate / volume
 eco.detail.tab.<bubbleId>                ← última tab activa
+eco.terminals.<bubbleId>                 ← terminales extra (sin Claude) [{id,label}]
+eco.terminals.active.<bubbleId>          ← id del terminal activo en la pestaña Shell
 eco.browser.url.<bubbleId>               ← URL del BrowserPanel
 eco.browser.zoom.<bubbleId>              ← zoom (0.25..3)
 eco.dev.dual.<bubbleId>                  ← '1' si está en dual mode

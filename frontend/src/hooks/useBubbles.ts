@@ -194,6 +194,7 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
         'eco.dev.min.frontend.', 'eco.dev.min.backend.', 'eco.dev.restartmode.',
         'eco.browser.url.', 'eco.browser.zoom.',
         'eco.detail.tab.', 'eco.remote.',
+        'eco.terminals.', 'eco.terminals.active.',
       ];
       for (const p of prefixes) window.localStorage.removeItem(`${p}${id}`);
       // También las dual-mode meta y per-role command keys (`eco.dev.cmd.<role>.<id>`).

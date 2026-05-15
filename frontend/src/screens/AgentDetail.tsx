@@ -881,19 +881,186 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
         flex: 1, minHeight: 0, position: 'relative',
         display: 'flex', flexDirection: 'column',
       }}>
-        {/* RealTerminal se mantiene MONTADA aunque cambies de sub-tab: el
-            xterm + WebSocket sobreviven, así no perdés el state ni hay
-            reconnect al volver a "Shell". Solo se oculta con display:none. */}
+        {/* TerminalTabs (y por dentro cada RealTerminal) se mantienen MONTADAS
+            aunque cambies de sub-tab: xterm + WebSocket sobreviven, así no
+            perdés state ni hay reconnect al volver a "Shell". Solo se oculta
+            con display:none. */}
         <div style={{
           display: subTab === 'shell' ? 'flex' : 'none',
           flexDirection: 'column',
           flex: 1, minHeight: 0,
         }}>
-          <RealTerminal workspace={bubble.workspace} bubbleId={bubble.id} />
+          <TerminalTabs bubble={bubble}/>
         </div>
         {subTab === 'agent' && <AgentBashLog bubble={bubble}/>}
         {subTab === 'cmds' && <SimulatedTerminal bubble={bubble}/>}
       </div>
+    </div>
+  );
+}
+
+type ExtraTerm = { id: string; label: string };
+
+function readExtraTerms(bubbleId: string): ExtraTerm[] {
+  try {
+    const raw = window.localStorage.getItem(`eco.terminals.${bubbleId}`);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((t): t is ExtraTerm =>
+      t && typeof t.id === 'string' && /^[A-Za-z0-9_-]+$/.test(t.id) &&
+      typeof t.label === 'string',
+    );
+  } catch { return []; }
+}
+
+function writeExtraTerms(bubbleId: string, terms: ExtraTerm[]) {
+  try {
+    if (terms.length === 0) {
+      window.localStorage.removeItem(`eco.terminals.${bubbleId}`);
+    } else {
+      window.localStorage.setItem(`eco.terminals.${bubbleId}`, JSON.stringify(terms));
+    }
+  } catch { /* noop */ }
+}
+
+function TerminalTabs({ bubble }: { bubble: Bubble }) {
+  const t = useTokens();
+  const [extras, setExtras] = useState<ExtraTerm[]>(() => readExtraTerms(bubble.id));
+  // Default = "main" (el de Claude). Persistimos cuál estaba activo así al
+  // volver a la pestaña Shell no se pierde el foco.
+  const [activeId, setActiveId] = useState<string>(() => {
+    try { return window.localStorage.getItem(`eco.terminals.active.${bubble.id}`) || 'main'; }
+    catch { return 'main'; }
+  });
+
+  useEffect(() => { writeExtraTerms(bubble.id, extras); }, [bubble.id, extras]);
+  useEffect(() => {
+    try { window.localStorage.setItem(`eco.terminals.active.${bubble.id}`, activeId); }
+    catch { /* noop */ }
+  }, [bubble.id, activeId]);
+
+  // Si el active apunta a un extra que ya no existe, caer a main.
+  useEffect(() => {
+    if (activeId === 'main') return;
+    if (!extras.some((x) => x.id === activeId)) setActiveId('main');
+  }, [activeId, extras]);
+
+  const addShell = useCallback(() => {
+    const existingNums = extras
+      .map((x) => Number(x.label.replace(/\D/g, '')))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    const n = (existingNums.length ? Math.max(...existingNums) : 0) + 1;
+    const id = `shell-${Date.now().toString(36)}`;
+    const label = `Shell ${n}`;
+    setExtras((prev) => [...prev, { id, label }]);
+    setActiveId(id);
+  }, [extras]);
+
+  const closeShell = useCallback(async (id: string) => {
+    // Best-effort kill en el backend. Si falla, igual quitamos la pestaña.
+    void apiFetch('/pty/kill-terminal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bubbleId: bubble.id, ptyId: id }),
+    }).catch(() => { /* noop */ });
+    setExtras((prev) => prev.filter((x) => x.id !== id));
+    setActiveId((prev) => (prev === id ? 'main' : prev));
+  }, [bubble.id]);
+
+  const tabs: Array<{ id: string; label: string; closable: boolean; autoClaude: boolean }> = [
+    { id: 'main', label: 'Claude', closable: false, autoClaude: true },
+    ...extras.map((x) => ({ id: x.id, label: x.label, closable: true, autoClaude: false })),
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        padding: '6px 10px',
+        borderBottom: `1px solid ${t.glassBorder}`,
+        background: t.bg0,
+      }}>
+        {tabs.map((tab) => (
+          <TermTabBtn
+            key={tab.id}
+            active={tab.id === activeId}
+            onClick={() => setActiveId(tab.id)}
+            onClose={tab.closable ? () => closeShell(tab.id) : undefined}
+          >{tab.label}</TermTabBtn>
+        ))}
+        <button
+          type="button"
+          onClick={addShell}
+          title="Nueva terminal (sin Claude)"
+          style={{
+            marginLeft: 4,
+            padding: '4px 9px', borderRadius: 7, border: `1px dashed ${t.glassBorder}`,
+            background: 'transparent', color: t.text2, cursor: 'pointer',
+            fontFamily: t.fontSans, fontSize: 12, lineHeight: 1,
+          }}
+        >+ Nueva</button>
+      </div>
+      <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            style={{
+              position: 'absolute', inset: 0,
+              display: tab.id === activeId ? 'flex' : 'none',
+              flexDirection: 'column',
+            }}
+          >
+            <RealTerminal
+              workspace={bubble.workspace}
+              bubbleId={bubble.id}
+              ptyId={tab.id}
+              autoClaude={tab.autoClaude}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TermTabBtn({
+  active, onClick, onClose, children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  onClose?: () => void;
+  children: React.ReactNode;
+}) {
+  const t = useTokens();
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: onClose ? '4px 6px 4px 10px' : '4px 10px',
+        borderRadius: 7,
+        background: active ? t.bg3 : 'transparent',
+        color: active ? t.accent : t.text2,
+        cursor: 'pointer',
+        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
+        transition: 'background 140ms, color 140ms',
+        userSelect: 'none',
+      }}
+    >
+      <span>{children}</span>
+      {onClose && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          title="Cerrar terminal"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 16, height: 16, borderRadius: 4, padding: 0, border: 0,
+            background: 'transparent', color: 'inherit', cursor: 'pointer', opacity: 0.7,
+          }}
+        ><IconX size={10} strokeWidth={2.5}/></button>
+      )}
     </div>
   );
 }

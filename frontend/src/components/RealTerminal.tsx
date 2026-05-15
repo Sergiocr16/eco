@@ -14,12 +14,18 @@ type Props = {
   bubbleId: string;
   // Cuando este key cambia, se reinicia el terminal (sirve para "Nuevo shell")
   resetKey?: number;
+  // Identificador del terminal dentro de la burbuja. "main" (default) = el
+  // terminal con auto-claude. Cualquier otro string = un shell extra plano.
+  ptyId?: string;
+  // Si false, el backend NO auto-arranca `claude` en el shell. Default true
+  // para mantener el comportamiento del terminal principal.
+  autoClaude?: boolean;
 };
 
 // TOKEN se resuelve por llamada (no por módulo) para que funcione tanto en
 // dev (env de Vite) como en Electron empaquetado (preload IPC).
 
-export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
+export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main', autoClaude = true }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const t = useTokens();
   const [status, setStatus] = useState<'connecting' | 'open' | 'reconnecting' | 'closed' | 'error'>('connecting');
@@ -61,6 +67,8 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
       const url = new URL(`${wsProto}//${window.location.host}/ws/pty`);
       if (workspace) url.searchParams.set('workspace', workspace);
       if (bubbleId) url.searchParams.set('bubble', bubbleId);
+      if (ptyId) url.searchParams.set('pty', ptyId);
+      if (!autoClaude) url.searchParams.set('noClaude', '1');
       url.searchParams.set('cols', String(term.cols));
       url.searchParams.set('rows', String(term.rows));
       return url.toString();
@@ -187,7 +195,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0 }: Props) {
       term.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, bubbleId, resetKey]);
+  }, [workspace, bubbleId, resetKey, ptyId, autoClaude]);
 
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
