@@ -8,6 +8,7 @@
 // pasado a /dev/start /dev/stop /dev/restart.
 
 import { useEffect, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -27,11 +28,8 @@ import { ecoToken } from '@/lib/eco-config';
 
 type Status = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 type SlotRole = 'main' | 'frontend' | 'backend';
-
-// Cap del buffer de logs por slot. Mantenemos solo los últimos ~60 KB para
-// que un dev server ruidoso (gulp, webpack, java) no haga lagear el viewer
-// ni infle el heap del renderer. xterm tiene su propio scrollback además.
-const LOGS_MAX = 60_000;
+// Qué reinicia el botón global "Reiniciar servidor" cuando hay dos slots.
+type RestartMode = 'both' | 'frontend' | 'backend';
 
 type DevStatusEvent = {
   bubbleId: string;
@@ -61,7 +59,7 @@ const initSlot = (): SlotState => ({
   actionBusy: null, actionError: null,
 });
 
-export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
+export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string; workspace: string; visible?: boolean }) {
   const t = useTokens();
   const wsDefaults = useWorkspaceServerDefaults(workspace);
 
@@ -109,6 +107,21 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
   const setMin = (role: 'frontend' | 'backend', v: boolean) => {
     if (role === 'frontend') setMinFront(v); else setMinBack(v);
     try { window.localStorage.setItem(MIN_KEY(role), v ? '1' : '0'); } catch { /* noop */ }
+  };
+
+  // Qué reinicia el botón global "Reiniciar servidor" en dual mode. Persistido
+  // por agente. Default: ambos. Cada slot igual se puede reiniciar solo desde
+  // su botón en el header.
+  const RESTART_MODE_KEY = `eco.dev.restartmode.${bubbleId}`;
+  const [restartMode, setRestartModeState] = useState<RestartMode>(() => {
+    try {
+      const raw = window.localStorage.getItem(RESTART_MODE_KEY);
+      return raw === 'frontend' || raw === 'backend' ? raw : 'both';
+    } catch { return 'both'; }
+  });
+  const setRestartMode = (v: RestartMode) => {
+    setRestartModeState(v);
+    try { window.localStorage.setItem(RESTART_MODE_KEY, v); } catch { /* noop */ }
   };
 
   // Comandos por rol — persistidos por separado. Fallback al default del
@@ -305,7 +318,13 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
       return;
     }
 
-    // 'down' y 'restart': los corremos en paralelo, no hay dependencia.
+    // 'restart' respeta el setting "Al reiniciar": el user puede pedir que el
+    // botón global reinicie solo un slot.
+    if (action === 'restart' && restartMode !== 'both') {
+      return runActionForRole(restartMode, 'restart');
+    }
+
+    // 'down' y 'restart' (ambos): los corremos en paralelo, no hay dependencia.
     // Para 'restart' técnicamente el frontend podría fallar si lo bajamos y
     // levantamos antes que el backend, pero como el backend se reinicia en
     // paralelo, en pocos segundos vuelve a estar — y el proxy reintentará.
@@ -323,6 +342,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
           dual={dual}
           slots={slots}
           bubbleId={bubbleId}
+          onRestartRole={(role) => void runActionForRole(role, 'restart')}
         />
 
         {/* Botones de acción globales — corren ambos slots en dual */}
@@ -333,7 +353,9 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
             const anyStoppable = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting' || slots[r].status === 'error');
             const anyBusy = activeRoles.some((r) => !!slots[r].actionBusy);
             const startLabel = 'Iniciar servidor';
-            const restartLabel = 'Reiniciar servidor';
+            const restartLabel = dual && restartMode === 'frontend' ? 'Reiniciar frontend'
+              : dual && restartMode === 'backend' ? 'Reiniciar backend'
+              : 'Reiniciar servidor';
             const stopLabel = 'Detener servidor';
             // Identificamos cuál es la acción en curso (si la hay) para
             // mostrar "Iniciando…/Reiniciando…/Deteniendo…" en el botón
@@ -481,6 +503,48 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
           </div>
         )}
 
+        {/* En dual, qué reinicia el botón global "Reiniciar servidor" */}
+        {dual && (
+          <div style={{
+            padding: '10px 12px', marginBottom: 12, borderRadius: 10,
+            background: t.bg2, border: `1px solid ${t.glassBorder}`,
+          }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0, marginBottom: 2 }}>
+              Al reiniciar
+            </div>
+            <div style={{ fontSize: 11, color: t.text2, marginBottom: 8, lineHeight: 1.45 }}>
+              Qué reinicia el botón "Reiniciar servidor". Igual podés reiniciar cada slot por separado desde su botón en el header.
+            </div>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6,
+            }}>
+              {([
+                { id: 'both',     label: 'Ambos',    sub: 'frontend + backend' },
+                { id: 'frontend', label: 'Frontend', sub: 'solo el frontend' },
+                { id: 'backend',  label: 'Backend',  sub: 'solo el backend' },
+              ] as const).map((opt) => {
+                const selected = restartMode === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setRestartMode(opt.id)}
+                    style={{
+                      padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                      border: `1px solid ${selected ? t.accent : t.glassBorder}`,
+                      background: selected ? t.accentFaint : t.bg3,
+                      color: selected ? t.accent : t.text1,
+                      fontFamily: t.fontSans, textAlign: 'left',
+                    }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 600 }}>{opt.label}</div>
+                    <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>{opt.sub}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Comando(s) bash */}
         {!dual ? (
           <CommandSlot
@@ -521,6 +585,29 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
           <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>
             Eco ejecuta tu comando dentro del worktree del agente. Setea <code style={mono(t)}>$PORT</code> a un puerto libre {dual ? 'distinto para cada slot (frontend y backend)' : 'por agente'} — el comando debe respetarlo (ej. <code style={mono(t)}>vite --port $PORT</code>, <code style={mono(t)}>process.env.PORT</code>). Al detener, Eco mata el process group entero y verifica el cleanup con <code style={mono(t)}>lsof</code>.
           </div>
+          {dual && (
+            <div style={{
+              marginTop: 10, paddingTop: 10,
+              borderTop: `1px solid ${t.glassBorder}`,
+              fontSize: 11.5, color: t.text2, lineHeight: 1.55,
+            }}>
+              <div style={{ fontWeight: 600, color: t.text1, marginBottom: 4 }}>
+                Conectar el frontend con el backend
+              </div>
+              Como los puertos son dinámicos, <strong>no hardcodees el puerto del backend</strong> en la
+              config del frontend. En dual, el slot <strong>frontend</strong> recibe estas env vars
+              apuntando al backend: <code style={mono(t)}>BACKEND_URL</code>, <code style={mono(t)}>BACKEND_PORT</code>, <code style={mono(t)}>API_PORT</code>.
+              Tu proxy de dev tiene que leer una de ellas:
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                <li>Vite — en <code style={mono(t)}>vite.config</code>: <code style={mono(t)}>{'server.proxy: { \'/api\': process.env.BACKEND_URL }'}</code></li>
+                <li>gulp / browser-sync (JHipster) — <code style={mono(t)}>apiPort: process.env.BACKEND_PORT || 8080</code></li>
+                <li>Genérico — usá <code style={mono(t)}>$BACKEND_PORT</code> / <code style={mono(t)}>$BACKEND_URL</code> directo en el comando del slot.</li>
+              </ul>
+              <div style={{ marginTop: 4, color: t.text3 }}>
+                Dejá el valor viejo como fallback (<code style={mono(t)}>|| 8080</code>) para que el proyecto siga corriendo fuera de Eco.
+              </div>
+            </div>
+          )}
         </Glass>
           </>
         )}
@@ -548,6 +635,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
                 bubbleId={bubbleId}
                 workspace={workspace}
                 logSource="frontend"
+                visible={visible && !minFront}
               />
             </div>
             <div style={{
@@ -565,6 +653,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
                 bubbleId={bubbleId}
                 workspace={workspace}
                 logSource="backend"
+                visible={visible && !minBack}
               />
             </div>
           </div>
@@ -577,6 +666,7 @@ export function ServerPanel({ bubbleId, workspace }: { bubbleId: string; workspa
               bubbleId={bubbleId}
               workspace={workspace}
               logSource="server"
+              visible={visible}
             />
           </div>
         )}
@@ -612,11 +702,12 @@ function statusLabelFor(s: Status) {
 }
 
 function PanelHeader({
-  dual, slots, bubbleId,
+  dual, slots, bubbleId, onRestartRole,
 }: {
   dual: boolean;
   slots: Record<SlotRole, SlotState>;
   bubbleId: string;
+  onRestartRole: (role: SlotRole) => void;
 }) {
   const t = useTokens();
   const isDual = dual;
@@ -726,6 +817,26 @@ function PanelHeader({
                 }} title={s.actionError}>
                   <IconAlert size={11}/>
                 </span>
+              )}
+              {isDual && (s.status === 'running' || s.status === 'starting' || s.status === 'error') && (
+                <button
+                  type="button"
+                  onClick={() => onRestartRole(role)}
+                  disabled={!!s.actionBusy}
+                  title={`Reiniciar ${role}`}
+                  style={{
+                    flexShrink: 0,
+                    marginLeft: s.url ? 0 : 'auto',
+                    width: 22, height: 22, padding: 0, borderRadius: 5,
+                    border: 0, background: 'transparent',
+                    color: s.actionBusy ? t.text3 : t.text2,
+                    cursor: s.actionBusy ? 'default' : 'pointer',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                  onMouseEnter={(e) => { if (!s.actionBusy) e.currentTarget.style.background = t.bg3; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+                  <IconResume size={12}/>
+                </button>
               )}
             </div>
           );
@@ -980,7 +1091,7 @@ function PresetMenu({
 
 function LogsPane({
   label, role, accent, minimized, onToggle,
-  bubbleId, workspace, logSource,
+  bubbleId, workspace, logSource, visible,
 }: {
   label: string;
   role: SlotRole;
@@ -991,41 +1102,50 @@ function LogsPane({
   workspace?: string;
   // Etiqueta usada en el prompt enviado a Claude para que sepa de qué pane vino.
   logSource?: 'frontend' | 'backend' | 'server';
+  // true cuando este pane está realmente en pantalla (tab Server activa y,
+  // en dual, el slot no minimizado). Al pasar a visible, xterm baja al fondo.
+  visible?: boolean;
 }) {
   const t = useTokens();
-  // El buffer de logs vive ACÁ (no en el ServerPanel) — así un dev server
-  // ruidoso solo re-renderiza este panel chico, no todo el ServerPanel.
-  const [logs, setLogs] = useState('');
+  // El buffer de logs ya NO vive en React — xterm es el dueño del stream
+  // (ver TerminalLogs). Acá solo guardamos un contador throttled para el
+  // header y un handle imperativo al "clear" de la terminal.
+  const [logSize, setLogSize] = useState(0);
+  const clearRef = useRef<(() => void) | null>(null);
 
-  // Snapshot inicial: un GET al ring buffer del backend al montar.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await apiFetch(`/dev/logs?bubbleId=${encodeURIComponent(bubbleId)}&role=${role}`);
-        if (!r.ok || cancelled) return;
-        const text = await r.text();
-        setLogs(text.slice(-LOGS_MAX));
-      } catch { /* noop */ }
-    })();
-    return () => { cancelled = true; };
-  }, [bubbleId, role]);
+  // Altura del pane, redimensionable arrastrando el handle de abajo.
+  // Persistida por (bubbleId, role) para que sobreviva reload / cambio de tab.
+  const HEIGHT_KEY = `eco.dev.logheight.${bubbleId}.${role}`;
+  const HEIGHT_MIN = 160;
+  const HEIGHT_MAX = 1400;
+  const [paneHeight, setPaneHeight] = useState<number>(() => {
+    try {
+      const n = parseInt(window.localStorage.getItem(HEIGHT_KEY) ?? '', 10);
+      return Number.isFinite(n) ? Math.min(HEIGHT_MAX, Math.max(HEIGHT_MIN, n)) : 320;
+    } catch { return 320; }
+  });
 
-  // Stream de chunks por WS (batcheado ~80ms en el backend).
-  useEffect(() => {
-    return ecoOn('eco:dev_log', (e) => {
-      if (e.bubbleId !== bubbleId || e.role !== role) return;
-      setLogs((prev) => (prev + e.chunk).slice(-LOGS_MAX));
-    });
-  }, [bubbleId, role]);
-
-  // Al (re)iniciar el server limpiamos la pantalla — los logs vienen frescos.
-  useEffect(() => {
-    return ecoOn('eco:dev_status', (e) => {
-      if (e.bubbleId !== bubbleId || (e.role ?? 'main') !== role) return;
-      if (e.status === 'starting') setLogs('');
-    });
-  }, [bubbleId, role]);
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    // setPointerCapture: el handle sigue recibiendo pointermove aunque el
+    // cursor pase por encima del xterm (que si no se traga los eventos).
+    try { handle.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    const startY = e.clientY;
+    const startH = paneHeight;
+    let last = startH;
+    const onMove = (ev: PointerEvent) => {
+      last = Math.min(HEIGHT_MAX, Math.max(HEIGHT_MIN, startH + (ev.clientY - startY)));
+      setPaneHeight(last);
+    };
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      try { window.localStorage.setItem(HEIGHT_KEY, String(last)); } catch { /* noop */ }
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+  };
 
   return (
     <div style={{
@@ -1033,8 +1153,7 @@ function LogsPane({
       border: `1px solid ${t.glassBorder}`,
       background: '#0c0e14',
       display: 'flex', flexDirection: 'column',
-      height: '100%',
-      minHeight: minimized ? 'auto' : 320,
+      height: minimized ? 'auto' : paneHeight,
     }}>
       <div style={{
         padding: '6px 10px',
@@ -1051,12 +1170,12 @@ function LogsPane({
           textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600,
         }}>{label}</span>
         <span style={{ marginLeft: 'auto', fontSize: 10, color: t.text3, fontFamily: t.fontMono }}>
-          {logs.length.toLocaleString()} chars
+          {logSize.toLocaleString()} chars
         </span>
-        {logs.length > 0 && (
+        {logSize > 0 && (
           <button
             type="button"
-            onClick={() => setLogs('')}
+            onClick={() => clearRef.current?.()}
             title="Borrar consola"
             style={{
               width: 22, height: 22, borderRadius: 5, border: 0,
@@ -1088,9 +1207,25 @@ function LogsPane({
       </div>
       {!minimized && (
         <TerminalLogs
-          logs={logs} accent={accent}
+          role={role} accent={accent}
           bubbleId={bubbleId} workspace={workspace} logSource={logSource}
+          onSizeChange={setLogSize} clearRef={clearRef} visible={visible}
         />
+      )}
+      {!minimized && (
+        <div
+          onPointerDown={startResize}
+          title="Arrastrá para cambiar el alto"
+          style={{
+            height: 8, flexShrink: 0, cursor: 'ns-resize',
+            background: t.bg3, borderTop: `1px solid ${t.glassBorder}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            touchAction: 'none',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = t.bg3; }}>
+          <div style={{ width: 28, height: 3, borderRadius: 2, background: t.text3, opacity: 0.6 }}/>
+        </div>
       )}
     </div>
   );
@@ -1098,30 +1233,46 @@ function LogsPane({
 
 // Viewer de logs renderizado con xterm.js — interpreta secuencias ANSI
 // (colores, bold, dim, etc.) fielmente como una terminal real. El input
-// nativo está deshabilitado: es solo lectura. En cada update, escribimos
-// solo el delta para evitar parpadeo / scroll perdido.
+// nativo está deshabilitado: es solo lectura.
+//
+// xterm es el ÚNICO dueño del buffer de logs: los chunks del stream WS se
+// escriben directo a la terminal, sin pasar por React state. Su scrollback
+// (1500 líneas) es el único cap. Antes el buffer vivía en un string de
+// React capado a 60 KB y cada chunk (~12/seg) disparaba un re-render +
+// alocaba 60 KB; peor: al llegar al cap, el delta calculado por longitud
+// quedaba en 0 y la terminal se congelaba.
 //
 // Selección: cuando el user selecciona texto (drag con el mouse) aparece
 // una mini barra flotante con "Enviar a Claude" que escribe el texto al
 // PTY del agente (donde corre Claude CLI).
 function TerminalLogs({
-  logs, accent, bubbleId, workspace,
+  role, accent, bubbleId, workspace, onSizeChange, clearRef, visible,
 }: {
-  logs: string;
+  role: SlotRole;
   accent: string;
   bubbleId?: string;
   workspace?: string;
   logSource?: 'frontend' | 'backend' | 'server';
+  onSizeChange?: (n: number) => void;
+  clearRef?: MutableRefObject<(() => void) | null>;
+  visible?: boolean;
 }) {
   const t = useTokens();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const lastLenRef = useRef<number>(0);
+  // "stick to bottom": si el user scrollea arriba para leer, dejamos de
+  // arrastrarlo al fondo; cuando vuelve abajo, se reanuda el auto-scroll.
+  const stickyRef = useRef(true);
+  const sizeRef = useRef(0);
   const [selection, setSelection] = useState<string>('');
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // onSizeChange en un ref para no re-crear el efecto de montaje de xterm.
+  const onSizeChangeRef = useRef(onSizeChange);
+  useEffect(() => { onSizeChangeRef.current = onSizeChange; }, [onSizeChange]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1153,6 +1304,85 @@ function TerminalLogs({
     termRef.current = term;
     fitRef.current = fit;
 
+    // Contador de chars para el header — throttled (1 update / 750ms) para
+    // que el stream no re-renderice el LogsPane en cada chunk.
+    let sizeTimer: number | null = null;
+    const pushSize = () => {
+      if (sizeTimer != null) return;
+      sizeTimer = window.setTimeout(() => {
+        sizeTimer = null;
+        onSizeChangeRef.current?.(sizeRef.current);
+      }, 750);
+    };
+    const resetSize = () => {
+      sizeRef.current = 0;
+      if (sizeTimer != null) { clearTimeout(sizeTimer); sizeTimer = null; }
+      onSizeChangeRef.current?.(0);
+    };
+
+    // El user scrolleó: actualizamos sticky según si quedó pegado al fondo.
+    const onScrollDisp = term.onScroll(() => {
+      const b = term.buffer.active;
+      stickyRef.current = b.viewportY >= b.baseY;
+    });
+
+    // Escritura coalescida por requestAnimationFrame: varios eventos WS que
+    // caen en el mismo frame se juntan en un solo write() + un solo scroll.
+    const pending: string[] = [];
+    let raf: number | null = null;
+    const flush = () => {
+      raf = null;
+      if (!pending.length) return;
+      const text = pending.join('');
+      pending.length = 0;
+      // El scroll va en el callback de write() — write() es asíncrono, así que
+      // scrollear síncrono justo después usaría el buffer viejo y no bajaría.
+      term.write(text, () => {
+        if (stickyRef.current) { try { term.scrollToBottom(); } catch { /* noop */ } }
+      });
+    };
+    const enqueue = (chunk: string) => {
+      pending.push(chunk);
+      sizeRef.current += chunk.length;
+      pushSize();
+      if (raf == null) raf = requestAnimationFrame(flush);
+    };
+    const clearTerm = () => {
+      pending.length = 0;
+      try { term.clear(); } catch { /* noop */ }
+      stickyRef.current = true;
+      resetSize();
+    };
+
+    // Snapshot inicial: GET al ring buffer del backend (64 KB) al montar.
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch(`/dev/logs?bubbleId=${encodeURIComponent(bubbleId ?? '')}&role=${role}`);
+        if (!r.ok || cancelled) return;
+        const text = await r.text();
+        if (cancelled || !text) return;
+        sizeRef.current += text.length;
+        pushSize();
+        term.write(text, () => { try { term.scrollToBottom(); } catch { /* noop */ } });
+      } catch { /* noop */ }
+    })();
+
+    // Stream de chunks por WS (batcheado ~80ms en el backend).
+    const offLog = ecoOn('eco:dev_log', (e) => {
+      if (e.bubbleId !== bubbleId || e.role !== role) return;
+      enqueue(e.chunk);
+    });
+
+    // Al (re)iniciar el server limpiamos la pantalla — los logs vienen frescos.
+    const offStatus = ecoOn('eco:dev_status', (e) => {
+      if (e.bubbleId !== bubbleId || (e.role ?? 'main') !== role) return;
+      if (e.status === 'starting') clearTerm();
+    });
+
+    // Handle imperativo para el botón "borrar consola" del header.
+    if (clearRef) clearRef.current = clearTerm;
+
     // Cada vez que cambia la selección del usuario, sincronizamos el estado
     // de React para mostrar/esconder la mini barra de acciones.
     const onSel = term.onSelectionChange(() => {
@@ -1161,39 +1391,61 @@ function TerminalLogs({
 
     const ro = new ResizeObserver(() => {
       try { fit.fit(); } catch { /* noop */ }
-      // Al volver a entrar a la pestaña Server el contenedor pasa de oculto a
-      // visible → dispara resize → reajustamos y bajamos el scroll al final.
-      try { term.scrollToBottom(); } catch { /* noop */ }
+      if (stickyRef.current) { try { term.scrollToBottom(); } catch { /* noop */ } }
     });
     ro.observe(container);
 
     return () => {
+      cancelled = true;
+      offLog();
+      offStatus();
       onSel.dispose();
+      onScrollDisp.dispose();
       ro.disconnect();
+      if (raf != null) cancelAnimationFrame(raf);
+      if (sizeTimer != null) clearTimeout(sizeTimer);
+      if (clearRef) clearRef.current = null;
       try { term.dispose(); } catch { /* noop */ }
       termRef.current = null;
       fitRef.current = null;
-      lastLenRef.current = 0;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bubbleId, role]);
 
+  // Cada vez que el pane vuelve a ser visible (tab Server activa de nuevo, o
+  // se des-minimiza el slot) bajamos al fondo y reanudamos el sticky-scroll.
+  // KeepAliveServer oculta la tab con display:none — xterm sigue vivo pero su
+  // scroll quedó donde el user lo dejó.
   useEffect(() => {
+    if (!visible) return;
     const term = termRef.current;
     if (!term) return;
-    const prevLen = lastLenRef.current;
-    // El scroll va en el callback de write() — write() es asíncrono, así que
-    // scrollear síncrono justo después usaba el buffer viejo y no bajaba.
-    const toBottom = () => { try { term.scrollToBottom(); } catch { /* noop */ } };
-    if (logs.length < prevLen) {
-      term.clear();
-      if (logs) term.write(logs, toBottom); else toBottom();
-      lastLenRef.current = logs.length;
-    } else if (logs.length > prevLen) {
-      term.write(logs.slice(prevLen), toBottom);
-      lastLenRef.current = logs.length;
-    }
-  }, [logs]);
+    stickyRef.current = true;
+    const hardSync = () => {
+      if (!stickyRef.current) return;
+      // Tras salir de display:none, fit.fit() suele ser no-op (mismas dims) y
+      // xterm nunca recomputa su .xterm-scroll-area → la scrollbar queda
+      // pegada arriba. Un resize real (toggle de 1 fila y vuelta) lo obliga a
+      // resincronizar buffer + render service + viewport.
+      try {
+        const { cols, rows } = term;
+        if (cols > 1 && rows > 0) {
+          term.resize(cols, rows + 1);
+          term.resize(cols, rows);
+        }
+      } catch { /* noop */ }
+      try { fitRef.current?.fit(); } catch { /* noop */ }
+      try { term.scrollToBottom(); } catch { /* noop */ }
+      // Y por las dudas, empujamos el div DOM del viewport directo al fondo.
+      const vp = containerRef.current?.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (vp) vp.scrollTop = vp.scrollHeight;
+    };
+    // Dos frames: el layout de la tab recién visible necesita asentarse antes
+    // de que las dimensiones que lee xterm sean reales.
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => { hardSync(); raf2 = requestAnimationFrame(hardSync); });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+  }, [visible]);
 
   // Auto-clear del feedback después de 2.5s.
   useEffect(() => {

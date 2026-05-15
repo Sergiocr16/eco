@@ -252,6 +252,8 @@ eco.dev.cmd.<bubbleId>.<role>            ← comando del slot (role: main|fronte
 eco.dev.workspace_defaults.<wsPath>      ← preset por workspace {dual, main, frontend, backend}
 eco.dev.config_collapsed.<bubbleId>      ← '1' colapsado (default true)
 eco.dev.min.<role>.<bubbleId>            ← '1' minimizado en dual
+eco.dev.logheight.<bubbleId>.<role>      ← alto en px del pane de logs (redimensionable)
+eco.dev.restartmode.<bubbleId>           ← 'both'|'frontend'|'backend': qué reinicia el botón global en dual
 eco.dev.presets                          ← presets globales user
 eco.dev.presets.hidden                   ← built-ins ocultados
 eco.remote.<bubbleId>                    ← slug si remote control activo

@@ -191,7 +191,7 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     try {
       const prefixes = [
         'eco.dev.cmd.', 'eco.dev.dual.', 'eco.dev.config_collapsed.',
-        'eco.dev.min.frontend.', 'eco.dev.min.backend.',
+        'eco.dev.min.frontend.', 'eco.dev.min.backend.', 'eco.dev.restartmode.',
         'eco.browser.url.', 'eco.browser.zoom.',
         'eco.detail.tab.', 'eco.remote.',
       ];
@@ -199,6 +199,10 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
       // También las dual-mode meta y per-role command keys (`eco.dev.cmd.<role>.<id>`).
       for (const role of ['frontend', 'backend']) {
         window.localStorage.removeItem(`eco.dev.cmd.${role}.${id}`);
+      }
+      // Alto del pane de logs, una key por rol (`eco.dev.logheight.<id>.<role>`).
+      for (const role of ['main', 'frontend', 'backend']) {
+        window.localStorage.removeItem(`eco.dev.logheight.${id}.${role}`);
       }
       window.localStorage.removeItem(`eco.dev.dual.${id}.touched`);
     } catch { /* noop */ }

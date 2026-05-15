@@ -3210,7 +3210,7 @@ function KeepAliveServer({ visible, bubbleId, workspace }: { visible: boolean; b
       flexDirection: 'column',
       flex: 1, minHeight: 0,
     }}>
-      <ServerPanel bubbleId={bubbleId} workspace={workspace}/>
+      <ServerPanel bubbleId={bubbleId} workspace={workspace} visible={visible}/>
     </div>
   );
 }
