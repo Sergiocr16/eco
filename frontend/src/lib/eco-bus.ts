@@ -13,7 +13,7 @@ export type EcoBusEvents = {
   // "stash", "tags", "prs" (Pull requests). Si la AgentDetail está en otra
   // tab, primero hay que dispararle `eco:switch_tab → git`.
   'eco:switch_git_subtab': {
-    sub: 'branches' | 'history' | 'changes' | 'prs';
+    sub: 'history' | 'changes' | 'prs';
     bubbleId?: string;
   };
   'eco:confirm': { answer: 'yes' | 'no' };

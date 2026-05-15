@@ -20,7 +20,7 @@ export type MetaAction =
   | { kind: 'set_theme'; mode: 'dark' | 'light' | 'system' }
   | { kind: 'scroll'; dir: 'up' | 'down' | 'top' | 'bottom' }
   | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' }
-  | { kind: 'switch_git_subtab'; sub: 'branches' | 'history' | 'changes' | 'prs' }
+  | { kind: 'switch_git_subtab'; sub: 'history' | 'changes' | 'prs' }
   | { kind: 'confirm'; answer: 'yes' | 'no' }
   | { kind: 'repeat_last' }
   | { kind: 'tts_rate'; dir: 'faster' | 'slower' | 'normal' }
@@ -109,8 +109,10 @@ const ALIASES: Record<string, string> = {
   // Tab Git en detail.
   'git': 'tab_git',
 
-  // Sub-pestañas del tab Git.
-  'ramas': 'gsub_branches', 'rama': 'gsub_branches', 'branches': 'gsub_branches',
+  // Sub-pestañas del tab Git. "ramas" abre el dropdown del top bar — no es
+  // una sub-pestaña, así que se mapea a tab_git (que abre Git con el último
+  // subtab usado, normalmente Cambios).
+  'ramas': 'tab_git', 'rama': 'tab_git', 'branches': 'tab_git',
   'prs': 'gsub_prs', 'pull': 'gsub_prs',
 
   // Scroll (con o sin keyword "scroll")
@@ -321,7 +323,6 @@ export function parseMetaCommand(
     if (aliased === 'archivos_ctx') return { kind: 'switch_git_subtab', sub: 'changes' };
     if (aliased === 'cambios_ctx')  return { kind: 'switch_git_subtab', sub: 'changes' };
     if (aliased === 'history_ctx')  return { kind: 'switch_git_subtab', sub: 'history' };
-    if (aliased === 'gsub_branches') return { kind: 'switch_git_subtab', sub: 'branches' };
     if (aliased === 'gsub_prs')     return { kind: 'switch_git_subtab', sub: 'prs' };
   }
 
@@ -387,7 +388,6 @@ export function parseMetaCommand(
     case 'tab_plan':     return { kind: 'switch_tab', tab: 'plan' };
     case 'tab_chat':     return { kind: 'switch_tab', tab: 'chat' };
     case 'tab_browser':  return { kind: 'switch_tab', tab: 'browser' };
-    case 'gsub_branches': return { kind: 'switch_git_subtab', sub: 'branches' };
     case 'gsub_history':  return { kind: 'switch_git_subtab', sub: 'history' };
     case 'gsub_changes':  return { kind: 'switch_git_subtab', sub: 'changes' };
     case 'gsub_prs':      return { kind: 'switch_git_subtab', sub: 'prs' };

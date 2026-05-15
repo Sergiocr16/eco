@@ -184,13 +184,14 @@ Si vas a tocar X, los archivos clave son:
 - Setting: `eco.agent.review_mode` (default OFF, opt-in en Settings → General).
 - Endpoints: `POST /file/accept | accept-hunk | revert-hunk | discard | contents`. Ver sección [Endpoints](#ws) abajo.
 
-### Tab Git por agente (history, cherry-pick, merge, reset, revert)
-- `frontend/src/components/GitPanel/GitPanel.tsx` — contenedor del tab con sub-nav (Cambios | Historial | Ramas | PRs). Sub-pestaña activa persistida en `eco.git.subtab.<bubbleId>` (default `changes`). `OpInProgressBanner` sticky arriba.
-- `frontend/src/components/GitPanel/HistoryView.tsx` + `CommitDetailPanel.tsx` — log paginado (scroll infinito) + detalle con diff completo y acciones por commit: Cherry-pick a otra rama (selector + confirmación + checkout automático), Revert, Reset to here (soft/mixed/hard con doble confirm tipeando `HARD RESET`), Copy SHA.
-- `frontend/src/components/GitPanel/BranchesView.tsx` — wrapping del `BranchPicker` con sección "Merge into current" abajo (selector + flags `--no-ff` / `--squash`).
+### Tab Git por agente (layout estilo GitHub Desktop)
+- `frontend/src/components/GitPanel/GitPanel.tsx` — contenedor del tab. Layout vertical: `GitTopBar` arriba → sub-nav (Cambios | Historial | PRs) → `OpInProgressBanner` → contenido. Sub-pestaña activa persistida en `eco.git.subtab.<bubbleId>` (default `changes`). Migración automática del valor viejo `'branches'` → `'changes'`.
+- `frontend/src/components/GitPanel/GitTopBar.tsx` — top bar persistente dentro del tab Git. Tres bloques: (1) **Branch chip + dropdown** buscable con tabs Locales/Remotas (reemplaza la sub-pestaña Ramas vieja; checkout via click); (2) **Sync button** que muestra ahead/behind y cambia de label según estado (`Publish` si no hay upstream, `Push` si solo ahead, `Pull` si solo behind, `Sync` si ambos, `Fetch` si está en sync); (3) **Menú "⋯"** con Merge a rama actual, Renombrar rama, Ver PRs, Usar nombre rama como nombre del agente.
+- `frontend/src/components/GitPanel/ChangesView.tsx` — layout master/detail: lista compacta de archivos a la izquierda (~300px) con dots ámbar/verde + sticky abajo el `CommitWithAI`. Diff persistente a la derecha (al cambiar de archivo solo actualiza contenido, no recrea).
+- `frontend/src/components/GitPanel/HistoryView.tsx` + `CommitDetailPanel.tsx` — log paginado (scroll infinito, checkbox "Todas las ramas") + detalle con diff completo y acciones por commit: Cherry-pick a otra rama (selector + confirmación + checkout automático), Revert, Reset to here (soft/mixed/hard con doble confirm tipeando `HARD RESET`), Copy SHA.
 - `frontend/src/components/GitPanel/PRsView.tsx` — lógica de `PullRequestsList` con layout amplio.
 - `frontend/src/components/GitPanel/OpInProgressBanner.tsx` — detecta cherry-pick/merge/revert en progreso via `useGitOpStatus`, ofrece Continuar/Abortar/"Resolver en Cambios".
-- `frontend/src/components/GitMiniDock.tsx` — sidebar derecho compacto: chip rama + ahead/behind + commit rápido + push + `CurrentPrBanner` + atajo "Abrir tab Git".
+- `frontend/src/components/GitMiniDock.tsx` — sidebar derecho compacto del agente (NO está duplicado con el top bar — es un atajo desde otros tabs como Chat): chip rama + ahead/behind + commit rápido + push + `CurrentPrBanner`.
 - Hooks: `useGitLog`, `useGitOpStatus` (con `peekOpStatus` sincrónico para Dashboard), `useBranches`.
 - Backend: `backend/src/git-history.ts` (log/show), `git-ops-advanced.ts` (cherry-pick/merge/revert/reset/abort/continue/opStatus). Endpoints en `index.ts`: `GET /git/log | show | op-status`, `POST /git/cherry-pick | merge | revert | reset | abort | continue`.
 - Validaciones: SHA via regex hex 4-40, branch/tag name via regex sin metacaracteres shell. Reset hard hace pre-check de commits perdidos con `rev-list --count` y devuelve `code: 'reset.would_lose_commits'` si > 0 — solo procede con `force: true`.
@@ -256,7 +257,9 @@ eco.session                              ← session token (X-Eco-Session header
 eco.voice.autostart                      ← '0' para deshabilitar auto-listen
 eco.tts.enabled / voice / rate / volume
 eco.detail.tab.<bubbleId>                ← última tab activa (chat|terminal|git|plan|browser|server). Si encontrás 'files' es migración legacy → mapeá a 'git'.
-eco.git.subtab.<bubbleId>                ← sub-pestaña activa del tab Git (branches|history|changes|prs)
+eco.git.subtab.<bubbleId>                ← sub-pestaña activa del tab Git (changes|history|prs). El valor legacy 'branches' se migra automáticamente a 'changes' (las ramas viven en el top bar).
+eco.git.splitter.changes.<bubbleId>      ← ancho en px de la columna izquierda (lista archivos) del split Cambios; redimensionable con drag handle, doble-click = reset
+eco.git.splitter.history.<bubbleId>      ← ancho en px de la columna izquierda (lista commits) del split Historial; redimensionable con drag handle, doble-click = reset
 eco.terminals.<bubbleId>                 ← terminales extra (sin Claude) [{id,label}]
 eco.terminals.active.<bubbleId>          ← id del terminal activo en la pestaña Shell
 eco.browser.url.<bubbleId>               ← URL del BrowserPanel
@@ -514,7 +517,7 @@ Parser: `frontend/src/lib/meta-commands.ts`. Tolera relleno discursivo (`me`, `p
 | Comando | Acción |
 |---|---|
 | `Eco chat/terminal/git/plan/navegador` | Cambia tab. `Eco archivos` también funciona y abre tab Git → Cambios. |
-| `Eco historial/ramas/prs/cambios` | Cambia sub-pestaña dentro del tab Git (en detail). `Eco historial` en dashboard abre la pantalla History. |
+| `Eco historial/prs/cambios` | Cambia sub-pestaña dentro del tab Git (en detail). `Eco ramas` abre el tab Git (las ramas viven en el dropdown del top bar). `Eco historial` en dashboard abre la pantalla History. |
 | `Eco scroll abajo/arriba/al final` | Scroll del panel activo |
 | `Eco repetir` | Re-lee el último mensaje (TTS) |
 | `Eco sí/no/acepta/cancela` | Diálogos de confirmación |

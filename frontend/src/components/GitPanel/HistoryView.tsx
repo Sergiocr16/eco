@@ -3,6 +3,7 @@ import { useTokens } from '@/design/theme';
 import { useGitLog, type LogEntry } from '@/hooks/useGitLog';
 import { ShaPill, SubpanelLoading, EmptyState, formatRelTime } from './shared';
 import { CommitDetailPanel } from './CommitDetailPanel';
+import { ResizableSplit } from './ResizableSplit';
 
 type Props = {
   workspace: string;
@@ -12,7 +13,7 @@ type Props = {
 export function HistoryView({ workspace, bubbleId }: Props) {
   const t = useTokens();
   const [allBranches, setAllBranches] = useState(false);
-  const { commits, loading, hasMore, error, loadMore, refresh } = useGitLog(workspace, bubbleId, { all: allBranches });
+  const { commits, loading, hasMore, error, loadMore } = useGitLog(workspace, bubbleId, { all: allBranches });
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -48,70 +49,66 @@ export function HistoryView({ workspace, bubbleId }: Props) {
   }
 
   return (
-    <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-      {/* Lista a la izquierda */}
-      <div style={{
-        width: 380, flexShrink: 0, display: 'flex', flexDirection: 'column',
-        borderRight: `1px solid ${t.glassBorder}`,
-        background: t.bg0, minHeight: 0,
-      }}>
+    <ResizableSplit
+      storageKey={`eco.git.splitter.history.${bubbleId}`}
+      defaultLeft={380}
+      minLeft={260}
+      left={
         <div style={{
-          padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8,
-          borderBottom: `1px solid ${t.glassBorder}`,
-          flexShrink: 0,
+          display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
+          background: t.bg0,
         }}>
-          <label style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            fontSize: 11.5, color: t.text2, cursor: 'pointer',
+          <div style={{
+            padding: '8px 14px', display: 'flex', alignItems: 'center',
+            borderBottom: `1px solid ${t.glassBorder}`,
+            flexShrink: 0,
           }}>
-            <input type="checkbox"
-              checked={allBranches}
-              onChange={(e) => setAllBranches(e.target.checked)}
-              style={{ margin: 0 }}/>
-            Todas las ramas
-          </label>
-          <div style={{ flex: 1 }}/>
-          <button type="button"
-            onClick={refresh}
-            style={{
-              height: 22, padding: '0 8px', borderRadius: 5, border: 0,
-              background: t.bg2, color: t.text1,
-              fontSize: 11, cursor: 'pointer',
-            }}>Refrescar</button>
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 11.5, color: t.text2, cursor: 'pointer',
+            }}
+            title="Mostrar commits de todas las ramas (no solo la actual)">
+              <input type="checkbox"
+                checked={allBranches}
+                onChange={(e) => setAllBranches(e.target.checked)}
+                style={{ margin: 0 }}/>
+              Todas las ramas
+            </label>
+          </div>
+          <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+            {commits.map((c) => (
+              <CommitRow
+                key={c.sha}
+                commit={c}
+                active={c.sha === selectedSha}
+                onClick={() => setSelectedSha(c.sha)}
+              />
+            ))}
+            {loading && commits.length > 0 && (
+              <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
+                Cargando más…
+              </div>
+            )}
+            {!hasMore && commits.length > 50 && (
+              <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
+                Fin del historial
+              </div>
+            )}
+          </div>
         </div>
-        <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-          {commits.map((c) => (
-            <CommitRow
-              key={c.sha}
-              commit={c}
-              active={c.sha === selectedSha}
-              onClick={() => setSelectedSha(c.sha)}
-            />
-          ))}
-          {loading && commits.length > 0 && (
-            <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
-              Cargando más…
-            </div>
-          )}
-          {!hasMore && commits.length > 50 && (
-            <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
-              Fin del historial
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Detalle a la derecha */}
-      {selected ? (
-        <CommitDetailPanel
-          workspace={workspace}
-          bubbleId={bubbleId}
-          summary={selected}
-        />
-      ) : (
-        <EmptyState message="Seleccioná un commit" hint="Click en uno de la lista para ver el diff y acciones."/>
-      )}
-    </div>
+      }
+      right={
+        selected ? (
+          <CommitDetailPanel
+            workspace={workspace}
+            bubbleId={bubbleId}
+            summary={selected}
+          />
+        ) : (
+          <EmptyState message="Seleccioná un commit" hint="Click en uno de la lista para ver el diff y acciones."/>
+        )
+      }
+    />
   );
 }
 

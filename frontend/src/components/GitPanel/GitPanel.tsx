@@ -1,15 +1,15 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconBranch, IconFile, IconLayers, IconGlobe } from '@/design/icons';
+import { IconGithub, IconLayers, IconGlobe } from '@/design/icons';
 import { on as ecoOn } from '@/lib/eco-bus';
 import type { Bubble } from '@/lib/types';
-import { BranchesView } from './BranchesView';
 import { ChangesView, type FileChange } from './ChangesView';
 import { HistoryView } from './HistoryView';
 import { PRsView } from './PRsView';
 import { OpInProgressBanner } from './OpInProgressBanner';
+import { GitTopBar } from './GitTopBar';
 
-export type GitSubtab = 'branches' | 'history' | 'changes' | 'prs';
+export type GitSubtab = 'changes' | 'history' | 'prs';
 
 type Props = {
   bubble: Bubble;
@@ -25,9 +25,9 @@ const STORAGE_PREFIX = 'eco.git.subtab.';
 function loadSubtab(bubbleId: string): GitSubtab {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + bubbleId);
-    if (raw === 'branches' || raw === 'history' || raw === 'changes' || raw === 'prs') {
-      return raw;
-    }
+    // Migración: 'branches' viejo → 'changes' (las ramas viven en el top bar).
+    if (raw === 'branches') return 'changes';
+    if (raw === 'history' || raw === 'changes' || raw === 'prs') return raw;
   } catch { /* noop */ }
   return 'changes';
 }
@@ -40,33 +40,42 @@ export function GitPanel({ bubble, workspace, bubbleId, filesChanged, gitChanges
   const t = useTokens();
   const [sub, setSub] = useState<GitSubtab>(() => loadSubtab(bubbleId));
 
-  // Reaccionar a voice commands tipo "Eco historial" / "Eco ramas".
+  // Reaccionar a voice commands tipo "Eco historial".
   useEffect(() => {
     return ecoOn('eco:switch_git_subtab', (e) => {
       if (e.bubbleId && e.bubbleId !== bubbleId) return;
-      setSub(e.sub);
+      // Migración: 'branches' del bus viejo → 'changes' (no hay sub-tab Ramas).
+      const next = e.sub === 'changes' || e.sub === 'history' || e.sub === 'prs' ? e.sub : 'changes';
+      setSub(next);
     });
   }, [bubbleId]);
 
-  // Persistir cuando cambia.
   useEffect(() => { saveSubtab(bubbleId, sub); }, [bubbleId, sub]);
 
   const pending = filesChanged.filter((f) => f.unstaged !== false).length;
 
-  const subnav: { id: GitSubtab; label: string; icon: typeof IconBranch; badge?: number }[] = [
-    { id: 'changes', label: 'Cambios', icon: IconFile, badge: pending || undefined },
+  const subnav: { id: GitSubtab; label: string; icon: typeof IconGithub; badge?: number }[] = [
+    { id: 'changes', label: 'Cambios', icon: IconGithub, badge: pending || undefined },
     { id: 'history', label: 'Historial', icon: IconLayers },
-    { id: 'branches', label: 'Ramas', icon: IconBranch },
     { id: 'prs', label: 'PRs', icon: IconGlobe },
   ];
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      {/* Top bar persistente (branch + sync + ⋯) */}
+      <GitTopBar
+        workspace={workspace}
+        bubbleId={bubbleId}
+        onOpenPRs={() => setSub('prs')}
+        onRenameAgent={onRename}
+      />
+
       {/* Sub-nav */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 4,
-        padding: '8px 20px', borderBottom: `1px solid ${t.glassBorder}`,
-        background: t.bg1,
+        padding: '6px 16px',
+        borderBottom: `1px solid ${t.glassBorder}`,
+        background: t.bg0,
         flexShrink: 0, overflowX: 'auto',
       }}>
         {subnav.map((s) => (
@@ -102,9 +111,6 @@ export function GitPanel({ bubble, workspace, bubbleId, filesChanged, gitChanges
         {sub === 'history' && (
           <HistoryView workspace={workspace} bubbleId={bubbleId} />
         )}
-        {sub === 'branches' && (
-          <BranchesView workspace={workspace} bubbleId={bubbleId} onRenameAgent={onRename} />
-        )}
         {sub === 'prs' && (
           <PRsView workspace={workspace} bubbleId={bubbleId} />
         )}
@@ -129,7 +135,7 @@ function SubtabBtn({
       onClick={onClick}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '6px 12px', borderRadius: 8,
+        padding: '5px 12px', borderRadius: 7,
         border: 0,
         background: active ? t.accentDim : 'transparent',
         color: active ? t.accentOn : t.text1,

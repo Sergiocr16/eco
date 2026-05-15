@@ -543,14 +543,60 @@ export function pull(workspace: string): GitActionResult {
   return { ok: true, message: r.stdout.trim() || 'Sin cambios remotos' };
 }
 
+/**
+ * Fetch tolerante: corre `git fetch` por cada remote y reporta cuáles
+ * tuvieron éxito y cuáles fallaron por falta de credenciales (típico en
+ * remotos tipo `heroku-*` que requieren auth interactiva). Como tenemos
+ * `GIT_TERMINAL_PROMPT=0`, esos remotos fallan con "could not read
+ * Username for X: terminal prompts disabled" — los tratamos como skip
+ * en lugar de error fatal.
+ *
+ * Devolvemos `ok: true` si AL MENOS UN remote se trajo OK; el mensaje
+ * resume cuáles OK y cuáles requirieron auth. Solo `ok: false` si todos
+ * fallaron o si no hay remotos.
+ */
 export function fetch(workspace: string): GitActionResult {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
-  const r = git(['fetch', '--all', '--prune'], workspace);
-  if (!r.ok) {
-    const msg = (r.stderr || r.stdout).trim();
-    return { ok: false, error: msg.slice(0, 600) || 'fetch falló' };
+  const remotesR = git(['remote'], workspace);
+  if (!remotesR.ok) {
+    return { ok: false, error: (remotesR.stderr || 'no pude listar remotos').slice(0, 400) };
   }
-  return { ok: true, message: 'Fetch completado' };
+  const remotes = remotesR.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (remotes.length === 0) {
+    return { ok: false, error: 'El repositorio no tiene remotos configurados', code: 'fetch.no_remotes' };
+  }
+  const ok: string[] = [];
+  const authNeeded: string[] = [];
+  const otherFailures: { name: string; error: string }[] = [];
+  for (const name of remotes) {
+    const r = git(['fetch', '--prune', name], workspace);
+    if (r.ok) { ok.push(name); continue; }
+    const msg = (r.stderr || r.stdout).toLowerCase();
+    if (/terminal prompts disabled|could not read username|could not read password|authentication failed/.test(msg)) {
+      authNeeded.push(name);
+    } else {
+      otherFailures.push({ name, error: ((r.stderr || r.stdout).trim().slice(0, 200)) });
+    }
+  }
+  // Todos fallaron sin auth issues → error fatal con detalle del primero.
+  if (ok.length === 0 && authNeeded.length === 0 && otherFailures.length > 0) {
+    const first = otherFailures[0]!;
+    return { ok: false, error: `fetch falló en «${first.name}»: ${first.error}` };
+  }
+  // Todos fallaron por auth → reportamos auth, no error genérico.
+  if (ok.length === 0 && otherFailures.length === 0 && authNeeded.length > 0) {
+    return {
+      ok: false,
+      code: 'fetch.auth_needed',
+      error: `Todos los remotos requieren credenciales: ${authNeeded.join(', ')}. Configurá un credential helper o sacá los remotos privados.`,
+    };
+  }
+  // Hay al menos un OK — éxito parcial con resumen.
+  const parts: string[] = [];
+  if (ok.length > 0) parts.push(`OK: ${ok.join(', ')}`);
+  if (authNeeded.length > 0) parts.push(`saltados (sin credenciales): ${authNeeded.join(', ')}`);
+  if (otherFailures.length > 0) parts.push(`con error: ${otherFailures.map((f) => f.name).join(', ')}`);
+  return { ok: true, message: `Fetch — ${parts.join(' · ')}` };
 }
 
 /**
@@ -625,21 +671,22 @@ export function suggestCommitMessage(workspace: string, extraContext = ''): Sugg
   if (!ctx.hasChanges) return { ok: false, error: 'Sin cambios para commitear' };
 
   const prompt = [
-    'Generá un mensaje de commit conciso para los cambios siguientes.',
-    'Devolvé ÚNICAMENTE el mensaje del commit — sin preámbulo, sin comillas, sin code fences, sin explicación.',
-    'Formato: primera línea es el título (máx 72 chars, modo imperativo). Si hace falta, dejá una línea en blanco y agregás body de 1-3 bullets.',
-    'Inferí el estilo del repo viendo los últimos commits (conventional, prefix tipo "feat:", etc.).',
-    'NO incluyas trailers tipo Co-Authored-By, Signed-off-by, ni "🤖 Generated with Claude Code".',
-    extraContext ? `Contexto del usuario: ${extraContext}` : '',
+    'Generate a concise commit message for the following changes.',
+    'IMPORTANT: write the commit message in ENGLISH. Even if the diff, the user context, or the recent log are in another language, the output must be English.',
+    'Return ONLY the commit message — no preamble, no quotes, no code fences, no explanation.',
+    'Format: first line is the title (max 72 chars, imperative mood). If needed, leave a blank line and add a body of 1-3 bullets.',
+    'Infer the repo style from the recent commits below (conventional, prefix like "feat:", etc.).',
+    'DO NOT include trailers like Co-Authored-By, Signed-off-by, or "🤖 Generated with Claude Code".',
+    extraContext ? `User context (may be in any language — translate if needed; output stays in English): ${extraContext}` : '',
     '',
     '=== git status ===',
-    ctx.status || '(vacío)',
+    ctx.status || '(empty)',
     '',
     '=== git log --oneline -10 ===',
-    ctx.recentLog || '(sin historial)',
+    ctx.recentLog || '(no history)',
     '',
     '=== git diff ===',
-    ctx.diff || '(sin diff)',
+    ctx.diff || '(no diff)',
   ].filter(Boolean).join('\n');
 
   const r = spawnSync(config.claudeCliPath, ['-p', prompt], {

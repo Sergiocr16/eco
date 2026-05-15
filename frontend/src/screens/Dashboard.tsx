@@ -10,7 +10,7 @@ import {
   IconWave, IconMic, IconSend, IconGrid, IconGraph, IconExt, IconColumns,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck, IconAgent,
   IconClock, IconAlert, IconZap, IconCpu, IconTrash, IconX,
-  IconGlobe, IconLayers, IconShield, IconFile, IconCommand, type IconProps,
+  IconGlobe, IconLayers, IconShield, IconGithub, IconCommand, type IconProps,
 } from '@/design/icons';
 import type { Bubble, VoiceState } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
@@ -445,7 +445,7 @@ function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
     { icon: IconTerminal, count: ptys,      color: t.ok,     label: tr('dash.card.res.ptys') },
     { icon: IconCpu,      count: servers,   color: t.busy,   label: tr('dash.card.res.servers') },
     { icon: IconGlobe,    count: browsers,  color: t.accent, label: tr('dash.card.res.browsers') },
-    { icon: IconFile,     count: files,     color: t.warn,   label: tr('dash.card.res.files') },
+    { icon: IconGithub,   count: files,     color: t.warn,   label: tr('dash.card.res.files') },
     { icon: IconCommand,  count: remote,    color: t.accent, label: tr('dash.card.res.remote') },
     { icon: IconFolder,   count: worktrees, color: t.text2,  label: tr('dash.card.res.worktrees') },
   ];
@@ -1873,12 +1873,11 @@ const SAT_ICONS = {
       <path d="M7 7a7 7 0 0110 0M4.5 4.5a11 11 0 0115 0"/>
     </>
   ),
-  // Archivos modificados — hoja con esquina doblada + líneas internas.
+  // Cambios pendientes — Mark de GitHub (el satélite ahora abre el tab Git → Cambios).
   files: (
     <>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <path d="M14 2v6h6"/>
-      <path d="M8 13h8M8 17h6"/>
+      <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/>
+      <path d="M9 18c-4.51 2-5-2-7-2"/>
     </>
   ),
 } as const;
@@ -1913,7 +1912,7 @@ function SatellitesLocal({
   const items: { key: SatKey; on: boolean; color: string; label: string; icon: JSX.Element; pulse?: boolean }[] = [
     { key: 'chat',    on: n.hasChat,    color: t.text2,  label: 'Conversación',          icon: SAT_ICONS.chat },
     { key: 'pty',     on: n.hasPty,     color: t.ok,     label: busy ? 'Procesando…' : 'Terminal', icon: SAT_ICONS.pty, pulse: busy },
-    { key: 'files',   on: n.hasFiles,   color: t.warn,   label: 'Archivos modificados',  icon: SAT_ICONS.files, pulse: true },
+    { key: 'files',   on: n.hasFiles,   color: t.warn,   label: 'Cambios sin commitear', icon: SAT_ICONS.files, pulse: true },
     { key: 'server',  on: n.hasServer,  color: t.busy,   label: 'Server',                icon: SAT_ICONS.server },
     { key: 'browser', on: n.hasBrowser, color: t.err,    label: 'Navegador',             icon: SAT_ICONS.browser },
     { key: 'remote',  on: n.hasRemote,  color: t.accent, label: 'Claude remote control', icon: SAT_ICONS.remote, pulse: true },

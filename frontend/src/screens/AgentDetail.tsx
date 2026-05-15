@@ -23,7 +23,7 @@ import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
-  IconCheck, IconX, IconBolt, IconBranch,
+  IconCheck, IconX, IconBolt, IconGithub,
   IconAgent, IconFolder, IconTrash, IconCopy,
   type IconProps,
 } from '@/design/icons';
@@ -401,9 +401,9 @@ export function AgentDetail({
       }}>
         <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')} label={tr('detail.tab.chat')} icon={IconCommand} badge={bubble.messages.length}/>
         <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
-        <TabBtn active={tab === 'git'} onClick={() => setTab('git')} label="Git" icon={IconBranch} badge={filesChanged.length}/>
         <TabBtn active={tab === 'browser'} onClick={() => setTab('browser')} label={tr('detail.tab.browser')} icon={IconGlobe}/>
         <TabBtn active={tab === 'server'} onClick={() => setTab('server')} label={tr('detail.tab.server')} icon={IconCpu}/>
+        <TabBtn active={tab === 'git'} onClick={() => setTab('git')} label="Git" icon={IconGithub} badge={filesChanged.length}/>
         <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
         <div style={{ flex: 1 }}/>
         <RemoteControlNavButton bubble={bubble}/>
@@ -2091,11 +2091,14 @@ function AgentSidebar({
   // scrollear. Skills y QuickActions van siempre arriba (en ese orden).
   const running = bubble.status === 'thinking' || bubble.status === 'executing'
     || bubble.status === 'running' || bubble.status === 'pending';
+  // Git va FIJO arriba para que la rama actual sea siempre lo primero
+  // que se ve del agente — independiente de si está corriendo o tiene
+  // archivos modificados.
   const sectionOrder = useMemo<SectionId[]>(() => {
     if (running || filesChangedCount > 0) {
-      return ['skills', 'quick', 'next', 'git', 'stats', 'obsidian'];
+      return ['git', 'skills', 'quick', 'next', 'stats', 'obsidian'];
     }
-    return ['skills', 'quick', 'git', 'next', 'stats', 'obsidian'];
+    return ['git', 'skills', 'quick', 'next', 'stats', 'obsidian'];
   }, [running, filesChangedCount]);
 
   // Datos para sparkline.
@@ -2129,23 +2132,23 @@ function AgentSidebar({
 
       case 'git':
         if (!bubble.workspace) return null;
+        // Git va fijo arriba — header sin chevron ni toggle, así la rama
+        // actual siempre está visible.
         return (
-          <CollapsibleSection key="git" id="git"
-            title="Git"
-            collapsed={sectionCollapse.isCollapsed('git')}
-            onToggle={() => sectionCollapse.toggle('git')}>
+          <div key="git" data-section="git">
+            <div style={{
+              padding: '6px 4px 10px',
+              color: t.text2,
+              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
+              letterSpacing: 0.5, textTransform: 'uppercase',
+            }}>Git</div>
             <GitMiniDock
               workspace={bubble.workspace}
               bubbleId={bubble.id}
               baseBranch={bubble.baseBranch}
-              onGoToGit={(sub) => {
-                onGoTab('git');
-                if (sub) {
-                  ecoEmit('eco:switch_git_subtab', { sub, bubbleId: bubble.id });
-                }
-              }}
+              onGoToGit={() => onGoTab('git')}
             />
-          </CollapsibleSection>
+          </div>
         );
 
       case 'next':
