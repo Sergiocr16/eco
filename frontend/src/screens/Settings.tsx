@@ -7,7 +7,7 @@ import {
 import {
   IconSettings, IconKey, IconMic, IconFolder, IconShield, IconLayers,
   IconInfo, IconCheck, IconCpu, IconTerminal, IconWave, IconGlobe, IconAlert,
-  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, type IconProps,
+  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
 import { useTTS, type UnifiedVoice } from '@/hooks/useTTS';
@@ -1956,7 +1956,8 @@ function FeatureGrid() {
     { icon: IconTerminal, title: tr('settings.about.feat.terminal.title'), body: tr('settings.about.feat.terminal.body') },
     { icon: IconGlobe,    title: tr('settings.about.feat.browser.title'),  body: tr('settings.about.feat.browser.body') },
     { icon: IconCpu,      title: tr('settings.about.feat.server.title'),   body: tr('settings.about.feat.server.body') },
-    { icon: IconFolder,   title: tr('settings.about.feat.git.title'),      body: tr('settings.about.feat.git.body') },
+    { icon: IconGithub,   title: tr('settings.about.feat.git.title'),      body: tr('settings.about.feat.git.body') },
+    { icon: IconBranch,   title: tr('settings.about.feat.prs.title'),      body: tr('settings.about.feat.prs.body') },
     { icon: IconCheck,    title: tr('settings.about.feat.review.title'),   body: tr('settings.about.feat.review.body') },
     { icon: IconMic,      title: tr('settings.about.feat.voice.title'),    body: tr('settings.about.feat.voice.body') },
     { icon: IconLayers,   title: tr('settings.about.feat.obsidian.title'), body: tr('settings.about.feat.obsidian.body') },
