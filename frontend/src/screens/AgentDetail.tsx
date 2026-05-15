@@ -2266,13 +2266,12 @@ function AgentSidebar({
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>›</button>
       </div>
 
-      {/* Scrollable area — top padding generoso para que el botón flotante
-          de colapsar (›) que vive en top:8/right:8 no se traslape con el
-          header de la primera sección (Skills tiene un SkillsPicker
-          alineado a la derecha en el mismo eje horizontal). */}
+      {/* Scrollable area — top padding ajustado: el botón flotante de
+          colapsar (›) vive en top:8/right:8 y la primera sección (Git)
+          tiene su header a la izquierda, así que no se traslapan. */}
       <div style={{
         flex: 1, overflow: 'auto',
-        padding: '46px 18px 20px',
+        padding: '14px 18px 20px',
         display: 'flex', flexDirection: 'column', gap: 18,
       }}>
         {sectionOrder.map(renderSection)}
