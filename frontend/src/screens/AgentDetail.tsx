@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '@/lib/api';
 import { useTokens } from '@/design/theme';
-import { DiffPane } from '@/components/DiffViewer';
 import { RealTerminal } from '@/components/RealTerminal';
 import { SkillsPicker } from '@/components/SkillsPicker';
 import { useSkills, type SkillInfo } from '@/hooks/useSkills';
@@ -12,11 +11,9 @@ import { setVoiceTarget } from '@/lib/voice-router';
 import { ecoToken } from '@/lib/eco-config';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
-import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
 import { useCategories } from '@/hooks/useCategories';
-import { BranchPicker } from '@/components/BranchPicker';
-import { PullRequestsList } from '@/components/PullRequestsList';
-import { CurrentPrBanner } from '@/components/CurrentPrBanner';
+import { GitPanel } from '@/components/GitPanel/GitPanel';
+import { GitMiniDock } from '@/components/GitMiniDock';
 import { BrowserPanel } from '@/components/BrowserPanel';
 import { ServerPanel } from '@/components/ServerPanel';
 import {
@@ -197,7 +194,7 @@ type Props = {
   voiceInterim: string;
 };
 
-type Tab = 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server';
+type Tab = 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server';
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
@@ -225,7 +222,9 @@ export function AgentDetail({
   const [tab, setTabState] = useState<Tab>(() => {
     try {
       const saved = window.localStorage.getItem(tabStorageKey);
-      if (saved === 'chat' || saved === 'terminal' || saved === 'files'
+      // Migración: el tab 'files' viejo ahora vive como sub-pestaña Cambios del tab Git.
+      if (saved === 'files') return 'git';
+      if (saved === 'chat' || saved === 'terminal' || saved === 'git'
         || saved === 'plan' || saved === 'browser' || saved === 'server') {
         return saved as Tab;
       }
@@ -402,7 +401,7 @@ export function AgentDetail({
       }}>
         <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')} label={tr('detail.tab.chat')} icon={IconCommand} badge={bubble.messages.length}/>
         <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
-        <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label={tr('detail.tab.files')} icon={IconFile} badge={filesChanged.length}/>
+        <TabBtn active={tab === 'git'} onClick={() => setTab('git')} label="Git" icon={IconBranch} badge={filesChanged.length}/>
         <TabBtn active={tab === 'browser'} onClick={() => setTab('browser')} label={tr('detail.tab.browser')} icon={IconGlobe}/>
         <TabBtn active={tab === 'server'} onClick={() => setTab('server')} label={tr('detail.tab.server')} icon={IconCpu}/>
         <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
@@ -423,7 +422,16 @@ export function AgentDetail({
             />
           )}
           {tab === 'terminal' && <TerminalPanel bubble={bubble}/>}
-          {tab === 'files' && <FilesPanel files={filesChanged} workspace={bubble.workspace} bubbleId={bubble.id} bubble={bubble} loading={gitChangesLoading}/>}
+          {tab === 'git' && (
+            <GitPanel
+              bubble={bubble}
+              workspace={bubble.workspace}
+              bubbleId={bubble.id}
+              filesChanged={filesChanged}
+              gitChangesLoading={gitChangesLoading}
+              onRename={onRename}
+            />
+          )}
           {tab === 'plan' && <PlanPanel bubble={bubble}/>}
           {/* Navegador queda MONTADO siempre una vez abierto, solo se oculta cuando
               cambiás de pestaña. Así el iframe no recarga y la sesión del browser
@@ -1370,239 +1378,6 @@ function normalizePosixPath(p: string): string {
   return '/' + out.join('/');
 }
 
-function FilesPanel({ files, workspace, bubbleId, bubble, loading }: { files: FileChange[]; workspace: string; bubbleId: string; bubble: Bubble; loading?: boolean }) {
-  const t = useTokens();
-  const tr = useT();
-  const review = useReviewState(bubbleId);
-  const reviewMode = isReviewModeEnabled();
-  // Paths expandidos (mostrando el diff inline debajo de la card). Multi-expand:
-  // varios pueden estar abiertos a la vez.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  function toggleExpand(path: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path); else next.add(path);
-      return next;
-    });
-  }
-
-  // Aceptar todos: stagea cada archivo en git (`git add`) ANTES de marcar
-  // como aceptado local. Sin `git add`, el archivo sigue modified vs index
-  // y al abrirlo aparecería diff aunque el dot local diga "aceptado".
-  // Marcamos local solo los que el backend confirma OK.
-  async function acceptAllFiles() {
-    const paths = files.map((f) => f.path);
-    const results = await Promise.all(paths.map(async (p) => {
-      try {
-        const r = await apiFetch('/file/accept', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: p, workspace, bubbleId }),
-        });
-        const data = await r.json().catch(() => ({}));
-        return { path: p, ok: r.ok && data.ok === true };
-      } catch { return { path: p, ok: false }; }
-    }));
-    const okPaths = results.filter((r) => r.ok).map((r) => r.path);
-    if (okPaths.length > 0) review.acceptAll(okPaths);
-    ecoEmit('eco:git_refresh', { bubbleId });
-  }
-
-  // Si el agente edita un archivo DESPUÉS de que el user lo aceptó,
-  // desmarcamos automáticamente. Comparamos `m.createdAt` del message
-  // que contiene el tool call con `review.acceptedAt(path)`: si el edit
-  // sucedió después del accept, el accept ya no es válido — hay cambios
-  // nuevos sin revisar.
-  //
-  // Este approach es robusto al re-mount (no depende de un ref que se
-  // resetea) y al re-entrar a la conversación: el `acceptedAt` vive en
-  // localStorage y el `createdAt` del message también persiste.
-  useEffect(() => {
-    let sawNewEdit = false;
-    for (const m of bubble.messages) {
-      for (const tc of m.toolCalls ?? []) {
-        if (tc.status !== 'success') continue;
-        if (tc.name !== 'Write' && tc.name !== 'Edit' && tc.name !== 'MultiEdit' && tc.name !== 'NotebookEdit') continue;
-        const filePath = (tc.input as { file_path?: unknown }).file_path;
-        if (typeof filePath !== 'string' || !filePath) continue;
-        const acceptedAt = review.acceptedAt(filePath);
-        // Si nunca se aceptó, no hay nada que invalidar.
-        if (acceptedAt === 0) continue;
-        // Si la edición es POSTERIOR al accept, invalidamos.
-        if (m.createdAt > acceptedAt) {
-          review.unaccept(filePath);
-          sawNewEdit = true;
-        }
-      }
-    }
-    if (sawNewEdit) ecoEmit('eco:git_refresh', { bubbleId });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bubble.messages]);
-
-  if (files.length === 0) {
-    return (
-      <div style={{
-        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 32, color: t.text2, fontSize: 13,
-        flexDirection: 'column', gap: 10,
-      }}>
-        {loading ? (
-          <>
-            <span style={{
-              width: 18, height: 18, borderRadius: '50%',
-              border: `2px solid ${t.glassBorder}`,
-              borderTopColor: t.accent,
-              animation: 'eco-spin 0.8s linear infinite',
-              display: 'inline-block',
-            }}/>
-            <span>Buscando archivos modificados…</span>
-          </>
-        ) : (
-          tr('detail.files.empty')
-        )}
-      </div>
-    );
-  }
-
-  // Un archivo está "pendiente" si tiene cambios unstaged en git
-  // (independiente del state local del review). Esa es la fuente de verdad:
-  // si hay unstaged, hay cambios sin aceptar. El review state local
-  // (acceptedAt) lo usamos solo como hint visual cuando NO hay unstaged.
-  const pending = reviewMode
-    ? files.filter((f) => f.unstaged !== false).length
-    : 0;
-
-  return (
-    <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-      {reviewMode && pending > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '10px 14px', marginBottom: 12,
-          borderRadius: 10,
-          background: `color-mix(in oklch, ${t.warn} 8%, transparent)`,
-          border: `1px solid color-mix(in oklch, ${t.warn} 50%, transparent)`,
-        }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: t.warn,
-            boxShadow: `0 0 6px ${t.warn}`,
-            flexShrink: 0,
-          }}/>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12.5, color: t.text0, fontWeight: 600 }}>
-              {pending} {pending === 1 ? 'cambio pendiente' : 'cambios pendientes'} de revisión
-            </div>
-            <div style={{ fontSize: 11, color: t.text2, marginTop: 2 }}>
-              Click en un archivo para ver el diff y aceptar/rechazar inline.
-            </div>
-          </div>
-          <Btn kind="primary" size="sm" icon={IconCheck} onClick={() => void acceptAllFiles()}>
-            Aceptar todos
-          </Btn>
-        </div>
-      )}
-      <SectionLabel count={files.length}>{tr('detail.files.modified')}</SectionLabel>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {files.map((f, i) => {
-          // El dot es VERDE solo si:
-          //  - reviewMode está on,
-          //  - no hay cambios unstaged en git (todo ya staged),
-          //  - el user marcó accepted localmente.
-          // Si hay unstaged hay cambios sin aceptar → ámbar.
-          const hasUnstaged = f.unstaged !== false;
-          const accepted = reviewMode && !hasUnstaged && review.isAccepted(f.path);
-          const dotColor = accepted ? t.ok : t.warn;
-          const isOpen = expanded.has(f.path);
-          return (
-            <div key={i} style={{
-              borderRadius: 12,
-              border: `1px solid ${isOpen ? t.accent : t.glassBorder}`,
-              background: t.bg2,
-              overflow: 'hidden',
-              transition: 'border-color 140ms',
-            }}>
-              {/* Header clickeable — toggle del diff inline */}
-              <button type="button"
-                onClick={() => toggleExpand(f.path)}
-                style={{
-                  width: '100%',
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: 14, border: 0,
-                  background: 'transparent',
-                  color: t.text0, cursor: 'pointer', textAlign: 'left',
-                }}>
-                <span style={{
-                  width: 18, height: 18,
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  color: t.text2,
-                  transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 160ms ease',
-                  flexShrink: 0,
-                  fontFamily: 'monospace', fontSize: 14, fontWeight: 600,
-                }}>›</span>
-                {reviewMode && (
-                  <span
-                    title={accepted ? 'Aceptado' : 'Pendiente de revisión'}
-                    style={{
-                      width: 10, height: 10, borderRadius: '50%',
-                      background: dotColor,
-                      boxShadow: accepted ? 'none' : `0 0 6px ${dotColor}`,
-                      flexShrink: 0,
-                    }}/>
-                )}
-                <div style={{
-                  width: 36, height: 36, borderRadius: 10,
-                  background: t.bg3, color: t.text1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}><IconFile size={16}/></div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>{f.path}</div>
-                  <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Pill color={f.change === 'created' ? t.ok : t.accent}>{f.change === 'created' ? tr('detail.files.created') : tr('detail.files.modified_one')}</Pill>
-                    {accepted && (
-                      <Pill color={t.ok}>Revisado</Pill>
-                    )}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}
-                  onClick={(e) => e.stopPropagation()}>
-                  <DiscardFileButton
-                    path={f.path}
-                    workspace={workspace}
-                    bubbleId={bubbleId}
-                    change={f.change}
-                  />
-                </div>
-              </button>
-
-              {/* Diff inline desplegado */}
-              {isOpen && (
-                <div style={{
-                  borderTop: `1px solid ${t.glassBorder}`,
-                  maxHeight: '70vh',
-                  display: 'flex', flexDirection: 'column',
-                  background: t.bg0,
-                }}>
-                  <DiffPane
-                    path={f.path}
-                    workspace={workspace}
-                    bubbleId={bubbleId}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // Helper: corre un skill mandando "/<skill>\r" directo al PTY del agente
 // (donde corre Claude CLI). Después switcheamos al tab Terminal para que
 // el user vea la salida en vivo.
@@ -1852,117 +1627,6 @@ function SkillsCard({
   );
 }
 
-function DiscardFileButton({
-  path, workspace, bubbleId, change,
-}: {
-  path: string;
-  workspace: string;
-  bubbleId: string;
-  change: string;
-}) {
-  const t = useTokens();
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function discard() {
-    setBusy(true); setErr(null);
-    try {
-      const r = await apiFetch('/file/discard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace, bubbleId, path }),
-      });
-      const data = await r.json().catch(() => ({} as { error?: string }));
-      if (!r.ok || data?.ok === false) {
-        setErr(data?.error || `HTTP ${r.status}`);
-        setBusy(false);
-        return;
-      }
-      // Éxito → forzamos refetch inmediato del estado git en vez de esperar
-      // el próximo polling, así el archivo desaparece de la lista al instante.
-      ecoEmit('eco:git_refresh', { bubbleId });
-      setConfirming(false);
-      setBusy(false);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
-      setBusy(false);
-    }
-  }
-
-  if (err) {
-    return (
-      <button
-        type="button"
-        title="Click para reintentar"
-        onClick={() => setErr(null)}
-        style={{
-          maxWidth: 260,
-          fontSize: 11, color: t.err, fontFamily: t.fontMono,
-          padding: '4px 10px', borderRadius: 6,
-          background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-          border: `1px solid ${t.err}`,
-          cursor: 'pointer', textAlign: 'left',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{err}</button>
-    );
-  }
-
-  if (!confirming) {
-    return (
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        title={change === 'created'
-          ? `Eliminar el archivo nuevo ${path}`
-          : `Descartar los cambios en ${path}`}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '5px 10px', borderRadius: 7,
-          border: `1px solid ${t.glassBorder}`,
-          background: 'transparent', color: t.text2,
-          fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
-          cursor: 'pointer',
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = t.err; e.currentTarget.style.borderColor = t.err; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = t.text2; e.currentTarget.style.borderColor = t.glassBorder; }}>
-        <IconTrash size={11}/>
-        Descartar
-      </button>
-    );
-  }
-
-  return (
-    <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6,
-      padding: '4px 6px 4px 10px', borderRadius: 7,
-      background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-      border: `1px solid ${t.err}`,
-    }}>
-      <span style={{ fontSize: 11, color: t.err, fontWeight: 500 }}>
-        {change === 'created' ? '¿Eliminar?' : '¿Descartar?'}
-      </span>
-      <button type="button"
-        onClick={() => void discard()}
-        disabled={busy}
-        style={{
-          padding: '3px 9px', borderRadius: 5, border: 0,
-          background: t.err, color: '#fff',
-          fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
-          opacity: busy ? 0.6 : 1,
-        }}>{busy ? '…' : 'Sí'}</button>
-      <button type="button"
-        onClick={() => setConfirming(false)}
-        disabled={busy}
-        style={{
-          padding: '3px 9px', borderRadius: 5, border: 0,
-          background: 'transparent', color: t.text2,
-          fontSize: 11, cursor: 'pointer',
-        }}>No</button>
-    </div>
-  );
-}
-
 function PlanPanel({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
   const tr = useT();
@@ -2047,309 +1711,6 @@ function PlanPanel({ bubble }: { bubble: Bubble }) {
         ))}
       </div>
     </div>
-  );
-}
-
-function CommitWithAI({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
-  const t = useTokens();
-  const review = useReviewState(bubbleId);
-  type Phase = 'idle' | 'suggesting' | 'preview' | 'committing' | 'done' | 'error';
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [extra, setExtra] = useState('');
-  const [message, setMessage] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [commitResult, setCommitResult] = useState<string | null>(null);
-
-  async function suggest() {
-    setErr(null); setCommitResult(null); setPhase('suggesting');
-    try {
-      const r = await apiFetch('/git/commit-suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace, bubbleId, context: extra.trim() }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (d.ok) { setMessage(d.message ?? ''); setPhase('preview'); }
-      else { setErr(d.error || 'No se pudo generar'); setPhase('error'); }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error'); setPhase('error');
-    }
-  }
-
-  async function commit() {
-    if (!message.trim()) return;
-    setErr(null); setPhase('committing');
-    try {
-      const r = await apiFetch('/git/commit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace, bubbleId, message }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (d.ok) {
-        setCommitResult(d.message ?? 'Commit creado');
-        setPhase('done');
-        setMessage(''); setExtra('');
-        // Review estilo Cursor: tras un commit, todo lo "aceptado" ya quedó
-        // en historia. Limpiamos el state local para que el banner desaparezca.
-        review.clearAll();
-      } else {
-        setErr(d.error || 'Commit falló'); setPhase('error');
-      }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error'); setPhase('error');
-    }
-  }
-
-  function reset() {
-    setPhase('idle'); setMessage(''); setExtra(''); setErr(null); setCommitResult(null);
-  }
-
-  return (
-    <Glass radius={10} style={{ padding: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{
-          width: 22, height: 22, borderRadius: 6,
-          background: t.accentFaint, color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <IconBolt size={11}/>
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>Commit con AI</div>
-          <div style={{ fontSize: 10, color: t.text3, marginTop: 0 }}>
-            Analiza el diff y propone mensaje
-          </div>
-        </div>
-      </div>
-
-      {phase === 'idle' || phase === 'error' || phase === 'done' ? (
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {phase === 'done' && commitResult && (
-            <div style={{
-              padding: '6px 8px', borderRadius: 6,
-              background: `color-mix(in oklch, ${t.ok} 12%, transparent)`,
-              color: t.ok, fontFamily: t.fontMono, fontSize: 10.5,
-              whiteSpace: 'pre-wrap', maxHeight: 80, overflow: 'auto',
-            }}>{commitResult}</div>
-          )}
-          {phase === 'error' && err && (
-            <div style={{
-              padding: '6px 8px', borderRadius: 6,
-              background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-              color: t.err, fontFamily: t.fontMono, fontSize: 10.5,
-              whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
-            }}>{err}</div>
-          )}
-          <input
-            value={extra}
-            onChange={(e) => setExtra(e.target.value)}
-            placeholder="Contexto opcional (ej: fix login bug)"
-            style={{
-              width: '100%', boxSizing: 'border-box',
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              borderRadius: 6, padding: '5px 8px',
-              fontFamily: t.fontSans, fontSize: 11, color: t.text0,
-              outline: 'none',
-            }}
-            onKeyDown={(e) => { if (e.key === 'Enter') void suggest(); }}
-          />
-          <button
-            type="button"
-            onClick={() => void suggest()}
-            style={{
-              height: 26, padding: '0 8px', border: 0, borderRadius: 6,
-              background: t.accentDim, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
-            }}>
-            Generar mensaje
-          </button>
-        </div>
-      ) : phase === 'suggesting' ? (
-        <div style={{ marginTop: 8, padding: '6px 8px', fontSize: 11, color: t.text2, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%', background: t.accent,
-            animation: 'eco-shimmer 0.9s ease-in-out infinite',
-          }}/>
-          Analizando diff…
-        </div>
-      ) : (
-        // Preview / committing
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={6}
-            disabled={phase === 'committing'}
-            style={{
-              width: '100%', boxSizing: 'border-box',
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              borderRadius: 6, padding: '6px 8px',
-              fontFamily: t.fontMono, fontSize: 11, color: t.text0,
-              outline: 'none', resize: 'vertical', minHeight: 80,
-              lineHeight: 1.5,
-            }}
-          />
-          <div style={{ display: 'flex', gap: 4 }}>
-            <button
-              type="button"
-              onClick={reset}
-              disabled={phase === 'committing'}
-              style={{
-                flex: 1, height: 26, border: 0, borderRadius: 6,
-                background: t.bg2, color: t.text1,
-                fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
-              }}>
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={() => void suggest()}
-              disabled={phase === 'committing'}
-              style={{
-                flex: 1, height: 26, border: 0, borderRadius: 6,
-                background: t.bg3, color: t.text1,
-                fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
-              }}>
-              Regenerar
-            </button>
-            <button
-              type="button"
-              onClick={() => void commit()}
-              disabled={phase === 'committing' || !message.trim()}
-              style={{
-                flex: 1.4, height: 26, border: 0, borderRadius: 6,
-                background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                opacity: phase === 'committing' || !message.trim() ? 0.6 : 1,
-              }}>
-              {phase === 'committing' ? 'Commiteando…' : 'Hacer commit'}
-            </button>
-          </div>
-        </div>
-      )}
-    </Glass>
-  );
-}
-
-// Push de la rama actual al remoto. Auto-detecta upstream y fallback a
-// --set-upstream origin <branch> si no existe.
-function PushButton({ bubbleId, workspace }: { bubbleId: string; workspace: string }) {
-  const t = useTokens();
-  // 'confirm' = paso intermedio de confirmación (igual que el preview del
-  // commit) — el push no se dispara hasta que el user confirma.
-  type Phase = 'idle' | 'confirm' | 'pushing' | 'done' | 'error';
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [msg, setMsg] = useState<string | null>(null);
-
-  async function push() {
-    setMsg(null); setPhase('pushing');
-    try {
-      const r = await apiFetch('/git/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace, bubbleId }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (d.ok) { setMsg(d.message || 'Push OK'); setPhase('done'); }
-      else { setMsg(d.error || 'Push falló'); setPhase('error'); }
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Error'); setPhase('error');
-    }
-  }
-
-  // Reset el banner de "done"/"error" tras unos segundos para no quedar
-  // gritando estado viejo.
-  useEffect(() => {
-    if (phase !== 'done' && phase !== 'error') return;
-    const id = window.setTimeout(() => { setPhase('idle'); setMsg(null); }, 5000);
-    return () => window.clearTimeout(id);
-  }, [phase]);
-
-  const isError = phase === 'error';
-  const isDone = phase === 'done';
-
-  return (
-    <Glass radius={10} style={{ padding: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{
-          width: 22, height: 22, borderRadius: 6,
-          background: t.accentFaint, color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <IconBranch size={11}/>
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>Push</div>
-          <div style={{ fontSize: 10, color: t.text3, marginTop: 0 }}>
-            Publica la rama actual en origin
-          </div>
-        </div>
-        {phase !== 'confirm' && (
-          <button
-            type="button"
-            onClick={() => setPhase('confirm')}
-            disabled={phase === 'pushing'}
-            style={{
-              height: 26, padding: '0 12px', border: 0, borderRadius: 6,
-              background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
-              cursor: phase === 'pushing' ? 'default' : 'pointer',
-              opacity: phase === 'pushing' ? 0.6 : 1,
-            }}>
-            {phase === 'pushing' ? 'Pushing…' : 'Push'}
-          </button>
-        )}
-      </div>
-      {/* Paso de confirmación — igual que el preview del commit, el push
-          no se dispara hasta confirmar. */}
-      {phase === 'confirm' && (
-        <div style={{
-          marginTop: 8, padding: '8px 10px', borderRadius: 8,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        }}>
-          <div style={{ fontSize: 11, color: t.text1, lineHeight: 1.5 }}>
-            ¿Publicar la rama actual en <code style={{
-              fontFamily: t.fontMono, fontSize: 10.5,
-              padding: '1px 5px', borderRadius: 4,
-              background: t.bg3, color: t.text1,
-            }}>origin</code>?
-          </div>
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
-            <button
-              type="button"
-              onClick={() => setPhase('idle')}
-              style={{
-                height: 26, padding: '0 12px', borderRadius: 6,
-                background: 'transparent', color: t.text2,
-                border: `1px solid ${t.glassBorder}`,
-                fontFamily: t.fontSans, fontSize: 11, cursor: 'pointer',
-              }}>Cancelar</button>
-            <button
-              type="button"
-              onClick={() => void push()}
-              style={{
-                height: 26, padding: '0 12px', border: 0, borderRadius: 6,
-                background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
-                cursor: 'pointer',
-              }}>Pushear</button>
-          </div>
-        </div>
-      )}
-      {msg && (isDone || isError) && (
-        <div style={{
-          marginTop: 6,
-          padding: '6px 8px', borderRadius: 6,
-          background: `color-mix(in oklch, ${isError ? t.err : t.ok} 12%, transparent)`,
-          color: isError ? t.err : t.ok,
-          fontFamily: t.fontMono, fontSize: 10.5,
-          whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
-        }}>{msg}</div>
-      )}
-    </Glass>
   );
 }
 
@@ -2528,7 +1889,7 @@ function QuickActions({
     },
     {
       label: 'Archivos', icon: <IconFile size={12}/>,
-      onClick: () => onGoTab('files'),
+      onClick: () => onGoTab('git'),
       badge: filesChangedCount > 0 ? filesChangedCount : undefined,
       tooltip: 'Ver archivos modificados',
     },
@@ -2631,7 +1992,7 @@ function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubb
 }
 
 function AgentSidebar({
-  bubble, filesChangedCount, onSend, onInterrupt, onGoTab, onRename,
+  bubble, filesChangedCount, onSend, onInterrupt, onGoTab,
 }: {
   bubble: Bubble;
   filesChangedCount: number;
@@ -2773,34 +2134,17 @@ function AgentSidebar({
             title="Git"
             collapsed={sectionCollapse.isCollapsed('git')}
             onToggle={() => sectionCollapse.toggle('git')}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {bubble.baseBranch && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '6px 10px', borderRadius: 8,
-                  background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                  fontSize: 11, color: t.text2,
-                }}
-                title={`El worktree de esta burbuja salió de la rama "${bubble.baseBranch}" del repo padre.`}>
-                  <IconBranch size={11}/>
-                  <span>worktree salió de</span>
-                  <code style={{
-                    fontFamily: t.fontMono, fontSize: 11, color: t.text0,
-                    padding: '1px 6px', borderRadius: 4,
-                    background: t.bg3,
-                  }}>{bubble.baseBranch}</code>
-                </div>
-              )}
-              <CurrentPrBanner workspace={bubble.workspace} bubbleId={bubble.id}/>
-              <BranchPicker
-                workspace={bubble.workspace}
-                bubbleId={bubble.id}
-                onRenameAgent={(name) => onRename(name)}
-              />
-              <PullRequestsList workspace={bubble.workspace} bubbleId={bubble.id}/>
-              <CommitWithAI bubbleId={bubble.id} workspace={bubble.workspace}/>
-              <PushButton bubbleId={bubble.id} workspace={bubble.workspace}/>
-            </div>
+            <GitMiniDock
+              workspace={bubble.workspace}
+              bubbleId={bubble.id}
+              baseBranch={bubble.baseBranch}
+              onGoToGit={(sub) => {
+                onGoTab('git');
+                if (sub) {
+                  ecoEmit('eco:switch_git_subtab', { sub, bubbleId: bubble.id });
+                }
+              }}
+            />
           </CollapsibleSection>
         );
 
@@ -2860,7 +2204,7 @@ function AgentSidebar({
                 <StatBox
                   label={tr('detail.stat.files_changed')}
                   value={String(filesChangedCount)}
-                  onClick={filesChangedCount > 0 ? () => onGoTab('files') : undefined}/>
+                  onClick={filesChangedCount > 0 ? () => onGoTab('git') : undefined}/>
                 <StatBox
                   label={tr('detail.stat.tool_calls')}
                   value={String(toolCallCount)}/>
@@ -3256,7 +2600,7 @@ function NextActionsPanel({
         sub: 'ver diffs antes de commitear',
         icon: <IconFile size={12}/>,
         tone: 'primary',
-        onClick: () => onGoTab('files'),
+        onClick: () => onGoTab('git'),
       });
     }
     if (lastIsError) {

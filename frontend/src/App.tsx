@@ -304,6 +304,13 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         // Comando de voz "Eco terminal/chat/..." → aplica a la burbuja
         // del detalle activo.
         ecoEmit('eco:switch_tab', { tab: action.tab, bubbleId: detailBubbleId ?? undefined }); return;
+      case 'switch_git_subtab':
+        // Comandos "Eco historial/ramas/stash/tags/cambios/prs" — navegan al
+        // tab Git y cambian la sub-pestaña. Emitimos ambos eventos para que
+        // tanto el AgentDetail (que ve el tab) como el GitPanel (sub) reaccionen.
+        ecoEmit('eco:switch_tab', { tab: 'git', bubbleId: detailBubbleId ?? undefined });
+        ecoEmit('eco:switch_git_subtab', { sub: action.sub, bubbleId: detailBubbleId ?? undefined });
+        return;
       case 'confirm':
         ecoEmit('eco:confirm', { answer: action.answer }); return;
       case 'repeat_last': {

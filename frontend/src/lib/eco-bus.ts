@@ -7,7 +7,15 @@ export type EcoBusEvents = {
   // reacciona. Sin él (legacy / voz sin contexto), reacciona cualquiera
   // montada. Sin este filtro, con multi-detail keepalive TODAS las
   // AgentDetail montadas cambiaban de tab al mismo tiempo.
-  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server'; bubbleId?: string };
+  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server'; bubbleId?: string };
+  // Cambio de sub-pestaña dentro del tab Git. Las sub-pestañas son
+  // "branches" (Ramas), "history" (Historial), "changes" (Cambios pendientes),
+  // "stash", "tags", "prs" (Pull requests). Si la AgentDetail está en otra
+  // tab, primero hay que dispararle `eco:switch_tab → git`.
+  'eco:switch_git_subtab': {
+    sub: 'branches' | 'history' | 'changes' | 'prs';
+    bubbleId?: string;
+  };
   'eco:confirm': { answer: 'yes' | 'no' };
   'eco:wake_detected': { ts: number };
   'eco:dev_status': {

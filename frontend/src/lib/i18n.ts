@@ -1269,6 +1269,8 @@ const DICT = {
   'cmd.tab.chat': { es: 'Conversación', en: 'Conversation' },
   'cmd.tab.terminal': { es: 'Terminal', en: 'Terminal' },
   'cmd.tab.files': { es: 'Archivos', en: 'Files' },
+  'cmd.tab.git': { es: 'Git', en: 'Git' },
+  'cmd.tab.server': { es: 'Servidor', en: 'Server' },
   'cmd.tab.plan': { es: 'Plan', en: 'Plan' },
   'cmd.tab.browser': { es: 'Navegador', en: 'Browser' },
   'cmd.confirm_yes': { es: 'Sí, confirmado', en: 'Yes, confirmed' },

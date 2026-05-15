@@ -1885,13 +1885,13 @@ const SAT_ICONS = {
 
 // Mapeo de cada satélite a la tab que se abre en AgentDetail.
 type SatKey = 'chat' | 'pty' | 'server' | 'browser' | 'remote' | 'files';
-const SAT_TO_TAB: Record<SatKey, 'chat' | 'terminal' | 'server' | 'browser' | 'files'> = {
+const SAT_TO_TAB: Record<SatKey, 'chat' | 'terminal' | 'server' | 'browser' | 'git'> = {
   chat: 'chat',
   pty: 'terminal',
   server: 'server',
   browser: 'browser',
   remote: 'terminal', // click en el satélite remote te lleva a la terminal
-  files: 'files',
+  files: 'git', // el satélite 'files' (archivos modificados) abre el tab Git → Cambios
 };
 
 // Satélites alrededor de un electrón — íconos de cada subsistema (chat,

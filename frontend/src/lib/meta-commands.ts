@@ -19,7 +19,8 @@ export type MetaAction =
   | { kind: 'toggle_voice'; on: boolean }
   | { kind: 'set_theme'; mode: 'dark' | 'light' | 'system' }
   | { kind: 'scroll'; dir: 'up' | 'down' | 'top' | 'bottom' }
-  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'files' | 'plan' | 'browser' | 'server' }
+  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' }
+  | { kind: 'switch_git_subtab'; sub: 'branches' | 'history' | 'changes' | 'prs' }
   | { kind: 'confirm'; answer: 'yes' | 'no' }
   | { kind: 'repeat_last' }
   | { kind: 'tts_rate'; dir: 'faster' | 'slower' | 'normal' }
@@ -96,11 +97,21 @@ const ALIASES: Record<string, string> = {
   'ajustes': 'settings', 'configuracion': 'settings', 'config': 'settings',
   'settings': 'settings', 'preferencias': 'settings',
 
-  // 'archivos' depende del contexto: pantalla en dashboard / tab en detail.
+  // 'archivos' depende del contexto: pantalla en dashboard / tab Git → Cambios en detail.
   // El resolver final usa `currentScreen` para decidir.
   'archivos': 'archivos_ctx', 'files': 'archivos_ctx', 'carpetas': 'archivos_ctx',
+  'cambios': 'cambios_ctx', 'pendientes': 'cambios_ctx',
 
-  'historial': 'history', 'history': 'history',
+  // 'historial' depende del contexto: pantalla History en dashboard / sub-pestaña
+  // Historial del tab Git en detail.
+  'historial': 'history_ctx', 'history': 'history_ctx',
+
+  // Tab Git en detail.
+  'git': 'tab_git',
+
+  // Sub-pestañas del tab Git.
+  'ramas': 'gsub_branches', 'rama': 'gsub_branches', 'branches': 'gsub_branches',
+  'prs': 'gsub_prs', 'pull': 'gsub_prs',
 
   // Scroll (con o sin keyword "scroll")
   'scroll': 'scroll',
@@ -274,9 +285,18 @@ export function parseMetaCommand(
 
   if (!commandKey) return { kind: 'unknown' };
 
-  // "archivos" es ambiguo: en detail = tab Archivos; en cualquier otra pantalla = ir a screen Archivos.
+  // "archivos" es ambiguo: en detail = tab Git → Cambios; en cualquier otra pantalla = ir a screen Archivos.
   if (commandKey === 'archivos_ctx') {
-    commandKey = currentScreen === 'detail' ? 'tab_files' : 'files';
+    commandKey = currentScreen === 'detail' ? 'gsub_changes' : 'files';
+  }
+  // "cambios" solo tiene sentido en detail (cambios pendientes del worktree).
+  if (commandKey === 'cambios_ctx') {
+    if (currentScreen !== 'detail') return { kind: 'unknown' };
+    commandKey = 'gsub_changes';
+  }
+  // "historial": en detail → sub-pestaña Historial del tab Git; sino → pantalla History.
+  if (commandKey === 'history_ctx') {
+    commandKey = currentScreen === 'detail' ? 'gsub_history' : 'history';
   }
 
   // Argumento = resto del texto después del keyword, con fillers removidos.
@@ -297,7 +317,12 @@ export function parseMetaCommand(
     if (aliased === 'tab_browser')  return { kind: 'switch_tab', tab: 'browser' };
     if (aliased === 'tab_plan')     return { kind: 'switch_tab', tab: 'plan' };
     if (aliased === 'tab_chat')     return { kind: 'switch_tab', tab: 'chat' };
-    if (aliased === 'archivos_ctx') return { kind: 'switch_tab', tab: 'files' };
+    if (aliased === 'tab_git')      return { kind: 'switch_tab', tab: 'git' };
+    if (aliased === 'archivos_ctx') return { kind: 'switch_git_subtab', sub: 'changes' };
+    if (aliased === 'cambios_ctx')  return { kind: 'switch_git_subtab', sub: 'changes' };
+    if (aliased === 'history_ctx')  return { kind: 'switch_git_subtab', sub: 'history' };
+    if (aliased === 'gsub_branches') return { kind: 'switch_git_subtab', sub: 'branches' };
+    if (aliased === 'gsub_prs')     return { kind: 'switch_git_subtab', sub: 'prs' };
   }
 
   // Acciones que aplican al agente activo (server, remote control, obsidian).
@@ -358,10 +383,14 @@ export function parseMetaCommand(
     case 'scroll_down': return { kind: 'scroll', dir: argClean === 'todo' ? 'bottom' : 'down' };
     case 'scroll_up':   return { kind: 'scroll', dir: argClean === 'todo' ? 'top'    : 'up'   };
     case 'tab_terminal': return { kind: 'switch_tab', tab: 'terminal' };
-    case 'tab_files':    return { kind: 'switch_tab', tab: 'files' };
+    case 'tab_git':      return { kind: 'switch_tab', tab: 'git' };
     case 'tab_plan':     return { kind: 'switch_tab', tab: 'plan' };
     case 'tab_chat':     return { kind: 'switch_tab', tab: 'chat' };
     case 'tab_browser':  return { kind: 'switch_tab', tab: 'browser' };
+    case 'gsub_branches': return { kind: 'switch_git_subtab', sub: 'branches' };
+    case 'gsub_history':  return { kind: 'switch_git_subtab', sub: 'history' };
+    case 'gsub_changes':  return { kind: 'switch_git_subtab', sub: 'changes' };
+    case 'gsub_prs':      return { kind: 'switch_git_subtab', sub: 'prs' };
     case 'confirm_yes':  return { kind: 'confirm', answer: 'yes' };
     case 'confirm_no':   return { kind: 'confirm', answer: 'no' };
     case 'repeat':       return { kind: 'repeat_last' };
@@ -465,6 +494,7 @@ export function describeAction(action: MetaAction, bubbles: Bubble[], lang: Lang
     case 'set_theme':      return { title: tr('cmd.theme', { mode: action.mode }) };
     case 'scroll':         return { title: tr('cmd.scroll'), detail: tr(`cmd.scroll.${action.dir}`) };
     case 'switch_tab':     return { title: tr('cmd.switch_tab'), detail: tr(`cmd.tab.${action.tab}`) };
+    case 'switch_git_subtab': return { title: 'Git', detail: action.sub };
     case 'confirm':        return { title: action.answer === 'yes' ? tr('cmd.confirm_yes') : tr('cmd.confirm_no') };
     case 'repeat_last':    return { title: tr('cmd.repeat') };
     case 'tts_rate':       return { title: tr(`cmd.tts.${action.dir}`) };

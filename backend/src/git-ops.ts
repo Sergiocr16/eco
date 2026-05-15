@@ -10,6 +10,31 @@ import { config } from './config.js';
 
 const GIT_TIMEOUT = 10_000;
 
+// Operación git que puede dejar el worktree en estado mixto (con
+// CHERRY_PICK_HEAD / MERGE_HEAD / REVERT_HEAD en .git). Se usa para
+// detectar conflictos en curso y ofrecer abort/continue.
+export type GitConflictOp = 'cherry-pick' | 'merge' | 'revert';
+
+export type GitOpResult =
+  | { ok: true; message?: string }
+  | {
+      ok: false;
+      error: string;
+      code?: string;
+      conflict?: { files: string[]; op: GitConflictOp };
+    };
+
+// SHA hex válido (abbrev 4-40 chars).
+export function isValidSha(s: string): boolean {
+  return typeof s === 'string' && /^[a-f0-9]{4,40}$/i.test(s);
+}
+
+// Nombre de ref (branch/tag) sin metacaracteres de shell. Permite slashes
+// para refs anidadas tipo `feature/login` o `eco/abc123`.
+export function isValidRef(s: string): boolean {
+  return typeof s === 'string' && /^[a-zA-Z0-9._\-/]+$/.test(s) && !s.startsWith('-');
+}
+
 export type BranchInfo = {
   name: string;
   isCurrent: boolean;
@@ -33,7 +58,7 @@ export type BranchListResult = {
   worktree: string;
 };
 
-function git(args: string[], cwd: string): { ok: boolean; stdout: string; stderr: string } {
+export function git(args: string[], cwd: string): { ok: boolean; stdout: string; stderr: string } {
   const r = spawnSync('git', args, {
     cwd,
     timeout: GIT_TIMEOUT,
@@ -47,7 +72,7 @@ function git(args: string[], cwd: string): { ok: boolean; stdout: string; stderr
   };
 }
 
-function isRepo(dir: string): boolean {
+export function isRepo(dir: string): boolean {
   if (!existsSync(dir)) return false;
   const r = git(['rev-parse', '--is-inside-work-tree'], dir);
   return r.ok && r.stdout.trim() === 'true';

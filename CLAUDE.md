@@ -179,10 +179,22 @@ Si vas a tocar X, los archivos clave son:
 ### Review de cambios estilo Cursor (post-edit)
 - `frontend/src/hooks/useReviewState.ts` — Map<bubbleId, { [path]: acceptedAt: timestamp }> persistido en localStorage. Migración automática del formato boolean viejo.
 - `frontend/src/components/DiffViewer.tsx` — exporta `DiffPane` (inline, sin overlay) + `DiffViewer` (modal wrapper que reusa DiffPane). El DiffPane tiene toolbar review + toggle "Nuevos / Todos" (`vsIndex` true/false) + botones por hunk.
-- `frontend/src/screens/AgentDetail.tsx:FilesPanel` — lista de archivos con dots ámbar/verde basados en `git status --porcelain` (campo `unstaged`), banner de pendientes con "Aceptar todos", diff inline desplegable por archivo (sin modal).
+- `frontend/src/components/GitPanel/ChangesView.tsx` — lista de archivos con dots ámbar/verde basados en `git status --porcelain` (campo `unstaged`), banner de pendientes con "Aceptar todos", diff inline desplegable por archivo (sin modal). Sub-pestaña "Cambios" del tab Git, también incluye `CommitWithAI` arriba.
 - `frontend/src/hooks/useGitChanges.ts` — cache global por (workspace, bubbleId) que sobrevive al unmount; arranca con snapshot + revalida en background. Polling 4s + escucha `eco:git_refresh`.
 - Setting: `eco.agent.review_mode` (default OFF, opt-in en Settings → General).
 - Endpoints: `POST /file/accept | accept-hunk | revert-hunk | discard | contents`. Ver sección [Endpoints](#ws) abajo.
+
+### Tab Git por agente (history, cherry-pick, merge, reset, revert)
+- `frontend/src/components/GitPanel/GitPanel.tsx` — contenedor del tab con sub-nav (Cambios | Historial | Ramas | PRs). Sub-pestaña activa persistida en `eco.git.subtab.<bubbleId>` (default `changes`). `OpInProgressBanner` sticky arriba.
+- `frontend/src/components/GitPanel/HistoryView.tsx` + `CommitDetailPanel.tsx` — log paginado (scroll infinito) + detalle con diff completo y acciones por commit: Cherry-pick a otra rama (selector + confirmación + checkout automático), Revert, Reset to here (soft/mixed/hard con doble confirm tipeando `HARD RESET`), Copy SHA.
+- `frontend/src/components/GitPanel/BranchesView.tsx` — wrapping del `BranchPicker` con sección "Merge into current" abajo (selector + flags `--no-ff` / `--squash`).
+- `frontend/src/components/GitPanel/PRsView.tsx` — lógica de `PullRequestsList` con layout amplio.
+- `frontend/src/components/GitPanel/OpInProgressBanner.tsx` — detecta cherry-pick/merge/revert en progreso via `useGitOpStatus`, ofrece Continuar/Abortar/"Resolver en Cambios".
+- `frontend/src/components/GitMiniDock.tsx` — sidebar derecho compacto: chip rama + ahead/behind + commit rápido + push + `CurrentPrBanner` + atajo "Abrir tab Git".
+- Hooks: `useGitLog`, `useGitOpStatus` (con `peekOpStatus` sincrónico para Dashboard), `useBranches`.
+- Backend: `backend/src/git-history.ts` (log/show), `git-ops-advanced.ts` (cherry-pick/merge/revert/reset/abort/continue/opStatus). Endpoints en `index.ts`: `GET /git/log | show | op-status`, `POST /git/cherry-pick | merge | revert | reset | abort | continue`.
+- Validaciones: SHA via regex hex 4-40, branch/tag name via regex sin metacaracteres shell. Reset hard hace pre-check de commits perdidos con `rev-list --count` y devuelve `code: 'reset.would_lose_commits'` si > 0 — solo procede con `force: true`.
+- Detección de op en progreso: `git rev-parse --git-dir` para resolver el path real del `.git` (en worktrees es un archivo, no dir), luego `existsSync(CHERRY_PICK_HEAD|MERGE_HEAD|REVERT_HEAD)`.
 
 ### Claude SDK
 - `backend/src/agent.ts` — wrapper del Claude Agent SDK
@@ -243,7 +255,8 @@ Todas las claves usan prefijo `eco.`. Si agregás nuevas, mantenelo y agregá a 
 eco.session                              ← session token (X-Eco-Session header)
 eco.voice.autostart                      ← '0' para deshabilitar auto-listen
 eco.tts.enabled / voice / rate / volume
-eco.detail.tab.<bubbleId>                ← última tab activa
+eco.detail.tab.<bubbleId>                ← última tab activa (chat|terminal|git|plan|browser|server). Si encontrás 'files' es migración legacy → mapeá a 'git'.
+eco.git.subtab.<bubbleId>                ← sub-pestaña activa del tab Git (branches|history|changes|prs)
 eco.terminals.<bubbleId>                 ← terminales extra (sin Claude) [{id,label}]
 eco.terminals.active.<bubbleId>          ← id del terminal activo en la pestaña Shell
 eco.browser.url.<bubbleId>               ← URL del BrowserPanel
@@ -500,7 +513,8 @@ Parser: `frontend/src/lib/meta-commands.ts`. Tolera relleno discursivo (`me`, `p
 
 | Comando | Acción |
 |---|---|
-| `Eco chat/terminal/archivos/plan/navegador` | Cambia tab |
+| `Eco chat/terminal/git/plan/navegador` | Cambia tab. `Eco archivos` también funciona y abre tab Git → Cambios. |
+| `Eco historial/ramas/prs/cambios` | Cambia sub-pestaña dentro del tab Git (en detail). `Eco historial` en dashboard abre la pantalla History. |
 | `Eco scroll abajo/arriba/al final` | Scroll del panel activo |
 | `Eco repetir` | Re-lee el último mensaje (TTS) |
 | `Eco sí/no/acepta/cancela` | Diálogos de confirmación |
@@ -913,8 +927,9 @@ Tests rápidos de smoke. Si alguno falla, el PR no está listo.
 8. **`npm run dmg`** produce `.dmg` sin errores; bundle contiene `Resources/bin/eco-stt`
 9. **.app instalada** arranca, login funciona, voz funciona (con prompts macOS de Mic + Speech Recognition la primera vez)
 10. **Persistencia dev server**: con un server corriendo, matar el backend → `~/.eco/dev-sessions.json` tiene la entrada → relanzar backend → server aparece como running
+11. **Tab Git**: en una conversación con worktree git, abrir tab Git → recorrer las 6 sub-pestañas (Cambios/Historial/Ramas/Stash/Tags/PRs) sin errores en consola. Cherry-pick de un commit en Historial → verde. Iniciar cherry-pick con conflicto → OpInProgressBanner aparece → Abortar → estado limpio. Reset hard sobre commits posteriores al HEAD pide tipear `HARD RESET` antes de habilitar Confirmar.
 
-Si pasa los 10, sigue al siguiente paso (commit/push si Sergio lo autoriza).
+Si pasa los 11, sigue al siguiente paso (commit/push si Sergio lo autoriza).
 
 ---
 

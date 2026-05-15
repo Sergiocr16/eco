@@ -11,6 +11,8 @@ import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
 import { attachPtyServer, killBubblePty, killBubbleTerminal } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
+import * as gitHistory from './git-history.js';
+import * as gitAdv from './git-ops-advanced.js';
 import * as devServer from './dev-server.js';
 import * as obsidian from './obsidian.js';
 import { getClaudeAuthStatus } from './claude-auth.js';
@@ -674,6 +676,131 @@ app.post('/git/pr/close', (req: Request, res: Response) => {
   if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
   const comment = typeof req.body?.comment === 'string' ? req.body.comment : undefined;
   res.json(gitOps.closePullRequest(dir, num, comment));
+});
+
+// ─── Git history (log + show) ─────────────────────────────────────────────
+app.get('/git/log', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const branch = typeof req.query.branch === 'string' ? req.query.branch : undefined;
+  const pathFilter = typeof req.query.path === 'string' ? req.query.path : undefined;
+  const limitRaw = Number(req.query.limit);
+  const skipRaw = Number(req.query.skip);
+  const all = req.query.all === '1' || req.query.all === 'true';
+  res.json(gitHistory.gitLog(dir, {
+    branch,
+    path: pathFilter,
+    limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
+    skip: Number.isFinite(skipRaw) ? skipRaw : undefined,
+    all,
+  }));
+});
+
+app.get('/git/show', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const sha = typeof req.query.sha === 'string' ? req.query.sha : '';
+  if (!sha) return errResponse(res, 400, 'http.invalid_body', 'sha requerido');
+  res.json(gitHistory.gitShow(dir, sha));
+});
+
+// ─── Git ops avanzadas (cherry-pick, merge, revert, reset, abort/continue) ─
+const CherryPickSchema = z.object({
+  workspace: z.string().min(1).max(4096),
+  bubbleId: z.string().max(128).optional(),
+  shas: z.array(z.string().min(4).max(40)).min(1).max(50),
+});
+app.post('/git/cherry-pick', (req: Request, res: Response) => {
+  const parsed = CherryPickSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const result = gitAdv.cherryPick(dir, parsed.data.shas);
+  invalidateFileChanges(dir);
+  res.json(result);
+});
+
+const MergeSchema = z.object({
+  workspace: z.string().min(1).max(4096),
+  bubbleId: z.string().max(128).optional(),
+  source: z.string().min(1).max(256),
+  noFf: z.boolean().optional(),
+  squash: z.boolean().optional(),
+  message: z.string().max(500).optional(),
+});
+app.post('/git/merge', (req: Request, res: Response) => {
+  const parsed = MergeSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const { source, noFf, squash, message } = parsed.data;
+  const result = gitAdv.mergeBranch(dir, source, { noFf, squash, message });
+  invalidateFileChanges(dir);
+  res.json(result);
+});
+
+const RevertSchema = z.object({
+  workspace: z.string().min(1).max(4096),
+  bubbleId: z.string().max(128).optional(),
+  sha: z.string().min(4).max(40),
+});
+app.post('/git/revert', (req: Request, res: Response) => {
+  const parsed = RevertSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const result = gitAdv.revertCommit(dir, parsed.data.sha);
+  invalidateFileChanges(dir);
+  res.json(result);
+});
+
+const ResetSchema = z.object({
+  workspace: z.string().min(1).max(4096),
+  bubbleId: z.string().max(128).optional(),
+  ref: z.string().min(1).max(256),
+  mode: z.enum(['soft', 'mixed', 'hard']),
+  force: z.boolean().optional(),
+});
+app.post('/git/reset', (req: Request, res: Response) => {
+  const parsed = ResetSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const { ref, mode, force } = parsed.data;
+  const result = gitAdv.resetTo(dir, ref, mode, !!force);
+  invalidateFileChanges(dir);
+  res.json(result);
+});
+
+const OpSchema = z.object({
+  workspace: z.string().min(1).max(4096),
+  bubbleId: z.string().max(128).optional(),
+  op: z.enum(['cherry-pick', 'merge', 'revert']),
+});
+app.post('/git/abort', (req: Request, res: Response) => {
+  const parsed = OpSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const result = gitAdv.abortOp(dir, parsed.data.op);
+  invalidateFileChanges(dir);
+  res.json(result);
+});
+
+app.post('/git/continue', (req: Request, res: Response) => {
+  const parsed = OpSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const result = gitAdv.continueOp(dir, parsed.data.op);
+  invalidateFileChanges(dir);
+  res.json(result);
+});
+
+app.get('/git/op-status', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  res.json(gitAdv.opStatus(dir));
 });
 
 // ─── Worktrees mantenimiento ──────────────────────────────────────────────
