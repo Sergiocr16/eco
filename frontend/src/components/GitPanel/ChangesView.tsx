@@ -100,7 +100,9 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
         minLeft={220}
         left={
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: t.bg1, minHeight: 0 }}>
-            <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
+            {/* Display flex + minHeight 0 para que EmptyState pueda usar flex:1
+                y centrar verticalmente dentro del espacio disponible. */}
+            <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <EmptyState
                 message={loading ? 'Cargando…' : tr('detail.files.empty')}
                 hint={loading ? undefined : 'No hay archivos modificados en el worktree.'}

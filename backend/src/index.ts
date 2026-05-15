@@ -650,6 +650,16 @@ app.post('/git/pr/checkout', (req: Request, res: Response) => {
   res.json(gitOps.checkoutPullRequest(dir, num));
 });
 
+// Detalle completo de un PR: descripción + comentarios + reviews + commits.
+// Usado por la sub-pestaña PRs del tab Git cuando el user clickea "Ver detalle".
+app.get('/git/pr/details', (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const num = Number(req.query.number);
+  if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
+  res.json(gitOps.pullRequestDetails(dir, num));
+});
+
 // PR asociado a la rama actual del worktree (si lo hay). Lo consume el
 // banner del chat para mostrar "estás en el PR #N" + acciones merge/close.
 app.get('/git/pr/current', (req: Request, res: Response) => {

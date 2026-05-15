@@ -338,10 +338,14 @@ function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
   // tiempo real — mismo criterio que los satélites de la vista de nodos.
   const liveIds = new Set(bubbles.map((b) => b.id));
 
-  // Terminales: PTYs que están procesando algo ahora mismo (no solo abiertos —
-  // un shell idle no es un recurso "en uso"). Set vivo de usePtyBusyNotifier.
-  const busyPtyIds = useBusyBubbleIds();
-  const ptys = [...busyPtyIds].filter((id) => liveIds.has(id)).length;
+  // Terminales: PTYs abiertos en cualquier bubble viva (mismo criterio que
+  // el satélite "pty" en la vista de nodos, que se prende con b.ptyOpen).
+  // Antes solo contábamos los busy — pero el label es "Terminales activas"
+  // = abiertas, no procesando. Así matchea el satélite.
+  const ptys = bubbles.filter((b) => b.ptyOpen).length;
+  // Mantenemos referencia al hook para no perder el suscriptor de eventos
+  // que actualiza el spinner de "Procesando…" en los satélites individuales.
+  void useBusyBubbleIds();
 
   // Dev servers: escuchamos eco:dev_status para mantener un Map por bubble.
   // Seed inicial con /dev/active para no perder estado al montar el dashboard
@@ -438,16 +442,20 @@ function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
   }, []);
   const remote = [...remoteSet].filter((id) => liveIds.has(id)).length;
 
-  // Worktrees: workspaces únicos en uso.
-  const worktrees = new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size;
+  // Worktrees: uno por bubble con workspace git. Cada bubble tiene su propio
+  // worktree aislado (~/.eco/worktrees/<bubbleId>), aunque varias bubbles
+  // compartan el mismo workspace padre.
+  const worktrees = bubbles.filter((b) => !!b.workspace).length;
 
+  // Colores en sync con los satélites de la vista de nodos para que el
+  // user reconozca cada subsistema con el mismo color en ambos lados.
   const items = [
-    { icon: IconTerminal, count: ptys,      color: t.ok,     label: tr('dash.card.res.ptys') },
-    { icon: IconCpu,      count: servers,   color: t.busy,   label: tr('dash.card.res.servers') },
-    { icon: IconGlobe,    count: browsers,  color: t.accent, label: tr('dash.card.res.browsers') },
-    { icon: IconGithub,   count: files,     color: t.warn,   label: tr('dash.card.res.files') },
-    { icon: IconCommand,  count: remote,    color: t.accent, label: tr('dash.card.res.remote') },
-    { icon: IconFolder,   count: worktrees, color: t.text2,  label: tr('dash.card.res.worktrees') },
+    { icon: IconTerminal, count: ptys,      color: t.ok,      label: tr('dash.card.res.ptys') },       // verde
+    { icon: IconCpu,      count: servers,   color: '#facc15', label: tr('dash.card.res.servers') },    // amarillo
+    { icon: IconGlobe,    count: browsers,  color: '#94a3b8', label: tr('dash.card.res.browsers') },   // gris
+    { icon: IconGithub,   count: files,     color: '#a855f7', label: tr('dash.card.res.files') },      // morado
+    { icon: IconCommand,  count: remote,    color: '#d97757', label: tr('dash.card.res.remote') },     // naranja Claude
+    { icon: IconFolder,   count: worktrees, color: t.text2,   label: tr('dash.card.res.worktrees') },  // gris tema (sin satélite asociado)
   ];
 
   return (
@@ -1865,13 +1873,11 @@ const SAT_ICONS = {
       <path d="M2 12h20M12 2a15 15 0 010 20 15 15 0 010-20z"/>
     </>
   ),
-  // Claude remote control — antena con ondas, da idea de "control remoto activo"
+  // Claude remote control — sparkle de 4 puntas (mark del logo de Claude).
+  // El SVG padre del satélite usa fill="none" stroke=accentOn, así que
+  // queda como outline limpio del sparkle.
   remote: (
-    <>
-      <path d="M12 13v8"/>
-      <circle cx="12" cy="11" r="2"/>
-      <path d="M7 7a7 7 0 0110 0M4.5 4.5a11 11 0 0115 0"/>
-    </>
+    <path d="M12 4c.4 4.5 1.5 7 6 8-4.5 1-5.6 3.5-6 8-.4-4.5-1.5-7-6-8 4.5-1 5.6-3.5 6-8z"/>
   ),
   // Cambios pendientes — Mark de GitHub (el satélite ahora abre el tab Git → Cambios).
   files: (
@@ -1910,12 +1916,15 @@ function SatellitesLocal({
   const [hoverKey, setHoverKey] = useState<SatKey | null>(null);
   const busy = useBubbleBusy(n.id);
   const items: { key: SatKey; on: boolean; color: string; label: string; icon: JSX.Element; pulse?: boolean }[] = [
-    { key: 'chat',    on: n.hasChat,    color: t.text2,  label: 'Conversación',          icon: SAT_ICONS.chat },
+    { key: 'chat',    on: n.hasChat,    color: '#3b82f6', label: 'Conversación',          icon: SAT_ICONS.chat },
     { key: 'pty',     on: n.hasPty,     color: t.ok,     label: busy ? 'Procesando…' : 'Terminal', icon: SAT_ICONS.pty, pulse: busy },
-    { key: 'files',   on: n.hasFiles,   color: t.warn,   label: 'Cambios sin commitear', icon: SAT_ICONS.files, pulse: true },
-    { key: 'server',  on: n.hasServer,  color: t.busy,   label: 'Server',                icon: SAT_ICONS.server },
-    { key: 'browser', on: n.hasBrowser, color: t.err,    label: 'Navegador',             icon: SAT_ICONS.browser },
-    { key: 'remote',  on: n.hasRemote,  color: t.accent, label: 'Claude remote control', icon: SAT_ICONS.remote, pulse: true },
+    // Color morado para diferenciarlo del satélite Server (busy=naranja/amber).
+    { key: 'files',   on: n.hasFiles,   color: '#a855f7', label: 'Cambios sin commitear', icon: SAT_ICONS.files, pulse: true },
+    // Color amarillo brillante para Server (antes usaba t.busy del tema).
+    { key: 'server',  on: n.hasServer,  color: '#facc15', label: 'Server',                icon: SAT_ICONS.server },
+    { key: 'browser', on: n.hasBrowser, color: '#94a3b8', label: 'Navegador',             icon: SAT_ICONS.browser },
+    // Color naranja Claude — diferencia del t.accent del tema (que coincidía con el verde PTY en algunos temas).
+    { key: 'remote',  on: n.hasRemote,  color: '#d97757', label: 'Claude remote control', icon: SAT_ICONS.remote, pulse: true },
   ];
   const visible = items.filter((it) => it.on);
   if (visible.length === 0) return null;

@@ -894,6 +894,141 @@ export function currentPullRequest(workspace: string): CurrentPrResult {
   }
 }
 
+// Detalle completo de un PR para mostrar en el panel de detalle: body
+// (descripción), comentarios (de issue + de review) y conteo de commits.
+export type PrComment = {
+  author: string;
+  authorAvatarUrl?: string;
+  body: string;
+  createdAt: string;
+  // Tipo del comentario para que la UI pueda diferenciar visualmente:
+  // 'issue'   = comentario general del PR
+  // 'review'  = un review (approve, request_changes, comment)
+  // 'inline'  = comentario sobre un archivo específico (dentro de un review)
+  kind: 'issue' | 'review' | 'inline';
+  // Para reviews: APPROVED / CHANGES_REQUESTED / COMMENTED / DISMISSED
+  state?: string;
+  // Para inline: path del archivo donde quedó el comentario
+  path?: string;
+};
+
+export type PrDetails = {
+  number: number;
+  title: string;
+  body: string;
+  author: string;
+  headRefName: string;
+  baseRefName: string;
+  state: string;
+  isDraft: boolean;
+  url: string;
+  commitsCount: number;
+  comments: PrComment[];
+  additions?: number;
+  deletions?: number;
+};
+
+export type PrDetailsResult =
+  | { ok: true; pr: PrDetails }
+  | { ok: false; error: string; code?: string };
+
+export function pullRequestDetails(workspace: string, number: number): PrDetailsResult {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git', code: 'git.not_a_repo' };
+  if (!ghAvailable()) return { ok: false, error: 'gh CLI no instalado', code: 'pr.gh_missing' };
+  if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
+
+  // Pido en un solo gh call todos los campos que necesito para no spawnear
+  // gh varias veces. `comments` trae los issue comments. `reviews` trae los
+  // reviews completos (cada uno con su body + estado + comentarios inline).
+  const r = spawnSync('gh', [
+    'pr', 'view', String(number),
+    '--json', 'number,title,body,author,headRefName,baseRefName,state,isDraft,url,additions,deletions,commits,comments,reviews',
+  ], {
+    cwd: workspace,
+    timeout: 25_000,
+    encoding: 'utf-8',
+    env: buildSafeEnv({}),
+  });
+  if (r.status !== 0) {
+    const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString()).trim();
+    if (/auth/i.test(err) && /login/i.test(err)) {
+      return { ok: false, error: 'gh no autenticado', code: 'pr.gh_unauthenticated' };
+    }
+    return { ok: false, error: err.slice(0, 500) || 'gh pr view falló' };
+  }
+
+  let raw: any;
+  try { raw = JSON.parse((r.stdout ?? '').toString()); }
+  catch { return { ok: false, error: 'No pude parsear la respuesta de gh' }; }
+
+  const comments: PrComment[] = [];
+
+  // Issue comments (los más comunes — la gente comentando en el PR).
+  if (Array.isArray(raw.comments)) {
+    for (const c of raw.comments) {
+      if (!c) continue;
+      comments.push({
+        kind: 'issue',
+        author: String(c.author?.login ?? c.author?.name ?? ''),
+        body: String(c.body ?? ''),
+        createdAt: String(c.createdAt ?? ''),
+      });
+    }
+  }
+
+  // Reviews (approve/request_changes/comment). Cada review puede traer su
+  // propio body + un array de comments inline asociados a archivos.
+  if (Array.isArray(raw.reviews)) {
+    for (const rev of raw.reviews) {
+      if (!rev) continue;
+      const author = String(rev.author?.login ?? rev.author?.name ?? '');
+      const createdAt = String(rev.submittedAt ?? rev.createdAt ?? '');
+      const state = String(rev.state ?? '');
+      // Body del review (solo agregar si tiene contenido o si es un estado
+      // significativo como APPROVED/CHANGES_REQUESTED).
+      const body = String(rev.body ?? '');
+      if (body || state === 'APPROVED' || state === 'CHANGES_REQUESTED') {
+        comments.push({ kind: 'review', author, body, createdAt, state });
+      }
+      // Inline comments dentro del review (sobre archivos específicos).
+      if (Array.isArray(rev.comments)) {
+        for (const c of rev.comments) {
+          if (!c) continue;
+          comments.push({
+            kind: 'inline',
+            author: String(c.author?.login ?? c.author?.name ?? author),
+            body: String(c.body ?? ''),
+            createdAt: String(c.createdAt ?? createdAt),
+            ...(c.path ? { path: String(c.path) } : {}),
+          });
+        }
+      }
+    }
+  }
+
+  // Ordenamos por fecha asc — más viejo arriba, más nuevo abajo (estilo GitHub).
+  comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  return {
+    ok: true,
+    pr: {
+      number: Number(raw.number),
+      title: String(raw.title ?? ''),
+      body: String(raw.body ?? ''),
+      author: String(raw.author?.login ?? ''),
+      headRefName: String(raw.headRefName ?? ''),
+      baseRefName: String(raw.baseRefName ?? ''),
+      state: String(raw.state ?? 'OPEN'),
+      isDraft: !!raw.isDraft,
+      url: String(raw.url ?? ''),
+      commitsCount: Array.isArray(raw.commits) ? raw.commits.length : 0,
+      comments,
+      ...(typeof raw.additions === 'number' ? { additions: raw.additions } : {}),
+      ...(typeof raw.deletions === 'number' ? { deletions: raw.deletions } : {}),
+    },
+  };
+}
+
 /**
  * Merge del PR usando `gh pr merge`. Método configurable: merge commit
  * (default), squash o rebase. Asume que el PR está mergeable — si hay

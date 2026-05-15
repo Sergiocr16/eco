@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconGithub, IconLayers, IconGlobe } from '@/design/icons';
+import { IconGithub, IconLayers, IconBranch } from '@/design/icons';
 import { on as ecoOn } from '@/lib/eco-bus';
 import type { Bubble } from '@/lib/types';
 import { ChangesView, type FileChange } from './ChangesView';
@@ -57,7 +57,7 @@ export function GitPanel({ bubble, workspace, bubbleId, filesChanged, gitChanges
   const subnav: { id: GitSubtab; label: string; icon: typeof IconGithub; badge?: number }[] = [
     { id: 'changes', label: 'Cambios', icon: IconGithub, badge: pending || undefined },
     { id: 'history', label: 'Historial', icon: IconLayers },
-    { id: 'prs', label: 'PRs', icon: IconGlobe },
+    { id: 'prs', label: 'PRs', icon: IconBranch },
   ];
 
   return (
