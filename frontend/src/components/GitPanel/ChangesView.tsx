@@ -37,15 +37,29 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
   const review = useReviewState(bubbleId);
   const reviewMode = isReviewModeEnabled();
 
-  // Default: primer archivo modificado. Se preserva entre renders si sigue
-  // existiendo; si no, cae al primero disponible.
-  const [selected, setSelected] = useState<string | null>(null);
+  // Persistimos el archivo seleccionado por bubble — al volver al tab Git
+  // arranca con el último archivo que estabas viendo. Si ese archivo ya no
+  // está en la lista actual (porque se commiteó/descartó), cae al primero.
+  const [selected, setSelected] = useState<string | null>(() => {
+    try { return localStorage.getItem(`eco.git.selected_file.${bubbleId}`); }
+    catch { return null; }
+  });
   useEffect(() => {
+    try {
+      if (selected) localStorage.setItem(`eco.git.selected_file.${bubbleId}`, selected);
+      else localStorage.removeItem(`eco.git.selected_file.${bubbleId}`);
+    } catch { /* noop */ }
+  }, [selected, bubbleId]);
+  useEffect(() => {
+    // Mientras cargamos no tocamos `selected` — si lo resetábamos a null
+    // acá durante el primer fetch (files arranca vacío) borrábamos la
+    // persistencia del archivo que el user estaba viendo al volver al tab.
+    if (loading) return;
     if (files.length === 0) { setSelected(null); return; }
     if (selected && files.some((f) => f.path === selected)) return;
     setSelected(files[0]!.path);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files]);
+  }, [files, loading]);
 
   async function acceptAllFiles() {
     const paths = files.map((f) => f.path);

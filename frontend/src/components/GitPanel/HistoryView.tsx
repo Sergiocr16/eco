@@ -12,14 +12,39 @@ type Props = {
 
 export function HistoryView({ workspace, bubbleId }: Props) {
   const t = useTokens();
-  const [allBranches, setAllBranches] = useState(false);
+  // Persistimos allBranches por bubble — si el user activó el checkbox una
+  // vez, lo mantiene al volver al tab Git.
+  const [allBranches, setAllBranches] = useState<boolean>(() => {
+    try { return localStorage.getItem(`eco.git.history.all_branches.${bubbleId}`) === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`eco.git.history.all_branches.${bubbleId}`, allBranches ? '1' : '0'); }
+    catch { /* noop */ }
+  }, [allBranches, bubbleId]);
+
   const { commits, loading, hasMore, error, loadMore } = useGitLog(workspace, bubbleId, { all: allBranches });
-  const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  // Persistimos el commit seleccionado por bubble — al volver al tab Git
+  // arranca con el último commit que estabas viendo.
+  const [selectedSha, setSelectedSha] = useState<string | null>(() => {
+    try { return localStorage.getItem(`eco.git.selected_commit.${bubbleId}`); }
+    catch { return null; }
+  });
+  useEffect(() => {
+    try {
+      if (selectedSha) localStorage.setItem(`eco.git.selected_commit.${bubbleId}`, selectedSha);
+      else localStorage.removeItem(`eco.git.selected_commit.${bubbleId}`);
+    } catch { /* noop */ }
+  }, [selectedSha, bubbleId]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Default selection: el primer commit cuando carga.
+  // Default selection: primer commit cuando carga SI no había uno
+  // persistido. Si el SHA persistido no aparece en la lista paginada,
+  // lo MANTENEMOS — CommitDetailPanel carga el detalle vía /git/show
+  // aunque el commit esté fuera de la página actual.
   useEffect(() => {
-    if (!selectedSha && commits.length > 0) setSelectedSha(commits[0]!.sha);
+    if (commits.length === 0) return;
+    if (!selectedSha) setSelectedSha(commits[0]!.sha);
   }, [commits, selectedSha]);
 
   // Infinite scroll: cuando se acerca al final de la lista, pedimos más.
@@ -36,7 +61,14 @@ export function HistoryView({ workspace, bubbleId }: Props) {
     return () => el.removeEventListener('scroll', onScroll);
   }, [hasMore, loading, loadMore]);
 
-  const selected = commits.find((c) => c.sha === selectedSha) ?? null;
+  // Si el SHA seleccionado no está en la página actual del log (commit
+  // viejo persistido fuera del fetch inicial), creamos un summary stub —
+  // CommitDetailPanel reemplaza los campos al hacer su fetch de detalles.
+  const selectedFromList = commits.find((c) => c.sha === selectedSha);
+  const selected: LogEntry | null = selectedFromList
+    ?? (selectedSha
+      ? { sha: selectedSha, abbrev: selectedSha.slice(0, 7), author: '—', email: '', date: '', subject: '(cargando…)', body: '', refs: [], parents: [] }
+      : null);
 
   if (loading && commits.length === 0) {
     return <SubpanelLoading label="Cargando historial…"/>;

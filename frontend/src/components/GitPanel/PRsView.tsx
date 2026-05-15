@@ -7,25 +7,7 @@ import { emit as ecoEmit, on as ecoOn } from '@/lib/eco-bus';
 import { ResizableSplit } from './ResizableSplit';
 import { EmptyState, SubpanelLoading, formatRelTime } from './shared';
 import { Markdown } from './Markdown';
-
-type PullRequest = {
-  number: number;
-  title: string;
-  author: string;
-  headRefName: string;
-  baseRefName: string;
-  isDraft: boolean;
-  createdAt: string;
-  updatedAt: string;
-  url: string;
-  isFork: boolean;
-  additions?: number;
-  deletions?: number;
-};
-
-type ListResult =
-  | { ok: true; prs: PullRequest[] }
-  | { ok: false; error: string; code?: string };
+import { usePullRequests, type PullRequest } from '@/hooks/usePullRequests';
 
 type PrComment = {
   author: string;
@@ -56,42 +38,46 @@ type DetailsResult =
   | { ok: true; pr: PrDetails }
   | { ok: false; error: string; code?: string };
 
+// Cache global de detalles de PR — keyed por (workspace, bubbleId, prNumber).
+// Permite volver al mismo PR sin ver spinner; el viejo se muestra al instante
+// y se revalida en background.
+const prDetailsCache = new Map<string, DetailsResult>();
+
 type Props = { workspace: string; bubbleId: string };
 
 export function PRsView({ workspace, bubbleId }: Props) {
   const t = useTokens();
-  const [list, setList] = useState<ListResult | null>(null);
-  const [listLoading, setListLoading] = useState(false);
-  // Lee pending PR de localStorage al montar — viene del GitMiniDock cuando
-  // el user clickea el chip del PR de la rama actual y GitPanel aún no
-  // estaba montado (evento eco:open_pr se hubiera perdido).
+  const { data: list, loading: listLoading, refresh } = usePullRequests(workspace, bubbleId);
+  // Lee selección al montar. Dos fuentes:
+  //  1) pending_pr (one-shot): viene del GitMiniDock cuando el user clickea
+  //     el chip del PR de la rama actual — intent explícito, prioridad alta.
+  //     Se consume y borra en el primer mount.
+  //  2) selected_pr (sticky): último PR que el user estaba viendo en este
+  //     bubble. Se persiste cada vez que cambia para que volver al tab Git
+  //     recuerde dónde estabas (incluso si salís a otro tab y volvés).
   const [selected, setSelected] = useState<number | null>(() => {
     try {
-      const raw = localStorage.getItem(`eco.git.pending_pr.${bubbleId}`);
-      if (raw) {
+      const pending = localStorage.getItem(`eco.git.pending_pr.${bubbleId}`);
+      if (pending) {
         localStorage.removeItem(`eco.git.pending_pr.${bubbleId}`);
-        const n = Number(raw);
+        const n = Number(pending);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      const sticky = localStorage.getItem(`eco.git.selected_pr.${bubbleId}`);
+      if (sticky) {
+        const n = Number(sticky);
         if (Number.isFinite(n) && n > 0) return n;
       }
     } catch { /* noop */ }
     return null;
   });
-
-  const refresh = useCallback(async () => {
-    if (!workspace) return;
-    setListLoading(true);
+  // Persistir cuando cambia el seleccionado.
+  useEffect(() => {
     try {
-      const params = new URLSearchParams({ workspace, bubbleId });
-      const r = await apiFetch(`/git/prs?${params}`);
-      setList(await r.json() as ListResult);
-    } catch (e) {
-      setList({ ok: false, error: e instanceof Error ? e.message : 'Error' });
-    } finally {
-      setListLoading(false);
-    }
-  }, [workspace, bubbleId]);
-
-  useEffect(() => { void refresh(); }, [refresh]);
+      if (selected != null) localStorage.setItem(`eco.git.selected_pr.${bubbleId}`, String(selected));
+      else localStorage.removeItem(`eco.git.selected_pr.${bubbleId}`);
+    } catch { /* noop */ }
+  }, [selected, bubbleId]);
 
   // Escucha eco:open_pr (emitido por GitMiniDock cuando el user clickea el
   // chip del PR de la rama actual) para preseleccionar ese PR en el detalle.
@@ -246,12 +232,14 @@ function PrDetailPane({
   onAfterCheckout: () => void;
 }) {
   const t = useTokens();
-  const [details, setDetails] = useState<DetailsResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Cache global del detalle del PR — al volver al MISMO PR no se ve spinner,
+  // se muestra el detalle viejo y se revalida en background.
+  const cacheKey = `${workspace}|${bubbleId}|${prNumber}`;
+  const cached = prDetailsCache.get(cacheKey);
+  const [details, setDetails] = useState<DetailsResult | null>(cached ?? null);
+  const [loading, setLoading] = useState(!cached);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  // Confirmaciones — mostrar modal antes de mergear/cerrar (operaciones que
-  // afectan el repo remoto y son difíciles de revertir).
   const [mergeConfirm, setMergeConfirm] = useState<{ method: 'merge' | 'squash' | 'rebase' } | null>(null);
   const [closeConfirm, setCloseConfirm] = useState<{ comment: string } | null>(null);
 
@@ -261,20 +249,27 @@ function PrDetailPane({
     return () => clearTimeout(id);
   }, [msg]);
 
-  const load = useCallback(async () => {
-    setLoading(true); setDetails(null);
+  const load = useCallback(async (silent: boolean) => {
+    if (!silent) setLoading(true);
     try {
       const params = new URLSearchParams({ workspace, bubbleId, number: String(prNumber) });
       const r = await apiFetch(`/git/pr/details?${params}`);
-      setDetails(await r.json() as DetailsResult);
+      const fresh = await r.json() as DetailsResult;
+      setDetails(fresh);
+      prDetailsCache.set(cacheKey, fresh);
     } catch (e) {
       setDetails({ ok: false, error: e instanceof Error ? e.message : 'Error' });
     } finally {
       setLoading(false);
     }
-  }, [workspace, bubbleId, prNumber]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, bubbleId, prNumber, cacheKey]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    // Si tenemos cache, mostramos sin spinner y revalidamos en background.
+    if (cached) void load(true); else void load(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
 
   async function checkout() {
     setBusyAction('checkout'); setMsg(null);
@@ -312,7 +307,7 @@ function PrDetailPane({
         setMsg({ kind: 'ok', text: d.message || `PR #${prNumber} mergeado` });
         ecoEmit('eco:git_refresh', { bubbleId });
         // Recargamos detalles para reflejar el nuevo state (MERGED).
-        void load();
+        void load(true);
       } else {
         setMsg({ kind: 'err', text: d.error || 'Merge falló' });
       }
@@ -339,7 +334,7 @@ function PrDetailPane({
       if (d.ok) {
         setMsg({ kind: 'ok', text: d.message || `PR #${prNumber} cerrado` });
         ecoEmit('eco:git_refresh', { bubbleId });
-        void load();
+        void load(true);
       } else {
         setMsg({ kind: 'err', text: d.error || 'Cerrar falló' });
       }
@@ -428,7 +423,7 @@ function PrDetailPane({
             </a>
           )}
           <button type="button"
-            onClick={() => void load()}
+            onClick={() => void load(false)}
             disabled={!!busyAction}
             title="Refrescar comentarios"
             style={{
