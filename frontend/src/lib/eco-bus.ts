@@ -50,6 +50,11 @@ export type EcoBusEvents = {
   // = idle). Se usa para mostrar indicadores visuales y opcionalmente
   // notificar al sistema cuando termina.
   'eco:pty_busy_change': { bubbleId: string; busy: boolean };
+  // Abre el detalle de un PR específico en la sub-pestaña PRs del tab Git.
+  // El emisor (ej. GitMiniDock al detectar que la rama actual tiene PR) lo
+  // dispara antes/después de un switch_tab → git + switch_git_subtab → prs.
+  // PRsView lo escucha y setea su `selected`.
+  'eco:open_pr': { bubbleId: string; prNumber: number };
 };
 
 type EventName = keyof EcoBusEvents;

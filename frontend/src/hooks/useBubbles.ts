@@ -197,6 +197,7 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
         'eco.terminals.', 'eco.terminals.active.',
         'eco.git.subtab.',
         'eco.git.splitter.changes.', 'eco.git.splitter.history.',
+        'eco.git.pending_pr.',
       ];
       for (const p of prefixes) window.localStorage.removeItem(`${p}${id}`);
       // También las dual-mode meta y per-role command keys (`eco.dev.cmd.<role>.<id>`).

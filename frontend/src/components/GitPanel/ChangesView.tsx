@@ -10,7 +10,6 @@ import { CommitWithAI } from '@/components/CommitWithAI';
 import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
 import { useT } from '@/hooks/useI18n';
 import type { Bubble } from '@/lib/types';
-import { EmptyState } from './shared';
 import { ResizableSplit } from './ResizableSplit';
 
 export type FileChange = {
@@ -93,30 +92,39 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
   const splitKey = `eco.git.splitter.changes.${bubbleId}`;
 
   if (files.length === 0) {
+    // Sin archivos modificados: NO usamos el split (esa columnita de 300 px
+    // hacía que el mensaje quedara visualmente descentrado contra el resto
+    // del panel). Mostramos el EmptyState ocupando todo el ancho del tab.
+    // Tampoco mostramos el commit form — sin diff no hay nada para commitear.
     return (
-      <ResizableSplit
-        storageKey={splitKey}
-        defaultLeft={300}
-        minLeft={220}
-        left={
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: t.bg1, minHeight: 0 }}>
-            {/* Display flex + minHeight 0 para que EmptyState pueda usar flex:1
-                y centrar verticalmente dentro del espacio disponible. */}
-            <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <EmptyState
-                message={loading ? 'Cargando…' : tr('detail.files.empty')}
-                hint={loading ? undefined : 'No hay archivos modificados en el worktree.'}
-              />
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        minHeight: 0, padding: 40, gap: 10,
+        background: t.bg0, color: t.text2,
+      }}>
+        {loading ? (
+          <>
+            <span style={{
+              width: 22, height: 22, borderRadius: '50%',
+              border: `2px solid ${t.glassBorder}`,
+              borderTopColor: t.accent,
+              animation: 'eco-spin 0.8s linear infinite',
+              display: 'inline-block',
+            }}/>
+            <div style={{ fontSize: 13, color: t.text2 }}>Buscando archivos modificados…</div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 14, color: t.text1, fontWeight: 500 }}>
+              {tr('detail.files.empty')}
             </div>
-            <CommitFormColumn workspace={workspace} bubbleId={bubbleId}/>
-          </div>
-        }
-        right={
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.text3, fontSize: 12, background: t.bg0 }}>
-            {loading ? 'Buscando archivos modificados…' : 'Worktree limpio'}
-          </div>
-        }
-      />
+            <div style={{ fontSize: 12, color: t.text3, maxWidth: 380, textAlign: 'center', lineHeight: 1.5 }}>
+              No hay archivos modificados en el worktree.
+            </div>
+          </>
+        )}
+      </div>
     );
   }
 

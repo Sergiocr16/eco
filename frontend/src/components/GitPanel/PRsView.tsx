@@ -3,7 +3,7 @@ import { useTokens } from '@/design/theme';
 import { Btn } from '@/design/primitives';
 import { IconBranch, IconExt, IconUser, IconCheck, IconX, IconResume } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
-import { emit as ecoEmit } from '@/lib/eco-bus';
+import { emit as ecoEmit, on as ecoOn } from '@/lib/eco-bus';
 import { ResizableSplit } from './ResizableSplit';
 import { EmptyState, SubpanelLoading, formatRelTime } from './shared';
 import { Markdown } from './Markdown';
@@ -62,7 +62,20 @@ export function PRsView({ workspace, bubbleId }: Props) {
   const t = useTokens();
   const [list, setList] = useState<ListResult | null>(null);
   const [listLoading, setListLoading] = useState(false);
-  const [selected, setSelected] = useState<number | null>(null);
+  // Lee pending PR de localStorage al montar — viene del GitMiniDock cuando
+  // el user clickea el chip del PR de la rama actual y GitPanel aún no
+  // estaba montado (evento eco:open_pr se hubiera perdido).
+  const [selected, setSelected] = useState<number | null>(() => {
+    try {
+      const raw = localStorage.getItem(`eco.git.pending_pr.${bubbleId}`);
+      if (raw) {
+        localStorage.removeItem(`eco.git.pending_pr.${bubbleId}`);
+        const n = Number(raw);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+    } catch { /* noop */ }
+    return null;
+  });
 
   const refresh = useCallback(async () => {
     if (!workspace) return;
@@ -79,6 +92,15 @@ export function PRsView({ workspace, bubbleId }: Props) {
   }, [workspace, bubbleId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Escucha eco:open_pr (emitido por GitMiniDock cuando el user clickea el
+  // chip del PR de la rama actual) para preseleccionar ese PR en el detalle.
+  useEffect(() => {
+    return ecoOn('eco:open_pr', (e) => {
+      if (e.bubbleId !== bubbleId) return;
+      setSelected(e.prNumber);
+    });
+  }, [bubbleId]);
 
   const prs = list?.ok ? list.prs : [];
 
