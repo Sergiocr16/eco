@@ -405,6 +405,43 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
 
         {!configCollapsed && (
           <>
+            {/* Comando(s) — lo más importante, va primero */}
+            {!dual ? (
+              <CommandSlot
+                role="main"
+                label="Comando para iniciar el server"
+                placeholder="npm run dev -- --port $PORT"
+                command={cmdMain}
+                onChange={(v) => saveCmd('main', v)}
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <CommandSlot
+                  role="frontend"
+                  label="Frontend"
+                  placeholder="npm run dev -- --port $PORT"
+                  command={cmdFrontend}
+                  onChange={(v) => saveCmd('frontend', v)}
+                />
+                <CommandSlot
+                  role="backend"
+                  label="Backend"
+                  placeholder="PORT=$PORT node server.js"
+                  command={cmdBackend}
+                  onChange={(v) => saveCmd('backend', v)}
+                />
+              </div>
+            )}
+
+            {/* Ajustes secundarios — agrupados debajo de los comandos */}
+            <div style={{
+              fontSize: 10.5, color: t.text3, fontWeight: 600,
+              textTransform: 'uppercase', letterSpacing: 0.5,
+              margin: '16px 2px 8px',
+            }}>
+              Ajustes
+            </div>
+
             {/* Toggle de dual */}
             <div style={{
               display: 'flex', alignItems: 'center', gap: 12,
@@ -542,34 +579,6 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
                 );
               })}
             </div>
-          </div>
-        )}
-
-        {/* Comando(s) bash */}
-        {!dual ? (
-          <CommandSlot
-            role="main"
-            label="Comando para iniciar el server"
-            placeholder="npm run dev -- --port $PORT"
-            command={cmdMain}
-            onChange={(v) => saveCmd('main', v)}
-          />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <CommandSlot
-              role="frontend"
-              label="Frontend"
-              placeholder="npm run dev -- --port $PORT"
-              command={cmdFrontend}
-              onChange={(v) => saveCmd('frontend', v)}
-            />
-            <CommandSlot
-              role="backend"
-              label="Backend"
-              placeholder="PORT=$PORT node server.js"
-              command={cmdBackend}
-              onChange={(v) => saveCmd('backend', v)}
-            />
           </div>
         )}
 
