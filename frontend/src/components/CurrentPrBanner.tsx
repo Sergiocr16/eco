@@ -17,6 +17,7 @@ import {
 } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
+import { useT } from '@/hooks/useI18n';
 
 type CurrentPr = {
   number: number;
@@ -43,6 +44,7 @@ type Props = {
 
 export function CurrentPrBanner({ workspace, bubbleId }: Props) {
   const t = useTokens();
+  const tr = useT();
   const [pr, setPr] = useState<CurrentPr | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<'merging' | 'closing' | null>(null);
@@ -116,16 +118,16 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
-        setMsg({ kind: 'ok', text: d.message || `PR #${pr.number} mergeado` });
+        setMsg({ kind: 'ok', text: d.message || tr('prs.merge.ok', { n: pr.number }) });
         // Tras merge: refrescar — gh ya hace pull del base, así que la rama
         // actual podría cambiar a `main`/`master`.
         ecoEmit('eco:git_refresh', { bubbleId });
         await fetchCurrent();
       } else {
-        setMsg({ kind: 'err', text: d.error || 'Merge falló' });
+        setMsg({ kind: 'err', text: d.error || tr('prs.merge.fail') });
       }
     } catch (e) {
-      setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusy(null);
     }
@@ -144,14 +146,14 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
-        setMsg({ kind: 'ok', text: d.message || `PR #${pr.number} cerrado` });
+        setMsg({ kind: 'ok', text: d.message || tr('prs.close.ok', { n: pr.number }) });
         ecoEmit('eco:git_refresh', { bubbleId });
         await fetchCurrent();
       } else {
-        setMsg({ kind: 'err', text: d.error || 'Close falló' });
+        setMsg({ kind: 'err', text: d.error || tr('prs.close.fail') });
       }
     } catch (e) {
-      setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusy(null);
     }
@@ -170,10 +172,10 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
     : pr?.isDraft ? t.text2
     : t.accent;
   const stateLabel =
-    state === 'MERGED' ? 'Mergeado'
-    : state === 'CLOSED' ? 'Cerrado'
-    : pr?.isDraft ? 'Draft'
-    : 'Abierto';
+    state === 'MERGED' ? tr('prs.banner.state.merged')
+    : state === 'CLOSED' ? tr('prs.banner.state.closed')
+    : pr?.isDraft ? tr('prs.banner.state.draft')
+    : tr('prs.banner.state.open');
 
   const conflicting = pr?.mergeable === 'CONFLICTING';
   const canMerge = !!pr && pr.state === 'OPEN' && !pr.isDraft && !conflicting && !busy;
@@ -214,7 +216,7 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
         }}>{stateLabel}</span>
         <span style={{ flex: 1 }}/>
         <a href={pr.url} target="_blank" rel="noopener noreferrer"
-          title="Ver en GitHub"
+          title={tr('prs.banner.view_github_tooltip')}
           style={{
             width: 22, height: 22, borderRadius: 5,
             background: 'transparent', color: t.text3,
@@ -261,7 +263,7 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
             fontSize: 9.5, fontWeight: 500,
             flexShrink: 0,
           }}>
-            <IconAlert size={9}/> conflictos
+            <IconAlert size={9}/> {tr('prs.banner.conflicts')}
           </span>
         )}
       </div>
@@ -287,7 +289,7 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
             <button type="button"
               onClick={() => setConfirming({ method: 'merge' })}
               disabled={!canMerge}
-              title={conflicting ? 'Hay conflictos — resolvelos primero' : pr.isDraft ? 'PR en draft' : 'Mergear con merge commit'}
+              title={conflicting ? tr('prs.banner.conflict_tooltip') : pr.isDraft ? tr('prs.banner.draft_tooltip') : tr('prs.banner.merge_tooltip')}
               style={{
                 flex: 1, minWidth: 0,
                 padding: '6px 8px',
@@ -302,12 +304,12 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
               }}>
               <IconCheck size={10}/>
-              {busy === 'merging' ? 'Mergeando…' : 'Mergear'}
+              {busy === 'merging' ? tr('prs.banner.merging') : tr('prs.banner.merge_btn')}
             </button>
             <button type="button"
               onClick={() => setShowMergeMenu((v) => !v)}
               disabled={!canMerge}
-              title="Elegir método de merge"
+              title={tr('prs.banner.merge_method_tooltip')}
               style={{
                 padding: '6px 7px',
                 borderTopLeftRadius: 0, borderBottomLeftRadius: 0,
@@ -354,9 +356,9 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
                         }}
                         onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                        <div>{m === 'merge' ? 'Merge commit' : m === 'squash' ? 'Squash and merge' : 'Rebase and merge'}</div>
+                        <div>{m === 'merge' ? tr('prs.banner.method.merge.label') : m === 'squash' ? tr('prs.banner.method.squash.label') : tr('prs.banner.method.rebase.label')}</div>
                         <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>
-                          {m === 'merge' ? 'Crea merge commit en la base' : m === 'squash' ? 'Aplasta commits en uno' : 'Reaplica commits sobre la base'}
+                          {m === 'merge' ? tr('prs.banner.method.merge.desc') : m === 'squash' ? tr('prs.banner.method.squash.desc') : tr('prs.banner.method.rebase.desc')}
                         </div>
                       </button>
                     ))}
@@ -369,7 +371,7 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
           <button type="button"
             onClick={() => setConfirming('close')}
             disabled={!canClose}
-            title="Cerrar el PR sin mergear"
+            title={tr('prs.banner.close_tooltip')}
             style={{
               padding: '6px 10px', borderRadius: 7,
               border: `1px solid ${t.glassBorder}`,
@@ -381,7 +383,7 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
               flexShrink: 0,
             }}>
             <IconX size={10}/>
-            {busy === 'closing' ? 'Cerrando…' : 'Cerrar'}
+            {busy === 'closing' ? tr('prs.banner.closing') : tr('prs.banner.close_btn')}
           </button>
         </div>
       )}
@@ -449,12 +451,13 @@ function ConfirmMergeDialog({
   onConfirm: () => void;
 }) {
   const t = useTokens();
-  const methodLabel = method === 'merge' ? 'Merge commit'
-    : method === 'squash' ? 'Squash and merge'
-    : 'Rebase and merge';
-  const methodDesc = method === 'merge' ? 'Crea un merge commit en la rama base.'
-    : method === 'squash' ? 'Aplasta todos los commits del PR en uno solo.'
-    : 'Reaplica los commits del PR sobre la rama base.';
+  const tr = useT();
+  const methodLabel = method === 'merge' ? tr('prs.banner.confirm_merge.method_merge.label')
+    : method === 'squash' ? tr('prs.banner.confirm_merge.method_squash.label')
+    : tr('prs.banner.confirm_merge.method_rebase.label');
+  const methodDesc = method === 'merge' ? tr('prs.banner.confirm_merge.method_merge.desc')
+    : method === 'squash' ? tr('prs.banner.confirm_merge.method_squash.desc')
+    : tr('prs.banner.confirm_merge.method_rebase.desc');
   return createPortal((
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -479,7 +482,7 @@ function ConfirmMergeDialog({
           boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
         }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
-          ¿Mergear el PR #{pr.number}?
+          {tr('prs.banner.confirm_merge.title', { n: pr.number })}
         </h3>
         <div style={{
           fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 14,
@@ -491,7 +494,7 @@ function ConfirmMergeDialog({
             background: t.bg3, color: t.text1,
           }}>{pr.title}</code>
           <div style={{ marginTop: 6 }}>
-            Método: <strong style={{ color: t.text1 }}>{methodLabel}</strong> — {methodDesc}
+            {tr('prs.banner.confirm_merge.method')}: <strong style={{ color: t.text1 }}>{methodLabel}</strong> — {methodDesc}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -501,13 +504,13 @@ function ConfirmMergeDialog({
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
               fontSize: 12.5, cursor: 'pointer',
-            }}>Cancelar</button>
+            }}>{tr('common.cancel')}</button>
           <button type="button" onClick={onConfirm}
             style={{
               padding: '9px 14px', borderRadius: 9,
               background: t.ok, color: '#fff', border: 0,
               fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-            }}>Mergear</button>
+            }}>{tr('prs.banner.merge_btn')}</button>
         </div>
       </motion.div>
     </motion.div>
@@ -522,6 +525,7 @@ function ConfirmCloseDialog({
   onConfirm: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   // Portal a <body> — el sidebar tiene ancestors con backdrop-filter del
   // Glass que pueden atrapar position:fixed.
   return createPortal((
@@ -548,7 +552,7 @@ function ConfirmCloseDialog({
           boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
         }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
-          ¿Cerrar el PR #{pr.number} sin mergear?
+          {tr('prs.banner.confirm_close.title', { n: pr.number })}
         </h3>
         <div style={{
           fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 14,
@@ -560,14 +564,14 @@ function ConfirmCloseDialog({
             background: t.bg3, color: t.text1,
           }}>{pr.title}</code>
           <div style={{ marginTop: 6 }}>
-            Esto cierra el PR en GitHub sin merge. La rama remota
+            {tr('prs.banner.confirm_close.body_pre')}
             <code style={{
               fontFamily: t.fontMono, fontSize: 10.5,
               padding: '1px 4px', borderRadius: 3,
               background: t.bg3, color: t.text1,
               margin: '0 4px',
             }}>{pr.headRefName}</code>
-            no se borra; podés re-abrir el PR después si querés.
+            {tr('prs.banner.confirm_close.body_post')}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -577,13 +581,13 @@ function ConfirmCloseDialog({
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
               fontSize: 12.5, cursor: 'pointer',
-            }}>Cancelar</button>
+            }}>{tr('common.cancel')}</button>
           <button type="button" onClick={onConfirm}
             style={{
               padding: '9px 14px', borderRadius: 9,
               background: t.err, color: '#fff', border: 0,
               fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-            }}>Cerrar PR</button>
+            }}>{tr('prs.detail.close_btn')}</button>
         </div>
       </motion.div>
     </motion.div>

@@ -6,6 +6,7 @@ import { Glass } from '@/design/primitives';
 import { IconBranch, IconSearch, IconX, IconCheck, IconResume, IconEdit, IconAgent } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
+import { useT } from '@/hooks/useI18n';
 
 type BranchInfo = {
   name: string;
@@ -34,6 +35,7 @@ type Props = {
 
 export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
   const t = useTokens();
+  const tr = useT();
   const [data, setData] = useState<BranchListResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -65,7 +67,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
         setActionMsg({ kind: 'err', text: `HTTP ${r.status}` });
       }
     } catch (e) {
-      setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally { setLoading(false); }
   };
 
@@ -112,14 +114,14 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
-        setActionMsg({ kind: 'ok', text: d.message || 'Rama renombrada' });
+        setActionMsg({ kind: 'ok', text: d.message || tr('branch.rename_ok') });
         setRenaming(false); setNewName('');
         await refresh();
       } else {
-        setActionMsg({ kind: 'err', text: d.error || 'Rename falló' });
+        setActionMsg({ kind: 'err', text: d.error || tr('branch.rename_fail') });
       }
     } catch (e) {
-      setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     }
   }
 
@@ -138,7 +140,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
-        setActionMsg({ kind: 'ok', text: d.message || 'OK' });
+        setActionMsg({ kind: 'ok', text: d.message || tr('common.ok') });
         await refresh();
         // Notificamos a CurrentPrBanner + PullRequestsList + FilesPanel etc.
         // que el estado git cambió: rama nueva implica posiblemente otro PR
@@ -153,10 +155,10 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
           files: Array.isArray(d.files) ? d.files : [],
         });
       } else {
-        setActionMsg({ kind: 'err', text: d.error || `Error en ${action}` });
+        setActionMsg({ kind: 'err', text: d.error || tr('branch.action_fail', { action }) });
       }
     } catch (e) {
-      setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusyBranch(null);
       setBusyAction(null);
@@ -196,7 +198,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
             autoFocus
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="nuevo-nombre-rama"
+            placeholder={tr('branch.placeholder_new')}
             style={{
               flex: 1, minWidth: 0,
               background: t.bg2, border: `1px solid ${t.accent}`,
@@ -210,7 +212,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
             }}
           />
           <button type="button" onClick={() => void doRename()}
-            title="Guardar (Enter)"
+            title={tr('branch.save_tooltip')}
             style={{
               width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
               background: t.accent, color: t.accentOn, cursor: 'pointer',
@@ -219,7 +221,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
             <IconCheck size={11}/>
           </button>
           <button type="button" onClick={() => { setRenaming(false); setNewName(''); }}
-            title="Cancelar (Esc)"
+            title={tr('branch.cancel_tooltip')}
             style={{
               width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
               background: t.bg3, color: t.text2, cursor: 'pointer',
@@ -254,7 +256,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 lineHeight: 1.3,
               }}>
-                {loading && !data ? '…' : (currentBranch ?? (noRepo ? 'sin git' : '—'))}
+                {loading && !data ? '…' : (currentBranch ?? (noRepo ? tr('branch.no_repo') : tr('common.empty_dash')))}
               </div>
               {(currentInfo || (data && data.branches.length > 0)) && (
                 <div style={{
@@ -266,7 +268,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
                   {currentInfo?.behind != null && currentInfo.behind > 0 && (
                     <span style={{ color: t.warn, fontFamily: t.fontMono }}>↓{currentInfo.behind}</span>
                   )}
-                  <span>{data!.branches.length} branches</span>
+                  <span>{tr('branch.branches_count', { n: data!.branches.length })}</span>
                 </div>
               )}
             </div>
@@ -290,7 +292,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
                 <button
                   type="button"
                   onClick={() => onRenameAgent(currentBranch)}
-                  title={`Renombrar el agente a «${currentBranch}»`}
+                  title={tr('branch.rename_agent_tooltip', { name: currentBranch })}
                   style={{
                     width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
                     background: 'transparent', color: t.text3, cursor: 'pointer',
@@ -305,7 +307,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
               <button
                 type="button"
                 onClick={() => { setNewName(currentBranch); setRenaming(true); }}
-                title="Renombrar rama actual"
+                title={tr('branch.rename_branch_tooltip')}
                 style={{
                   width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
                   background: 'transparent', color: t.text3, cursor: 'pointer',
@@ -323,10 +325,10 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
       {!noRepo && (
         <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
           <ToolbarBtn icon={IconResume} loading={busyAction === 'fetch'} onClick={() => void run('fetch')}>
-            Fetch
+            {tr('branch.fetch')}
           </ToolbarBtn>
           <ToolbarBtn primary loading={busyAction === 'pull'} onClick={() => void run('pull')}>
-            Pull
+            {tr('branch.pull')}
           </ToolbarBtn>
         </div>
       )}
@@ -392,7 +394,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar…"
+                  placeholder={tr('branch.search_placeholder')}
                   style={{
                     flex: 1, minWidth: 0,
                     background: 'transparent', border: 0, outline: 'none',
@@ -409,10 +411,10 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
               {/* Tabs local / remoto */}
               <div style={{ display: 'flex', gap: 3, marginBottom: 6 }}>
                 <SubTab active={tab === 'local'} onClick={() => setTab('local')}>
-                  Local {data ? `· ${data.branches.filter((b) => !b.isRemote).length}` : ''}
+                  {tr('branch.tab.local')} {data ? `· ${data.branches.filter((b) => !b.isRemote).length}` : ''}
                 </SubTab>
                 <SubTab active={tab === 'remote'} onClick={() => setTab('remote')}>
-                  Remoto {data ? `· ${data.branches.filter((b) => b.isRemote).length}` : ''}
+                  {tr('branch.tab.remote')} {data ? `· ${data.branches.filter((b) => b.isRemote).length}` : ''}
                 </SubTab>
               </div>
               {/* Lista */}
@@ -422,10 +424,10 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
                 margin: '0 -2px',
               }}>
                 {loading && !data ? (
-                  <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: t.text3 }}>Cargando…</div>
+                  <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: t.text3 }}>{tr('common.loading')}</div>
                 ) : filtered.length === 0 ? (
                   <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: t.text3 }}>
-                    {query ? 'Sin coincidencias' : (tab === 'local' ? 'Sin branches locales' : 'Sin branches remotas')}
+                    {query ? tr('branch.list.empty_match') : (tab === 'local' ? tr('branch.list.empty_local') : tr('branch.list.empty_remote'))}
                   </div>
                 ) : (
                   filtered.map((b) => (
@@ -477,6 +479,7 @@ function DirtyChangesDialog({
   onDiscard: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // Portal a <body> para esquivar contenedores con transform/filter que
   // capturarían el position:fixed y lo posicionarían respecto a ellos en
@@ -517,9 +520,9 @@ function DirtyChangesDialog({
           <div style={{ flex: 1 }}>
             <h3 style={{
               margin: 0, fontSize: 15, fontWeight: 600, color: t.text0, letterSpacing: -0.2,
-            }}>Cambios sin commitear</h3>
+            }}>{tr('branch.dirty.title')}</h3>
             <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>
-              No podés saltar a <code style={{ fontFamily: t.fontMono, color: t.text1 }}>{branch}</code> sin decidir qué hacer con los cambios actuales.
+              {tr('branch.dirty.body', { branch })}
             </div>
           </div>
         </div>
@@ -534,7 +537,7 @@ function DirtyChangesDialog({
             <div style={{
               fontSize: 10, color: t.text3, textTransform: 'uppercase',
               letterSpacing: 0.5, fontWeight: 600, marginBottom: 6,
-            }}>{files.length} {files.length === 1 ? 'archivo' : 'archivos'} con cambios</div>
+            }}>{files.length === 1 ? tr('branch.dirty.files_count_one', { n: files.length }) : tr('branch.dirty.files_count_many', { n: files.length })}</div>
             {files.map((f) => (
               <div key={f} style={{
                 fontFamily: t.fontMono, fontSize: 11.5, color: t.text1,
@@ -558,10 +561,10 @@ function DirtyChangesDialog({
             onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = t.bg2; }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: t.accent }}>
-              Llevar los cambios a {branch}
+              {tr('branch.dirty.carry.title', { branch })}
             </div>
             <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>
-              Stash → checkout → pop. Si hay conflictos en la otra rama, los resolvés vos.
+              {tr('branch.dirty.carry.desc')}
             </div>
           </button>
 
@@ -580,12 +583,12 @@ function DirtyChangesDialog({
               transition: 'background 140ms, border-color 140ms',
             }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: confirmDiscard ? t.err : t.text1 }}>
-              {confirmDiscard ? '¿Seguro? Click otra vez para descartar' : `Descartar y cambiar a ${branch}`}
+              {confirmDiscard ? tr('branch.dirty.discard.title_confirm') : tr('branch.dirty.discard.title', { branch })}
             </div>
             <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>
               {confirmDiscard
-                ? 'Esto es irreversible. Tus cambios se perderán.'
-                : 'Tirar los cambios sin commitear y saltar a la otra rama.'}
+                ? tr('branch.dirty.discard.desc_confirm')
+                : tr('branch.dirty.discard.desc')}
             </div>
           </button>
         </div>
@@ -596,7 +599,7 @@ function DirtyChangesDialog({
             background: 'transparent', color: t.text2,
             border: `1px solid ${t.glassBorder}`,
             fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer',
-          }}>Cancelar</button>
+          }}>{tr('common.cancel')}</button>
       </motion.div>
     </motion.div>
   ), document.body);

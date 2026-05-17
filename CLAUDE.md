@@ -22,6 +22,7 @@ Guía operativa para que cualquier agente que abra el repo pueda tomar el proyec
 16. [Cosas removidas que NO hay que restaurar](#removido)
 17. [Caps de memoria que NO hay que aflojar](#memcaps)
 18. [Pre-flight antes de cualquier PR](#preflight)
+19. [i18n — toda string user-facing va por `useT`](#i18n)
 
 ---
 
@@ -58,6 +59,7 @@ Leé en este orden para arrancar a trabajar:
 ### ALWAYS
 
 - **`npm run typecheck` debe pasar.** Antes de cualquier rebuild o commit. Si tocás backend y frontend, ambos.
+- **`npm run check:i18n` debe pasar.** Toda string user-facing pasa por `useT`/`translate`. Sin excepciones para "es corto" o "es solo un placeholder". Ver sección 19.
 - **Comunicación en español.** UI, comments útiles, mensajes en chat.
 - **Idioma de los logs/errores del usuario en español.** Backend traduce con códigos estables (`AppError` con `code` + `message`).
 - **Persistir state importante a disco** (`~/.eco/*.json` chmod 600) si tiene que sobrevivir reload del backend.
@@ -922,17 +924,103 @@ Tests rápidos de smoke. Si alguno falla, el PR no está listo.
 
 1. **`cd frontend && npx tsc --noEmit`** → 0 errores
 2. **`cd backend && npx tsc --noEmit`** → 0 errores
-3. **`npm run web`** arranca, frontend carga, login funciona
-4. **Voz en navegador** (Web Speech): click hablar → animation listening → decí "Eco terminal" → cambia tab
-5. **ServerPanel single mode**: en una conversación, comando `echo hola` → arranca → status idle (porque echo termina) → no crash
-6. **ServerPanel dual mode**: activar toggle, comandos válidos → backend arranca primero, frontend después con `API_PORT` correcto
-7. **Browser panel**: navegar a `localhost:7100/health` → JSON → cambiar tab → volver → no se recargó
-8. **`npm run dmg`** produce `.dmg` sin errores; bundle contiene `Resources/bin/eco-stt`
-9. **.app instalada** arranca, login funciona, voz funciona (con prompts macOS de Mic + Speech Recognition la primera vez)
-10. **Persistencia dev server**: con un server corriendo, matar el backend → `~/.eco/dev-sessions.json` tiene la entrada → relanzar backend → server aparece como running
-11. **Tab Git**: en una conversación con worktree git, abrir tab Git → recorrer las 6 sub-pestañas (Cambios/Historial/Ramas/Stash/Tags/PRs) sin errores en consola. Cherry-pick de un commit en Historial → verde. Iniciar cherry-pick con conflicto → OpInProgressBanner aparece → Abortar → estado limpio. Reset hard sobre commits posteriores al HEAD pide tipear `HARD RESET` antes de habilitar Confirmar.
+3. **`npm run check:i18n`** → 0 hits. Garantiza que toda string user-facing está en `frontend/src/lib/i18n.ts`.
+4. **`npm run web`** arranca, frontend carga, login funciona
+5. **Voz en navegador** (Web Speech): click hablar → animation listening → decí "Eco terminal" → cambia tab
+6. **ServerPanel single mode**: en una conversación, comando `echo hola` → arranca → status idle (porque echo termina) → no crash
+7. **ServerPanel dual mode**: activar toggle, comandos válidos → backend arranca primero, frontend después con `API_PORT` correcto
+8. **Browser panel**: navegar a `localhost:7100/health` → JSON → cambiar tab → volver → no se recargó
+9. **`npm run dmg`** produce `.dmg` sin errores; bundle contiene `Resources/bin/eco-stt`
+10. **.app instalada** arranca, login funciona, voz funciona (con prompts macOS de Mic + Speech Recognition la primera vez)
+11. **Persistencia dev server**: con un server corriendo, matar el backend → `~/.eco/dev-sessions.json` tiene la entrada → relanzar backend → server aparece como running
+12. **Tab Git**: en una conversación con worktree git, abrir tab Git → recorrer las 6 sub-pestañas (Cambios/Historial/Ramas/Stash/Tags/PRs) sin errores en consola. Cherry-pick de un commit en Historial → verde. Iniciar cherry-pick con conflicto → OpInProgressBanner aparece → Abortar → estado limpio. Reset hard sobre commits posteriores al HEAD pide tipear `HARD RESET` antes de habilitar Confirmar.
+13. **Toggle de idioma**: en Settings → idioma EN, recorrer Dashboard / AgentDetail / Git panel / Server panel / Browser panel — no debe quedar texto en español. Volver a ES — no debe quedar inglés.
 
-Si pasa los 11, sigue al siguiente paso (commit/push si Sergio lo autoriza).
+Si pasa los 13, sigue al siguiente paso (commit/push si Sergio lo autoriza).
+
+---
+
+<a id="i18n"></a>
+## 19. i18n — toda string user-facing va por `useT`
+
+**Regla**: cualquier string que el usuario lee en la UI (Mac o LAN) DEBE estar en
+`frontend/src/lib/i18n.ts` con ambos `es` y `en`, y consumirse vía `useT()`.
+Sin excepciones para "es un texto cortito" o "es solo un placeholder".
+
+### Qué cuenta como user-facing
+
+- **JSX text**: `<div>Hola</div>` ❌ → `<div>{tr('saludo')}</div>` ✓
+- **Atributos visibles**: `placeholder`, `title`, `aria-label`, `alt`, `label` (en `<optgroup>` / `<Btn>`).
+- **Toasts, confirms, alerts, error banners** en la UI.
+- **Tooltips de hover**.
+- **Fallbacks de error que el user va a ver**: `tr('common.error')`, no `'Error'` literal.
+
+### Qué NO cuenta (queda en duro OK)
+
+- `console.log` / `console.error` y mensajes de debug del developer.
+- Logs internos del backend (los traducimos solo si suben al UI vía `translateBackendError`).
+- IDs, paths, URLs, MIME types, nombres de eventos del bus, CSS class names.
+- Códigos técnicos que aparecen en duro en la UI por convención (`OPEN`, `MERGED`,
+  `DRAFT`, `HARD RESET` como phrase de confirmación, etc.).
+- Comentarios JS/TS.
+
+### Convenciones
+
+- **Namespace por feature**: `git.*`, `commit.*`, `push.*`, `discard.*`, `prs.*`,
+  `branch.*`, `dock.*`, `browser.*`, `server.*`, `settings.*`, `dash.*`, `detail.*`,
+  `time.*`, `common.*`, etc.
+- **Sub-claves estables**: `.title`, `.sub`, `.label`, `.placeholder`, `.btn`,
+  `.btn.*`, `.err.*`, `.confirm.*`, `.loading`, `.tooltip`. Kebab-case.
+- **Interpolación con `{{var}}`**: `tr('git.commit.count', { count: 5 })`.
+- **Pluralización**: claves separadas `_one` / `_many` (y `_zero` cuando aplique).
+  El componente elige cuál llamar según el número.
+- **Reuso**: si una key se usa en múltiples lugares, ponerla en `common.*` o en
+  el namespace más amplio (p.ej. `common.cancel`, `common.ok`).
+
+### Workflow al crear un componente nuevo
+
+1. Antes de escribir UI: pensá las keys que vas a necesitar y agregalas a
+   `i18n.ts` en su namespace.
+2. `import { useT } from '@/hooks/useI18n'` y `const tr = useT()` en el componente.
+3. Cada string visible pasa por `tr('namespace.key')`.
+4. **Antes de commitear**: `npm run check:i18n` — debe pasar.
+
+### `formatRelTime` y otros helpers de tiempo
+
+Para strings sensibles al lang que viven fuera de componentes React, usá el
+patrón de `frontend/src/components/GitPanel/shared.tsx`:
+
+- `formatRelTime(iso, lang)` — función pura que acepta `lang` explícito (default `'es'`).
+- `useFormatRelTime()` — hook que devuelve el wrapper con el `lang` activo del contexto.
+
+En componentes preferí siempre el hook.
+
+### Enforcement
+
+- **Script**: `scripts/check-i18n.mjs` corre regex sobre `frontend/src/**/*.{ts,tsx}`
+  y falla con exit 1 si encuentra texto en español (acentos o palabras comunes)
+  hardcoded en JSX o atributos UI conocidos.
+- **Allowlist**: `scripts/.i18n-allowlist` con líneas `path:fragmento` para escape
+  hatches puntuales (selector de idioma, archivos legacy fuera de scope).
+- **Comandos**:
+  - `npm run check:i18n` — estricto (exit 1 si encuentra hits).
+  - `npm run check:i18n:report` — listado sin fallar (auditoría tech-debt).
+- **Pre-flight**: corre en el item 3 de la sección 18.
+
+### Backend errors
+
+- Backend siempre devuelve `{ ok: false, code: 'STABLE_CODE', message: '…' }`.
+- Frontend usa `translateBackendError(code)` desde `backend-errors.ts`.
+- Si agregás un `AppError` nuevo, sumá su `code` al diccionario `berr.*` en
+  `i18n.ts` con ambos idiomas. El `message` que devuelve el backend es fallback.
+
+### Estado actual
+
+- ~600+ keys en `i18n.ts` cubriendo auth, nav, dashboard, settings, server,
+  browser, git, prs, commit, branch, discard, dock, time relativo, etc.
+- Componentes legacy fuera de scope (App.tsx, DiffViewer, PullRequestsList,
+  SkillsPicker, GitPanel/ResizableSplit) están en la allowlist como tech-debt
+  visible — se limpian en iteraciones futuras.
 
 ---
 

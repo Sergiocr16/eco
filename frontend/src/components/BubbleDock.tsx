@@ -6,6 +6,7 @@ import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
 import { IconCommand } from '@/design/icons';
 import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   bubbles: Bubble[];
@@ -19,6 +20,7 @@ type Props = {
 // magnificación que crece hacia arriba (sin empujar vecinos).
 export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atHome }: Props) {
   const t = useTokens();
+  const tr = useT();
   // Mostramos el dock si hay agentes O si hay home button (para navegar
   // siempre desde cualquier vista).
   if (bubbles.length === 0 && !onGoHome) return null;
@@ -43,7 +45,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
     return [...map.entries()].map(([key, items]) => ({
       key,
       label: key === '__none__'
-        ? 'Sin carpeta'
+        ? tr('dock.no_folder')
         : (key.split('/').filter(Boolean).pop() || key),
       items: [...items].sort(sortFn),
     }));
@@ -182,6 +184,7 @@ const SLOT_WIDTH = 60;  // Ancho del slot (icono + padding para que el label
 
 function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => void }) {
   const t = useTokens();
+  const tr = useT();
   const [hover, setHover] = useState(false);
   // Slot un poco más angosto que los de las burbujas (no necesita 60px de label).
   // Mantiene el alto del slot igual que los demás (button + label combined ≈ 54px)
@@ -201,7 +204,7 @@ function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => voi
       <motion.button
         type="button"
         onClick={onClick}
-        title="Ir al inicio"
+        title={tr('dock.home_tooltip')}
         whileHover={{ scale: 1.35, y: -6 }}
         whileTap={{ scale: 0.92 }}
         transition={{ type: 'spring', stiffness: 380, damping: 22 }}
@@ -241,10 +244,11 @@ function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => voi
 // espacios — "fix-bug-login" se muestra como "fix-bug-" (los primeros 8
 // chars de la primera "palabra"), no como "fix". Eso preserva contexto
 // útil para títulos tipo TAR-660, jh-prod, eco-test, etc.
-function firstWord(title: string | undefined): string {
-  if (!title) return 'sin nombre';
+// fallback: string traducido para títulos vacíos.
+function firstWord(title: string | undefined, fallback: string): string {
+  if (!title) return fallback;
   const trimmed = title.trim();
-  if (!trimmed) return 'sin nombre';
+  if (!trimmed) return fallback;
   // Cortamos solo en el primer espacio — guiones/underscores forman parte
   // del nombre.
   const m = trimmed.match(/^\S+/);
@@ -261,6 +265,7 @@ function DockIcon({
   onClick: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [hover, setHover] = useState(false);
   const [showTip, setShowTip] = useState(false);
 
@@ -292,7 +297,7 @@ function DockIcon({
       <motion.button
         type="button"
         onClick={onClick}
-        title={bubble.title || 'Burbuja sin título'}
+        title={bubble.title || tr('dock.bubble_no_title')}
         initial={{ opacity: 0, scale: 0.6, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.6, y: 8 }}
@@ -349,7 +354,7 @@ function DockIcon({
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         pointerEvents: 'none',
         userSelect: 'none',
-      }}>{firstWord(bubble.title)}</div>
+      }}>{firstWord(bubble.title, tr('dock.no_name'))}</div>
 
       {/* Dot indicador "abierta" debajo del label — convención macOS. */}
       {active && (
@@ -385,10 +390,10 @@ function DockIcon({
               maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis',
               zIndex: 100,
             }}>
-            {bubble.title || 'Burbuja sin título'}
+            {bubble.title || tr('dock.bubble_no_title')}
             {isActive && (
               <span style={{ marginLeft: 6, color: sColor, fontFamily: t.fontMono, fontSize: 10.5 }}>
-                · {busy ? 'procesando' : state}
+                · {busy ? tr('dock.processing') : state}
               </span>
             )}
           </motion.div>

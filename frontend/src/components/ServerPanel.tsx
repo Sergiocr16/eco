@@ -25,6 +25,7 @@ import { useDevPresets, type PresetRole } from '@/hooks/useDevPresets';
 import { useWorkspaceServerDefaults } from '@/hooks/useWorkspaceServerDefaults';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { ecoToken } from '@/lib/eco-config';
+import { useT } from '@/hooks/useI18n';
 
 type Status = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 type SlotRole = 'main' | 'frontend' | 'backend';
@@ -61,6 +62,7 @@ const initSlot = (): SlotState => ({
 
 export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string; workspace: string; visible?: boolean }) {
   const t = useTokens();
+  const tr = useT();
   const wsDefaults = useWorkspaceServerDefaults(workspace);
 
   // Si el bubble nunca tocó el toggle dual, arrancamos con el default del
@@ -409,7 +411,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             {!dual ? (
               <CommandSlot
                 role="main"
-                label="Comando para iniciar el server"
+                label={tr('server.cmd.main_label')}
                 placeholder="npm run dev -- --port $PORT"
                 command={cmdMain}
                 onChange={(v) => saveCmd('main', v)}
@@ -589,10 +591,10 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             fontSize: 11, color: t.accent, fontWeight: 500,
             textTransform: 'uppercase', letterSpacing: 0.3,
           }}>
-            <IconCpu size={11}/> Cómo funciona
+            <IconCpu size={11}/> {tr('server.help.how_it_works')}
           </div>
           <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>
-            Eco ejecuta tu comando dentro del worktree del agente. Setea <code style={mono(t)}>$PORT</code> a un puerto libre {dual ? 'distinto para cada slot (frontend y backend)' : 'por agente'} — el comando debe respetarlo (ej. <code style={mono(t)}>vite --port $PORT</code>, <code style={mono(t)}>process.env.PORT</code>). Al detener, Eco mata el process group entero y verifica el cleanup con <code style={mono(t)}>lsof</code>.
+            {tr('server.help.body_a')} <code style={mono(t)}>$PORT</code> {dual ? tr('server.help.body_dual') : tr('server.help.body_single')} {tr('server.help.body_b')} <code style={mono(t)}>vite --port $PORT</code>, <code style={mono(t)}>process.env.PORT</code>{tr('server.help.body_c')} <code style={mono(t)}>lsof</code>.
           </div>
           {dual && (
             <div style={{
@@ -601,19 +603,17 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               fontSize: 11.5, color: t.text2, lineHeight: 1.55,
             }}>
               <div style={{ fontWeight: 600, color: t.text1, marginBottom: 4 }}>
-                Conectar el frontend con el backend
+                {tr('server.help.dual.title')}
               </div>
-              Como los puertos son dinámicos, <strong>no hardcodees el puerto del backend</strong> en la
-              config del frontend. En dual, el slot <strong>frontend</strong> recibe estas env vars
-              apuntando al backend: <code style={mono(t)}>BACKEND_URL</code>, <code style={mono(t)}>BACKEND_PORT</code>, <code style={mono(t)}>API_PORT</code>.
-              Tu proxy de dev tiene que leer una de ellas:
+              {tr('server.help.dual.body_a')} <strong>{tr('server.help.dual.body_b')}</strong> {tr('server.help.dual.body_c')} <strong>{tr('server.help.dual.body_d')}</strong> {tr('server.help.dual.body_e')} <code style={mono(t)}>BACKEND_URL</code>, <code style={mono(t)}>BACKEND_PORT</code>, <code style={mono(t)}>API_PORT</code>.
+              {' '}{tr('server.help.dual.body_f')}
               <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                <li>Vite — en <code style={mono(t)}>vite.config</code>: <code style={mono(t)}>{'server.proxy: { \'/api\': process.env.BACKEND_URL }'}</code></li>
-                <li>gulp / browser-sync (JHipster) — <code style={mono(t)}>apiPort: process.env.BACKEND_PORT || 8080</code></li>
-                <li>Genérico — usá <code style={mono(t)}>$BACKEND_PORT</code> / <code style={mono(t)}>$BACKEND_URL</code> directo en el comando del slot.</li>
+                <li>{tr('server.help.dual.li_vite')} <code style={mono(t)}>vite.config</code>: <code style={mono(t)}>{'server.proxy: { \'/api\': process.env.BACKEND_URL }'}</code></li>
+                <li>{tr('server.help.dual.li_gulp')} <code style={mono(t)}>apiPort: process.env.BACKEND_PORT || 8080</code></li>
+                <li>{tr('server.help.dual.li_generic_a')} <code style={mono(t)}>$BACKEND_PORT</code> {tr('server.help.dual.li_generic_b')} <code style={mono(t)}>$BACKEND_URL</code> {tr('server.help.dual.li_generic_c')}</li>
               </ul>
               <div style={{ marginTop: 4, color: t.text3 }}>
-                Dejá el valor viejo como fallback (<code style={mono(t)}>|| 8080</code>) para que el proyecto siga corriendo fuera de Eco.
+                {tr('server.help.dual.fallback')}<code style={mono(t)}>|| 8080</code>{tr('server.help.dual.fallback_post')}
               </div>
             </div>
           )}
@@ -719,6 +719,7 @@ function PanelHeader({
   onRestartRole: (role: SlotRole) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const isDual = dual;
   const visibleRoles: SlotRole[] = isDual ? ['frontend', 'backend'] : ['main'];
 
@@ -792,7 +793,7 @@ function PanelHeader({
                         ecoEmit('eco:browser_navigate', { bubbleId, url });
                       }, 120);
                     }}
-                    title="Abrir en el navegador de Eco (tab Navegador)"
+                    title={tr('server.action.open_browser')}
                     style={{
                       flexShrink: 0,
                       width: 22, height: 22, padding: 0, borderRadius: 5,
@@ -807,7 +808,7 @@ function PanelHeader({
                     onClick={() => {
                       try { window.open(s.url, '_blank', 'noopener,noreferrer'); } catch { /* noop */ }
                     }}
-                    title="Abrir en el navegador del sistema"
+                    title={tr('server.action.open_os')}
                     style={{
                       flexShrink: 0,
                       width: 22, height: 22, padding: 0, borderRadius: 5,
@@ -945,6 +946,7 @@ function PresetMenu({
   onSaveAs?: (name: string) => unknown;
 }) {
   const t = useTokens();
+  const tr = useT();
   const { forRole, add, remove } = useDevPresets();
   const [open, setOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -984,11 +986,11 @@ function PresetMenu({
             cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center', gap: 4,
           }}>
-          Usar preset… <span style={{ color: t.text3, fontSize: 10 }}>▾</span>
+          {tr('server.config.use_preset')} <span style={{ color: t.text3, fontSize: 10 }}>▾</span>
         </button>
         {currentCommand.trim() && (
           <button type="button"
-            title="Guardar comando actual como preset"
+            title={tr('server.config.save_preset_tooltip')}
             onClick={() => { setSaveOpen((o) => !o); setOpen(false); }}
             style={{
               width: 26, height: 26, borderRadius: 6,
@@ -1065,7 +1067,7 @@ function PresetMenu({
             autoFocus value={saveName}
             onChange={(e) => setSaveName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') saveAndClose(); if (e.key === 'Escape') setSaveOpen(false); }}
-            placeholder="Nombre del preset"
+            placeholder={tr('server.config.preset_name_placeholder')}
             style={{
               width: '100%', boxSizing: 'border-box',
               padding: '6px 8px', borderRadius: 6,
@@ -1082,7 +1084,7 @@ function PresetMenu({
                 background: 'transparent', color: t.text2,
                 border: `1px solid ${t.glassBorder}`, cursor: 'pointer',
                 fontSize: 11.5,
-              }}>Cancelar</button>
+              }}>{tr('common.cancel')}</button>
             <button type="button" onClick={saveAndClose} disabled={!saveName.trim()}
               style={{
                 padding: '4px 10px', borderRadius: 6,
@@ -1090,7 +1092,7 @@ function PresetMenu({
                 cursor: saveName.trim() ? 'pointer' : 'default',
                 fontSize: 11.5, fontWeight: 600,
                 opacity: saveName.trim() ? 1 : 0.5,
-              }}>Guardar</button>
+              }}>{tr('common.save')}</button>
           </div>
         </div>
       )}
@@ -1116,6 +1118,7 @@ function LogsPane({
   visible?: boolean;
 }) {
   const t = useTokens();
+  const tr = useT();
   // El buffer de logs ya NO vive en React — xterm es el dueño del stream
   // (ver TerminalLogs). Acá solo guardamos un contador throttled para el
   // header y un handle imperativo al "clear" de la terminal.
@@ -1185,7 +1188,7 @@ function LogsPane({
           <button
             type="button"
             onClick={() => clearRef.current?.()}
-            title="Borrar consola"
+            title={tr('server.logs.clear_tooltip')}
             style={{
               width: 22, height: 22, borderRadius: 5, border: 0,
               background: 'transparent', color: t.text2, cursor: 'pointer',
@@ -1224,7 +1227,7 @@ function LogsPane({
       {!minimized && (
         <div
           onPointerDown={startResize}
-          title="Arrastrá para cambiar el alto"
+          title={tr('server.config.resize_tooltip')}
           style={{
             height: 8, flexShrink: 0, cursor: 'ns-resize',
             background: t.bg3, borderTop: `1px solid ${t.glassBorder}`,

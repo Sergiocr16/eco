@@ -3,6 +3,7 @@ import { useTokens } from '@/design/theme';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useGitOpStatus } from '@/hooks/useGitOpStatus';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   workspace: string;
@@ -10,20 +11,21 @@ type Props = {
   onGoChanges: () => void;
 };
 
-const LABELS = {
-  'cherry-pick': 'Cherry-pick',
-  merge: 'Merge',
-  revert: 'Revert',
+const LABEL_KEYS = {
+  'cherry-pick': 'git.op.cherry_pick',
+  merge: 'git.op.merge',
+  revert: 'git.op.revert',
 } as const;
 
 export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) {
   const t = useTokens();
+  const tr = useT();
   const status = useGitOpStatus(workspace, bubbleId);
   const [busy, setBusy] = useState<'continue' | 'abort' | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   if (!status.inProgress) return null;
-  const opLabel = LABELS[status.inProgress];
+  const opLabel = tr(LABEL_KEYS[status.inProgress]);
 
   async function callOp(action: 'continue' | 'abort') {
     if (!status.inProgress) return;
@@ -42,7 +44,7 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
         ecoEmit('eco:git_refresh', { bubbleId });
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
+      setErr(e instanceof Error ? e.message : tr('common.error'));
     } finally {
       setBusy(null);
     }
@@ -64,12 +66,13 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
         }}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12.5, color: t.text0, fontWeight: 600 }}>
-            {opLabel} en progreso
+            {tr('git.op.in_progress', { op: opLabel })}
           </div>
           {status.conflictedFiles.length > 0 && (
             <div style={{ fontSize: 11, color: t.text2, marginTop: 2 }}>
-              {status.conflictedFiles.length} archivo{status.conflictedFiles.length === 1 ? '' : 's'} con conflicto: {status.conflictedFiles.slice(0, 3).join(', ')}
-              {status.conflictedFiles.length > 3 ? '…' : ''}
+              {status.conflictedFiles.length === 1
+                ? tr('git.op.conflict_files_one', { n: 1, list: status.conflictedFiles.slice(0, 3).join(', ') + (status.conflictedFiles.length > 3 ? '…' : '') })
+                : tr('git.op.conflict_files_many', { n: status.conflictedFiles.length, list: status.conflictedFiles.slice(0, 3).join(', ') + (status.conflictedFiles.length > 3 ? '…' : '') })}
             </div>
           )}
         </div>
@@ -82,7 +85,7 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
               background: 'transparent', border: `1px solid ${t.glassBorder}`,
               color: t.text1, fontSize: 11.5, fontWeight: 500, cursor: 'pointer',
             }}>
-            Resolver en Cambios
+            {tr('git.op.resolve_in_changes')}
           </button>
           <button
             type="button"
@@ -95,7 +98,7 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
               cursor: busy ? 'wait' : 'pointer',
               opacity: busy ? 0.6 : 1,
             }}>
-            {busy === 'continue' ? '…' : 'Continuar'}
+            {busy === 'continue' ? '…' : tr('git.op.continue')}
           </button>
           <button
             type="button"
@@ -108,7 +111,7 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
               cursor: busy ? 'wait' : 'pointer',
               opacity: busy ? 0.6 : 1,
             }}>
-            {busy === 'abort' ? '…' : 'Abortar'}
+            {busy === 'abort' ? '…' : tr('git.op.abort')}
           </button>
         </div>
       </div>
