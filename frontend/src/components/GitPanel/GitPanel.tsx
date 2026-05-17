@@ -8,6 +8,7 @@ import { HistoryView } from './HistoryView';
 import { PRsView } from './PRsView';
 import { OpInProgressBanner } from './OpInProgressBanner';
 import { GitTopBar } from './GitTopBar';
+import { useT } from '@/hooks/useI18n';
 
 export type GitSubtab = 'changes' | 'history' | 'prs';
 
@@ -38,6 +39,7 @@ function saveSubtab(bubbleId: string, sub: GitSubtab) {
 
 export function GitPanel({ bubble, workspace, bubbleId, filesChanged, gitChangesLoading, onRename }: Props) {
   const t = useTokens();
+  const tr = useT();
   const [sub, setSub] = useState<GitSubtab>(() => loadSubtab(bubbleId));
 
   // Reaccionar a voice commands tipo "Eco historial".
@@ -55,9 +57,9 @@ export function GitPanel({ bubble, workspace, bubbleId, filesChanged, gitChanges
   const pending = filesChanged.filter((f) => f.unstaged !== false).length;
 
   const subnav: { id: GitSubtab; label: string; icon: typeof IconGithub; badge?: number }[] = [
-    { id: 'changes', label: 'Cambios', icon: IconGithub, badge: pending || undefined },
-    { id: 'history', label: 'Historial', icon: IconLayers },
-    { id: 'prs', label: 'PRs', icon: IconBranch },
+    { id: 'changes', label: tr('git.tab.changes'), icon: IconGithub, badge: pending || undefined },
+    { id: 'history', label: tr('git.tab.history'), icon: IconLayers },
+    { id: 'prs', label: tr('git.tab.prs'), icon: IconBranch },
   ];
 
   return (

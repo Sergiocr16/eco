@@ -97,7 +97,7 @@ function HeaderMenu({
             fontSize: 9.5, color: t.text3, letterSpacing: 0.4,
             textTransform: 'uppercase', fontWeight: 600,
             padding: '6px 10px 3px',
-          }}>Categoría</div>
+          }}>{tr('dash.category.label')}</div>
           {categories.map((c) => {
             const active = c.id === currentCategoryId;
             return (
@@ -338,7 +338,7 @@ export function AgentDetail({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
-                title="Cambiar categoría"
+                title={tr('dash.category.change_tooltip')}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
                   padding: '2px 9px', borderRadius: 999,
@@ -869,6 +869,7 @@ type TermLine =
 
 function TerminalPanel({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
+  const tr = useT();
   const [subTab, setSubTab] = useState<'shell' | 'agent' | 'cmds'>('shell');
   useEffect(() => {
     setVoiceTarget(subTab === 'shell' ? 'pty' : 'chat');
@@ -881,9 +882,9 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
         borderBottom: `1px solid ${t.glassBorder}`,
         background: t.bg1,
       }}>
-        <SubTabBtn active={subTab === 'shell'} onClick={() => setSubTab('shell')}>Shell</SubTabBtn>
-        <SubTabBtn active={subTab === 'agent'} onClick={() => setSubTab('agent')}>Agente</SubTabBtn>
-        <SubTabBtn active={subTab === 'cmds'} onClick={() => setSubTab('cmds')}>Comandos</SubTabBtn>
+        <SubTabBtn active={subTab === 'shell'} onClick={() => setSubTab('shell')}>{tr('detail.terminal.tab.shell')}</SubTabBtn>
+        <SubTabBtn active={subTab === 'agent'} onClick={() => setSubTab('agent')}>{tr('detail.terminal.tab.agent')}</SubTabBtn>
+        <SubTabBtn active={subTab === 'cmds'} onClick={() => setSubTab('cmds')}>{tr('detail.terminal.tab.cmds')}</SubTabBtn>
       </div>
       <div style={{
         flex: 1, minHeight: 0, position: 'relative',
@@ -934,6 +935,7 @@ function writeExtraTerms(bubbleId: string, terms: ExtraTerm[]) {
 
 function TerminalTabs({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
+  const tr = useT();
   const [extras, setExtras] = useState<ExtraTerm[]>(() => readExtraTerms(bubble.id));
   // Default = "main" (el de Claude). Persistimos cuál estaba activo así al
   // volver a la pestaña Shell no se pierde el foco.
@@ -1000,14 +1002,14 @@ function TerminalTabs({ bubble }: { bubble: Bubble }) {
         <button
           type="button"
           onClick={addShell}
-          title="Nueva terminal (sin Claude)"
+          title={tr('detail.terminal.new_tooltip')}
           style={{
             marginLeft: 4,
             padding: '4px 9px', borderRadius: 7, border: `1px dashed ${t.glassBorder}`,
             background: 'transparent', color: t.text2, cursor: 'pointer',
             fontFamily: t.fontSans, fontSize: 12, lineHeight: 1,
           }}
-        >+ Nueva</button>
+        >{tr('detail.terminal.new_btn')}</button>
       </div>
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         {tabs.map((tab) => (
@@ -1041,6 +1043,7 @@ function TermTabBtn({
   children: React.ReactNode;
 }) {
   const t = useTokens();
+  const tr = useT();
   return (
     <div
       onClick={onClick}
@@ -1061,7 +1064,7 @@ function TermTabBtn({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onClose(); }}
-          title="Cerrar terminal"
+          title={tr('detail.terminal.close_tooltip')}
           style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 16, height: 16, borderRadius: 4, padding: 0, border: 0,
@@ -1406,6 +1409,7 @@ function SkillsCard({
   onSend: (text: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const { skills } = useSkills(workspace);
   const { isFav, toggle: toggleFav } = useSkillFavorites();
   const [busy, setBusy] = useState<string | null>(null);
@@ -1472,9 +1476,9 @@ function SkillsCard({
           }}>★</div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 500, color: t.text0, marginBottom: 2 }}>
-              Sin favoritos aún
+              {tr('detail.skills.no_favs_title')}
             </div>
-            <div>Abrí el picker (botón arriba a la derecha) y marcá con <span style={{ color: t.warn }}>★</span> los skills que usás seguido.</div>
+            <div>{tr('detail.skills.no_favs_hint_pre')} <span style={{ color: t.warn }}>★</span> {tr('detail.skills.no_favs_hint_post')}</div>
           </div>
         </div>
       ) : (
@@ -1876,32 +1880,33 @@ function QuickActions({
   onSend: (text: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   type QA = {
     label: string; icon: ReactNode; onClick: () => void;
     badge?: number; disabled?: boolean; tooltip?: string;
   };
   const actions: QA[] = [
     {
-      label: 'Chat', icon: <IconCommand size={12}/>,
+      label: tr('cmd.tab.chat'), icon: <IconCommand size={12}/>,
       onClick: () => onGoTab('chat'),
       badge: bubble.unread > 0 ? bubble.unread : undefined,
-      tooltip: 'Ir al chat',
+      tooltip: tr('detail.action.chat_tooltip'),
     },
     {
-      label: 'Archivos', icon: <IconFile size={12}/>,
+      label: tr('cmd.tab.files'), icon: <IconFile size={12}/>,
       onClick: () => onGoTab('git'),
       badge: filesChangedCount > 0 ? filesChangedCount : undefined,
-      tooltip: 'Ver archivos modificados',
+      tooltip: tr('detail.action.files_tooltip'),
     },
     {
-      label: 'Terminal', icon: <IconTerminal size={12}/>,
+      label: tr('cmd.tab.terminal'), icon: <IconTerminal size={12}/>,
       onClick: () => onGoTab('terminal'),
-      tooltip: 'Abrir terminal del agente',
+      tooltip: tr('detail.action.terminal_tooltip'),
     },
     {
-      label: 'Resumir', icon: <IconLayers size={12}/>,
-      onClick: () => onSend('Hacé un resumen breve de los cambios y decisiones de esta sesión.'),
-      tooltip: 'Pedirle al agente un resumen',
+      label: tr('detail.quick.summary_label'), icon: <IconLayers size={12}/>,
+      onClick: () => onSend(tr('detail.action.summary_prompt')),
+      tooltip: tr('detail.action.summary_tooltip'),
     },
   ];
   return (
@@ -1957,6 +1962,7 @@ function QuickActions({
 
 function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubble }) {
   const t = useTokens();
+  const tr = useT();
   const animated = bubble.status === 'thinking' || bubble.status === 'executing'
     || bubble.status === 'running' || bubble.status === 'pending';
   const color = animated ? t.warn : t.text3;
@@ -1970,7 +1976,7 @@ function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubb
       <button
         type="button"
         onClick={onExpand}
-        title="Mostrar panel"
+        title={tr('detail.sidebar.show')}
         style={{
           width: 30, height: 30, border: 0, borderRadius: 8,
           background: 'transparent', color: t.text1, cursor: 'pointer',
@@ -1986,7 +1992,7 @@ function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubb
         background: color,
         boxShadow: animated ? `0 0 6px ${color}` : 'none',
         animation: animated ? 'eco-shimmer 1.4s ease-in-out infinite' : 'none',
-      }} title={animated ? 'Agente activo' : 'Agente inactivo'}/>
+      }} title={animated ? tr('detail.status.active') : tr('detail.status.inactive')}/>
     </div>
   );
 }
@@ -2233,7 +2239,7 @@ function AgentSidebar({
           accent; durante el drag, cursor col-resize global. */}
       <div
         onMouseDown={onSplitterDown}
-        title="Arrastrar para redimensionar"
+        title={tr('detail.resize_split_tooltip')}
         style={{
           position: 'absolute', left: -3, top: 0, bottom: 0, width: 6,
           cursor: 'col-resize', zIndex: 10,
@@ -2334,6 +2340,7 @@ function emitRemoteChange(bubbleId: string, slug: string | null) {
 
 function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
+  const tr = useT();
   const [active, setActive] = useState<string | null>(() => readRemoteSlug(bubble.id));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -2370,12 +2377,12 @@ function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
       onClick={isOn ? deactivate : (() => void activate())}
       disabled={busy}
       title={busy
-        ? 'Activando Claude remote control…'
+        ? tr('detail.remote.activating')
         : isOn
-          ? `Claude remote control corriendo como "${active}". Click para detener.`
+          ? tr('detail.remote.running_tooltip', { slug: active ?? '' })
           : err
-            ? `Error: ${err}. Click para reintentar.`
-            : `Iniciar Claude remote control (corre /remote-control ${slug} en la terminal por debajo)`}
+            ? tr('detail.remote.err_tooltip', { err })
+            : tr('detail.remote.start_tooltip', { slug })}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 26, padding: '0 10px',
@@ -2416,8 +2423,8 @@ function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
       </span>
       <span>
         {busy
-          ? 'Activando…'
-          : isOn ? 'Desactivar Claude remote control' : 'Activar Claude remote control'}
+          ? tr('detail.remote.activating_short')
+          : isOn ? tr('detail.remote.disable') : tr('detail.remote.enable')}
       </span>
     </button>
   );
@@ -2425,6 +2432,7 @@ function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
 
 function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
+  const tr = useT();
   const { status: obs } = useObsidian();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -2444,7 +2452,7 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
     setResult(null);
     const r = await saveSessionToObsidian({
       bubbleId: bubble.id,
-      title: bubble.title || 'Sesión',
+      title: bubble.title || tr('detail.obsidian.session_default'),
       workspace: bubble.workspace ?? '',
       createdAt: bubble.createdAt,
       updatedAt: bubble.updatedAt,
@@ -2454,7 +2462,7 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
         createdAt: m.createdAt,
       })),
     });
-    if (r.ok) setResult({ ok: true, text: `Guardado: ${r.path.split('/').slice(-2).join('/')}` });
+    if (r.ok) setResult({ ok: true, text: tr('detail.obsidian.saved', { path: r.path.split('/').slice(-2).join('/') }) });
     else setResult({ ok: false, text: r.error });
     setBusy(false);
     setTimeout(() => setResult(null), 5000);
@@ -2462,7 +2470,7 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
 
   return (
     <div>
-      <SectionLabel>Obsidian</SectionLabel>
+      <SectionLabel>{tr('detail.obsidian.label')}</SectionLabel>
       <button
         type="button"
         onClick={() => void save()}
@@ -2482,7 +2490,7 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
         onMouseEnter={(e) => { if (!busy) e.currentTarget.style.background = t.bg3; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = t.bg2; }}>
         <IconLayers size={13}/>
-        {busy ? 'Guardando…' : 'Guardar sesión en Obsidian'}
+        {busy ? tr('detail.obsidian.saving') : tr('detail.obsidian.save_btn')}
       </button>
       {result && (
         <div style={{
@@ -2581,25 +2589,25 @@ function NextActionsPanel({
 
   if (running) {
     actions.push({
-      label: 'Detener',
-      sub: 'interrumpe lo que está corriendo',
+      label: tr('detail.quick.stop'),
+      sub: tr('detail.quick.interrupt_sub'),
       icon: <IconStop size={12}/>,
       tone: 'danger',
       onClick: () => onInterrupt(),
     });
   } else if (noMessages) {
     actions.push({
-      label: 'Saludar',
-      sub: 'rompe el hielo',
+      label: tr('detail.quick.greet'),
+      sub: tr('detail.quick.hi_sub'),
       icon: <IconCommand size={12}/>,
       tone: 'primary',
-      onClick: () => onSend('Hola — ¿qué podés hacer en este proyecto?'),
+      onClick: () => onSend(tr('detail.quick.greet_prompt')),
     });
   } else {
     if (filesChangedCount > 0) {
       actions.push({
-        label: `Revisar ${filesChangedCount} ${filesChangedCount === 1 ? 'archivo' : 'archivos'}`,
-        sub: 'ver diffs antes de commitear',
+        label: filesChangedCount === 1 ? tr('detail.quick.review_one', { n: filesChangedCount }) : tr('detail.quick.review_many', { n: filesChangedCount }),
+        sub: tr('detail.quick.commit_sub'),
         icon: <IconFile size={12}/>,
         tone: 'primary',
         onClick: () => onGoTab('git'),
@@ -2607,35 +2615,35 @@ function NextActionsPanel({
     }
     if (lastIsError) {
       actions.push({
-        label: 'Reintentar',
-        sub: 'el último intento falló',
+        label: tr('detail.quick.retry'),
+        sub: tr('detail.quick.retry_sub'),
         icon: <IconResume size={12}/>,
         tone: 'primary',
-        onClick: () => onSend('Reintentá lo último, por favor.'),
+        onClick: () => onSend(tr('detail.quick.retry_prompt')),
       });
     }
     if (lastIsUser) {
       actions.push({
-        label: 'Continuar',
-        sub: 'sigue tu último mensaje',
+        label: tr('detail.quick.continue'),
+        sub: tr('detail.quick.continue_sub'),
         icon: <IconResume size={12}/>,
         tone: 'normal',
-        onClick: () => onSend('continuá'),
+        onClick: () => onSend(tr('detail.quick.continue_prompt')),
       });
     } else {
       actions.push({
-        label: 'Pedir resumen',
-        sub: 'qué hiciste hasta ahora',
+        label: tr('detail.quick.summary_label'),
+        sub: tr('detail.quick.summary_sub'),
         icon: <IconLayers size={12}/>,
         tone: 'normal',
-        onClick: () => onSend('Hacé un resumen de los cambios y decisiones de esta sesión.'),
+        onClick: () => onSend(tr('detail.quick.summary_prompt')),
       });
       actions.push({
-        label: 'Plan próximos pasos',
-        sub: 'qué falta para terminar',
+        label: tr('detail.quick.plan_label'),
+        sub: tr('detail.quick.plan_sub'),
         icon: <IconBolt size={12}/>,
         tone: 'normal',
-        onClick: () => onSend('Listame los próximos pasos que recomendás para avanzar.'),
+        onClick: () => onSend(tr('detail.quick.plan_prompt')),
       });
     }
   }

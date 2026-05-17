@@ -3,6 +3,7 @@ import { useTokens } from '@/design/theme';
 import { IconTrash } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   path: string;
@@ -13,6 +14,7 @@ type Props = {
 
 export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) {
   const t = useTokens();
+  const tr = useT();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
       setConfirming(false);
       setBusy(false);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
+      setErr(e instanceof Error ? e.message : tr('common.error'));
       setBusy(false);
     }
   }
@@ -44,7 +46,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
     return (
       <button
         type="button"
-        title="Click para reintentar"
+        title={tr('discard.retry_tooltip')}
         onClick={() => setErr(null)}
         style={{
           maxWidth: 260,
@@ -64,8 +66,8 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
         type="button"
         onClick={() => setConfirming(true)}
         title={change === 'created'
-          ? `Eliminar el archivo nuevo ${path}`
-          : `Descartar los cambios en ${path}`}
+          ? tr('discard.tooltip.delete', { path })
+          : tr('discard.tooltip.revert', { path })}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '5px 10px', borderRadius: 7,
@@ -77,7 +79,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
         onMouseEnter={(e) => { e.currentTarget.style.color = t.err; e.currentTarget.style.borderColor = t.err; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = t.text2; e.currentTarget.style.borderColor = t.glassBorder; }}>
         <IconTrash size={11}/>
-        Descartar
+        {tr('discard.btn')}
       </button>
     );
   }
@@ -90,7 +92,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
       border: `1px solid ${t.err}`,
     }}>
       <span style={{ fontSize: 11, color: t.err, fontWeight: 500 }}>
-        {change === 'created' ? '¿Eliminar?' : '¿Descartar?'}
+        {change === 'created' ? tr('discard.confirm.delete') : tr('discard.confirm.revert')}
       </span>
       <button type="button"
         onClick={() => void discard()}
@@ -100,7 +102,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
           background: t.err, color: '#fff',
           fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
           opacity: busy ? 0.6 : 1,
-        }}>{busy ? '…' : 'Sí'}</button>
+        }}>{busy ? '…' : tr('common.yes')}</button>
       <button type="button"
         onClick={() => setConfirming(false)}
         disabled={busy}
@@ -108,7 +110,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
           padding: '3px 9px', borderRadius: 5, border: 0,
           background: 'transparent', color: t.text2,
           fontSize: 11, cursor: 'pointer',
-        }}>No</button>
+        }}>{tr('common.no')}</button>
     </div>
   );
 }

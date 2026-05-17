@@ -19,6 +19,8 @@
     "typecheck": "npm-run-all --parallel typecheck:*",
     "typecheck:backend": "npm --workspace backend run typecheck",
     "typecheck:frontend": "npm --workspace frontend run typecheck",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "check:i18n:report": "node scripts/check-i18n.mjs --report",
     "test:security": "npm --workspace backend run test:security",
     "listener": "cd listener && .venv/bin/python main.py",
     "listener:setup": "cd listener && ./setup.sh",

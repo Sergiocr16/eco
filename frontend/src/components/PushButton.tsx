@@ -3,6 +3,7 @@ import { useTokens } from '@/design/theme';
 import { Glass } from '@/design/primitives';
 import { IconBranch } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   bubbleId: string;
@@ -13,6 +14,7 @@ type Props = {
 // --set-upstream origin <branch> si no existe.
 export function PushButton({ bubbleId, workspace }: Props) {
   const t = useTokens();
+  const tr = useT();
   type Phase = 'idle' | 'confirm' | 'pushing' | 'done' | 'error';
   const [phase, setPhase] = useState<Phase>('idle');
   const [msg, setMsg] = useState<string | null>(null);
@@ -26,10 +28,10 @@ export function PushButton({ bubbleId, workspace }: Props) {
         body: JSON.stringify({ workspace, bubbleId }),
       });
       const d = await r.json().catch(() => ({}));
-      if (d.ok) { setMsg(d.message || 'Push OK'); setPhase('done'); }
-      else { setMsg(d.error || 'Push falló'); setPhase('error'); }
+      if (d.ok) { setMsg(d.message || tr('push.ok')); setPhase('done'); }
+      else { setMsg(d.error || tr('push.err')); setPhase('error'); }
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Error'); setPhase('error');
+      setMsg(e instanceof Error ? e.message : tr('common.error')); setPhase('error');
     }
   }
 
@@ -54,9 +56,9 @@ export function PushButton({ bubbleId, workspace }: Props) {
           <IconBranch size={11}/>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>Push</div>
+          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>{tr('push.btn')}</div>
           <div style={{ fontSize: 10, color: t.text3, marginTop: 0 }}>
-            Publica la rama actual en origin
+            {tr('push.sub')}
           </div>
         </div>
         {phase !== 'confirm' && (
@@ -71,7 +73,7 @@ export function PushButton({ bubbleId, workspace }: Props) {
               cursor: phase === 'pushing' ? 'default' : 'pointer',
               opacity: phase === 'pushing' ? 0.6 : 1,
             }}>
-            {phase === 'pushing' ? 'Pushing…' : 'Push'}
+            {phase === 'pushing' ? tr('push.pushing') : tr('push.btn')}
           </button>
         )}
       </div>
@@ -81,11 +83,11 @@ export function PushButton({ bubbleId, workspace }: Props) {
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
         }}>
           <div style={{ fontSize: 11, color: t.text1, lineHeight: 1.5 }}>
-            ¿Publicar la rama actual en <code style={{
+            {tr('push.confirm.q_pre')} <code style={{
               fontFamily: t.fontMono, fontSize: 10.5,
               padding: '1px 5px', borderRadius: 4,
               background: t.bg3, color: t.text1,
-            }}>origin</code>?
+            }}>origin</code>{tr('push.confirm.q_post')}
           </div>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
             <button
@@ -96,7 +98,7 @@ export function PushButton({ bubbleId, workspace }: Props) {
                 background: 'transparent', color: t.text2,
                 border: `1px solid ${t.glassBorder}`,
                 fontFamily: t.fontSans, fontSize: 11, cursor: 'pointer',
-              }}>Cancelar</button>
+              }}>{tr('common.cancel')}</button>
             <button
               type="button"
               onClick={() => void push()}
@@ -105,7 +107,7 @@ export function PushButton({ bubbleId, workspace }: Props) {
                 background: t.accent, color: t.accentOn,
                 fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
                 cursor: 'pointer',
-              }}>Pushear</button>
+              }}>{tr('push.confirm.do')}</button>
           </div>
         </div>
       )}

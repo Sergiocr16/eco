@@ -1,0 +1,22 @@
+# scripts/.i18n-allowlist — excepciones para check:i18n.
+# Una línea por excepción. Formato:
+#   path/relativo/al/repo.tsx:fragmento
+#
+# - `path` debe terminar el archivo (suffix match), o ser `*` para global.
+# - `fragmento` debe estar contenido en la línea del hit, o ser `*` para
+#   ignorar TODO el archivo.
+#
+# Mantenelo lo más corto posible. Si una excepción se vuelve un patrón
+# repetido, probablemente conviene una key i18n nueva en vez del bypass.
+
+# Selector de idioma: los nombres se muestran en su propio idioma siempre
+# (Español queda "Español" tanto en ES como en EN).
+frontend/src/screens/Settings.tsx:Español
+
+# Tech debt pre-existente — fuera del scope del refactor i18n inicial.
+# Estos archivos no se tocaron en el merge y quedan para iteraciones futuras.
+frontend/src/App.tsx:*
+frontend/src/components/DiffViewer.tsx:*
+frontend/src/components/PullRequestsList.tsx:*
+frontend/src/components/SkillsPicker.tsx:*
+frontend/src/components/GitPanel/ResizableSplit.tsx:*
