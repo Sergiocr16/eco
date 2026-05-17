@@ -5,9 +5,10 @@ import { IconBranch, IconExt, IconUser, IconCheck, IconX, IconResume } from '@/d
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit, on as ecoOn } from '@/lib/eco-bus';
 import { ResizableSplit } from './ResizableSplit';
-import { EmptyState, SubpanelLoading, formatRelTime } from './shared';
+import { EmptyState, SubpanelLoading, useFormatRelTime } from './shared';
 import { Markdown } from './Markdown';
 import { usePullRequests, type PullRequest } from '@/hooks/usePullRequests';
+import { useT } from '@/hooks/useI18n';
 
 type PrComment = {
   author: string;
@@ -47,6 +48,7 @@ type Props = { workspace: string; bubbleId: string };
 
 export function PRsView({ workspace, bubbleId }: Props) {
   const t = useTokens();
+  const tr = useT();
   const { data: list, loading: listLoading, refresh } = usePullRequests(workspace, bubbleId);
   // Lee selección al montar. Dos fuentes:
   //  1) pending_pr (one-shot): viene del GitMiniDock cuando el user clickea
@@ -90,7 +92,7 @@ export function PRsView({ workspace, bubbleId }: Props) {
 
   const prs = list?.ok ? list.prs : [];
 
-  if (listLoading && !list) return <SubpanelLoading label="Cargando pull requests…"/>;
+  if (listLoading && !list) return <SubpanelLoading label={tr('prs.loading')}/>;
   if (list && !list.ok) {
     return (
       <div style={{ padding: 24 }}>
@@ -99,7 +101,7 @@ export function PRsView({ workspace, bubbleId }: Props) {
     );
   }
   if (prs.length === 0) {
-    return <EmptyState message="Sin PRs abiertos" hint="Cuando haya pull requests abiertos en este repo de GitHub vas a verlos acá."/>;
+    return <EmptyState message={tr('prs.empty.title')} hint={tr('prs.empty.hint')}/>;
   }
 
   return (
@@ -115,11 +117,11 @@ export function PRsView({ workspace, bubbleId }: Props) {
             flexShrink: 0,
           }}>
             <div style={{ flex: 1, fontSize: 11.5, color: t.text2 }}>
-              <strong style={{ color: t.text0 }}>{prs.length}</strong> abierto{prs.length === 1 ? '' : 's'}
+              <strong style={{ color: t.text0 }}>{prs.length}</strong> {prs.length === 1 ? tr('prs.list.open_one') : tr('prs.list.open_many')}
             </div>
             <button type="button"
               onClick={() => void refresh()}
-              title="Refrescar"
+              title={tr('prs.list.refresh_tooltip')}
               style={{
                 width: 24, height: 24, padding: 0, borderRadius: 6,
                 background: 'transparent', border: `1px solid ${t.glassBorder}`,
@@ -147,7 +149,7 @@ export function PRsView({ workspace, bubbleId }: Props) {
               listSummary={prs.find((p) => p.number === selected) ?? null}
               onAfterCheckout={() => { ecoEmit('eco:git_refresh', { bubbleId }); }}
             />
-          : <EmptyState message="Seleccioná un PR" hint="Click sobre un pull request de la lista para ver descripción, comentarios y acciones."/>
+          : <EmptyState message={tr('prs.pick.title')} hint={tr('prs.pick.hint')}/>
       }
     />
   );
@@ -161,6 +163,8 @@ function compactNum(n: number): string {
 
 function PrRow({ pr, active, onClick }: { pr: PullRequest; active: boolean; onClick: () => void }) {
   const t = useTokens();
+  const tr = useT();
+  const formatRelTime = useFormatRelTime();
   return (
     <button type="button"
       onClick={onClick}
@@ -192,7 +196,7 @@ function PrRow({ pr, active, onClick }: { pr: PullRequest; active: boolean; onCl
       }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
           <IconUser size={9}/>
-          <span>{pr.author || '—'}</span>
+          <span>{pr.author || tr('common.empty_dash')}</span>
         </span>
         <span>·</span>
         <span>{formatRelTime(pr.updatedAt || pr.createdAt)}</span>
@@ -201,7 +205,7 @@ function PrRow({ pr, active, onClick }: { pr: PullRequest; active: boolean; onCl
             padding: '0 5px', borderRadius: 3,
             background: t.bg3, color: t.text2,
             fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
-          }}>draft</span>
+          }}>{tr('prs.list.draft')}</span>
         )}
         {pr.isFork && (
           <span style={{
@@ -209,7 +213,7 @@ function PrRow({ pr, active, onClick }: { pr: PullRequest; active: boolean; onCl
             background: `color-mix(in oklch, ${t.warn} 18%, transparent)`,
             color: t.warn,
             fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
-          }}>fork</span>
+          }}>{tr('prs.list.fork')}</span>
         )}
         {(pr.additions != null || pr.deletions != null) && (
           <span style={{ display: 'inline-flex', gap: 4 }}>
@@ -232,6 +236,7 @@ function PrDetailPane({
   onAfterCheckout: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   // Cache global del detalle del PR — al volver al MISMO PR no se ve spinner,
   // se muestra el detalle viejo y se revalida en background.
   const cacheKey = `${workspace}|${bubbleId}|${prNumber}`;
@@ -258,7 +263,7 @@ function PrDetailPane({
       setDetails(fresh);
       prDetailsCache.set(cacheKey, fresh);
     } catch (e) {
-      setDetails({ ok: false, error: e instanceof Error ? e.message : 'Error' });
+      setDetails({ ok: false, error: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setLoading(false);
     }
@@ -281,13 +286,13 @@ function PrDetailPane({
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
-        setMsg({ kind: 'ok', text: d.message || `Checkout del PR #${prNumber} OK` });
+        setMsg({ kind: 'ok', text: d.message || tr('prs.checkout.ok', { n: prNumber }) });
         onAfterCheckout();
       } else {
-        setMsg({ kind: 'err', text: d.error || 'Checkout falló' });
+        setMsg({ kind: 'err', text: d.error || tr('prs.checkout.fail') });
       }
     } catch (e) {
-      setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusyAction(null);
     }
@@ -304,15 +309,15 @@ function PrDetailPane({
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
-        setMsg({ kind: 'ok', text: d.message || `PR #${prNumber} mergeado` });
+        setMsg({ kind: 'ok', text: d.message || tr('prs.merge.ok', { n: prNumber }) });
         ecoEmit('eco:git_refresh', { bubbleId });
         // Recargamos detalles para reflejar el nuevo state (MERGED).
         void load(true);
       } else {
-        setMsg({ kind: 'err', text: d.error || 'Merge falló' });
+        setMsg({ kind: 'err', text: d.error || tr('prs.merge.fail') });
       }
     } catch (e) {
-      setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusyAction(null);
     }
@@ -332,20 +337,20 @@ function PrDetailPane({
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
-        setMsg({ kind: 'ok', text: d.message || `PR #${prNumber} cerrado` });
+        setMsg({ kind: 'ok', text: d.message || tr('prs.close.ok', { n: prNumber }) });
         ecoEmit('eco:git_refresh', { bubbleId });
         void load(true);
       } else {
-        setMsg({ kind: 'err', text: d.error || 'Cerrar falló' });
+        setMsg({ kind: 'err', text: d.error || tr('prs.close.fail') });
       }
     } catch (e) {
-      setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusyAction(null);
     }
   }
 
-  if (loading) return <SubpanelLoading label="Cargando detalles del PR…"/>;
+  if (loading) return <SubpanelLoading label={tr('prs.loading_detail')}/>;
 
   if (details && !details.ok) {
     return (
@@ -395,19 +400,19 @@ function PrDetailPane({
         <div style={{
           fontSize: 12, color: t.text2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
         }}>
-          <strong style={{ color: t.text1 }}>{author || '—'}</strong>
-          <span>quiere mergear</span>
+          <strong style={{ color: t.text1 }}>{author || tr('common.empty_dash')}</strong>
+          <span>{tr('prs.detail.wants_to_merge')}</span>
           <strong style={{ color: t.text0 }}>{commitsCount}</strong>
-          <span>commit{commitsCount === 1 ? '' : 's'} en</span>
+          <span>{commitsCount === 1 ? tr('prs.detail.commit_one') : tr('prs.detail.commit_many')}</span>
           <BranchPill name={baseRef}/>
-          <span>desde</span>
+          <span>{tr('prs.detail.from')}</span>
           <BranchPill name={headRef}/>
         </div>
 
         {/* Acciones */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <Btn kind="primary" size="sm" icon={IconBranch} onClick={() => void checkout()} disabled={!!busyAction}>
-            {busyAction === 'checkout' ? '…' : 'Ir a la rama del PR'}
+            {busyAction === 'checkout' ? '…' : tr('prs.detail.go_to_branch')}
           </Btn>
           {url && (
             <a href={url} target="_blank" rel="noopener noreferrer"
@@ -419,13 +424,13 @@ function PrDetailPane({
               }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.glassBorder; e.currentTarget.style.color = t.text2; }}>
-              <IconExt size={11}/> Ver en GitHub
+              <IconExt size={11}/> {tr('prs.detail.view_github')}
             </a>
           )}
           <button type="button"
             onClick={() => void load(false)}
             disabled={!!busyAction}
-            title="Refrescar comentarios"
+            title={tr('prs.detail.refresh_comments')}
             style={{
               width: 28, height: 28, padding: 0, borderRadius: 7,
               background: 'transparent', border: `1px solid ${t.glassBorder}`,
@@ -458,7 +463,7 @@ function PrDetailPane({
         )}
         {comments.length === 0 && !body ? (
           <div style={{ padding: 32, textAlign: 'center', color: t.text3, fontSize: 12 }}>
-            Sin descripción ni comentarios.
+            {tr('prs.detail.no_comments')}
           </div>
         ) : (
           comments.map((c, i) => (
@@ -487,8 +492,8 @@ function PrDetailPane({
         }}>
           <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: t.text3 }}>
             {isDraft
-              ? 'Este PR es draft — convertilo a "Ready for review" en GitHub antes de mergear.'
-              : `Acciones sobre el PR #${number} en GitHub`}
+              ? tr('prs.detail.draft_hint')
+              : tr('prs.detail.actions_on', { n: number })}
           </div>
           <button type="button"
             onClick={() => setCloseConfirm({ comment: '' })}
@@ -500,12 +505,12 @@ function PrDetailPane({
               fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
               cursor: busyAction ? 'wait' : 'pointer',
             }}>
-            {busyAction === 'close' ? '…' : 'Cerrar PR'}
+            {busyAction === 'close' ? '…' : tr('prs.detail.close_btn')}
           </button>
           <button type="button"
             onClick={() => setMergeConfirm({ method: 'merge' })}
             disabled={!!busyAction || isDraft}
-            title={isDraft ? 'No se puede mergear un PR en draft' : 'Mergear este PR'}
+            title={isDraft ? tr('prs.detail.draft_cant_merge') : tr('prs.detail.merge_tooltip')}
             style={{
               height: 32, padding: '0 14px', borderRadius: 8, border: 0,
               background: isDraft ? t.bg3 : t.accent,
@@ -513,7 +518,7 @@ function PrDetailPane({
               fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
               cursor: busyAction || isDraft ? 'not-allowed' : 'pointer',
             }}>
-            {busyAction === 'merge' ? '…' : 'Hacer merge'}
+            {busyAction === 'merge' ? '…' : tr('prs.detail.merge_btn')}
           </button>
         </div>
       )}
@@ -555,11 +560,12 @@ function MergeConfirm({
   onConfirm: (method: 'merge' | 'squash' | 'rebase') => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [method, setMethod] = useState<'merge' | 'squash' | 'rebase'>(initialMethod);
   const methods: { id: 'merge' | 'squash' | 'rebase'; label: string; desc: string }[] = [
-    { id: 'merge', label: 'Create merge commit', desc: 'Mantiene todos los commits + agrega un commit de merge.' },
-    { id: 'squash', label: 'Squash and merge', desc: 'Combina todos los commits en uno solo.' },
-    { id: 'rebase', label: 'Rebase and merge', desc: 'Reaplica los commits encima de la base sin merge commit.' },
+    { id: 'merge', label: tr('prs.merge_confirm.method.merge.label'), desc: tr('prs.merge_confirm.method.merge.desc') },
+    { id: 'squash', label: tr('prs.merge_confirm.method.squash.label'), desc: tr('prs.merge_confirm.method.squash.desc') },
+    { id: 'rebase', label: tr('prs.merge_confirm.method.rebase.label'), desc: tr('prs.merge_confirm.method.rebase.desc') },
   ];
   return (
     <div style={{
@@ -573,14 +579,14 @@ function MergeConfirm({
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
-          Mergear PR #{prNumber}
+          {tr('prs.merge_confirm.title', { n: prNumber })}
         </div>
         <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
-          Vas a mergear <strong>{commitsCount}</strong> commit{commitsCount === 1 ? '' : 's'} de{' '}
+          {tr('prs.merge_confirm.body_pre')} <strong>{commitsCount}</strong> {commitsCount === 1 ? tr('prs.merge_confirm.commit_one') : tr('prs.merge_confirm.commit_many')}{' '}
           <code style={{ fontFamily: t.fontMono, padding: '1px 5px', borderRadius: 4, background: t.bg3, color: t.text0 }}>{headRef}</code>{' '}
-          en{' '}
+          {tr('prs.merge_confirm.into')}{' '}
           <code style={{ fontFamily: t.fontMono, padding: '1px 5px', borderRadius: 4, background: t.bg3, color: t.text0 }}>{baseRef}</code>{' '}
-          en el remote.
+          {tr('prs.merge_confirm.into_remote')}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {methods.map((m) => (
@@ -605,7 +611,7 @@ function MergeConfirm({
           ))}
         </div>
         <div style={{ fontSize: 11, color: t.text3 }}>
-          Esto se hace en el remote vía <code style={{ fontFamily: t.fontMono }}>gh pr merge</code>. No se puede deshacer fácilmente.
+          {tr('prs.merge_confirm.gh_hint')}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onCancel}
@@ -614,14 +620,14 @@ function MergeConfirm({
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
               fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-            }}>Cancelar</button>
+            }}>{tr('common.cancel')}</button>
           <button type="button" onClick={() => onConfirm(method)}
             style={{
               height: 28, padding: '0 14px', borderRadius: 7, border: 0,
               background: t.accent, color: t.accentOn,
               fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
               cursor: 'pointer',
-            }}>Sí, hacer merge</button>
+            }}>{tr('prs.merge_confirm.confirm')}</button>
         </div>
       </div>
     </div>
@@ -638,6 +644,7 @@ function CloseConfirm({
   onConfirm: (comment: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [comment, setComment] = useState(initialComment);
   return (
     <div style={{
@@ -651,18 +658,18 @@ function CloseConfirm({
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.err }}>
-          Cerrar PR #{prNumber} sin mergear
+          {tr('prs.close_confirm.title', { n: prNumber })}
         </div>
         <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
           <em>{title}</em>
         </div>
         <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
-          El PR queda en estado CLOSED en GitHub. Los commits no se mergean. Podés reabrirlo después.
+          {tr('prs.close_confirm.body')}
         </div>
         <textarea
           value={comment}
           onChange={(e) => setComment(e.target.value)}
-          placeholder="Comentario opcional al cerrar (visible en GitHub)…"
+          placeholder={tr('prs.close_confirm.comment_placeholder')}
           rows={3}
           style={{
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
@@ -677,14 +684,14 @@ function CloseConfirm({
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
               fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-            }}>Cancelar</button>
+            }}>{tr('common.cancel')}</button>
           <button type="button" onClick={() => onConfirm(comment)}
             style={{
               height: 28, padding: '0 14px', borderRadius: 7, border: 0,
               background: t.err, color: '#fff',
               fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
               cursor: 'pointer',
-            }}>Cerrar PR</button>
+            }}>{tr('prs.detail.close_btn')}</button>
         </div>
       </div>
     </div>
@@ -710,12 +717,13 @@ function StateBadge({ state, isDraft }: { state: string; isDraft: boolean }) {
 
 function BranchPill({ name }: { name: string }) {
   const t = useTokens();
+  const tr = useT();
   return (
     <code style={{
       fontFamily: t.fontMono, fontSize: 11,
       padding: '1px 6px', borderRadius: 5,
       background: t.bg3, color: t.text0,
-    }}>{name || '—'}</code>
+    }}>{name || tr('common.empty_dash')}</code>
   );
 }
 
@@ -728,6 +736,8 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
   createdAt: string;
 }) {
   const t = useTokens();
+  const tr = useT();
+  const formatRelTime = useFormatRelTime();
   const stateIcon =
     state === 'APPROVED' ? <IconCheck size={11}/>
     : state === 'CHANGES_REQUESTED' ? <IconX size={11}/>
@@ -737,10 +747,10 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
     : state === 'CHANGES_REQUESTED' ? t.err
     : t.text2;
   const kindLabel =
-    kind === 'body' ? 'Descripción'
-    : kind === 'review' ? (state ? state.replace('_', ' ').toLowerCase() : 'review')
-    : kind === 'inline' ? `comentó sobre ${path || 'un archivo'}`
-    : 'comentó';
+    kind === 'body' ? tr('prs.detail.body_kind')
+    : kind === 'review' ? (state ? state.replace('_', ' ').toLowerCase() : tr('prs.detail.review_kind'))
+    : kind === 'inline' ? tr('prs.detail.inline_kind', { path: path || tr('prs.detail.inline_kind_file') })
+    : tr('prs.detail.commented_kind');
 
   return (
     <div style={{
@@ -758,7 +768,7 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
           fontSize: 10, fontWeight: 700,
           flexShrink: 0,
         }}>{(author || '?').slice(0, 1).toUpperCase()}</span>
-        <strong style={{ color: t.text0 }}>{author || 'anónimo'}</strong>
+        <strong style={{ color: t.text0 }}>{author || tr('prs.detail.anon')}</strong>
         <span style={{ color: kind === 'body' ? t.accent : stateColor, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           {stateIcon}
           {kindLabel}
@@ -779,7 +789,7 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
         </div>
       ) : (
         <div style={{ fontSize: 11.5, color: t.text3, fontStyle: 'italic' }}>
-          (sin texto)
+          {tr('prs.detail.no_text')}
         </div>
       )}
     </div>
@@ -788,10 +798,11 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
 
 function ErrorBlock({ error, code }: { error: string; code?: string }) {
   const t = useTokens();
+  const tr = useT();
   const friendly =
-    code === 'pr.gh_missing' ? 'GitHub CLI (gh) no está instalado. Instalalo con `brew install gh`.'
-    : code === 'pr.gh_unauthenticated' ? 'gh no está autenticado. Corré `gh auth login` en una terminal.'
-    : code === 'pr.no_github_remote' ? 'Este repo no tiene un remote de GitHub.'
+    code === 'pr.gh_missing' ? tr('prs.err.gh_missing')
+    : code === 'pr.gh_unauthenticated' ? tr('prs.err.gh_unauthenticated')
+    : code === 'pr.no_github_remote' ? tr('prs.err.no_github_remote')
     : null;
   return (
     <div style={{

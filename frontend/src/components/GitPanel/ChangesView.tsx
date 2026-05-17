@@ -126,7 +126,7 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
               animation: 'eco-spin 0.8s linear infinite',
               display: 'inline-block',
             }}/>
-            <div style={{ fontSize: 13, color: t.text2 }}>{tr('detail.git.changes.searching')}</div>
+            <div style={{ fontSize: 13, color: t.text2 }}>{tr('git.changes.searching')}</div>
           </>
         ) : (
           <>
@@ -134,7 +134,7 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
               {tr('detail.files.empty')}
             </div>
             <div style={{ fontSize: 12, color: t.text3, maxWidth: 380, textAlign: 'center', lineHeight: 1.5 }}>
-              {tr('detail.git.changes.empty_hint')}
+              {tr('git.changes.empty_detail')}
             </div>
           </>
         )}
@@ -160,17 +160,16 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
             flexShrink: 0,
           }}>
             <div style={{ flex: 1, fontSize: 11.5, color: t.text2, minWidth: 0 }}>
-              <strong style={{ color: t.text0 }}>{files.length}</strong>{' '}
-              {files.length === 1 ? tr('detail.git.changes.file_count_one').replace(/^1\s*/, '') : tr('detail.git.changes.file_count_many', { n: files.length }).replace(/^\d+\s*/, '')}
+              <strong style={{ color: t.text0 }}>{files.length}</strong> {files.length === 1 ? tr('git.changes.file_one') : tr('git.changes.file_many')}
               {reviewMode && pending > 0 && (
                 <span style={{ marginLeft: 6, color: t.warn }}>
-                  · {pending === 1 ? tr('detail.git.changes.pending_count_one') : tr('detail.git.changes.pending_count_many', { n: pending })}
+                  · {pending} {pending === 1 ? tr('git.changes.pending_one') : tr('git.changes.pending_many')}
                 </span>
               )}
             </div>
             {reviewMode && pending > 0 && (
               <Btn kind="ghost" size="sm" icon={IconCheck} onClick={() => void acceptAllFiles()}>
-                {tr('detail.git.changes.accept_all')}
+                {tr('git.changes.accept_all')}
               </Btn>
             )}
           </div>
@@ -213,7 +212,7 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: t.text3, fontSize: 12,
             }}>
-              Seleccioná un archivo
+              {tr('git.changes.pick_file')}
             </div>
           )}
         </div>
@@ -232,6 +231,7 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
   bubbleId: string;
 }) {
   const t = useTokens();
+  const tr = useT();
   const hasUnstaged = file.unstaged !== false;
   const dotColor = accepted ? t.ok : t.warn;
   // Acorta el path: si es muy largo, mostramos solo el último componente +
@@ -258,7 +258,7 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
       onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}>
       {reviewMode && (
         <span
-          title={accepted ? 'Aceptado' : 'Pendiente'}
+          title={accepted ? tr('git.changes.dot.accepted') : tr('git.changes.dot.pending')}
           style={{
             width: 8, height: 8, borderRadius: '50%',
             background: dotColor,

@@ -1057,7 +1057,7 @@ function NameAgentDialog({
             <input
               value={customDraft}
               onChange={(e) => setCustomDraft(e.target.value)}
-              placeholder="nombre de la rama"
+              placeholder={tr('dash.branch_name_placeholder')}
               spellCheck={false}
               autoCorrect="off"
               style={{
@@ -1337,7 +1337,7 @@ function NewAgentCard({
             <input
               value={customDraft}
               onChange={(e) => setCustomDraft(e.target.value)}
-              placeholder="nombre de la rama"
+              placeholder={tr('dash.branch_name_placeholder')}
               spellCheck={false}
               autoCorrect="off"
               style={{
@@ -1517,7 +1517,7 @@ function BubbleMenu({
             fontSize: 9.5, color: t.text3, letterSpacing: 0.4,
             textTransform: 'uppercase', fontWeight: 600,
             padding: '6px 10px 3px',
-          }}>Categoría</div>
+          }}>{tr('dash.category.label')}</div>
           {categories.map((c) => {
             const active = c.id === currentCategoryId;
             return (
@@ -1582,6 +1582,7 @@ function GridView({
   onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
 
   const groups = (() => {
     const map = new Map<string, Bubble[]>();
@@ -1594,7 +1595,7 @@ function GridView({
     return [...map.entries()].map(([key, items]) => ({
       key,
       label: key === '__none__'
-        ? 'Sin carpeta'
+        ? tr('dash.no_folder')
         : (key.split('/').filter(Boolean).pop() || key),
       path: key === '__none__' ? '' : key,
       items,
@@ -1713,20 +1714,20 @@ function KanbanView({
   const columns: ColumnDef[] = [
     {
       id: 'active',
-      label: 'Activos',
+      label: tr('dash.col.active'),
       color: t.accent,
       match: (b) =>
         b.status === 'thinking' || b.status === 'executing' || b.status === 'running',
     },
     {
       id: 'waiting',
-      label: 'En espera',
+      label: tr('dash.col.waiting'),
       color: t.warn,
       match: (b) => b.status === 'waiting' || b.status === 'paused' || b.status === 'pending',
     },
     {
       id: 'idle',
-      label: 'Inactivos',
+      label: tr('dash.col.idle'),
       color: t.text2,
       match: (b) =>
         (b.status === 'idle' || !b.status) &&
@@ -1734,19 +1735,19 @@ function KanbanView({
     },
     {
       id: 'shell',
-      label: 'Con shell abierto',
+      label: tr('dash.col.shell'),
       color: t.busy,
       match: (b) => (b.status === 'idle' || !b.status) && !!b.ptyOpen,
     },
     {
       id: 'done',
-      label: 'Terminados',
+      label: tr('dash.col.done'),
       color: t.ok,
       match: (b) => b.status === 'done',
     },
     {
       id: 'error',
-      label: 'Con error',
+      label: tr('dash.col.error'),
       color: t.err,
       match: (b) => b.status === 'error',
     },
@@ -1828,7 +1829,7 @@ function KanbanView({
                 <div style={{
                   padding: '14px 8px', textAlign: 'center',
                   fontSize: 11.5, color: t.text3, fontFamily: t.fontSans,
-                }}>Vacío.</div>
+                }}>{tr('dash.empty.cell')}</div>
               )}
             </div>
             {col.id === 'idle' && (
@@ -2273,7 +2274,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     return [...map.entries()].map(([key, items]) => ({
       key,
       label: key === '__none__'
-        ? 'Sin carpeta'
+        ? tr('dash.no_folder')
         : (key.split('/').filter(Boolean).pop() || key),
       items,
     }));

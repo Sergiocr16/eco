@@ -6,6 +6,7 @@ import { canEmbedArbitrarySites } from '@/lib/platform';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { ecoToken } from '@/lib/eco-config';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   bubbleId: string;
@@ -39,6 +40,7 @@ const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
 export function BrowserPanel({ bubbleId, workspace }: Props) {
   const t = useTokens();
+  const tr = useT();
   // En Electron el <webview> expone los DevTools nativos completos de
   // Chromium (Elements, Network, Sources, Performance, Console…). En web
   // puro (iframe) no hay API equivalente.
@@ -104,9 +106,9 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     if (!url) return;
     try {
       await navigator.clipboard.writeText(url);
-      setCopyMsg('Copiada');
+      setCopyMsg(tr('common.copied'));
     } catch {
-      setCopyMsg('Error al copiar');
+      setCopyMsg(tr('common.copy_error'));
     }
     setTimeout(() => setCopyMsg(null), 1500);
   }
@@ -122,7 +124,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
   const [sendMsg, setSendMsg] = useState<string | null>(null);
   async function sendUrlToClaude() {
     if (!url || sendingToClaude) return;
-    if (!workspace) { setSendMsg('Sin workspace'); setTimeout(() => setSendMsg(null), 2500); return; }
+    if (!workspace) { setSendMsg(tr('browser.send.no_workspace')); setTimeout(() => setSendMsg(null), 2500); return; }
     setSendingToClaude(true);
     setSendMsg(null);
     const r = await writeToBubblePty({
@@ -133,11 +135,11 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     });
     setSendingToClaude(false);
     if (r.ok) {
-      setSendMsg('Pegada');
+      setSendMsg(tr('browser.send.pasted'));
       ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId });
       setTimeout(() => setSendMsg(null), 1800);
     } else {
-      setSendMsg(`Error: ${r.error}`);
+      setSendMsg(tr('browser.send.err', { err: r.error ?? '' }));
       setTimeout(() => setSendMsg(null), 3500);
     }
   }
@@ -203,14 +205,14 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
         <button
           type="button"
           onClick={() => smartRef.current?.back()}
-          title="Atrás"
+          title={tr('browser.back')}
           style={navBtnStyle(t)}>
           <IconArrowL size={12}/>
         </button>
         <button
           type="button"
           onClick={reload}
-          title="Recargar"
+          title={tr('browser.reload')}
           disabled={!url}
           style={{ ...navBtnStyle(t), opacity: url ? 1 : 0.4 }}>
           <IconResume size={12}/>
@@ -225,7 +227,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') go(draft); }}
-            placeholder="URL o búsqueda…"
+            placeholder={tr('browser.url_placeholder')}
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="off"
@@ -274,17 +276,17 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
             fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
             cursor: draft.trim() ? 'pointer' : 'not-allowed',
             opacity: draft.trim() ? 1 : 0.5,
-          }}>Ir</button>
+          }}>{tr('browser.go')}</button>
         {/* Copiar URL actual al clipboard. */}
         <button
           type="button"
           onClick={() => void copyUrl()}
           disabled={!url}
-          title={copyMsg || (url ? `Copiar ${url}` : 'Cargá un sitio primero')}
+          title={copyMsg || (url ? tr('browser.copy_url_tooltip', { url }) : tr('browser.no_url_tooltip'))}
           style={{
             ...navBtnStyle(t),
             opacity: url ? 1 : 0.4,
-            color: copyMsg === 'Copiada' ? t.ok : (copyMsg ? t.err : t.text1),
+            color: copyMsg === tr('common.copied') ? t.ok : (copyMsg ? t.err : t.text1),
           }}>
           <IconCopy size={12}/>
         </button>
@@ -295,7 +297,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           type="button"
           onClick={() => void sendUrlToClaude()}
           disabled={!url || sendingToClaude}
-          title={sendMsg || (url ? `Enviar ${url} a Claude en la terminal` : 'Cargá un sitio primero')}
+          title={sendMsg || (url ? tr('browser.send_to_claude_tooltip', { url }) : tr('browser.no_url_tooltip'))}
           style={{
             ...navBtnStyle(t),
             opacity: url ? (sendingToClaude ? 0.6 : 1) : 0.4,
@@ -309,15 +311,15 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           padding: '2px 4px', borderRadius: 6,
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
         }}>
-          <button type="button" onClick={() => bumpZoom('out')} title="Zoom out"
+          <button type="button" onClick={() => bumpZoom('out')} title={tr('browser.zoom_out')}
             style={{ ...zoomBtnStyle(t) }}>−</button>
-          <button type="button" onClick={() => bumpZoom('reset')} title="Reset zoom"
+          <button type="button" onClick={() => bumpZoom('reset')} title={tr('browser.zoom_reset')}
             style={{
               minWidth: 38, padding: '0 4px', height: 22, border: 0, borderRadius: 4,
               background: 'transparent', color: t.text1, cursor: 'pointer',
               fontFamily: t.fontMono, fontSize: 10.5,
             }}>{Math.round(zoom * 100)}%</button>
-          <button type="button" onClick={() => bumpZoom('in')} title="Zoom in"
+          <button type="button" onClick={() => bumpZoom('in')} title={tr('browser.zoom_in')}
             style={{ ...zoomBtnStyle(t) }}>+</button>
         </div>
         {/* DevTools nativos completos de Chromium: Elements, Network,
@@ -328,7 +330,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
             type="button"
             onClick={() => smartRef.current?.openDevTools()}
             disabled={!url}
-            title="Abrir DevTools (Elements, Network, Console, Sources…)"
+            title={tr('browser.devtools_tooltip')}
             style={{
               ...navBtnStyle(t),
               opacity: url ? 1 : 0.4,
@@ -340,7 +342,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           type="button"
           onClick={openInOs}
           disabled={!url}
-          title="Abrir en navegador del sistema"
+          title={tr('browser.open_in_os')}
           style={{ ...navBtnStyle(t), opacity: url ? 1 : 0.4 }}>
           <IconExt size={11}/>
         </button>
@@ -366,11 +368,10 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
               <IconGlobe size={22}/>
             </div>
             <div style={{ fontSize: 14, color: t.text1, fontWeight: 500 }}>
-              Navegá desde la conversación
+              {tr('browser.home.title')}
             </div>
             <div style={{ fontSize: 12, color: t.text3, textAlign: 'center', maxWidth: 360 }}>
-              Útil para dev servers locales (ej. localhost:3000) o sitios que permiten embebido.
-              Si un sitio bloquea iframes, podés abrirlo en el navegador del sistema con el botón ↗.
+              {tr('browser.home.desc')}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 8 }}>
               {SHORTCUTS.map((s) => (
@@ -426,10 +427,9 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
                   color: t.warn, fontSize: 18, lineHeight: 1,
                 }}>!</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: 4 }}>El sitio bloqueó el embebido</div>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>{tr('browser.blocked.title')}</div>
                   <div style={{ fontSize: 11.5, color: t.text2 }}>
-                    Muchos sitios (Google, GitHub, banks) impiden cargarse adentro de un iframe.
-                    Abrilo en tu navegador con el botón ↗.
+                    {tr('browser.blocked.desc')}
                   </div>
                 </div>
                 <button

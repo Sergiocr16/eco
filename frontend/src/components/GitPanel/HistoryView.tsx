@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { useGitLog, type LogEntry } from '@/hooks/useGitLog';
-import { useT } from '@/hooks/useI18n';
-import { ShaPill, SubpanelLoading, EmptyState, formatRelTime } from './shared';
+import { ShaPill, SubpanelLoading, EmptyState, useFormatRelTime } from './shared';
 import { CommitDetailPanel } from './CommitDetailPanel';
 import { ResizableSplit } from './ResizableSplit';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   workspace: string;
@@ -69,17 +69,17 @@ export function HistoryView({ workspace, bubbleId }: Props) {
   const selectedFromList = commits.find((c) => c.sha === selectedSha);
   const selected: LogEntry | null = selectedFromList
     ?? (selectedSha
-      ? { sha: selectedSha, abbrev: selectedSha.slice(0, 7), author: '—', email: '', date: '', subject: tr('detail.git.commit.loading_stub'), body: '', refs: [], parents: [] }
+      ? { sha: selectedSha, abbrev: selectedSha.slice(0, 7), author: tr('common.empty_dash'), email: '', date: '', subject: tr('common.loading'), body: '', refs: [], parents: [] }
       : null);
 
   if (loading && commits.length === 0) {
-    return <SubpanelLoading label={tr('detail.git.history.loading')}/>;
+    return <SubpanelLoading label={tr('git.history.loading')}/>;
   }
   if (error) {
-    return <EmptyState message={tr('detail.git.history.error_title')} hint={error}/>;
+    return <EmptyState message={tr('git.history.error_title')} hint={error}/>;
   }
   if (commits.length === 0) {
-    return <EmptyState message={tr('detail.git.history.empty_title')} hint={tr('detail.git.history.empty_hint')}/>;
+    return <EmptyState message={tr('git.history.empty_title')} hint={tr('git.history.empty_hint')}/>;
   }
 
   return (
@@ -101,12 +101,12 @@ export function HistoryView({ workspace, bubbleId }: Props) {
               display: 'inline-flex', alignItems: 'center', gap: 6,
               fontSize: 11.5, color: t.text2, cursor: 'pointer',
             }}
-            title={tr('detail.git.history.all_branches_title')}>
+            title={tr('git.history.all_branches_tooltip')}>
               <input type="checkbox"
                 checked={allBranches}
                 onChange={(e) => setAllBranches(e.target.checked)}
                 style={{ margin: 0 }}/>
-              {tr('detail.git.history.all_branches_label')}
+              {tr('git.history.all_branches')}
             </label>
           </div>
           <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
@@ -120,12 +120,12 @@ export function HistoryView({ workspace, bubbleId }: Props) {
             ))}
             {loading && commits.length > 0 && (
               <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
-                {tr('detail.git.history.loading_more')}
+                {tr('git.history.loading_more')}
               </div>
             )}
             {!hasMore && commits.length > 50 && (
               <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
-                {tr('detail.git.history.end')}
+                {tr('git.history.end')}
               </div>
             )}
           </div>
@@ -139,7 +139,7 @@ export function HistoryView({ workspace, bubbleId }: Props) {
             summary={selected}
           />
         ) : (
-          <EmptyState message={tr('detail.git.history.select_commit')} hint={tr('detail.git.history.select_hint')}/>
+          <EmptyState message={tr('git.history.pick_commit_title')} hint={tr('git.history.pick_commit_hint')}/>
         )
       }
     />
@@ -149,6 +149,7 @@ export function HistoryView({ workspace, bubbleId }: Props) {
 function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: boolean; onClick: () => void }) {
   const t = useTokens();
   const tr = useT();
+  const formatRelTime = useFormatRelTime();
   return (
     <button type="button"
       onClick={onClick}
@@ -173,7 +174,7 @@ function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: bool
       <div style={{ fontSize: 10.5, color: t.text3, display: 'flex', gap: 6, alignItems: 'center' }}>
         <span>{commit.author}</span>
         <span>·</span>
-        <span>{formatRelTime(commit.date, tr)}</span>
+        <span>{formatRelTime(commit.date)}</span>
         {commit.refs.length > 0 && (
           <>
             <span>·</span>
@@ -188,7 +189,7 @@ function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: bool
         {commit.parents.length > 1 && (
           <>
             <span>·</span>
-            <span style={{ color: t.accent, fontSize: 9.5, fontWeight: 600 }}>merge</span>
+            <span style={{ color: t.accent, fontSize: 9.5, fontWeight: 600 }}>{tr('git.history.merge_tag')}</span>
           </>
         )}
       </div>

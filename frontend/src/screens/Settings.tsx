@@ -788,6 +788,7 @@ function VoiceSelect({
   onSelect: (id: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const macsay = voices.filter((v) => v.kind === 'macsay');
   const piper = voices.filter((v) => v.kind === 'piper');
   const browser = voices.filter((v) => v.kind === 'browser');
@@ -827,7 +828,7 @@ function VoiceSelect({
         </optgroup>
       )}
       {browser.length > 0 && (
-        <optgroup label="Sistema / navegador" style={labelStyle}>
+        <optgroup label={tr('settings.voice.optgroup_browser')} style={labelStyle}>
           {browser.map((v) => (
             <option key={v.id} value={v.id}>{v.name} · {v.language}</option>
           ))}
@@ -991,6 +992,7 @@ function SectionFolders() {
 // del NameAgentDialog lee desde acá.
 function WorktreeFavoritesField({ workspace }: { workspace: string }) {
   const t = useTokens();
+  const tr = useT();
   const key = `eco.worktree.favorites.${workspace}`;
   const [draft, setDraft] = useState<string>(() => {
     try { return window.localStorage.getItem(key) ?? ''; } catch { return ''; }
@@ -1017,13 +1019,13 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
         fontSize: 11, color: t.text2, marginBottom: 6,
       }}>
         <IconBranch size={11}/>
-        <span>Branches base favoritos (separados por coma)</span>
-        {savedFlash && <span style={{ color: t.ok, fontSize: 10.5 }}>· guardado</span>}
+        <span>{tr('settings.bases.label')}</span>
+        {savedFlash && <span style={{ color: t.ok, fontSize: 10.5 }}>{tr('settings.bases.saved')}</span>}
       </div>
       <input
         value={draft}
         onChange={(e) => save(e.target.value)}
-        placeholder="main, develop, staging"
+        placeholder={tr('settings.bases.placeholder')}
         spellCheck={false}
         autoCorrect="off"
         style={{
@@ -1035,8 +1037,7 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
         }}
       />
       <div style={{ marginTop: 4, fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
-        Al crear una burbuja con este workspace, podés elegir desde qué rama base
-        crear el worktree. Si está vacío, se usa el HEAD del repo padre.
+        {tr('settings.bases.hint')}
       </div>
     </div>
   );
@@ -1249,10 +1250,9 @@ function SectionAppearance() {
         })}
       </div>
 
-      <SectionLabel>Categorías de agentes</SectionLabel>
+      <SectionLabel>{tr('settings.categories.label')}</SectionLabel>
       <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
-        Etiquetá tus agentes con categorías. El color de la categoría tiñe el
-        nodo del agente en la vista de grafo del Dashboard.
+        {tr('settings.categories.desc')}
       </div>
       <CategoryManager/>
     </div>
@@ -1263,6 +1263,7 @@ function SectionAppearance() {
 // botón para agregar. Persiste vía useCategories (localStorage compartido).
 function CategoryManager() {
   const t = useTokens();
+  const tr = useT();
   const { categories, add, update, remove } = useCategories();
   const [draftName, setDraftName] = useState('');
 
@@ -1274,7 +1275,7 @@ function CategoryManager() {
           background: t.bg2, border: `1px dashed ${t.glassBorder}`,
           fontSize: 11.5, color: t.text2,
         }}>
-          Sin categorías. Agregá una abajo (ej. «Producción», «Bugs», «Spike»).
+          {tr('settings.categories.empty')}
         </div>
       )}
       {categories.map((c) => (
@@ -1306,7 +1307,7 @@ function CategoryManager() {
           <input
             value={c.name}
             onChange={(e) => update(c.id, { name: e.target.value })}
-            placeholder="Nombre de la categoría"
+            placeholder={tr('settings.categories.name_placeholder')}
             style={{
               flex: 1, minWidth: 0, boxSizing: 'border-box',
               background: t.bg3, border: `1px solid ${t.glassBorder}`,
@@ -1318,7 +1319,7 @@ function CategoryManager() {
           <button
             type="button"
             onClick={() => remove(c.id)}
-            title="Eliminar categoría"
+            title={tr('settings.categories.delete_tooltip')}
             style={{
               width: 26, height: 26, borderRadius: 7, border: 0,
               background: 'transparent', color: t.text3, cursor: 'pointer',
@@ -1342,7 +1343,7 @@ function CategoryManager() {
               setDraftName('');
             }
           }}
-          placeholder="Nueva categoría…"
+          placeholder={tr('settings.categories.new_placeholder')}
           style={{
             flex: 1, boxSizing: 'border-box',
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
@@ -1358,7 +1359,7 @@ function CategoryManager() {
             add(draftName.trim(), CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length]!);
             setDraftName('');
           }}>
-          Agregar
+          {tr('common.add')}
         </Btn>
       </div>
     </div>
@@ -1401,7 +1402,7 @@ function SectionIntegrations() {
     <div style={{ maxWidth: 720 }}>
       <Header title={tr('settings.integrations.title')} sub={tr('settings.integrations.sub')}/>
 
-      <SectionLabel>Obsidian</SectionLabel>
+      <SectionLabel>{tr('settings.obsidian.label')}</SectionLabel>
       <Glass radius={14} style={{ padding: 18, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
           <div style={{
@@ -1478,8 +1479,8 @@ function SectionIntegrations() {
                       border: 0, background: 'transparent', cursor: 'pointer',
                       color: t.text3, fontSize: 10.5, padding: '2px 6px',
                     }}
-                    title="Volver a detectar vaults">
-                    ↻ Refrescar
+                    title={tr('settings.obsidian.refresh_tooltip')}>
+                    {tr('settings.obsidian.refresh_btn')}
                   </button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
@@ -1553,20 +1554,20 @@ function SectionIntegrations() {
               border: `1px solid ${t.glassBorder}`, background: t.bg2,
             }}>
               <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 8 }}>
-                Modo de guardado
+                {tr('settings.obsidian.mode_label')}
               </label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <ModeRow
                   active={mode === 'builtin'}
-                  title="Built-in (PARA-lite)"
-                  desc="Eco escribe la sesión directo al vault en 10 - Projects/<repo>/Sessions/."
+                  title={tr('settings.obsidian.mode_builtin_title')}
+                  desc={tr('settings.obsidian.mode_builtin_desc')}
                   onClick={() => setMode('builtin')}
                   t={t}
                 />
                 <ModeRow
                   active={mode === 'custom'}
-                  title="Comando custom"
-                  desc="Eco ejecuta tu comando con la sesión por stdin. Útil para usar tu skill global (ej: claude -p &quot;/kb&quot;)."
+                  title={tr('settings.obsidian.mode_custom_title')}
+                  desc={tr('settings.obsidian.mode_custom_desc')}
                   onClick={() => setMode('custom')}
                   t={t}
                 />

@@ -6,7 +6,8 @@ import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { fetchCommit, type LogEntry } from '@/hooks/useGitLog';
 import { useBranches } from '@/hooks/useBranches';
-import { ShaPill, SubpanelLoading, formatRelTime } from './shared';
+import { ShaPill, SubpanelLoading, useFormatRelTime } from './shared';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   workspace: string;
@@ -18,6 +19,8 @@ type Props = {
 
 export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
   const t = useTokens();
+  const tr = useT();
+  const formatRelTime = useFormatRelTime();
   const { data: branchesData } = useBranches(workspace, bubbleId);
   const [loading, setLoading] = useState(true);
   const [diff, setDiff] = useState<string>('');
@@ -67,15 +70,15 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) {
-        const conflictMsg = d.conflict ? ` (${d.conflict.files.length} archivos en conflicto)` : '';
+        const conflictMsg = d.conflict ? tr('git.commit.conflict_files', { n: d.conflict.files.length }) : '';
         setActionMsg({ kind: 'err', text: (d.error || `HTTP ${r.status}`) + conflictMsg });
         return { ok: false, data: d };
       }
-      setActionMsg({ kind: 'ok', text: d.message || 'OK' });
+      setActionMsg({ kind: 'ok', text: d.message || tr('git.commit.action_ok') });
       ecoEmit('eco:git_refresh', { bubbleId });
       return { ok: true, data: d };
     } catch (e) {
-      setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
       return { ok: false, data: null };
     } finally {
       setBusyAction(null);
@@ -108,15 +111,15 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
         if (!r.ok || !d.ok) {
           // Si hay cambios sin commitear, el backend devuelve checkout.dirty_working_tree.
           const hint = d.code === 'checkout.dirty_working_tree'
-            ? ' — commiteá o descartá tus cambios antes'
+            ? tr('git.cherry.dirty_hint')
             : '';
-          setActionMsg({ kind: 'err', text: `No se pudo cambiar a «${targetBranch}»: ${d.error || `HTTP ${r.status}`}${hint}` });
+          setActionMsg({ kind: 'err', text: tr('git.cherry.checkout_err', { branch: targetBranch, err: (d.error || `HTTP ${r.status}`) + hint }) });
           setBusyAction(null);
           return;
         }
         ecoEmit('eco:git_refresh', { bubbleId });
       } catch (e) {
-        setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+        setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
         setBusyAction(null);
         return;
       }
@@ -140,7 +143,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
     }
   }
   function copySha() {
-    try { void navigator.clipboard.writeText(summary.sha); setActionMsg({ kind: 'ok', text: 'SHA copiado' }); } catch { /* noop */ }
+    try { void navigator.clipboard.writeText(summary.sha); setActionMsg({ kind: 'ok', text: tr('git.commit.sha_copied') }); } catch { /* noop */ }
   }
 
   return (
@@ -162,7 +165,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
         </div>
         <div style={{ fontSize: 11, color: t.text2 }}>
           {summary.author} · {formatRelTime(summary.date)}
-          {summary.parents.length > 1 && <span style={{ marginLeft: 8, color: t.accent }}>· merge de {summary.parents.length} padres</span>}
+          {summary.parents.length > 1 && <span style={{ marginLeft: 8, color: t.accent }}>{tr('git.commit.merge_of_n', { n: summary.parents.length })}</span>}
         </div>
         {summary.body && (
           <pre style={{
@@ -177,7 +180,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
             <Btn kind="primary" size="sm" icon={IconCheck} onClick={() => setShowCherryMenu((v) => !v)} disabled={!!busyAction}>
-              {busyAction === 'cherry' ? '…' : 'Cherry-pick a…'}
+              {busyAction === 'cherry' ? '…' : tr('git.commit.cherry_to')}
             </Btn>
             {showCherryMenu && (
               <div style={{
@@ -191,7 +194,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
                 <div style={{
                   padding: '6px 10px', fontSize: 10.5, color: t.text3,
                   textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
-                }}>Aplicar este commit a:</div>
+                }}>{tr('git.commit.apply_to')}</div>
                 {(branchesData?.branches ?? [])
                   .filter((b) => !b.isRemote)
                   .map((b) => (
@@ -214,24 +217,24 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
                           fontSize: 9.5, fontWeight: 700, color: t.accent,
                           padding: '1px 5px', borderRadius: 3,
                           background: t.accentFaint,
-                        }}>ACTUAL</span>
+                        }}>{tr('git.commit.current_tag')}</span>
                       )}
                     </button>
                   ))}
                 {(!branchesData?.branches || branchesData.branches.filter((b) => !b.isRemote).length === 0) && (
                   <div style={{ padding: '8px 10px', fontSize: 11, color: t.text3 }}>
-                    Sin ramas locales disponibles.
+                    {tr('git.commit.no_local_branches')}
                   </div>
                 )}
               </div>
             )}
           </div>
           <Btn kind="ghost" size="sm" icon={IconX} onClick={() => void revert()} disabled={!!busyAction}>
-            {busyAction === 'revert' ? '…' : 'Revert'}
+            {busyAction === 'revert' ? '…' : tr('git.commit.revert')}
           </Btn>
           <div style={{ position: 'relative' }}>
             <Btn kind="ghost" size="sm" icon={IconResume} onClick={() => setShowResetMenu((v) => !v)} disabled={!!busyAction}>
-              Reset to here
+              {tr('git.commit.reset_to_here')}
             </Btn>
             {showResetMenu && (
               <div style={{
@@ -254,16 +257,16 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
                     <div style={{ fontWeight: 500 }}>--{m}</div>
                     <div style={{ fontSize: 10.5, color: t.text3, marginTop: 1 }}>
-                      {m === 'soft' && 'Mueve HEAD. Working tree e index intactos.'}
-                      {m === 'mixed' && 'Mueve HEAD + resetea index. Working tree intacto.'}
-                      {m === 'hard' && 'Mueve HEAD + resetea TODO. Destructivo.'}
+                      {m === 'soft' && tr('git.commit.reset.soft_desc')}
+                      {m === 'mixed' && tr('git.commit.reset.mixed_desc')}
+                      {m === 'hard' && tr('git.commit.reset.hard_desc')}
                     </div>
                   </button>
                 ))}
               </div>
             )}
           </div>
-          <Btn kind="ghost" size="sm" icon={IconCopy} onClick={copySha}>SHA</Btn>
+          <Btn kind="ghost" size="sm" icon={IconCopy} onClick={copySha}>{tr('git.commit.sha_btn')}</Btn>
         </div>
 
         {actionMsg && (
@@ -300,7 +303,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
 
       {/* Diff */}
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        {loading && <SubpanelLoading label="Cargando diff…"/>}
+        {loading && <SubpanelLoading label={tr('git.commit.loading_diff')}/>}
         {error && (
           <div style={{ padding: 20, color: t.err, fontFamily: t.fontMono, fontSize: 12 }}>
             {error}
@@ -319,7 +322,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
             <DiffRender diff={diff}/>
             {truncated && (
               <div style={{ padding: 16, textAlign: 'center', color: t.warn, fontSize: 12 }}>
-                Diff truncado a 512 KB
+                {tr('git.commit.diff_truncated')}
               </div>
             )}
           </>
@@ -340,6 +343,7 @@ function CherryPickConfirm({
   onConfirm: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const isSwitching = !!currentBranch && currentBranch !== targetBranch;
   return (
     <div style={{
@@ -353,15 +357,15 @@ function CherryPickConfirm({
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
-          Aplicar cherry-pick
+          {tr('git.cherry.title')}
         </div>
         <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
-          Vas a aplicar el commit{' '}
+          {tr('git.cherry.body_a')}{' '}
           <code style={{
             fontFamily: t.fontMono, padding: '1px 6px', borderRadius: 4,
             background: t.bg3, color: t.text0,
           }}>{commitAbbrev}</code>
-          {' '}— <em>{commitSubject}</em> — sobre la rama{' '}
+          {' '}— <em>{commitSubject}</em> — {tr('git.cherry.body_b')}{' '}
           <code style={{
             fontFamily: t.fontMono, padding: '1px 6px', borderRadius: 4,
             background: t.accentFaint, color: t.accent, fontWeight: 600,
@@ -375,16 +379,14 @@ function CherryPickConfirm({
             border: `1px solid color-mix(in oklch, ${t.warn} 40%, transparent)`,
             lineHeight: 1.5,
           }}>
-            Estás en <code style={{ fontFamily: t.fontMono }}>{currentBranch}</code>.
-            Eco va a hacer checkout a <code style={{ fontFamily: t.fontMono }}>{targetBranch}</code> antes de aplicar el commit, y vas a quedar parado ahí.
-            Si tenés cambios sin commitear el checkout va a fallar.
+            {tr('git.cherry.checkout_warning', { current: currentBranch ?? '', target: targetBranch })}
           </div>
         )}
         <div style={{ fontSize: 11, color: t.text3 }}>
-          Si el commit conflicta vas a ver el banner rojo arriba con opciones para resolver/abortar.
+          {tr('git.cherry.conflict_hint')}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Btn kind="ghost" size="sm" onClick={onCancel}>Cancelar</Btn>
+          <Btn kind="ghost" size="sm" onClick={onCancel}>{tr('common.cancel')}</Btn>
           <button type="button"
             onClick={onConfirm}
             style={{
@@ -392,7 +394,7 @@ function CherryPickConfirm({
               background: t.accent, color: t.accentOn,
               fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
               cursor: 'pointer',
-            }}>Sí, aplicar</button>
+            }}>{tr('git.cherry.confirm')}</button>
         </div>
       </div>
     </div>
@@ -408,6 +410,7 @@ function ResetHardConfirm({
   onConfirm: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const enabled = info.phrase.trim() === 'HARD RESET';
   return (
     <div style={{
@@ -421,10 +424,10 @@ function ResetHardConfirm({
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.err }}>
-          Reset --hard destructivo
+          {tr('git.reset.title')}
         </div>
         <div style={{ fontSize: 12, color: t.text1, lineHeight: 1.5 }}>
-          Vas a perder <strong>{info.lostCommits}</strong> commit{info.lostCommits === 1 ? '' : 's'}:
+          {info.lostCommits === 1 ? tr('git.reset.lose_one') : tr('git.reset.lose_many', { n: info.lostCommits ?? 0 })}
         </div>
         {info.lostSubjects && info.lostSubjects.length > 0 && (
           <ul style={{
@@ -435,13 +438,10 @@ function ResetHardConfirm({
           </ul>
         )}
         <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>
-          Tip: podés recuperar con <code style={{ fontFamily: t.fontMono }}>git reflog</code> dentro de los próximos 90 días.
+          {tr('git.reset.reflog_hint')}
         </div>
         <div style={{ fontSize: 11.5, color: t.text1 }}>
-          Para confirmar, escribí <code style={{
-            fontFamily: t.fontMono, padding: '2px 6px', borderRadius: 4,
-            background: t.bg3, color: t.text0,
-          }}>HARD RESET</code>:
+          {tr('git.reset.phrase_prompt')}
         </div>
         <input
           value={info.phrase}
@@ -453,7 +453,7 @@ function ResetHardConfirm({
             fontFamily: t.fontMono, fontSize: 13, color: t.text0, outline: 'none',
           }}/>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Btn kind="ghost" size="sm" onClick={onCancel}>Cancelar</Btn>
+          <Btn kind="ghost" size="sm" onClick={onCancel}>{tr('common.cancel')}</Btn>
           <button type="button"
             onClick={onConfirm}
             disabled={!enabled}
@@ -463,7 +463,7 @@ function ResetHardConfirm({
               color: enabled ? '#fff' : t.text3,
               fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
               cursor: enabled ? 'pointer' : 'not-allowed',
-            }}>Confirmar</button>
+            }}>{tr('git.reset.confirm')}</button>
         </div>
       </div>
     </div>
@@ -474,10 +474,11 @@ function ResetHardConfirm({
 // por tipo de línea. Para inspección rápida del commit alcanza.
 function DiffRender({ diff }: { diff: string }) {
   const t = useTokens();
+  const tr = useT();
   if (!diff.trim()) {
     return (
       <div style={{ padding: 20, color: t.text2, fontSize: 12 }}>
-        Sin cambios en el diff (commit vacío o solo metadata).
+        {tr('git.commit.empty_diff')}
       </div>
     );
   }

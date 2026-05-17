@@ -7,6 +7,7 @@ import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
 import { IconCommand } from '@/design/icons';
 import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   bubbles: Bubble[];
@@ -38,8 +39,10 @@ function saveOrder(ids: string[]) {
 // son reordenables con drag.
 export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atHome }: Props) {
   const t = useTokens();
+  const tr = useT();
   const [customOrder, setCustomOrder] = useState<string[]>(loadOrder);
-
+  // Mostramos el dock si hay agentes O si hay home button (para navegar
+  // siempre desde cualquier vista).
   if (bubbles.length === 0 && !onGoHome) return null;
 
   const sortFn = (a: Bubble, b: Bubble) => {
@@ -76,7 +79,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
     return [...map.entries()].map(([key, items]) => ({
       key,
       label: key === '__none__'
-        ? 'Sin carpeta'
+        ? tr('dock.no_folder')
         : (key.split('/').filter(Boolean).pop() || key),
       items: applyCustomOrder(items),
     }));
@@ -254,6 +257,7 @@ const SLOT_WIDTH = 60;
 
 function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => void }) {
   const t = useTokens();
+  const tr = useT();
   const [hover, setHover] = useState(false);
   const HOME_SLOT = 48;
   const SLOT_HEIGHT = SIZE + 17;
@@ -270,7 +274,7 @@ function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => voi
       <motion.button
         type="button"
         onClick={onClick}
-        title="Ir al inicio"
+        title={tr('dock.home_tooltip')}
         whileHover={{ scale: 1.35, y: -6 }}
         whileTap={{ scale: 0.92 }}
         transition={{ type: 'spring', stiffness: 380, damping: 22 }}
@@ -304,10 +308,17 @@ function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => voi
   );
 }
 
-function firstWord(title: string | undefined): string {
-  if (!title) return 'sin nombre';
+// Primera palabra del título, cortada a 8 chars. Solo separa por
+// espacios — "fix-bug-login" se muestra como "fix-bug-" (los primeros 8
+// chars de la primera "palabra"), no como "fix". Eso preserva contexto
+// útil para títulos tipo TAR-660, jh-prod, eco-test, etc.
+// fallback: string traducido para títulos vacíos.
+function firstWord(title: string | undefined, fallback: string): string {
+  if (!title) return fallback;
   const trimmed = title.trim();
-  if (!trimmed) return 'sin nombre';
+  if (!trimmed) return fallback;
+  // Cortamos solo en el primer espacio — guiones/underscores forman parte
+  // del nombre.
   const m = trimmed.match(/^\S+/);
   const word = m ? m[0] : trimmed;
   return word.slice(0, 8);
@@ -322,6 +333,7 @@ function DockIcon({
   onClick: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [hover, setHover] = useState(false);
   const [showTip, setShowTip] = useState(false);
   // Coordenadas absolutas para el tooltip (portal-based). Calculadas desde
@@ -399,16 +411,8 @@ function DockIcon({
     >
       <motion.button
         type="button"
-        onClick={(e) => {
-          // Si veníamos de un drag, suprimir el click.
-          if (dragStartRef.current) {
-            const dx = Math.abs(e.clientX - dragStartRef.current.x);
-            const dy = Math.abs(e.clientY - dragStartRef.current.y);
-            if (dx > 4 || dy > 4) { e.preventDefault(); return; }
-          }
-          onClick();
-        }}
-        title={bubble.title || 'Burbuja sin título'}
+        onClick={onClick}
+        title={bubble.title || tr('dock.bubble_no_title')}
         initial={{ opacity: 0, scale: 0.6, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.6, y: 8 }}
@@ -459,7 +463,7 @@ function DockIcon({
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         pointerEvents: 'none',
         userSelect: 'none',
-      }}>{firstWord(bubble.title)}</div>
+      }}>{firstWord(bubble.title, tr('dock.no_name'))}</div>
 
       {active && (
         <span style={{
@@ -498,10 +502,10 @@ function DockIcon({
               maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis',
               zIndex: 9999,
             }}>
-            {bubble.title || 'Burbuja sin título'}
+            {bubble.title || tr('dock.bubble_no_title')}
             {isActive && (
               <span style={{ marginLeft: 6, color: sColor, fontFamily: t.fontMono, fontSize: 10.5 }}>
-                · {busy ? 'procesando' : state}
+                · {busy ? tr('dock.processing') : state}
               </span>
             )}
           </motion.div>

@@ -57,9 +57,9 @@ export function GitPanel({ bubble, workspace, bubbleId, filesChanged, gitChanges
   const pending = filesChanged.filter((f) => f.unstaged !== false).length;
 
   const subnav: { id: GitSubtab; label: string; icon: typeof IconGithub; badge?: number }[] = [
-    { id: 'changes', label: tr('detail.git.subtab.changes'), icon: IconGithub, badge: pending || undefined },
-    { id: 'history', label: tr('detail.git.subtab.history'), icon: IconLayers },
-    { id: 'prs', label: tr('detail.git.subtab.prs'), icon: IconBranch },
+    { id: 'changes', label: tr('git.tab.changes'), icon: IconGithub, badge: pending || undefined },
+    { id: 'history', label: tr('git.tab.history'), icon: IconLayers },
+    { id: 'prs', label: tr('git.tab.prs'), icon: IconBranch },
   ];
 
   return (

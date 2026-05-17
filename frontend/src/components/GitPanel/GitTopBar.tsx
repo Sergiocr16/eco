@@ -40,7 +40,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
   }, [msg]);
 
   const current = data?.branches.find((b) => b.isCurrent) ?? null;
-  const branchName = data?.current ?? '—';
+  const branchName = data?.current ?? tr('common.empty_dash');
   const detached = data?.detached ?? false;
   const ahead = current?.ahead ?? 0;
   const behind = current?.behind ?? 0;
@@ -52,16 +52,12 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
   // - behind solo: "Pull" (pull --ff-only)
   // - ambos: "Sync" (pull → push)
   // - en sync: "Fetch" (refresca info remota)
+  let syncLabel = tr('git.action.label_fetch');
   let syncAction: 'fetch' | 'pull' | 'push' | 'sync' | 'publish' = 'fetch';
-  if (!hasRemote && !detached) syncAction = 'publish';
-  else if (ahead > 0 && behind > 0) syncAction = 'sync';
-  else if (ahead > 0) syncAction = 'push';
-  else if (behind > 0) syncAction = 'pull';
-  const syncLabel = syncAction === 'fetch' ? tr('detail.git.sync.fetch')
-    : syncAction === 'publish' ? tr('detail.git.sync.publish')
-    : syncAction === 'sync' ? tr('detail.git.sync.sync')
-    : syncAction === 'push' ? tr('detail.git.sync.push')
-    : tr('detail.git.sync.pull');
+  if (!hasRemote && !detached) { syncLabel = tr('git.action.label_publish'); syncAction = 'publish'; }
+  else if (ahead > 0 && behind > 0) { syncLabel = tr('git.action.label_sync'); syncAction = 'sync'; }
+  else if (ahead > 0) { syncLabel = tr('git.action.label_push'); syncAction = 'push'; }
+  else if (behind > 0) { syncLabel = tr('git.action.label_pull'); syncAction = 'pull'; }
 
   async function callBackend(path: string, body: object): Promise<{ ok: boolean; error?: string; message?: string }> {
     try {
@@ -74,7 +70,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
       if (!r.ok || !d.ok) return { ok: false, error: d.error || `HTTP ${r.status}` };
       return { ok: true, message: d.message };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Error' };
+      return { ok: false, error: e instanceof Error ? e.message : tr('common.error') };
     }
   }
 
@@ -83,18 +79,18 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
     try {
       if (syncAction === 'fetch') {
         const r = await callBackend('/git/fetch', {});
-        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('detail.git.sync.fetch') + ' OK' } : { kind: 'err', text: r.error ?? 'Error' });
+        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('git.topbar.sync.fetch_ok') } : { kind: 'err', text: r.error ?? tr('common.error') });
       } else if (syncAction === 'pull') {
         const r = await callBackend('/git/pull', {});
-        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('detail.git.sync.pull') + ' OK' } : { kind: 'err', text: r.error ?? 'Error' });
+        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('git.topbar.sync.pull_ok') } : { kind: 'err', text: r.error ?? tr('common.error') });
       } else if (syncAction === 'push' || syncAction === 'publish') {
         const r = await callBackend('/git/push', {});
-        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('detail.git.push.ok') } : { kind: 'err', text: r.error ?? 'Error' });
+        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('git.topbar.sync.push_ok') } : { kind: 'err', text: r.error ?? tr('common.error') });
       } else if (syncAction === 'sync') {
         const pullR = await callBackend('/git/pull', {});
-        if (!pullR.ok) { setMsg({ kind: 'err', text: `${tr('detail.git.sync.pull')}: ${pullR.error}` }); return; }
+        if (!pullR.ok) { setMsg({ kind: 'err', text: tr('git.topbar.sync.pull_fail', { err: pullR.error ?? '' }) }); return; }
         const pushR = await callBackend('/git/push', {});
-        setMsg(pushR.ok ? { kind: 'ok', text: tr('detail.git.sync.ok') } : { kind: 'err', text: `${tr('detail.git.push.error')}: ${pushR.error}` });
+        setMsg(pushR.ok ? { kind: 'ok', text: tr('git.topbar.sync.sync_ok') } : { kind: 'err', text: tr('git.topbar.sync.push_fail', { err: pushR.error ?? '' }) });
       }
       ecoEmit('eco:git_refresh', { bubbleId });
       refreshBranches();
@@ -148,7 +144,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
       {onRenameAgent && branchName && !detached && (
         <button type="button"
           onClick={() => onRenameAgent(branchName)}
-          title={tr('detail.git.topbar.use_as_agent_name_title', { branch: branchName })}
+          title={tr('git.topbar.rename_agent_tooltip', { name: branchName })}
           style={{
             height: 28, padding: '0 10px', borderRadius: 7,
             border: `1px solid ${t.glassBorder}`,
@@ -161,7 +157,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.glassBorder; e.currentTarget.style.color = t.text1; }}>
           <IconAgent size={12}/>
-          <span>{tr('detail.git.topbar.use_as_agent_name')}</span>
+          <span>{tr('git.topbar.rename_agent_btn')}</span>
         </button>
       )}
 
@@ -260,7 +256,7 @@ function SyncButton({
     <button type="button"
       onClick={onClick}
       disabled={busy || disabled}
-      title={disabled ? tr('detail.git.sync.detached_disabled') : `${tr('detail.git.sync.action_title')}: ${label}`}
+      title={disabled ? tr('git.topbar.sync.detached_disabled') : tr('git.topbar.sync.action_tooltip', { label })}
       style={{
         marginLeft: 10,
         display: 'inline-flex', alignItems: 'center', gap: 8,
@@ -308,7 +304,7 @@ function SyncButton({
           borderLeft: `1px solid ${actionable ? 'rgba(255,255,255,0.25)' : t.glassBorder}`,
         }}>
           {behind > 0 && (
-            <span title={behind === 1 ? tr('detail.git.sync.commits_behind_one') : tr('detail.git.sync.commits_behind_many', { n: behind })}
+            <span title={behind === 1 ? tr('git.topbar.sync.behind_one', { n: behind }) : tr('git.topbar.sync.behind_many', { n: behind })}
               style={{
                 fontFamily: t.fontMono, fontSize: 11, fontWeight: 700,
                 padding: '1px 6px', borderRadius: 4,
@@ -319,7 +315,7 @@ function SyncButton({
               }}>↓{behind}</span>
           )}
           {ahead > 0 && (
-            <span title={ahead === 1 ? tr('detail.git.sync.commits_ahead_one') : tr('detail.git.sync.commits_ahead_many', { n: ahead })}
+            <span title={ahead === 1 ? tr('git.topbar.sync.ahead_one', { n: ahead }) : tr('git.topbar.sync.ahead_many', { n: ahead })}
               style={{
                 fontFamily: t.fontMono, fontSize: 11, fontWeight: 700,
                 padding: '1px 6px', borderRadius: 4,
@@ -346,7 +342,7 @@ function BranchChip({ branchName, detached, isOpen, onToggle }: {
   return (
     <button type="button"
       onClick={onToggle}
-      title={detached ? tr('detail.git.topbar.detached_title', { branch: branchName }) : tr('detail.git.topbar.current_branch_title', { branch: branchName })}
+      title={detached ? tr('git.topbar.branch.detached_tooltip', { name: branchName }) : tr('git.topbar.branch.current_tooltip', { name: branchName })}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 28, padding: '0 10px',
@@ -362,7 +358,7 @@ function BranchChip({ branchName, detached, isOpen, onToggle }: {
         fontFamily: t.fontMono, fontSize: 12,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         flex: 1, minWidth: 0, textAlign: 'left',
-      }}>{detached ? `(detached) ${branchName}` : branchName}</code>
+      }}>{detached ? `${tr('git.topbar.branch.detached_prefix')} ${branchName}` : branchName}</code>
       <span style={{ color: t.text2, fontSize: 10 }}>▾</span>
     </button>
   );
@@ -387,9 +383,9 @@ function MoreMenu({ t, onClose, onRename, onMerge, onPRs }: {
   }, [onClose]);
 
   const items: { icon: typeof IconBranch; label: string; onClick: () => void }[] = [
-    { icon: IconResume, label: tr('detail.git.topbar.merge_to_current'), onClick: onMerge },
-    { icon: IconEdit, label: tr('detail.git.topbar.rename_current_branch'), onClick: onRename },
-    { icon: IconGlobe, label: tr('detail.git.topbar.view_prs'), onClick: onPRs },
+    { icon: IconResume, label: tr('git.topbar.menu.merge'), onClick: onMerge },
+    { icon: IconEdit, label: tr('git.topbar.menu.rename'), onClick: onRename },
+    { icon: IconGlobe, label: tr('git.topbar.menu.prs'), onClick: onPRs },
   ];
 
   return (
@@ -461,7 +457,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) {
         const hint = d.code === 'checkout.dirty_working_tree'
-          ? tr('detail.git.checkout.dirty_hint')
+          ? tr('git.cherry.dirty_hint')
           : '';
         setErr((d.error || `HTTP ${r.status}`) + hint);
         return;
@@ -469,7 +465,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
       onCheckoutDone();
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
+      setErr(e instanceof Error ? e.message : tr('common.error'));
     } finally {
       setBusy(null);
     }
@@ -498,7 +494,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
             value={query}
             autoFocus
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={tr('detail.git.branches.search_placeholder')}
+            placeholder={tr('git.topbar.dropdown.search')}
             style={{
               flex: 1, background: 'transparent', border: 0,
               fontFamily: t.fontMono, fontSize: 12.5, color: t.text0,
@@ -521,7 +517,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
                 fontFamily: t.fontSans, fontSize: 11.5, fontWeight: tab === k ? 600 : 500,
                 cursor: 'pointer',
               }}>
-              {k === 'local' ? tr('detail.git.branches.local') : tr('detail.git.branches.remote')}
+              {k === 'local' ? tr('git.topbar.dropdown.local') : tr('git.topbar.dropdown.remote')}
             </button>
           ))}
         </div>
@@ -530,7 +526,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
         <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
           {filtered.length === 0 ? (
             <div style={{ padding: 20, color: t.text3, fontSize: 12, textAlign: 'center' }}>
-              {query ? tr('detail.git.branches.no_matches') : tr('detail.git.branches.no_branches')}
+              {query ? tr('git.topbar.dropdown.no_match') : tr('git.topbar.dropdown.no_branches')}
             </div>
           ) : (
             filtered.map((b) => (
@@ -587,7 +583,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
           padding: '6px 12px', borderTop: `1px solid ${t.glassBorder}`,
           fontSize: 10.5, color: t.text3,
         }}>
-          {tr('detail.git.branches.dropdown_tip')}
+          {tr('git.topbar.dropdown.tip')}
         </div>
       </div>
     </div>,
@@ -621,7 +617,7 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
       if (!r.ok || !d.ok) setErr(d.error || `HTTP ${r.status}`);
       else onDone();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
+      setErr(e instanceof Error ? e.message : tr('common.error'));
     } finally {
       setBusy(false);
     }
@@ -638,9 +634,9 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('detail.git.rename.title')}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('git.topbar.rename.title')}</div>
         <div style={{ fontSize: 12, color: t.text2 }}>
-          {tr('detail.git.rename.label')} <code style={{ fontFamily: t.fontMono }}>{current}</code>:
+          {tr('git.topbar.rename.body')} <code style={{ fontFamily: t.fontMono }}>{current}</code>:
         </div>
         <input
           value={name}
@@ -659,11 +655,11 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
           }}>{err}</div>
         )}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} style={ghostBtn(t)}>{tr('detail.git.button.cancel')}</button>
+          <button type="button" onClick={onCancel} style={ghostBtn(t)}>{tr('common.cancel')}</button>
           <button type="button" onClick={() => void submit()}
             disabled={!name.trim() || name === current || busy}
             style={primaryBtn(t, !name.trim() || name === current || busy)}>
-            {busy ? '…' : tr('detail.git.rename.button')}
+            {busy ? '…' : tr('git.topbar.rename.do')}
           </button>
         </div>
       </div>
@@ -705,14 +701,14 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) {
-        const conflictMsg = d.conflict ? tr('detail.git.merge.conflict_hint', { n: d.conflict.files.length }) : '';
+        const conflictMsg = d.conflict ? tr('git.topbar.merge.conflict_suffix', { n: d.conflict.files.length }) : '';
         setMsg({ kind: 'err', text: (d.error || `HTTP ${r.status}`) + conflictMsg });
       } else {
-        setMsg({ kind: 'ok', text: d.message || tr('detail.git.merge.ok') });
+        setMsg({ kind: 'ok', text: d.message || tr('git.topbar.merge.ok') });
         setTimeout(onDone, 800);
       }
     } catch (e) {
-      setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error' });
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusy(false);
     }
@@ -729,9 +725,9 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('detail.git.merge.title')}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('git.topbar.merge.title')}</div>
         <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
-          {tr('detail.git.merge.description', { branch: currentBranch })}
+          {tr('git.topbar.merge.body', { branch: currentBranch })}
         </div>
         <select
           value={source}
@@ -743,7 +739,7 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
             borderRadius: 6, padding: '8px 10px',
             fontFamily: t.fontMono, fontSize: 13, color: t.text0, outline: 'none',
           }}>
-          <option value="">{tr('detail.git.merge.choose_source')}</option>
+          <option value="">{tr('git.topbar.merge.pick')}</option>
           {options.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -765,10 +761,10 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
           }}>{msg.text}</div>
         )}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} style={ghostBtn(t)}>{tr('detail.git.button.cancel')}</button>
+          <button type="button" onClick={onCancel} style={ghostBtn(t)}>{tr('common.cancel')}</button>
           <button type="button" onClick={() => void submit()} disabled={!source || busy}
             style={primaryBtn(t, !source || busy)}>
-            {busy ? '…' : tr('detail.git.merge.button')}
+            {busy ? '…' : tr('git.topbar.merge.do')}
           </button>
         </div>
       </div>

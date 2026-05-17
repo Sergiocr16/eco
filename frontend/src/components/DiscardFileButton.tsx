@@ -37,7 +37,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
       setConfirming(false);
       setBusy(false);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
+      setErr(e instanceof Error ? e.message : tr('common.error'));
       setBusy(false);
     }
   }
@@ -46,7 +46,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
     return (
       <button
         type="button"
-        title="Click para reintentar"
+        title={tr('discard.retry_tooltip')}
         onClick={() => setErr(null)}
         style={{
           maxWidth: 260,
@@ -66,8 +66,8 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
         type="button"
         onClick={() => setConfirming(true)}
         title={change === 'created'
-          ? tr('detail.git.discard.title_delete', { path })
-          : tr('detail.git.discard.title_revert', { path })}
+          ? tr('discard.tooltip.delete', { path })
+          : tr('discard.tooltip.revert', { path })}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '5px 10px', borderRadius: 7,
@@ -79,7 +79,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
         onMouseEnter={(e) => { e.currentTarget.style.color = t.err; e.currentTarget.style.borderColor = t.err; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = t.text2; e.currentTarget.style.borderColor = t.glassBorder; }}>
         <IconTrash size={11}/>
-        {tr('detail.git.discard.button')}
+        {tr('discard.btn')}
       </button>
     );
   }
@@ -92,7 +92,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
       border: `1px solid ${t.err}`,
     }}>
       <span style={{ fontSize: 11, color: t.err, fontWeight: 500 }}>
-        {change === 'created' ? tr('detail.git.discard.confirm_delete') : tr('detail.git.discard.confirm_revert')}
+        {change === 'created' ? tr('discard.confirm.delete') : tr('discard.confirm.revert')}
       </span>
       <button type="button"
         onClick={() => void discard()}
@@ -102,7 +102,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
           background: t.err, color: '#fff',
           fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
           opacity: busy ? 0.6 : 1,
-        }}>{busy ? '…' : tr('detail.git.button.yes')}</button>
+        }}>{busy ? '…' : tr('common.yes')}</button>
       <button type="button"
         onClick={() => setConfirming(false)}
         disabled={busy}
@@ -110,7 +110,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
           padding: '3px 9px', borderRadius: 5, border: 0,
           background: 'transparent', color: t.text2,
           fontSize: 11, cursor: 'pointer',
-        }}>{tr('detail.git.button.no')}</button>
+        }}>{tr('common.no')}</button>
     </div>
   );
 }
