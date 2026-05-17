@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { useGitLog, type LogEntry } from '@/hooks/useGitLog';
+import { useT } from '@/hooks/useI18n';
 import { ShaPill, SubpanelLoading, EmptyState, formatRelTime } from './shared';
 import { CommitDetailPanel } from './CommitDetailPanel';
 import { ResizableSplit } from './ResizableSplit';
@@ -12,6 +13,7 @@ type Props = {
 
 export function HistoryView({ workspace, bubbleId }: Props) {
   const t = useTokens();
+  const tr = useT();
   // Persistimos allBranches por bubble — si el user activó el checkbox una
   // vez, lo mantiene al volver al tab Git.
   const [allBranches, setAllBranches] = useState<boolean>(() => {
@@ -67,17 +69,17 @@ export function HistoryView({ workspace, bubbleId }: Props) {
   const selectedFromList = commits.find((c) => c.sha === selectedSha);
   const selected: LogEntry | null = selectedFromList
     ?? (selectedSha
-      ? { sha: selectedSha, abbrev: selectedSha.slice(0, 7), author: '—', email: '', date: '', subject: '(cargando…)', body: '', refs: [], parents: [] }
+      ? { sha: selectedSha, abbrev: selectedSha.slice(0, 7), author: '—', email: '', date: '', subject: tr('detail.git.commit.loading_stub'), body: '', refs: [], parents: [] }
       : null);
 
   if (loading && commits.length === 0) {
-    return <SubpanelLoading label="Cargando historial…"/>;
+    return <SubpanelLoading label={tr('detail.git.history.loading')}/>;
   }
   if (error) {
-    return <EmptyState message="Error al cargar el historial" hint={error}/>;
+    return <EmptyState message={tr('detail.git.history.error_title')} hint={error}/>;
   }
   if (commits.length === 0) {
-    return <EmptyState message="Sin commits" hint="Este worktree no tiene commits todavía."/>;
+    return <EmptyState message={tr('detail.git.history.empty_title')} hint={tr('detail.git.history.empty_hint')}/>;
   }
 
   return (
@@ -99,12 +101,12 @@ export function HistoryView({ workspace, bubbleId }: Props) {
               display: 'inline-flex', alignItems: 'center', gap: 6,
               fontSize: 11.5, color: t.text2, cursor: 'pointer',
             }}
-            title="Mostrar commits de todas las ramas (no solo la actual)">
+            title={tr('detail.git.history.all_branches_title')}>
               <input type="checkbox"
                 checked={allBranches}
                 onChange={(e) => setAllBranches(e.target.checked)}
                 style={{ margin: 0 }}/>
-              Todas las ramas
+              {tr('detail.git.history.all_branches_label')}
             </label>
           </div>
           <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
@@ -118,12 +120,12 @@ export function HistoryView({ workspace, bubbleId }: Props) {
             ))}
             {loading && commits.length > 0 && (
               <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
-                Cargando más…
+                {tr('detail.git.history.loading_more')}
               </div>
             )}
             {!hasMore && commits.length > 50 && (
               <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
-                Fin del historial
+                {tr('detail.git.history.end')}
               </div>
             )}
           </div>
@@ -137,7 +139,7 @@ export function HistoryView({ workspace, bubbleId }: Props) {
             summary={selected}
           />
         ) : (
-          <EmptyState message="Seleccioná un commit" hint="Click en uno de la lista para ver el diff y acciones."/>
+          <EmptyState message={tr('detail.git.history.select_commit')} hint={tr('detail.git.history.select_hint')}/>
         )
       }
     />
@@ -146,6 +148,7 @@ export function HistoryView({ workspace, bubbleId }: Props) {
 
 function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: boolean; onClick: () => void }) {
   const t = useTokens();
+  const tr = useT();
   return (
     <button type="button"
       onClick={onClick}
@@ -170,7 +173,7 @@ function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: bool
       <div style={{ fontSize: 10.5, color: t.text3, display: 'flex', gap: 6, alignItems: 'center' }}>
         <span>{commit.author}</span>
         <span>·</span>
-        <span>{formatRelTime(commit.date)}</span>
+        <span>{formatRelTime(commit.date, tr)}</span>
         {commit.refs.length > 0 && (
           <>
             <span>·</span>

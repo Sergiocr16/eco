@@ -5,6 +5,7 @@ import { IconBranch, IconMore, IconResume, IconGlobe, IconEdit, IconTrash, IconC
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useBranches, type BranchInfo } from '@/hooks/useBranches';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   workspace: string;
@@ -23,6 +24,7 @@ type Props = {
 //  - Menú "⋯" (der): Renombrar rama, Borrar rama, Merge into current, abrir PRs.
 export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Props) {
   const t = useTokens();
+  const tr = useT();
   const { data, refresh: refreshBranches } = useBranches(workspace, bubbleId);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -50,12 +52,16 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
   // - behind solo: "Pull" (pull --ff-only)
   // - ambos: "Sync" (pull → push)
   // - en sync: "Fetch" (refresca info remota)
-  let syncLabel = 'Fetch';
   let syncAction: 'fetch' | 'pull' | 'push' | 'sync' | 'publish' = 'fetch';
-  if (!hasRemote && !detached) { syncLabel = 'Publish'; syncAction = 'publish'; }
-  else if (ahead > 0 && behind > 0) { syncLabel = 'Sync'; syncAction = 'sync'; }
-  else if (ahead > 0) { syncLabel = 'Push'; syncAction = 'push'; }
-  else if (behind > 0) { syncLabel = 'Pull'; syncAction = 'pull'; }
+  if (!hasRemote && !detached) syncAction = 'publish';
+  else if (ahead > 0 && behind > 0) syncAction = 'sync';
+  else if (ahead > 0) syncAction = 'push';
+  else if (behind > 0) syncAction = 'pull';
+  const syncLabel = syncAction === 'fetch' ? tr('detail.git.sync.fetch')
+    : syncAction === 'publish' ? tr('detail.git.sync.publish')
+    : syncAction === 'sync' ? tr('detail.git.sync.sync')
+    : syncAction === 'push' ? tr('detail.git.sync.push')
+    : tr('detail.git.sync.pull');
 
   async function callBackend(path: string, body: object): Promise<{ ok: boolean; error?: string; message?: string }> {
     try {
@@ -77,18 +83,18 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
     try {
       if (syncAction === 'fetch') {
         const r = await callBackend('/git/fetch', {});
-        setMsg(r.ok ? { kind: 'ok', text: r.message ?? 'Fetch OK' } : { kind: 'err', text: r.error ?? 'Error' });
+        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('detail.git.sync.fetch') + ' OK' } : { kind: 'err', text: r.error ?? 'Error' });
       } else if (syncAction === 'pull') {
         const r = await callBackend('/git/pull', {});
-        setMsg(r.ok ? { kind: 'ok', text: r.message ?? 'Pull OK' } : { kind: 'err', text: r.error ?? 'Error' });
+        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('detail.git.sync.pull') + ' OK' } : { kind: 'err', text: r.error ?? 'Error' });
       } else if (syncAction === 'push' || syncAction === 'publish') {
         const r = await callBackend('/git/push', {});
-        setMsg(r.ok ? { kind: 'ok', text: r.message ?? 'Push OK' } : { kind: 'err', text: r.error ?? 'Error' });
+        setMsg(r.ok ? { kind: 'ok', text: r.message ?? tr('detail.git.push.ok') } : { kind: 'err', text: r.error ?? 'Error' });
       } else if (syncAction === 'sync') {
         const pullR = await callBackend('/git/pull', {});
-        if (!pullR.ok) { setMsg({ kind: 'err', text: `Pull falló: ${pullR.error}` }); return; }
+        if (!pullR.ok) { setMsg({ kind: 'err', text: `${tr('detail.git.sync.pull')}: ${pullR.error}` }); return; }
         const pushR = await callBackend('/git/push', {});
-        setMsg(pushR.ok ? { kind: 'ok', text: 'Sync OK (pull + push)' } : { kind: 'err', text: `Push falló: ${pushR.error}` });
+        setMsg(pushR.ok ? { kind: 'ok', text: tr('detail.git.sync.ok') } : { kind: 'err', text: `${tr('detail.git.push.error')}: ${pushR.error}` });
       }
       ecoEmit('eco:git_refresh', { bubbleId });
       refreshBranches();
@@ -142,7 +148,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
       {onRenameAgent && branchName && !detached && (
         <button type="button"
           onClick={() => onRenameAgent(branchName)}
-          title={`Renombrar este agente como «${branchName}»`}
+          title={tr('detail.git.topbar.use_as_agent_name_title', { branch: branchName })}
           style={{
             height: 28, padding: '0 10px', borderRadius: 7,
             border: `1px solid ${t.glassBorder}`,
@@ -155,7 +161,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.glassBorder; e.currentTarget.style.color = t.text1; }}>
           <IconAgent size={12}/>
-          <span>Usar como nombre del agente</span>
+          <span>{tr('detail.git.topbar.use_as_agent_name')}</span>
         </button>
       )}
 
@@ -233,11 +239,13 @@ function SyncButton({
   label: string;
   ahead: number;
   behind: number;
+  // NOTE: las labels traducidas se calculan en el caller y pasan via `label`.
   busy: boolean;
   disabled: boolean;
   onClick: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   // Icono unicode por acción.
   const icon = action === 'fetch' ? '↻'
     : action === 'pull' ? '↓'
@@ -252,7 +260,7 @@ function SyncButton({
     <button type="button"
       onClick={onClick}
       disabled={busy || disabled}
-      title={disabled ? 'HEAD detached — no se puede sincronizar' : `Acción: ${label}`}
+      title={disabled ? tr('detail.git.sync.detached_disabled') : `${tr('detail.git.sync.action_title')}: ${label}`}
       style={{
         marginLeft: 10,
         display: 'inline-flex', alignItems: 'center', gap: 8,
@@ -300,7 +308,7 @@ function SyncButton({
           borderLeft: `1px solid ${actionable ? 'rgba(255,255,255,0.25)' : t.glassBorder}`,
         }}>
           {behind > 0 && (
-            <span title={`${behind} commit${behind === 1 ? '' : 's'} remoto${behind === 1 ? '' : 's'} sin traer`}
+            <span title={behind === 1 ? tr('detail.git.sync.commits_behind_one') : tr('detail.git.sync.commits_behind_many', { n: behind })}
               style={{
                 fontFamily: t.fontMono, fontSize: 11, fontWeight: 700,
                 padding: '1px 6px', borderRadius: 4,
@@ -311,7 +319,7 @@ function SyncButton({
               }}>↓{behind}</span>
           )}
           {ahead > 0 && (
-            <span title={`${ahead} commit${ahead === 1 ? '' : 's'} local${ahead === 1 ? '' : 'es'} sin pushear`}
+            <span title={ahead === 1 ? tr('detail.git.sync.commits_ahead_one') : tr('detail.git.sync.commits_ahead_many', { n: ahead })}
               style={{
                 fontFamily: t.fontMono, fontSize: 11, fontWeight: 700,
                 padding: '1px 6px', borderRadius: 4,
@@ -334,10 +342,11 @@ function BranchChip({ branchName, detached, isOpen, onToggle }: {
   onToggle: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   return (
     <button type="button"
       onClick={onToggle}
-      title={detached ? `HEAD detached @ ${branchName}` : `Rama actual: ${branchName}`}
+      title={detached ? tr('detail.git.topbar.detached_title', { branch: branchName }) : tr('detail.git.topbar.current_branch_title', { branch: branchName })}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 28, padding: '0 10px',
@@ -366,6 +375,7 @@ function MoreMenu({ t, onClose, onRename, onMerge, onPRs }: {
   onMerge: () => void;
   onPRs: () => void;
 }) {
+  const tr = useT();
   // Click fuera cierra.
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -377,9 +387,9 @@ function MoreMenu({ t, onClose, onRename, onMerge, onPRs }: {
   }, [onClose]);
 
   const items: { icon: typeof IconBranch; label: string; onClick: () => void }[] = [
-    { icon: IconResume, label: 'Merge a rama actual…', onClick: onMerge },
-    { icon: IconEdit, label: 'Renombrar rama actual…', onClick: onRename },
-    { icon: IconGlobe, label: 'Ver pull requests', onClick: onPRs },
+    { icon: IconResume, label: tr('detail.git.topbar.merge_to_current'), onClick: onMerge },
+    { icon: IconEdit, label: tr('detail.git.topbar.rename_current_branch'), onClick: onRename },
+    { icon: IconGlobe, label: tr('detail.git.topbar.view_prs'), onClick: onPRs },
   ];
 
   return (
@@ -418,6 +428,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
   onCheckoutDone: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<'local' | 'remote'>('local');
   const [busy, setBusy] = useState<string | null>(null);
@@ -450,7 +461,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) {
         const hint = d.code === 'checkout.dirty_working_tree'
-          ? ' — commiteá o descartá tus cambios antes'
+          ? tr('detail.git.checkout.dirty_hint')
           : '';
         setErr((d.error || `HTTP ${r.status}`) + hint);
         return;
@@ -487,7 +498,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
             value={query}
             autoFocus
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar rama…"
+            placeholder={tr('detail.git.branches.search_placeholder')}
             style={{
               flex: 1, background: 'transparent', border: 0,
               fontFamily: t.fontMono, fontSize: 12.5, color: t.text0,
@@ -510,7 +521,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
                 fontFamily: t.fontSans, fontSize: 11.5, fontWeight: tab === k ? 600 : 500,
                 cursor: 'pointer',
               }}>
-              {k === 'local' ? 'Locales' : 'Remotas'}
+              {k === 'local' ? tr('detail.git.branches.local') : tr('detail.git.branches.remote')}
             </button>
           ))}
         </div>
@@ -519,7 +530,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
         <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
           {filtered.length === 0 ? (
             <div style={{ padding: 20, color: t.text3, fontSize: 12, textAlign: 'center' }}>
-              {query ? 'Sin coincidencias' : 'Sin ramas'}
+              {query ? tr('detail.git.branches.no_matches') : tr('detail.git.branches.no_branches')}
             </div>
           ) : (
             filtered.map((b) => (
@@ -576,7 +587,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
           padding: '6px 12px', borderTop: `1px solid ${t.glassBorder}`,
           fontSize: 10.5, color: t.text3,
         }}>
-          Tip: si tenés cambios sin commitear, commiteá o descartá antes de cambiar de rama.
+          {tr('detail.git.branches.dropdown_tip')}
         </div>
       </div>
     </div>,
@@ -592,6 +603,7 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
   bubbleId: string;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [name, setName] = useState(current);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -626,9 +638,9 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>Renombrar rama</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('detail.git.rename.title')}</div>
         <div style={{ fontSize: 12, color: t.text2 }}>
-          Renombrando <code style={{ fontFamily: t.fontMono }}>{current}</code>:
+          {tr('detail.git.rename.label')} <code style={{ fontFamily: t.fontMono }}>{current}</code>:
         </div>
         <input
           value={name}
@@ -647,11 +659,11 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
           }}>{err}</div>
         )}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} style={ghostBtn(t)}>Cancelar</button>
+          <button type="button" onClick={onCancel} style={ghostBtn(t)}>{tr('detail.git.button.cancel')}</button>
           <button type="button" onClick={() => void submit()}
             disabled={!name.trim() || name === current || busy}
             style={primaryBtn(t, !name.trim() || name === current || busy)}>
-            {busy ? '…' : 'Renombrar'}
+            {busy ? '…' : tr('detail.git.rename.button')}
           </button>
         </div>
       </div>
@@ -669,6 +681,7 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
   bubbleId: string;
 }) {
   const t = useTokens();
+  const tr = useT();
   const [source, setSource] = useState('');
   const [noFf, setNoFf] = useState(false);
   const [squash, setSquash] = useState(false);
@@ -692,10 +705,10 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) {
-        const conflictMsg = d.conflict ? ` (${d.conflict.files.length} archivos con conflicto — resolvé en Cambios)` : '';
+        const conflictMsg = d.conflict ? tr('detail.git.merge.conflict_hint', { n: d.conflict.files.length }) : '';
         setMsg({ kind: 'err', text: (d.error || `HTTP ${r.status}`) + conflictMsg });
       } else {
-        setMsg({ kind: 'ok', text: d.message || 'Merge OK' });
+        setMsg({ kind: 'ok', text: d.message || tr('detail.git.merge.ok') });
         setTimeout(onDone, 800);
       }
     } catch (e) {
@@ -716,9 +729,9 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>Merge a rama actual</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('detail.git.merge.title')}</div>
         <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
-          Trae los cambios de otra rama local a <code style={{ fontFamily: t.fontMono }}>{currentBranch}</code>.
+          {tr('detail.git.merge.description', { branch: currentBranch })}
         </div>
         <select
           value={source}
@@ -730,7 +743,7 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
             borderRadius: 6, padding: '8px 10px',
             fontFamily: t.fontMono, fontSize: 13, color: t.text0, outline: 'none',
           }}>
-          <option value="">Elegir rama origen…</option>
+          <option value="">{tr('detail.git.merge.choose_source')}</option>
           {options.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -752,10 +765,10 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
           }}>{msg.text}</div>
         )}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} style={ghostBtn(t)}>Cancelar</button>
+          <button type="button" onClick={onCancel} style={ghostBtn(t)}>{tr('detail.git.button.cancel')}</button>
           <button type="button" onClick={() => void submit()} disabled={!source || busy}
             style={primaryBtn(t, !source || busy)}>
-            {busy ? '…' : 'Mergear'}
+            {busy ? '…' : tr('detail.git.merge.button')}
           </button>
         </div>
       </div>

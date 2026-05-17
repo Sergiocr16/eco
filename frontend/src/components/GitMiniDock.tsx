@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit, on as ecoOn } from '@/lib/eco-bus';
 import { useBranches } from '@/hooks/useBranches';
 import { useGitOpStatus } from '@/hooks/useGitOpStatus';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   workspace: string;
@@ -15,11 +16,6 @@ type Props = {
   onGoToGit: () => void;
 };
 
-const OP_LABEL = {
-  'cherry-pick': 'Cherry-pick en conflicto',
-  merge: 'Merge en conflicto',
-  revert: 'Revert en conflicto',
-} as const;
 
 type CurrentPr = {
   number: number;
@@ -42,6 +38,11 @@ const STATE_COLOR: Record<string, string> = {
 
 export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Props) {
   const t = useTokens();
+  const tr = useT();
+  const opLabelConflict = (op: 'cherry-pick' | 'merge' | 'revert') =>
+    op === 'cherry-pick' ? tr('detail.git.ops.cherry_pick_conflicting')
+      : op === 'merge' ? tr('detail.git.ops.merge_conflicting')
+      : tr('detail.git.ops.revert_conflicting');
   const { data: branchesData } = useBranches(workspace, bubbleId);
   const op = useGitOpStatus(workspace, bubbleId);
   const [hover, setHover] = useState(false);
@@ -104,7 +105,7 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGoToGit(); } }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      title="Click para abrir el tab Git"
+      title={tr('detail.git.minidock.open_git_title')}
       style={{ cursor: 'pointer' }}>
       <div style={{
         padding: 10, borderRadius: 12,
@@ -115,7 +116,9 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
       }}>
         {/* Rama actual */}
         <div
-          title={op.inProgress ? OP_LABEL[op.inProgress] : (detached ? `HEAD detached @ ${branchName}` : `Rama actual: ${branchName}`)}
+          title={op.inProgress
+            ? opLabelConflict(op.inProgress)
+            : (detached ? tr('detail.git.topbar.detached_title', { branch: branchName }) : tr('detail.git.minidock.current_branch_title', { branch: branchName }))}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '4px 8px', borderRadius: 8,
@@ -147,7 +150,7 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPrDetail(e as unknown as React.MouseEvent); } }}
             onMouseEnter={(e) => { e.stopPropagation(); setHoverPr(true); }}
             onMouseLeave={() => setHoverPr(false)}
-            title={`Ver detalle del PR #${currentPr.number}: ${currentPr.title}`}
+            title={tr('detail.git.minidock.pr_detail_title', { n: currentPr.number, title: currentPr.title })}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '5px 8px', borderRadius: 8,
@@ -184,8 +187,8 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
             background: t.bg3,
             fontSize: 10.5, color: t.text3,
           }}
-          title={`El worktree de esta burbuja salió de la rama "${baseBranch}" del repo padre.`}>
-            <span>worktree de</span>
+          title={tr('detail.git.minidock.worktree_origin', { branch: baseBranch })}>
+            <span>{tr('detail.git.minidock.worktree_label')}</span>
             <code style={{
               fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
               padding: '0 4px', borderRadius: 3,

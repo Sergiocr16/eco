@@ -37,6 +37,9 @@ export function EmptyState({ message, hint }: { message: string; hint?: ReactNod
 
 export function SubpanelLoading({ label }: { label?: string }) {
   const t = useTokens();
+  // Sin acceso al hook context (porque SubpanelLoading se usa también en
+  // empty states que llaman desde funciones). El callsite que quiere
+  // traducción pasa `label` explícito; sin label, fallback a "Cargando…".
   return (
     <div style={{
       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -55,15 +58,27 @@ export function SubpanelLoading({ label }: { label?: string }) {
   );
 }
 
-export function formatRelTime(iso: string): string {
+// Acepta opcional `tr` para traducir; si no se pasa, usa fallback en español
+// (para callsites que aún no migraron). El callsite típico es un componente
+// que ya tiene `const tr = useT()` y pasa `tr` directamente.
+type TrFn = (key: string, vars?: Record<string, string | number>) => string;
+
+export function formatRelTime(iso: string, tr?: TrFn): string {
   if (!iso) return '';
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return iso;
   const diffSec = (Date.now() - t) / 1000;
-  if (diffSec < 60) return 'hace un momento';
-  if (diffSec < 3600) return `hace ${Math.floor(diffSec / 60)} min`;
-  if (diffSec < 86_400) return `hace ${Math.floor(diffSec / 3600)} h`;
-  if (diffSec < 30 * 86_400) return `hace ${Math.floor(diffSec / 86_400)} d`;
+  if (tr) {
+    if (diffSec < 60) return tr('detail.git.reltime.just_now');
+    if (diffSec < 3600) return tr('detail.git.reltime.minutes_ago', { n: Math.floor(diffSec / 60) });
+    if (diffSec < 86_400) return tr('detail.git.reltime.hours_ago', { n: Math.floor(diffSec / 3600) });
+    if (diffSec < 30 * 86_400) return tr('detail.git.reltime.days_ago', { n: Math.floor(diffSec / 86_400) });
+  } else {
+    if (diffSec < 60) return 'hace un momento';
+    if (diffSec < 3600) return `hace ${Math.floor(diffSec / 60)} min`;
+    if (diffSec < 86_400) return `hace ${Math.floor(diffSec / 3600)} h`;
+    if (diffSec < 30 * 86_400) return `hace ${Math.floor(diffSec / 86_400)} d`;
+  }
   const d = new Date(t);
-  return d.toLocaleDateString('es', { year: 'numeric', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }

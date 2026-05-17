@@ -4,6 +4,7 @@ import { Glass } from '@/design/primitives';
 import { IconBolt } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { useReviewState } from '@/hooks/useReviewState';
+import { useT } from '@/hooks/useI18n';
 
 type Props = {
   bubbleId: string;
@@ -15,6 +16,7 @@ type Props = {
 
 export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
   const t = useTokens();
+  const tr = useT();
   const review = useReviewState(bubbleId);
   type Phase = 'idle' | 'suggesting' | 'preview' | 'committing' | 'done' | 'error';
   const [phase, setPhase] = useState<Phase>('idle');
@@ -33,7 +35,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) { setMessage(d.message ?? ''); setPhase('preview'); }
-      else { setErr(d.error || 'No se pudo generar'); setPhase('error'); }
+      else { setErr(d.error || tr('detail.git.commit_ai.generate_error')); setPhase('error'); }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error'); setPhase('error');
     }
@@ -50,7 +52,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
-        setCommitResult(d.message ?? 'Commit creado');
+        setCommitResult(d.message ?? tr('detail.git.commit_ai.created'));
         setPhase('done');
         setMessage(''); setExtra('');
         // Review estilo Cursor: tras un commit, todo lo "aceptado" ya quedó
@@ -58,7 +60,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
         review.clearAll();
         onCommitted?.();
       } else {
-        setErr(d.error || 'Commit falló'); setPhase('error');
+        setErr(d.error || tr('detail.git.commit_ai.error')); setPhase('error');
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error'); setPhase('error');
@@ -81,9 +83,9 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
           <IconBolt size={11}/>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>Commit con AI</div>
+          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>{tr('detail.git.commit_ai.title')}</div>
           <div style={{ fontSize: 10, color: t.text3, marginTop: 0 }}>
-            Analiza el diff y propone mensaje
+            {tr('detail.git.commit_ai.subtitle')}
           </div>
         </div>
       </div>
@@ -109,7 +111,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
           <input
             value={extra}
             onChange={(e) => setExtra(e.target.value)}
-            placeholder="Contexto opcional (ej: fix login bug)"
+            placeholder={tr('detail.git.commit_ai.context_placeholder')}
             style={{
               width: '100%', boxSizing: 'border-box',
               background: t.bg2, border: `1px solid ${t.glassBorder}`,
@@ -127,7 +129,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
               background: t.accentDim, color: t.accentOn,
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
             }}>
-            Generar mensaje
+            {tr('detail.git.commit_ai.generate_button')}
           </button>
         </div>
       ) : phase === 'suggesting' ? (
@@ -136,7 +138,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
             width: 8, height: 8, borderRadius: '50%', background: t.accent,
             animation: 'eco-shimmer 0.9s ease-in-out infinite',
           }}/>
-          Analizando diff…
+          {tr('detail.git.commit_ai.analyzing')}
         </div>
       ) : (
         <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -164,7 +166,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
                 background: t.bg2, color: t.text1,
                 fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
               }}>
-              Cancelar
+              {tr('detail.git.button.cancel')}
             </button>
             <button
               type="button"
@@ -175,7 +177,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
                 background: t.bg3, color: t.text1,
                 fontFamily: t.fontSans, fontSize: 11, fontWeight: 500, cursor: 'pointer',
               }}>
-              Regenerar
+              {tr('detail.git.commit_ai.regenerate_button')}
             </button>
             <button
               type="button"
@@ -187,7 +189,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
                 fontFamily: t.fontSans, fontSize: 11, fontWeight: 600, cursor: 'pointer',
                 opacity: phase === 'committing' || !message.trim() ? 0.6 : 1,
               }}>
-              {phase === 'committing' ? 'Commiteando…' : 'Hacer commit'}
+              {phase === 'committing' ? tr('detail.git.commit_ai.committing') : tr('detail.git.commit_ai.commit_button')}
             </button>
           </div>
         </div>

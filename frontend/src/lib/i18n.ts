@@ -410,6 +410,238 @@ const DICT = {
   'detail.files.modified_one': { es: 'modificado', en: 'modified' },
   'detail.files.open_editor': { es: 'Abrir en editor', en: 'Open in editor' },
 
+  // ─────────────────────────── Tab Git (sub-nav + top bar + sub-vistas)
+  'detail.git.loading': { es: 'Cargando…', en: 'Loading…' },
+  'detail.git.button.cancel': { es: 'Cancelar', en: 'Cancel' },
+  'detail.git.button.confirm': { es: 'Sí, aplicar', en: 'Yes, apply' },
+  'detail.git.button.yes': { es: 'Sí', en: 'Yes' },
+  'detail.git.button.no': { es: 'No', en: 'No' },
+  'detail.git.button.refresh': { es: 'Refrescar', en: 'Refresh' },
+
+  // Sub-nav (Cambios / Historial / PRs)
+  'detail.git.subtab.changes': { es: 'Cambios', en: 'Changes' },
+  'detail.git.subtab.history': { es: 'Historial', en: 'History' },
+  'detail.git.subtab.prs': { es: 'PRs', en: 'PRs' },
+
+  // Top bar — sync button
+  'detail.git.sync.fetch': { es: 'Fetch', en: 'Fetch' },
+  'detail.git.sync.publish': { es: 'Publicar', en: 'Publish' },
+  'detail.git.sync.sync': { es: 'Sincronizar', en: 'Sync' },
+  'detail.git.sync.push': { es: 'Push', en: 'Push' },
+  'detail.git.sync.pull': { es: 'Pull', en: 'Pull' },
+  'detail.git.sync.detached_disabled': { es: 'HEAD detached — no se puede sincronizar', en: 'HEAD detached — cannot sync' },
+  'detail.git.sync.action_title': { es: 'Acción', en: 'Action' },
+  'detail.git.sync.ok': { es: 'Sync OK (pull + push)', en: 'Sync OK (pull + push)' },
+  'detail.git.sync.commits_behind_one': { es: '1 commit remoto sin traer', en: '1 remote commit to pull' },
+  'detail.git.sync.commits_behind_many': { es: '{{n}} commits remotos sin traer', en: '{{n}} remote commits to pull' },
+  'detail.git.sync.commits_ahead_one': { es: '1 commit local sin pushear', en: '1 local commit to push' },
+  'detail.git.sync.commits_ahead_many': { es: '{{n}} commits locales sin pushear', en: '{{n}} local commits to push' },
+
+  // Top bar — menú "⋯"
+  'detail.git.topbar.use_as_agent_name': { es: 'Usar como nombre del agente', en: 'Use as agent name' },
+  'detail.git.topbar.use_as_agent_name_title': { es: 'Renombrar este agente como «{{branch}}»', en: 'Rename this agent to «{{branch}}»' },
+  'detail.git.topbar.merge_to_current': { es: 'Merge a rama actual…', en: 'Merge into current…' },
+  'detail.git.topbar.rename_current_branch': { es: 'Renombrar rama actual…', en: 'Rename current branch…' },
+  'detail.git.topbar.view_prs': { es: 'Ver pull requests', en: 'View pull requests' },
+  'detail.git.topbar.current_branch_title': { es: 'Rama actual: {{branch}}', en: 'Current branch: {{branch}}' },
+  'detail.git.topbar.detached_title': { es: 'HEAD detached @ {{branch}}', en: 'HEAD detached @ {{branch}}' },
+
+  // Branch dropdown
+  'detail.git.branches.search_placeholder': { es: 'Buscar rama…', en: 'Search branch…' },
+  'detail.git.branches.local': { es: 'Locales', en: 'Local' },
+  'detail.git.branches.remote': { es: 'Remotas', en: 'Remote' },
+  'detail.git.branches.no_matches': { es: 'Sin coincidencias', en: 'No matches' },
+  'detail.git.branches.no_branches': { es: 'Sin ramas', en: 'No branches' },
+  'detail.git.branches.dropdown_tip': { es: 'Tip: si tenés cambios sin commitear, commiteá o descartá antes de cambiar de rama.', en: 'Tip: if you have uncommitted changes, commit or discard before switching branch.' },
+  'detail.git.checkout.dirty_hint': { es: ' — commiteá o descartá tus cambios antes', en: ' — commit or discard your changes first' },
+
+  // Rename branch modal
+  'detail.git.rename.title': { es: 'Renombrar rama', en: 'Rename branch' },
+  'detail.git.rename.label': { es: 'Renombrando', en: 'Renaming' },
+  'detail.git.rename.button': { es: 'Renombrar', en: 'Rename' },
+
+  // Merge modal
+  'detail.git.merge.title': { es: 'Merge a rama actual', en: 'Merge into current' },
+  'detail.git.merge.description': { es: 'Trae los cambios de otra rama local a {{branch}}.', en: 'Bring changes from another local branch into {{branch}}.' },
+  'detail.git.merge.choose_source': { es: 'Elegir rama origen…', en: 'Choose source branch…' },
+  'detail.git.merge.button': { es: 'Mergear', en: 'Merge' },
+  'detail.git.merge.conflict_hint': { es: ' ({{n}} archivos con conflicto — resolvé en Cambios)', en: ' ({{n}} conflicted files — resolve in Changes)' },
+  'detail.git.merge.ok': { es: 'Merge OK', en: 'Merge OK' },
+
+  // Op in progress banner
+  'detail.git.ops.cherry_pick_in_progress': { es: 'Cherry-pick en progreso', en: 'Cherry-pick in progress' },
+  'detail.git.ops.merge_in_progress': { es: 'Merge en progreso', en: 'Merge in progress' },
+  'detail.git.ops.revert_in_progress': { es: 'Revert en progreso', en: 'Revert in progress' },
+  'detail.git.ops.cherry_pick_conflicting': { es: 'Cherry-pick en conflicto', en: 'Cherry-pick conflicting' },
+  'detail.git.ops.merge_conflicting': { es: 'Merge en conflicto', en: 'Merge conflicting' },
+  'detail.git.ops.revert_conflicting': { es: 'Revert en conflicto', en: 'Revert conflicting' },
+  'detail.git.ops.conflict_files_one': { es: '1 archivo con conflicto', en: '1 conflicted file' },
+  'detail.git.ops.conflict_files_many': { es: '{{n}} archivos con conflicto', en: '{{n}} conflicted files' },
+  'detail.git.ops.resolve_in_changes': { es: 'Resolver en Cambios', en: 'Resolve in Changes' },
+  'detail.git.ops.continue': { es: 'Continuar', en: 'Continue' },
+  'detail.git.ops.abort': { es: 'Abortar', en: 'Abort' },
+
+  // Relative time (formatRelTime)
+  'detail.git.reltime.just_now': { es: 'hace un momento', en: 'just now' },
+  'detail.git.reltime.minutes_ago': { es: 'hace {{n}} min', en: '{{n}} min ago' },
+  'detail.git.reltime.hours_ago': { es: 'hace {{n}} h', en: '{{n}} h ago' },
+  'detail.git.reltime.days_ago': { es: 'hace {{n}} d', en: '{{n}} d ago' },
+
+  // Changes view
+  'detail.git.changes.searching': { es: 'Buscando archivos modificados…', en: 'Searching modified files…' },
+  'detail.git.changes.empty_hint': { es: 'No hay archivos modificados en el worktree.', en: 'No modified files in the worktree.' },
+  'detail.git.changes.file_count_one': { es: '1 archivo', en: '1 file' },
+  'detail.git.changes.file_count_many': { es: '{{n}} archivos', en: '{{n}} files' },
+  'detail.git.changes.pending_count_one': { es: '1 pendiente', en: '1 pending' },
+  'detail.git.changes.pending_count_many': { es: '{{n}} pendientes', en: '{{n}} pending' },
+  'detail.git.changes.accept_all': { es: 'Aceptar todos', en: 'Accept all' },
+  'detail.git.changes.select_file': { es: 'Seleccioná un archivo', en: 'Select a file' },
+  'detail.git.changes.status_accepted': { es: 'Aceptado', en: 'Accepted' },
+  'detail.git.changes.status_pending': { es: 'Pendiente', en: 'Pending' },
+
+  // History view
+  'detail.git.history.loading': { es: 'Cargando historial…', en: 'Loading history…' },
+  'detail.git.history.error_title': { es: 'Error al cargar el historial', en: 'Error loading history' },
+  'detail.git.history.empty_title': { es: 'Sin commits', en: 'No commits' },
+  'detail.git.history.empty_hint': { es: 'Este worktree no tiene commits todavía.', en: 'This worktree has no commits yet.' },
+  'detail.git.history.all_branches_label': { es: 'Todas las ramas', en: 'All branches' },
+  'detail.git.history.all_branches_title': { es: 'Mostrar commits de todas las ramas (no solo la actual)', en: 'Show commits from all branches (not just current)' },
+  'detail.git.history.loading_more': { es: 'Cargando más…', en: 'Loading more…' },
+  'detail.git.history.end': { es: 'Fin del historial', en: 'End of history' },
+  'detail.git.history.select_commit': { es: 'Seleccioná un commit', en: 'Select a commit' },
+  'detail.git.history.select_hint': { es: 'Click en uno de la lista para ver el diff y acciones.', en: 'Click one in the list to see its diff and actions.' },
+
+  // Commit detail panel
+  'detail.git.commit.loading_stub': { es: '(cargando…)', en: '(loading…)' },
+  'detail.git.commit.merge_parents': { es: 'merge de {{n}} padres', en: 'merge of {{n}} parents' },
+  'detail.git.commit.cherry_pick_button': { es: 'Cherry-pick a…', en: 'Cherry-pick to…' },
+  'detail.git.commit.cherry_pick_label': { es: 'Aplicar este commit a:', en: 'Apply this commit to:' },
+  'detail.git.commit.cherry_pick_current': { es: 'ACTUAL', en: 'CURRENT' },
+  'detail.git.commit.no_local_branches': { es: 'Sin ramas locales disponibles.', en: 'No local branches available.' },
+  'detail.git.commit.revert_button': { es: 'Revertir', en: 'Revert' },
+  'detail.git.commit.reset_button': { es: 'Reset a este punto', en: 'Reset to here' },
+  'detail.git.commit.reset_soft_desc': { es: 'Mueve HEAD. Working tree e index intactos.', en: 'Moves HEAD. Working tree and index intact.' },
+  'detail.git.commit.reset_mixed_desc': { es: 'Mueve HEAD + resetea index. Working tree intacto.', en: 'Moves HEAD + resets index. Working tree intact.' },
+  'detail.git.commit.reset_hard_desc': { es: 'Mueve HEAD + resetea TODO. Destructivo.', en: 'Moves HEAD + resets EVERYTHING. Destructive.' },
+  'detail.git.commit.loading_diff': { es: 'Cargando diff…', en: 'Loading diff…' },
+  'detail.git.commit.diff_truncated': { es: 'Diff truncado a 512 KB', en: 'Diff truncated to 512 KB' },
+  'detail.git.commit.empty_diff': { es: 'Sin cambios en el diff (commit vacío o solo metadata).', en: 'No changes in diff (empty commit or only metadata).' },
+
+  // Cherry-pick confirm modal
+  'detail.git.cherry_confirm.title': { es: 'Aplicar cherry-pick', en: 'Apply cherry-pick' },
+  'detail.git.cherry_confirm.desc': { es: 'Vas a aplicar el commit', en: 'You\'re about to apply commit' },
+  'detail.git.cherry_confirm.on_branch': { es: 'sobre la rama', en: 'on branch' },
+  'detail.git.cherry_confirm.checkout_warning': { es: 'Estás en {{currentBranch}}. Eco va a hacer checkout a {{targetBranch}} antes de aplicar el commit, y vas a quedar parado ahí. Si tenés cambios sin commitear el checkout va a fallar.', en: 'You\'re on {{currentBranch}}. Eco will checkout to {{targetBranch}} before applying the commit, and you\'ll stay there. If you have uncommitted changes the checkout will fail.' },
+  'detail.git.cherry_confirm.conflict_hint': { es: 'Si el commit conflicta vas a ver el banner rojo arriba con opciones para resolver/abortar.', en: 'If the commit conflicts you\'ll see the red banner above with resolve/abort options.' },
+
+  // Reset hard confirm modal
+  'detail.git.reset_confirm.title': { es: 'Reset --hard destructivo', en: 'Reset --hard (destructive)' },
+  'detail.git.reset_confirm.lose_one': { es: 'Vas a perder 1 commit:', en: 'You will lose 1 commit:' },
+  'detail.git.reset_confirm.lose_many': { es: 'Vas a perder {{n}} commits:', en: 'You will lose {{n}} commits:' },
+  'detail.git.reset_confirm.tip': { es: 'Tip: podés recuperar con git reflog dentro de los próximos 90 días.', en: 'Tip: you can recover with git reflog within the next 90 days.' },
+  'detail.git.reset_confirm.type_to_confirm': { es: 'Para confirmar, escribí', en: 'To confirm, type' },
+  'detail.git.reset_confirm.button': { es: 'Confirmar', en: 'Confirm' },
+
+  // PRs view — list
+  'detail.git.prs.loading': { es: 'Cargando pull requests…', en: 'Loading pull requests…' },
+  'detail.git.prs.empty_title': { es: 'Sin PRs abiertos', en: 'No open PRs' },
+  'detail.git.prs.empty_hint': { es: 'Cuando haya pull requests abiertos en este repo de GitHub vas a verlos acá.', en: 'When this GitHub repo has open pull requests you\'ll see them here.' },
+  'detail.git.prs.count_one': { es: '1 abierto', en: '1 open' },
+  'detail.git.prs.count_many': { es: '{{n}} abiertos', en: '{{n}} open' },
+  'detail.git.prs.refresh_title': { es: 'Refrescar', en: 'Refresh' },
+  'detail.git.prs.refresh_comments_title': { es: 'Refrescar comentarios', en: 'Refresh comments' },
+  'detail.git.prs.select_pr': { es: 'Seleccioná un PR', en: 'Select a PR' },
+  'detail.git.prs.select_hint': { es: 'Click sobre un pull request de la lista para ver descripción, comentarios y acciones.', en: 'Click a pull request in the list to see its description, comments and actions.' },
+  'detail.git.prs.loading_details': { es: 'Cargando detalles del PR…', en: 'Loading PR details…' },
+
+  // PRs view — detail header
+  'detail.git.prs.wants_to_merge': { es: 'quiere mergear', en: 'wants to merge' },
+  'detail.git.prs.commits_one': { es: '1 commit en', en: '1 commit into' },
+  'detail.git.prs.commits_many': { es: '{{n}} commits en', en: '{{n}} commits into' },
+  'detail.git.prs.from': { es: 'desde', en: 'from' },
+  'detail.git.prs.checkout_button': { es: 'Ir a la rama del PR', en: 'Checkout PR branch' },
+  'detail.git.prs.checkout_ok': { es: 'En la rama del PR #{{n}}', en: 'On PR #{{n}} branch' },
+  'detail.git.prs.view_on_github': { es: 'Ver en GitHub', en: 'View on GitHub' },
+  'detail.git.prs.no_body_comments': { es: 'Sin descripción ni comentarios.', en: 'No description or comments.' },
+
+  // PRs view — comments / reviews
+  'detail.git.prs.comment.body_label': { es: 'Descripción', en: 'Description' },
+  'detail.git.prs.comment.inline_label': { es: 'comentó sobre {{path}}', en: 'commented on {{path}}' },
+  'detail.git.prs.comment.inline_label_no_path': { es: 'comentó sobre un archivo', en: 'commented on a file' },
+  'detail.git.prs.comment.default_label': { es: 'comentó', en: 'commented' },
+  'detail.git.prs.comment.anonymous': { es: 'anónimo', en: 'anonymous' },
+  'detail.git.prs.comment.empty': { es: '(sin texto)', en: '(no text)' },
+
+  // PRs view — footer + merge/close
+  'detail.git.prs.draft_warning': { es: 'Este PR es draft — convertilo a "Ready for review" en GitHub antes de mergear.', en: 'This PR is draft — mark it "Ready for review" on GitHub before merging.' },
+  'detail.git.prs.actions_label': { es: 'Acciones sobre el PR #{{n}} en GitHub', en: 'Actions on PR #{{n}} on GitHub' },
+  'detail.git.prs.close_button': { es: 'Cerrar PR', en: 'Close PR' },
+  'detail.git.prs.merge_button': { es: 'Hacer merge', en: 'Merge' },
+
+  // PRs view — merge confirm modal
+  'detail.git.prs.merge_title': { es: 'Mergear PR #{{n}}', en: 'Merge PR #{{n}}' },
+  'detail.git.prs.merge_desc_one': { es: 'Vas a mergear 1 commit de', en: 'You\'re about to merge 1 commit from' },
+  'detail.git.prs.merge_desc_many': { es: 'Vas a mergear {{n}} commits de', en: 'You\'re about to merge {{n}} commits from' },
+  'detail.git.prs.merge_desc_into': { es: 'en', en: 'into' },
+  'detail.git.prs.merge_desc_remote': { es: 'en el remote.', en: 'on the remote.' },
+  'detail.git.prs.merge.merge_label': { es: 'Crear merge commit', en: 'Create merge commit' },
+  'detail.git.prs.merge.merge_desc': { es: 'Mantiene todos los commits + agrega un commit de merge.', en: 'Keeps all commits + adds a merge commit.' },
+  'detail.git.prs.merge.squash_label': { es: 'Squash and merge', en: 'Squash and merge' },
+  'detail.git.prs.merge.squash_desc': { es: 'Combina todos los commits en uno solo.', en: 'Combines all commits into a single one.' },
+  'detail.git.prs.merge.rebase_label': { es: 'Rebase and merge', en: 'Rebase and merge' },
+  'detail.git.prs.merge.rebase_desc': { es: 'Reaplica los commits encima de la base sin merge commit.', en: 'Reapplies commits on top of the base without a merge commit.' },
+  'detail.git.prs.merge_hint': { es: 'Esto se hace en el remote vía gh pr merge. No se puede deshacer fácilmente.', en: 'This runs on the remote via gh pr merge. Cannot be easily undone.' },
+  'detail.git.prs.merge_confirm_button': { es: 'Sí, hacer merge', en: 'Yes, merge' },
+  'detail.git.prs.merge_ok': { es: 'PR #{{n}} mergeado', en: 'PR #{{n}} merged' },
+
+  // PRs view — close confirm modal
+  'detail.git.prs.close_title': { es: 'Cerrar PR #{{n}} sin mergear', en: 'Close PR #{{n}} without merging' },
+  'detail.git.prs.close_desc': { es: 'El PR queda en estado CLOSED en GitHub. Los commits no se mergean. Podés reabrirlo después.', en: 'The PR stays in CLOSED state on GitHub. Commits are not merged. You can reopen it later.' },
+  'detail.git.prs.close_comment_placeholder': { es: 'Comentario opcional al cerrar (visible en GitHub)…', en: 'Optional comment when closing (visible on GitHub)…' },
+  'detail.git.prs.close_ok': { es: 'PR #{{n}} cerrado', en: 'PR #{{n}} closed' },
+
+  // PRs view — errors
+  'detail.git.prs.error.gh_missing': { es: 'GitHub CLI (gh) no está instalado. Instalalo con `brew install gh`.', en: 'GitHub CLI (gh) is not installed. Install it with `brew install gh`.' },
+  'detail.git.prs.error.gh_unauthenticated': { es: 'gh no está autenticado. Corré `gh auth login` en una terminal.', en: 'gh is not authenticated. Run `gh auth login` in a terminal.' },
+  'detail.git.prs.error.no_github_remote': { es: 'Este repo no tiene un remote de GitHub.', en: 'This repo has no GitHub remote.' },
+
+  // Mini-dock
+  'detail.git.minidock.open_git_title': { es: 'Click para abrir el tab Git', en: 'Click to open the Git tab' },
+  'detail.git.minidock.current_branch_title': { es: 'Rama actual: {{branch}}', en: 'Current branch: {{branch}}' },
+  'detail.git.minidock.pr_detail_title': { es: 'Ver detalle del PR #{{n}}: {{title}}', en: 'View PR #{{n}} details: {{title}}' },
+  'detail.git.minidock.worktree_label': { es: 'worktree de', en: 'worktree of' },
+  'detail.git.minidock.worktree_origin': { es: 'El worktree de esta burbuja salió de la rama "{{branch}}" del repo padre.', en: 'This bubble\'s worktree was created from "{{branch}}" in the parent repo.' },
+
+  // CommitWithAI
+  'detail.git.commit_ai.title': { es: 'Commit con IA', en: 'AI commit' },
+  'detail.git.commit_ai.subtitle': { es: 'Analiza el diff y propone mensaje', en: 'Analyzes the diff and proposes a message' },
+  'detail.git.commit_ai.context_placeholder': { es: 'Contexto opcional (ej: fix login bug)', en: 'Optional context (e.g. fix login bug)' },
+  'detail.git.commit_ai.generate_button': { es: 'Generar mensaje', en: 'Generate message' },
+  'detail.git.commit_ai.analyzing': { es: 'Analizando diff…', en: 'Analyzing diff…' },
+  'detail.git.commit_ai.regenerate_button': { es: 'Regenerar', en: 'Regenerate' },
+  'detail.git.commit_ai.commit_button': { es: 'Hacer commit', en: 'Commit' },
+  'detail.git.commit_ai.committing': { es: 'Commiteando…', en: 'Committing…' },
+  'detail.git.commit_ai.generate_error': { es: 'No se pudo generar', en: 'Could not generate' },
+  'detail.git.commit_ai.created': { es: 'Commit creado', en: 'Commit created' },
+  'detail.git.commit_ai.error': { es: 'Commit falló', en: 'Commit failed' },
+
+  // Push button
+  'detail.git.push.title': { es: 'Push', en: 'Push' },
+  'detail.git.push.subtitle': { es: 'Publica la rama actual en origin', en: 'Publishes current branch to origin' },
+  'detail.git.push.pushing': { es: 'Pushing…', en: 'Pushing…' },
+  'detail.git.push.button': { es: 'Push', en: 'Push' },
+  'detail.git.push.confirm': { es: '¿Publicar la rama actual en origin?', en: 'Publish current branch to origin?' },
+  'detail.git.push.confirm_button': { es: 'Pushear', en: 'Push' },
+  'detail.git.push.ok': { es: 'Push OK', en: 'Push OK' },
+  'detail.git.push.error': { es: 'Push falló', en: 'Push failed' },
+
+  // Discard file button
+  'detail.git.discard.title_delete': { es: 'Eliminar el archivo nuevo {{path}}', en: 'Delete new file {{path}}' },
+  'detail.git.discard.title_revert': { es: 'Descartar los cambios en {{path}}', en: 'Discard changes in {{path}}' },
+  'detail.git.discard.button': { es: 'Descartar', en: 'Discard' },
+  'detail.git.discard.confirm_delete': { es: '¿Eliminar?', en: 'Delete?' },
+  'detail.git.discard.confirm_revert': { es: '¿Descartar?', en: 'Discard?' },
+
   // ─────────────────────────── Settings
   'settings.title': { es: 'Ajustes', en: 'Settings' },
   'settings.section.general': { es: 'General', en: 'General' },

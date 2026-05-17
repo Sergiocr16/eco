@@ -126,7 +126,7 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
               animation: 'eco-spin 0.8s linear infinite',
               display: 'inline-block',
             }}/>
-            <div style={{ fontSize: 13, color: t.text2 }}>Buscando archivos modificados…</div>
+            <div style={{ fontSize: 13, color: t.text2 }}>{tr('detail.git.changes.searching')}</div>
           </>
         ) : (
           <>
@@ -134,7 +134,7 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
               {tr('detail.files.empty')}
             </div>
             <div style={{ fontSize: 12, color: t.text3, maxWidth: 380, textAlign: 'center', lineHeight: 1.5 }}>
-              No hay archivos modificados en el worktree.
+              {tr('detail.git.changes.empty_hint')}
             </div>
           </>
         )}
@@ -160,16 +160,17 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
             flexShrink: 0,
           }}>
             <div style={{ flex: 1, fontSize: 11.5, color: t.text2, minWidth: 0 }}>
-              <strong style={{ color: t.text0 }}>{files.length}</strong> {files.length === 1 ? 'archivo' : 'archivos'}
+              <strong style={{ color: t.text0 }}>{files.length}</strong>{' '}
+              {files.length === 1 ? tr('detail.git.changes.file_count_one').replace(/^1\s*/, '') : tr('detail.git.changes.file_count_many', { n: files.length }).replace(/^\d+\s*/, '')}
               {reviewMode && pending > 0 && (
                 <span style={{ marginLeft: 6, color: t.warn }}>
-                  · {pending} pendiente{pending === 1 ? '' : 's'}
+                  · {pending === 1 ? tr('detail.git.changes.pending_count_one') : tr('detail.git.changes.pending_count_many', { n: pending })}
                 </span>
               )}
             </div>
             {reviewMode && pending > 0 && (
               <Btn kind="ghost" size="sm" icon={IconCheck} onClick={() => void acceptAllFiles()}>
-                Aceptar todos
+                {tr('detail.git.changes.accept_all')}
               </Btn>
             )}
           </div>
