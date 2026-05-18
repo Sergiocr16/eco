@@ -416,6 +416,22 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         void saveSession();
         return;
       }
+      case 'browser_new_tab': {
+        // Voz "Eco nueva pestaña" / "Eco pestaña aislada" — switch a Browser
+        // + abre un tab del modo pedido en el agente activo.
+        const target = detailBubbleId ?? bubbles.activeBubbleId;
+        if (!target) return;
+        ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId: target });
+        ecoEmit('eco:browser:new_tab', { bubbleId: target, mode: action.mode });
+        return;
+      }
+      case 'browser_close_tab': {
+        const target = detailBubbleId ?? bubbles.activeBubbleId;
+        if (!target) return;
+        ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId: target });
+        ecoEmit('eco:browser:close_tab', { bubbleId: target });
+        return;
+      }
       case 'help':
         setOverlay('help'); return;
       case 'unknown':

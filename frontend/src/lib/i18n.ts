@@ -1752,6 +1752,27 @@ const DICT = {
   'files.err.invalid_path': { es: 'Ruta inválida', en: 'Invalid path' },
   'files.err.read_failed': { es: 'Error al leer el archivo', en: 'Failed to read file' },
 
+  // ─────────────────────────── Navegador: tabs + viewport
+  'browser.tab.untitled': { es: 'Nueva pestaña', en: 'New tab' },
+  'browser.tab.close': { es: 'Cerrar pestaña', en: 'Close tab' },
+  'browser.tab.new': { es: 'Nueva pestaña', en: 'New tab' },
+  'browser.tab.new_shared': { es: 'Misma sesión', en: 'Same session' },
+  'browser.tab.new_shared_desc': { es: 'Comparte cookies y datos con esta pestaña.', en: 'Shares cookies and data with this tab.' },
+  'browser.tab.new_isolated': { es: 'Sesión nueva', en: 'New session' },
+  'browser.tab.new_isolated_desc': { es: 'Datos aislados — útil para loguearte con otra cuenta.', en: 'Isolated data — useful to log in with another account.' },
+  'browser.tab.isolated_badge_tooltip': { es: 'Sesión aislada (cookies separadas)', en: 'Isolated session (separate cookies)' },
+  'browser.viewport.label': { es: 'Vista', en: 'Viewport' },
+  'browser.viewport.desktop': { es: 'Escritorio', en: 'Desktop' },
+  'browser.viewport.tablet': { es: 'Tablet', en: 'Tablet' },
+  'browser.viewport.mobile': { es: 'Móvil', en: 'Mobile' },
+  'browser.viewport.custom': { es: 'Personalizado…', en: 'Custom…' },
+  'browser.viewport.rotate': { es: 'Rotar', en: 'Rotate' },
+  'browser.viewport.custom_width': { es: 'Ancho', en: 'Width' },
+  'browser.viewport.custom_height': { es: 'Alto', en: 'Height' },
+  'browser.viewport.custom_apply': { es: 'Aplicar', en: 'Apply' },
+  'cmd.browser.new_tab': { es: 'Nueva pestaña', en: 'New tab' },
+  'cmd.browser.close_tab': { es: 'Pestaña cerrada', en: 'Tab closed' },
+
   // ─────────────────────────── Commit con AI
   'commit.title': { es: 'Commit con AI', en: 'Commit with AI' },
   'commit.sub': { es: 'Analiza el diff y propone mensaje', en: 'Analyzes the diff and proposes a message' },

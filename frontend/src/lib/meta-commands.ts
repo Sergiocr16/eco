@@ -29,6 +29,9 @@ export type MetaAction =
   | { kind: 'server_action'; action: 'start' | 'stop' | 'restart' }
   | { kind: 'toggle_remote_control'; on: boolean }
   | { kind: 'save_to_obsidian' }
+  // Multi-tabs del BrowserPanel.
+  | { kind: 'browser_new_tab'; mode: 'shared' | 'isolated' }
+  | { kind: 'browser_close_tab' }
   | { kind: 'help' }
   | { kind: 'unknown' };
 
@@ -261,6 +264,33 @@ function dropFillers(tokens: string[]): string[] {
   return tokens.filter((t) => !FILLERS.has(t));
 }
 
+// Detecta comandos del BrowserPanel referidos a "pestaña/pestana/tab":
+//  - "nueva pestaña" / "pestaña nueva" / "abrir pestaña"   → new shared
+//  - "pestaña aislada" / "pestaña incógnito" / "pestaña separada" → new isolated
+//  - "cerrar pestaña" / "cerrá pestaña" / "cierra pestaña" → close
+// Devuelve null si no matchea — el parser sigue con su lógica normal.
+function detectBrowserTabCommand(text: string): MetaAction | null {
+  const t = normalize(text);
+  // Acepta "pestaña" (con o sin tilde), "pestana", "tab".
+  if (!/\b(pestana|pestaña|tab|tabs)\b/.test(t) && !/\bnavegador\b.*\bventana\b/.test(t)) {
+    return null;
+  }
+  // Cerrar.
+  if (/\b(cerrar|cierra|cerra|cerrad|cerrá|close|cierr)\b/.test(t)) {
+    return { kind: 'browser_close_tab' };
+  }
+  // Aislada / incógnito.
+  if (/\b(aislad|incognit|separad|nueva\s+sesion|nueva\s+sesión|sesion\s+nueva|sesión\s+nueva|privad|incognito)\b/.test(t)) {
+    return { kind: 'browser_new_tab', mode: 'isolated' };
+  }
+  // Nueva / abrir / crear pestaña (default shared).
+  if (/\b(nueva|nuevo|abrir|abri|abre|crear|crea|abrime|abrila|abrilo|abríme)\b/.test(t)
+      || /\bpestana\b|\bpestaña\b|\btab\b/.test(t)) {
+    return { kind: 'browser_new_tab', mode: 'shared' };
+  }
+  return null;
+}
+
 export function parseMetaCommand(
   rest: string,
   bubbles: Bubble[],
@@ -269,6 +299,14 @@ export function parseMetaCommand(
 ): MetaAction {
   const text = rest.trim();
   if (!text) return { kind: 'unknown' };
+
+  // Pre-check de comandos de pestaña del BrowserPanel ("Eco nueva pestaña",
+  // "Eco pestaña aislada", "Eco cerrar pestaña"). Lo hacemos antes del
+  // matching de alias para que "cerrar" no se interprete como cerrar agente.
+  if (currentScreen === 'detail') {
+    const tabAction = detectBrowserTabCommand(text);
+    if (tabAction) return tabAction;
+  }
 
   // 1) Normalizamos y partimos en tokens.
   // 2) Saltamos rellenos de cortesía/clíticos al inicio ("por favor", "necesito", "me", etc.).
@@ -517,6 +555,13 @@ export function describeAction(action: MetaAction, bubbles: Bubble[], lang: Lang
       return { title: tr(action.on ? 'cmd.remote.on' : 'cmd.remote.off') };
     case 'save_to_obsidian':
       return { title: tr('cmd.obsidian.save') };
+    case 'browser_new_tab':
+      return {
+        title: tr('cmd.browser.new_tab'),
+        detail: action.mode === 'isolated' ? tr('browser.tab.new_isolated') : tr('browser.tab.new_shared'),
+      };
+    case 'browser_close_tab':
+      return { title: tr('cmd.browser.close_tab') };
     case 'help':           return { title: tr('cmd.help.title') };
     case 'unknown':        return { title: tr('cmd.unknown.title'), detail: tr('cmd.unknown.detail') };
   }

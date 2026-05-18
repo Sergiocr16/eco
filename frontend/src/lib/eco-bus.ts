@@ -66,6 +66,12 @@ export type EcoBusEvents = {
   // desde otras tabs (ej. desde "Cambios" del Git, click en archivo → abrirlo
   // en el editor). El emisor normalmente dispara switch_tab → files antes.
   'eco:files:open_path': { bubbleId: string; path: string };
+  // Pide al BrowserPanel del agente crear un nuevo tab. `mode: 'shared'`
+  // hereda la partition del tab activo (mismas cookies); `mode: 'isolated'`
+  // genera una partition persistente única para login independiente.
+  'eco:browser:new_tab': { bubbleId: string; mode: 'shared' | 'isolated' };
+  // Cierra el tab activo del BrowserPanel del agente.
+  'eco:browser:close_tab': { bubbleId: string };
 };
 
 type EventName = keyof EcoBusEvents;

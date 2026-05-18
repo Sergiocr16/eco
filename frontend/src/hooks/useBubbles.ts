@@ -192,7 +192,7 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
       const prefixes = [
         'eco.dev.cmd.', 'eco.dev.dual.', 'eco.dev.config_collapsed.',
         'eco.dev.min.frontend.', 'eco.dev.min.backend.', 'eco.dev.restartmode.',
-        'eco.browser.url.', 'eco.browser.zoom.',
+        'eco.browser.url.', 'eco.browser.zoom.', 'eco.browser.tabs.',
         'eco.detail.tab.', 'eco.remote.',
         'eco.terminals.', 'eco.terminals.active.',
         'eco.git.subtab.',

@@ -36,6 +36,12 @@ export type SmartBrowserProps = {
    * cookies — log in en uno te loguea en todos.
    */
   partition?: string;
+  /**
+   * Si false, el webview/iframe se renderiza con `display: none` para quedar
+   * montado pero invisible. Útil para multi-tabs (keep-alive entre tabs sin
+   * destruir el webview). Default true.
+   */
+  visible?: boolean;
 };
 
 type ElectronWebview = HTMLElement & {
@@ -55,7 +61,7 @@ type ElectronWebview = HTMLElement & {
 
 export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps>(
   function SmartBrowserView(
-    { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess, partition },
+    { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess, partition, visible = true },
     handleRef,
   ) {
     const useWebview = canEmbedArbitrarySites();
@@ -204,7 +210,11 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       return (
         <div
           ref={containerRef}
-          style={{ width: '100%', height: '100%', position: 'relative', background: 'white', ...style }}
+          style={{
+            width: '100%', height: '100%', position: 'relative', background: 'white',
+            ...style,
+            display: visible ? (style?.display ?? 'block') : 'none',
+          }}
         />
       );
     }
@@ -213,7 +223,11 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       <iframe
         ref={iframeRef}
         src={src}
-        style={{ width: '100%', height: '100%', border: 0, background: 'white', ...style }}
+        style={{
+          width: '100%', height: '100%', border: 0, background: 'white',
+          ...style,
+          display: visible ? (style?.display ?? 'block') : 'none',
+        }}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer-when-downgrade"
       />
