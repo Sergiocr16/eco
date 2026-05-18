@@ -487,7 +487,7 @@ export function acceptHunk(
  * highlight de las líneas modificadas, complementando el diff puro.
  */
 export type FileContentsResult =
-  | { ok: true; content: string; size: number; truncated: boolean }
+  | { ok: true; content: string; size: number; truncated: boolean; binary: boolean; mtime: number }
   | { ok: false; error: string };
 
 export function readFileContents(workspace: string, inputPath: string): FileContentsResult {
@@ -502,12 +502,26 @@ export function readFileContents(workspace: string, inputPath: string): FileCont
     const stat = statSync(abs);
     if (stat.isDirectory()) return { ok: false, error: 'Es un directorio' };
     const truncated = stat.size > MAX;
+    // Leemos como buffer (más útil que utf-8 directo) para poder detectar
+    // binario por bytes nulos y para slice exacto si truncated.
+    const buf = readFileSync(abs);
+    // Detección de binario en los primeros 8KB: heurística estándar (git,
+    // ripgrep). Cubre el 99% de los casos reales (imágenes, ejecutables,
+    // archivos comprimidos).
+    const headSize = Math.min(buf.length, 8 * 1024);
+    let binary = false;
+    for (let i = 0; i < headSize; i++) {
+      if (buf[i] === 0) { binary = true; break; }
+    }
+    if (binary) {
+      return { ok: true, content: '', size: stat.size, truncated: false, binary: true, mtime: stat.mtimeMs };
+    }
     // readFileSync con utf-8 puede romper caracteres multi-byte si truncamos
     // a la mitad de uno. Para mantener simple aceptamos esa imperfección
     // — los archivos > 512 KB son raros en review y el warning lo indica.
-    const fullContent = readFileSync(abs, 'utf-8');
-    const content = truncated ? fullContent.slice(0, MAX) : fullContent;
-    return { ok: true, content, size: stat.size, truncated };
+    const slice = truncated ? buf.subarray(0, MAX) : buf;
+    const content = slice.toString('utf-8');
+    return { ok: true, content, size: stat.size, truncated, binary: false, mtime: stat.mtimeMs };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Error leyendo archivo' };
   }

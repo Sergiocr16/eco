@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { Btn } from '@/design/primitives';
-import { IconCheck, IconFile } from '@/design/icons';
+import { IconCheck, IconFile, IconFolderOpen, IconTrash } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { DiffPane } from '@/components/DiffViewer';
@@ -79,6 +79,24 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
     ecoEmit('eco:git_refresh', { bubbleId });
   }
 
+  // Discard all: descarta TODOS los cambios sin commit del worktree. No es
+  // reversible — el confirm dialog lo hace explícito antes de ejecutar.
+  const [discardAllOpen, setDiscardAllOpen] = useState(false);
+  async function discardAllFiles() {
+    const paths = files.map((f) => f.path);
+    await Promise.all(paths.map(async (p) => {
+      try {
+        await apiFetch('/file/discard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: p, workspace, bubbleId }),
+        });
+      } catch { /* noop — el refresh trae el estado real */ }
+    }));
+    review.clearAll();
+    ecoEmit('eco:git_refresh', { bubbleId });
+  }
+
   // Auto-invalidación del review state cuando el agente vuelve a editar
   // después de un accept (mismo comportamiento que el FilesPanel viejo).
   useEffect(() => {
@@ -143,6 +161,7 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
   }
 
   return (
+    <>
     <ResizableSplit
       storageKey={splitKey}
       defaultLeft={300}
@@ -170,6 +189,11 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
             {reviewMode && pending > 0 && (
               <Btn kind="ghost" size="sm" icon={IconCheck} onClick={() => void acceptAllFiles()}>
                 {tr('git.changes.accept_all')}
+              </Btn>
+            )}
+            {files.length > 0 && (
+              <Btn kind="ghost" size="sm" icon={IconTrash} onClick={() => setDiscardAllOpen(true)}>
+                {tr('git.changes.discard_all')}
               </Btn>
             )}
           </div>
@@ -218,6 +242,75 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
         </div>
       }
     />
+    {discardAllOpen && (
+      <DiscardAllDialog
+        count={files.length}
+        onCancel={() => setDiscardAllOpen(false)}
+        onConfirm={async () => { setDiscardAllOpen(false); await discardAllFiles(); }}
+      />
+    )}
+    </>
+  );
+}
+
+function DiscardAllDialog({ count, onCancel, onConfirm }: {
+  count: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 100,
+      }}
+    >
+      <div style={{
+        maxWidth: 440, width: '90%', padding: 18,
+        background: t.windowBg, border: `1px solid ${t.glassBorder}`,
+        borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
+        boxShadow: t.shadowLg,
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+          {tr('git.changes.discard_all_title')}
+        </div>
+        <div style={{ fontSize: 13, color: t.text1, marginBottom: 16, lineHeight: 1.5 }}>
+          {count === 1
+            ? tr('git.changes.discard_all_body_one')
+            : tr('git.changes.discard_all_body_many', { n: count })}
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              padding: '6px 12px', borderRadius: t.r2,
+              background: 'transparent', color: t.text1, border: `1px solid ${t.glassBorder}`,
+              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
+            }}
+          >
+            {tr('common.cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            style={{
+              padding: '6px 12px', borderRadius: t.r2,
+              background: t.err, color: '#fff', border: 0,
+              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 600,
+            }}
+          >
+            {tr('git.changes.discard_all')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -280,6 +373,28 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
           background: `color-mix(in oklch, ${t.ok} 14%, transparent)`,
         }}>+</span>
       )}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          ecoEmit('eco:switch_tab', { tab: 'files', bubbleId });
+          ecoEmit('eco:files:open_path', { bubbleId, path: file.path });
+        }}
+        title={tr('files.open_in_editor')}
+        aria-label={tr('files.open_in_editor')}
+        style={{
+          flexShrink: 0,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 22, height: 22, padding: 0,
+          background: 'transparent', color: t.text2,
+          border: 0, cursor: 'pointer', borderRadius: t.r2,
+          transition: 'background 120ms, color 120ms',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.accent; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}
+      >
+        <IconFolderOpen size={13}/>
+      </button>
       <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
         <DiscardFileButton
           path={file.path}

@@ -16,6 +16,7 @@ import { GitPanel } from '@/components/GitPanel/GitPanel';
 import { GitMiniDock } from '@/components/GitMiniDock';
 import { BrowserPanel } from '@/components/BrowserPanel';
 import { ServerPanel } from '@/components/ServerPanel';
+import { FilesPanel } from '@/components/FilesPanel/FilesPanel';
 import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
@@ -194,7 +195,7 @@ type Props = {
   voiceInterim: string;
 };
 
-type Tab = 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server';
+type Tab = 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files';
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
@@ -222,10 +223,11 @@ export function AgentDetail({
   const [tab, setTabState] = useState<Tab>(() => {
     try {
       const saved = window.localStorage.getItem(tabStorageKey);
-      // Migración: el tab 'files' viejo ahora vive como sub-pestaña Cambios del tab Git.
-      if (saved === 'files') return 'git';
+      // 'files' volvió a ser un tab válido (explorador de archivos). Las
+      // entradas viejas con ese valor pasan directo al nuevo tab.
       if (saved === 'chat' || saved === 'terminal' || saved === 'git'
-        || saved === 'plan' || saved === 'browser' || saved === 'server') {
+        || saved === 'plan' || saved === 'browser' || saved === 'server'
+        || saved === 'files') {
         return saved as Tab;
       }
     } catch { /* noop */ }
@@ -401,6 +403,7 @@ export function AgentDetail({
       }}>
         <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')} label={tr('detail.tab.chat')} icon={IconCommand} badge={bubble.messages.length}/>
         <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
+        <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label={tr('files.tab.label')} icon={IconFolder}/>
         <TabBtn active={tab === 'browser'} onClick={() => setTab('browser')} label={tr('detail.tab.browser')} icon={IconGlobe}/>
         <TabBtn active={tab === 'server'} onClick={() => setTab('server')} label={tr('detail.tab.server')} icon={IconCpu}/>
         <TabBtn active={tab === 'git'} onClick={() => setTab('git')} label="Git" icon={IconGithub} badge={filesChanged.length}/>
@@ -433,6 +436,7 @@ export function AgentDetail({
             />
           )}
           {tab === 'plan' && <PlanPanel bubble={bubble}/>}
+          <KeepAliveFiles visible={tab === 'files'} bubbleId={bubble.id} workspace={bubble.workspace}/>
           {/* Navegador queda MONTADO siempre una vez abierto, solo se oculta cuando
               cambiás de pestaña. Así el iframe no recarga y la sesión del browser
               (cookies, localStorage del sitio, scroll position) se preserva. */}
@@ -512,6 +516,7 @@ function ChatPanel({
   const tr = useT();
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const suggestions = useQuickSuggestions();
 
   // Si el interim empieza con "Eco", no se mezcla con el draft del chat:
@@ -534,6 +539,31 @@ function ChatPanel({
     else if (dir === 'up') el.scrollBy({ top: -step, behavior: 'smooth' });
     else if (dir === 'down') el.scrollBy({ top: step, behavior: 'smooth' });
   }), []);
+
+  // Inserción de contexto desde la tab Archivos: el FilesPanel emite
+  // eco:set_chat_draft con un snippet (path + bloque de código) cuando el
+  // user selecciona texto y pulsa "Enviar a Claude". Lo appendemos al
+  // textarea para que pueda agregar la pregunta antes de mandar.
+  useEffect(() => {
+    const offDraft = ecoOn('eco:set_chat_draft', (d) => {
+      if (d.bubbleId !== bubble.id) return;
+      setDraft((prev) => prev + d.append);
+    });
+    const offFocus = ecoOn('eco:focus_chat_input', (d) => {
+      if (d.bubbleId !== bubble.id) return;
+      // Doble rAF: el switch_tab → 'chat' que viene antes monta este panel,
+      // así que esperamos un frame para que el textarea exista, y otro por
+      // si motion/animation lo monta diferido.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.focus();
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        }
+      }));
+    });
+    return () => { offDraft(); offFocus(); };
+  }, [bubble.id]);
 
   const submit = () => {
     const v = draft.trim();
@@ -576,6 +606,7 @@ function ChatPanel({
         )}
         <Glass radius={16} style={{ padding: 6, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
           <textarea
+            ref={textareaRef}
             value={displayValue}
             onChange={(e) => setDraft(e.target.value)}
             readOnly={!!interimForChat}
@@ -2732,6 +2763,25 @@ function KeepAliveServer({ visible, bubbleId, workspace }: { visible: boolean; b
       flex: 1, minHeight: 0,
     }}>
       <ServerPanel bubbleId={bubbleId} workspace={workspace} visible={visible}/>
+    </div>
+  );
+}
+
+// Mismo patrón: FilesPanel queda montado una vez visitado para preservar el
+// EditorView de CodeMirror (cursor, scroll, selección) + openFiles en memoria
+// + el árbol cargado. Sin esto, cada vuelta a la tab re-fetcheaba todo y
+// reseteaba el editor a la línea 1.
+function KeepAliveFiles({ visible, bubbleId, workspace }: { visible: boolean; bubbleId: string; workspace: string }) {
+  const [hasMounted, setHasMounted] = useState(visible);
+  useEffect(() => { if (visible && !hasMounted) setHasMounted(true); }, [visible, hasMounted]);
+  if (!hasMounted) return null;
+  return (
+    <div style={{
+      display: visible ? 'flex' : 'none',
+      flexDirection: 'column',
+      flex: 1, minHeight: 0,
+    }}>
+      <FilesPanel bubbleId={bubbleId} workspace={workspace}/>
     </div>
   );
 }

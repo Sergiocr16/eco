@@ -52,6 +52,7 @@ export default defineConfig({
       '/workspaces': { target: HTTP_TARGET, changeOrigin: false },
       '/shell': { target: HTTP_TARGET, changeOrigin: false },
       '/file': { target: HTTP_TARGET, changeOrigin: false },
+      '/fs': { target: HTTP_TARGET, changeOrigin: false },
       '/config': { target: HTTP_TARGET, changeOrigin: false },
       '/git': { target: HTTP_TARGET, changeOrigin: false },
       '/pty': { target: HTTP_TARGET, changeOrigin: false },

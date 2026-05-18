@@ -19,7 +19,7 @@ export type MetaAction =
   | { kind: 'toggle_voice'; on: boolean }
   | { kind: 'set_theme'; mode: 'dark' | 'light' | 'system' }
   | { kind: 'scroll'; dir: 'up' | 'down' | 'top' | 'bottom' }
-  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' }
+  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files' }
   | { kind: 'switch_git_subtab'; sub: 'history' | 'changes' | 'prs' }
   | { kind: 'confirm'; answer: 'yes' | 'no' }
   | { kind: 'repeat_last' }
@@ -97,9 +97,13 @@ const ALIASES: Record<string, string> = {
   'ajustes': 'settings', 'configuracion': 'settings', 'config': 'settings',
   'settings': 'settings', 'preferencias': 'settings',
 
-  // 'archivos' depende del contexto: pantalla en dashboard / tab Git → Cambios en detail.
-  // El resolver final usa `currentScreen` para decidir.
+  // 'archivos' depende del contexto: en detail abre el tab Archivos (explorador
+  // + editor); en cualquier otra pantalla va a la screen Archivos del dashboard.
+  // El resolver final usa `currentScreen` para decidir. Aliases adicionales:
+  // 'explorador', 'arbol', 'árbol', 'files', 'carpetas'.
   'archivos': 'archivos_ctx', 'files': 'archivos_ctx', 'carpetas': 'archivos_ctx',
+  'explorador': 'archivos_ctx', 'arbol': 'archivos_ctx', 'árbol': 'archivos_ctx',
+  // 'cambios' apunta a la sub-pestaña Cambios del tab Git en detail.
   'cambios': 'cambios_ctx', 'pendientes': 'cambios_ctx',
 
   // 'historial' depende del contexto: pantalla History en dashboard / sub-pestaña
@@ -287,9 +291,10 @@ export function parseMetaCommand(
 
   if (!commandKey) return { kind: 'unknown' };
 
-  // "archivos" es ambiguo: en detail = tab Git → Cambios; en cualquier otra pantalla = ir a screen Archivos.
+  // "archivos" es ambiguo: en detail = tab Archivos (explorador); en cualquier
+  // otra pantalla = ir a screen Archivos del dashboard.
   if (commandKey === 'archivos_ctx') {
-    commandKey = currentScreen === 'detail' ? 'gsub_changes' : 'files';
+    commandKey = currentScreen === 'detail' ? 'tab_files' : 'files';
   }
   // "cambios" solo tiene sentido en detail (cambios pendientes del worktree).
   if (commandKey === 'cambios_ctx') {
@@ -320,7 +325,7 @@ export function parseMetaCommand(
     if (aliased === 'tab_plan')     return { kind: 'switch_tab', tab: 'plan' };
     if (aliased === 'tab_chat')     return { kind: 'switch_tab', tab: 'chat' };
     if (aliased === 'tab_git')      return { kind: 'switch_tab', tab: 'git' };
-    if (aliased === 'archivos_ctx') return { kind: 'switch_git_subtab', sub: 'changes' };
+    if (aliased === 'archivos_ctx') return { kind: 'switch_tab', tab: 'files' };
     if (aliased === 'cambios_ctx')  return { kind: 'switch_git_subtab', sub: 'changes' };
     if (aliased === 'history_ctx')  return { kind: 'switch_git_subtab', sub: 'history' };
     if (aliased === 'gsub_prs')     return { kind: 'switch_git_subtab', sub: 'prs' };
@@ -388,6 +393,7 @@ export function parseMetaCommand(
     case 'tab_plan':     return { kind: 'switch_tab', tab: 'plan' };
     case 'tab_chat':     return { kind: 'switch_tab', tab: 'chat' };
     case 'tab_browser':  return { kind: 'switch_tab', tab: 'browser' };
+    case 'tab_files':    return { kind: 'switch_tab', tab: 'files' };
     case 'gsub_history':  return { kind: 'switch_git_subtab', sub: 'history' };
     case 'gsub_changes':  return { kind: 'switch_git_subtab', sub: 'changes' };
     case 'gsub_prs':      return { kind: 'switch_git_subtab', sub: 'prs' };

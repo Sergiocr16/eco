@@ -2,7 +2,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import helmet from 'helmet';
 import { createServer } from 'node:http';
-import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync, statSync, mkdirSync, createReadStream } from 'node:fs';
 import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -30,6 +30,9 @@ import {
 } from './user-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
 import { isAppError } from './app-error.js';
+import { resolveSafePath } from './fs-paths.js';
+import { listTree } from './fs-tree.js';
+import { searchInWorkspace } from './fs-search.js';
 import { z } from 'zod';
 
 function errResponse(res: Response, status: number, code: string, message: string) {
@@ -536,6 +539,160 @@ app.post('/file/diff', async (req: Request, res: Response) => {
     const message = err instanceof Error ? err.message : 'Error';
     res.status(status).json({ error: 'file.diff_failed', message });
   }
+});
+
+// ─── Filesystem (tab Archivos) ─────────────────────────────────────────────
+// /fs/tree, /file/save, /fs/search, /file/raw. Usan resolveSafePath para
+// validar paths. Los endpoints /file/* viejos siguen con su validación
+// inline en git-ops.ts — no se tocan acá.
+
+const FsTreeSchema = z.object({
+  bubbleId: z.string().min(1).max(128).optional(),
+  workspace: z.string().min(1).max(4096),
+  path: z.string().max(4096).optional().default(''),
+  maxDepth: z.number().int().min(1).max(6).optional().default(3),
+  includeHidden: z.boolean().optional().default(false),
+});
+app.post('/fs/tree', (req: Request, res: Response) => {
+  const parsed = FsTreeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+  }
+  const { workspace, bubbleId, path: subPath, maxDepth, includeHidden } = parsed.data;
+  if (!isAllowedWorkspace(workspace)) {
+    return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
+  }
+  const workdir = bubbleId ? ensureWorktree(bubbleId, workspace) : workspace;
+  const safe = resolveSafePath(workdir, subPath);
+  if (!safe.ok) return errResponse(res, 400, safe.code, safe.error);
+  const result = listTree({ workdir, subPath: safe.rel, maxDepth, includeHidden });
+  res.json(result);
+});
+
+const FileSaveSchema = z.object({
+  bubbleId: z.string().min(1).max(128).optional(),
+  workspace: z.string().min(1).max(4096),
+  path: z.string().min(1).max(4096),
+  content: z.string().max(2 * 1024 * 1024),  // 2MB hard cap
+  expectedMtime: z.number().optional(),
+});
+app.post('/file/save', (req: Request, res: Response) => {
+  const parsed = FileSaveSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+  }
+  const { workspace, bubbleId, path: relPath, content, expectedMtime } = parsed.data;
+  if (!isAllowedWorkspace(workspace)) {
+    return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
+  }
+  const workdir = bubbleId ? ensureWorktree(bubbleId, workspace) : workspace;
+  const safe = resolveSafePath(workdir, relPath);
+  if (!safe.ok) return errResponse(res, 400, safe.code, safe.error);
+  // Optimistic concurrency: si viene expectedMtime y el archivo existe con
+  // mtime distinto, alguien (agente, editor externo) lo modificó por debajo.
+  // Devolvemos berr.fs.stale para que el frontend ofrezca Recargar/Sobrescribir.
+  let currentMtime: number | null = null;
+  if (fsExistsSync(safe.abs)) {
+    try { currentMtime = statSync(safe.abs).mtimeMs; } catch { currentMtime = null; }
+    if (typeof expectedMtime === 'number' && currentMtime !== null && currentMtime !== expectedMtime) {
+      return res.status(409).json({ error: 'fs.stale', message: 'El archivo cambió fuera del editor', currentMtime });
+    }
+  }
+  try {
+    mkdirSync(path.dirname(safe.abs), { recursive: true });
+    writeFileSync(safe.abs, content, 'utf8');
+    const stat = statSync(safe.abs);
+    invalidateFileChanges(workdir);
+    res.json({ ok: true, mtime: stat.mtimeMs, bytes: Buffer.byteLength(content, 'utf8') });
+  } catch (e) {
+    return fromException(res, e, 'fs.write_failed', 'No se pudo guardar el archivo');
+  }
+});
+
+const FsSearchSchema = z.object({
+  bubbleId: z.string().min(1).max(128).optional(),
+  workspace: z.string().min(1).max(4096),
+  query: z.string().min(1).max(500),
+  regex: z.boolean().optional().default(false),
+  caseSensitive: z.boolean().optional().default(false),
+  includePattern: z.string().max(200).optional(),
+  maxResults: z.number().int().min(1).max(2000).optional().default(500),
+});
+app.post('/fs/search', async (req: Request, res: Response) => {
+  const parsed = FsSearchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+  }
+  const { workspace, bubbleId, query, regex, caseSensitive, includePattern, maxResults } = parsed.data;
+  if (!isAllowedWorkspace(workspace)) {
+    return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
+  }
+  const workdir = bubbleId ? ensureWorktree(bubbleId, workspace) : workspace;
+  // Validar que el workdir existe (resolveSafePath con relPath='' lo cubre).
+  const safe = resolveSafePath(workdir, '');
+  if (!safe.ok) return errResponse(res, 400, safe.code, safe.error);
+  const result = await searchInWorkspace({
+    workdir: safe.abs,
+    query,
+    regex,
+    caseSensitive,
+    includePattern,
+    maxResults,
+  });
+  if (!result.ok) {
+    const status = result.code === 'search.timeout' ? 504 : 500;
+    return res.status(status).json({ error: result.code, message: result.error });
+  }
+  res.json(result);
+});
+
+// Sirve archivos binarios (imágenes principalmente) para preview en la tab
+// Archivos. Validación: extensión en whitelist + size cap + auth normal.
+const RAW_ALLOWED_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.bmp': 'image/bmp',
+};
+const RAW_MAX_SIZE = 5 * 1024 * 1024;
+app.get('/file/raw', (req: Request, res: Response) => {
+  const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : '';
+  const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
+  const relPath = typeof req.query.path === 'string' ? req.query.path : '';
+  if (!workspace || !relPath) {
+    return errResponse(res, 400, 'http.invalid_body', 'workspace y path requeridos');
+  }
+  if (!isAllowedWorkspace(workspace)) {
+    return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
+  }
+  const workdir = bubbleId ? ensureWorktree(bubbleId, workspace) : workspace;
+  const safe = resolveSafePath(workdir, relPath);
+  if (!safe.ok) return errResponse(res, 400, safe.code, safe.error);
+  const ext = path.extname(safe.abs).toLowerCase();
+  const mime = RAW_ALLOWED_EXT[ext];
+  if (!mime) {
+    return errResponse(res, 415, 'fs.unsupported_media', 'Tipo de archivo no soportado');
+  }
+  if (!fsExistsSync(safe.abs)) {
+    return errResponse(res, 404, 'fs.not_found', 'Archivo no encontrado');
+  }
+  let size: number;
+  try { size = statSync(safe.abs).size; } catch { return errResponse(res, 404, 'fs.not_found', 'Archivo no encontrado'); }
+  if (size > RAW_MAX_SIZE) {
+    return errResponse(res, 413, 'fs.too_large', 'Archivo demasiado grande');
+  }
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Content-Length', String(size));
+  res.setHeader('Cache-Control', 'private, max-age=60');
+  const stream = createReadStream(safe.abs);
+  stream.on('error', () => {
+    if (!res.headersSent) res.status(500).end();
+  });
+  stream.pipe(res);
 });
 
 // ─── Git ops por burbuja (operan dentro del worktree de la burbuja) ────────

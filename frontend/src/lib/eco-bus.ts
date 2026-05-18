@@ -7,7 +7,7 @@ export type EcoBusEvents = {
   // reacciona. Sin él (legacy / voz sin contexto), reacciona cualquiera
   // montada. Sin este filtro, con multi-detail keepalive TODAS las
   // AgentDetail montadas cambiaban de tab al mismo tiempo.
-  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server'; bubbleId?: string };
+  'eco:switch_tab': { tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files'; bubbleId?: string };
   // Cambio de sub-pestaña dentro del tab Git. Las sub-pestañas son
   // "branches" (Ramas), "history" (Historial), "changes" (Cambios pendientes),
   // "stash", "tags", "prs" (Pull requests). Si la AgentDetail está en otra
@@ -55,6 +55,17 @@ export type EcoBusEvents = {
   // dispara antes/después de un switch_tab → git + switch_git_subtab → prs.
   // PRsView lo escucha y setea su `selected`.
   'eco:open_pr': { bubbleId: string; prNumber: number };
+  // Append al draft del ChatPanel de una burbuja. Usado por la tab Archivos
+  // cuando el user selecciona texto y dispara "Enviar a Claude" — el snippet
+  // se appendea al textarea para que pueda agregar contexto antes de mandar.
+  'eco:set_chat_draft': { bubbleId: string; append: string };
+  // Pone foco en el textarea del chat. Disparado junto con set_chat_draft
+  // después de cambiar a la tab chat con switch_tab.
+  'eco:focus_chat_input': { bubbleId: string };
+  // Pide a la tab Archivos que abra un archivo específico. Útil para deep-links
+  // desde otras tabs (ej. desde "Cambios" del Git, click en archivo → abrirlo
+  // en el editor). El emisor normalmente dispara switch_tab → files antes.
+  'eco:files:open_path': { bubbleId: string; path: string };
 };
 
 type EventName = keyof EcoBusEvents;

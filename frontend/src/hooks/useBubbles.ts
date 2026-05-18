@@ -200,6 +200,9 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
         'eco.git.pending_pr.', 'eco.git.selected_pr.',
         'eco.git.selected_commit.', 'eco.git.selected_file.',
         'eco.git.history.all_branches.',
+        // Tab Archivos (explorador + editor) — persistencia por bubble.
+        'eco.files.openTabs.', 'eco.files.activeFile.',
+        'eco.files.expanded.', 'eco.files.splitter.',
       ];
       for (const p of prefixes) window.localStorage.removeItem(`${p}${id}`);
       // También las dual-mode meta y per-role command keys (`eco.dev.cmd.<role>.<id>`).
