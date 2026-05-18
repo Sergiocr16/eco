@@ -665,22 +665,84 @@ La pestaña **Terminal** tiene tres sub-vistas:
 | **Agente** | Read-only. Muestra todos los `Bash` que ejecutó el agente Claude en esta agente, con su comando, output, y estado. |
 | **Comandos** | Legacy: terminal simulado one-shot vía `/shell`. Sigue ahí por compatibilidad. |
 
-### Pestaña Files con diff side-by-side
+### Pestaña Archivos (explorador + editor)
+
+Cada agente tiene una tab **Archivos** tipo mini-VS-Code dentro de su
+worktree. Layout split redimensionable: árbol a la izquierda, editor
+con tabs de archivos abiertos a la derecha.
+
+- **Árbol lazy gitignore-aware**: el backend usa `git ls-files --cached
+  --others --exclude-standard` (rápido, respeta `.gitignore`
+  automáticamente) o un walker manual con `EXCLUDED_DIRS` si no es
+  repo git. Cap de 5000 entradas por bubble; se expande on-demand al
+  click en una carpeta. Botones de toolbar para Expandir todo /
+  Colapsar todo / Refrescar.
+- **Iconos por tipo de archivo**: ~30 extensiones con color propio
+  (TS/JS/TSX azul, JSON ámbar, CSS azul fuerte, MD gris, PY azul, Rust
+  marrón, Go cian, etc.). Filenames especiales (`Dockerfile`,
+  `.gitignore`, `.env*`) con su color. Carpetas con glyph claramente
+  distinto entre cerrada y abierta (tab + cuerpo cerrado vs trapezoide
+  con "boca"). Chevron lateral rota como indicador adicional.
+- **Editor CodeMirror 6**: el editor del bundle (~138 KB gzip / +1.5
+  MB en `.dmg`, vs ~15 MB de Monaco). Syntax highlighting eager para
+  TS/JS/JSON/CSS/HTML/MD; el resto se descarga lazy vía
+  `@codemirror/language-data`. Theme propio derivado de los tokens de
+  Eco con fondo neutro (negro puro en dark / blanco puro en light)
+  para mantener legibilidad sin importar qué theme tenga la app.
+- **Save explícito** con `Cmd+S` + dirty indicator: cambios en memoria
+  se marcan con dot ámbar y nombre en bold. El endpoint `POST
+  /file/save` usa `expectedMtime` para detectar conflicts cuando otro
+  proceso (el agente, un editor externo) modificó el archivo por
+  debajo, y el frontend abre un diálogo Recargar / Sobrescribir.
+- **Cambios sin commit visibles desde el árbol**: combinamos editor
+  dirty + git status. Archivos en cualquiera de los dos estados se ven
+  ámbar; las carpetas ancestras muestran un dot atenuado. Apenas
+  commitéas, `git status` se limpia y los dots se apagan solos.
+- **Find-in-file** (`Cmd+F` nativo de CodeMirror) con panel estilizado
+  a los tokens de Eco. **Quick Open** (`Cmd+P`) con fuzzy casero que
+  filtra el árbol completo (cacheado tras la primera apertura).
+  **Búsqueda global** (`Cmd+Shift+F`) con ripgrep (fallback a
+  `grep -rn`), timeout 8s, cap 500 hits, navega a la línea/columna
+  exacta del match al hacer click.
+- **Enviar a Claude**: al seleccionar texto, aparece un botón flotante
+  cerca del cursor. Click → switch a la pestaña Terminal y escribe el
+  snippet (path + bloque de código fenced) al PTY del agente, sin
+  trailing newline para que vos completes la pregunta y presiones
+  Enter para mandar.
+- **Preview de imágenes**: PNG/JPG/GIF/WEBP/SVG/ICO/BMP se renderizan
+  inline en el editor vía `GET /file/raw` (validación de extensión
+  whitelist + cap 5 MB).
+- **Estado persistente y multi-detail keep-alive**: archivos abiertos,
+  archivo activo, carpetas expandidas y ancho del splitter se guardan
+  en `eco.files.*.<bubbleId>`. La pestaña queda montada al cambiar
+  entre tabs (igual que Browser y Server), así el cursor del editor,
+  scroll y selección se preservan. Cleanup en `useBubbles.removeBubble`.
+- **Deep-link desde Git → Cambios**: cada fila tiene un botón "Abrir
+  en Archivos" — switchea a la tab Archivos, expande los dirs
+  ancestrales, scrollea el árbol hasta el archivo y lo abre en el
+  editor seleccionado.
+- **Comando de voz**: `Eco archivos` abre esta pestaña (aliases
+  `explorador`, `árbol`, `arbol`, `files`). `Eco cambios` y `Eco git`
+  siguen yendo a Git → Cambios.
+
+### Git → Cambios (review estilo Cursor)
 
 - La lista de archivos viene de `git status --porcelain=v1
-  --untracked-files=all` polleado cada 4 s. `useGitChanges` cachea por
-  bubble en module-scope, así al volver a la conversación los archivos
-  se ven al instante (stale-while-revalidate). El polling se pausa con
-  `document.visibilityState !== 'visible'` y se dispara on-demand via
-  evento `eco:git_refresh` después de cada acción que toca git.
-- El backend reporta por archivo `{ change, unstaged }` donde `unstaged`
-  parsea el segundo carácter de `XY` del porcelain (cambios en el work
-  tree sin stagear). El dot ámbar/verde del FilesPanel se basa en eso —
+  --untracked-files=all` polleado cada 4-6 s. `useGitChanges` cachea
+  por bubble en module-scope (stale-while-revalidate). El polling se
+  pausa con `document.visibilityState !== 'visible'` y se dispara
+  on-demand via `eco:git_refresh` después de cada acción que toca git.
+- El backend reporta por archivo `{ change, unstaged }` donde
+  `unstaged` parsea el segundo carácter de `XY` del porcelain (cambios
+  en el work tree sin stagear). El dot ámbar/verde se basa en eso —
   es la verdad absoluta, no depende solo del state local.
-- Click en un archivo → **diff desplegable inline** (sin modal): la card
+- Click en un archivo → diff desplegable inline (sin modal): card que
   se expande hacia abajo y muestra el diff side-by-side de 4 columnas
   (lineNo viejo · texto viejo · lineNo nuevo · texto nuevo), hunks con
   header azul, adds verde / dels rojo / contexto neutral.
+- **Botón "Rechazar todos"**: descarta TODOS los cambios sin commit
+  del worktree en un solo paso (con diálogo de confirmación). Al lado
+  del "Aceptar todos" en el header del panel.
 - **Búsqueda** en el diff: filtra hunks y resalta matches con `<mark>`.
 
 ### Review estilo Cursor (modo opcional)
