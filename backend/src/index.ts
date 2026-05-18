@@ -397,37 +397,63 @@ const fileChangesCache = new Map<string, { result: FileChangesPayload; ts: numbe
 const fileChangesInFlight = new Map<string, Promise<FileChangesPayload>>();
 const FILE_CHANGES_CACHE_MS = 300;
 
-function computeFileChanges(effective: string): Promise<FileChangesPayload> {
-  return new Promise<FileChangesPayload>((resolve) => {
+// Spawn helper que captura stdout como string. Usado por status + check-ignore.
+function gitCapture(cwd: string, args: string[], stdin?: string, timeoutMs = 5000): Promise<{ ok: boolean; out: string }> {
+  return new Promise((resolve) => {
     import('node:child_process').then(({ spawn }) => {
-      const proc = spawn('git', ['-C', effective, 'status', '--porcelain=v1', '--untracked-files=all'], {
-        timeout: 5000,
-      });
+      const proc = spawn('git', ['-C', cwd, ...args], { timeout: timeoutMs });
       let out = '';
       proc.stdout.on('data', (d) => { out += d.toString(); });
-      proc.on('close', (code) => {
-        if (code !== 0) return resolve({ workspace: effective, files: [], git: false });
-        const files: FileChangesPayload['files'] = [];
-        for (const line of out.split('\n')) {
-          if (!line) continue;
-          const xy = line.slice(0, 2);
-          const workCh = xy[1];
-          const path = line.slice(3).trim();
-          if (!path) continue;
-          let change: FileChangesPayload['files'][number]['change'];
-          if (xy === '??' || xy.includes('A')) change = 'created';
-          else if (xy.includes('D')) change = 'deleted';
-          else if (xy.includes('R')) change = 'renamed';
-          else change = 'modified';
-          const unstaged = xy === '??' || (workCh !== undefined && workCh !== ' ');
-          const finalPath = path.includes(' -> ') ? path.split(' -> ').pop()! : path;
-          files.push({ path: finalPath, change, unstaged });
-        }
-        resolve({ workspace: effective, files, git: true });
-      });
-      proc.on('error', () => resolve({ workspace: effective, files: [], git: false }));
+      proc.on('close', (code) => resolve({ ok: code === 0 || code === 1, out })); // 1 = "ningún match" para check-ignore
+      proc.on('error', () => resolve({ ok: false, out: '' }));
+      if (stdin !== undefined) {
+        try { proc.stdin.end(stdin); } catch { /* noop */ }
+      }
     });
   });
+}
+
+async function computeFileChanges(effective: string): Promise<FileChangesPayload> {
+  const status = await gitCapture(effective, ['status', '--porcelain=v1', '--untracked-files=all']);
+  if (!status.ok) return { workspace: effective, files: [], git: false };
+
+  const files: FileChangesPayload['files'] = [];
+  for (const line of status.out.split('\n')) {
+    if (!line) continue;
+    const xy = line.slice(0, 2);
+    const workCh = xy[1];
+    const path = line.slice(3).trim();
+    if (!path) continue;
+    let change: FileChangesPayload['files'][number]['change'];
+    if (xy === '??' || xy.includes('A')) change = 'created';
+    else if (xy.includes('D')) change = 'deleted';
+    else if (xy.includes('R')) change = 'renamed';
+    else change = 'modified';
+    const unstaged = xy === '??' || (workCh !== undefined && workCh !== ' ');
+    const finalPath = path.includes(' -> ') ? path.split(' -> ').pop()! : path;
+    files.push({ path: finalPath, change, unstaged });
+  }
+
+  // Filtrar archivos que matchean reglas de .gitignore — aunque git status
+  // los muestra (típicamente porque ya estaban tracked al momento de agregar
+  // la regla), el user no los quiere ver. `check-ignore --stdin -z` valida
+  // cada path con las reglas activas; exit 0 = matchea ignored, 1 = no.
+  if (files.length > 0) {
+    const stdin = files.map((f) => f.path).join('\0') + '\0';
+    const r = await gitCapture(effective, ['check-ignore', '--no-index', '-z', '--stdin'], stdin);
+    if (r.ok && r.out) {
+      const ignored = new Set(r.out.split('\0').filter(Boolean));
+      if (ignored.size > 0) {
+        return {
+          workspace: effective,
+          files: files.filter((f) => !ignored.has(f.path)),
+          git: true,
+        };
+      }
+    }
+  }
+
+  return { workspace: effective, files, git: true };
 }
 
 app.get('/file/changes', async (req: Request, res: Response) => {

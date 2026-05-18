@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync, realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { isAllowedWorkspace, isInsideWorkspace } from './config.js';
 import { buildSafeEnv } from './security.js';
@@ -71,11 +71,16 @@ export async function fileDiff(req: DiffRequest): Promise<DiffResult> {
   // El workspace efectivo para los chequeos pasa a ser el worktree.
   const effectiveWorkspace = (req.bubbleId && getWorktree(req.bubbleId)) || req.workspace;
 
-  if (!isInsideWorkspace(req.path, effectiveWorkspace)) {
+  // El path puede venir absoluto (legacy) o relativo al workspace efectivo
+  // (formato actual desde que `useGitChanges` dejó de prefijear el workdir).
+  // Normalizamos a absoluto contra el workspace antes de validar.
+  const absInput = isAbsolute(req.path) ? req.path : resolve(effectiveWorkspace, req.path);
+
+  if (!isInsideWorkspace(absInput, effectiveWorkspace)) {
     throw Object.assign(new Error('Path fuera del workspace'), { httpStatus: 403 });
   }
 
-  const fullPath = realpathSafe(req.path);
+  const fullPath = realpathSafe(absInput);
   if (!fullPath) {
     return { mode: 'not_found', diff: '', hasChanges: false, message: 'Archivo no existe' };
   }
