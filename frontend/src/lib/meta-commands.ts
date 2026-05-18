@@ -19,7 +19,7 @@ export type MetaAction =
   | { kind: 'toggle_voice'; on: boolean }
   | { kind: 'set_theme'; mode: 'dark' | 'light' | 'system' }
   | { kind: 'scroll'; dir: 'up' | 'down' | 'top' | 'bottom' }
-  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files' }
+  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files' | 'notes' }
   | { kind: 'switch_git_subtab'; sub: 'history' | 'changes' | 'prs' }
   | { kind: 'confirm'; answer: 'yes' | 'no' }
   | { kind: 'repeat_last' }
@@ -138,6 +138,8 @@ const ALIASES: Record<string, string> = {
   'mensajes': 'tab_chat',
   'navegador': 'tab_browser', 'browser': 'tab_browser', 'web': 'tab_browser',
   'pagina': 'tab_browser', 'sitio': 'tab_browser', 'internet': 'tab_browser',
+  'notas': 'tab_notes', 'nota': 'tab_notes', 'notes': 'tab_notes',
+  'apuntes': 'tab_notes', 'anotacion': 'tab_notes', 'anotaciones': 'tab_notes',
 
   // Sí / No / Confirm
   'si': 'confirm_yes', 'yes': 'confirm_yes', 'ok': 'confirm_yes',
@@ -432,6 +434,7 @@ export function parseMetaCommand(
     case 'tab_chat':     return { kind: 'switch_tab', tab: 'chat' };
     case 'tab_browser':  return { kind: 'switch_tab', tab: 'browser' };
     case 'tab_files':    return { kind: 'switch_tab', tab: 'files' };
+    case 'tab_notes':    return { kind: 'switch_tab', tab: 'notes' };
     case 'gsub_history':  return { kind: 'switch_git_subtab', sub: 'history' };
     case 'gsub_changes':  return { kind: 'switch_git_subtab', sub: 'changes' };
     case 'gsub_prs':      return { kind: 'switch_git_subtab', sub: 'prs' };

@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace } from './config.js';
 import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
-import { attachPtyServer, killBubblePty, killBubbleTerminal } from './pty-server.js';
+import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
 import * as gitHistory from './git-history.js';
@@ -33,6 +33,7 @@ import { isAppError } from './app-error.js';
 import { resolveSafePath } from './fs-paths.js';
 import { listTree } from './fs-tree.js';
 import { searchInWorkspace } from './fs-search.js';
+import { summarizeBubble } from './notes-summary.js';
 import { z } from 'zod';
 
 function errResponse(res: Response, status: number, code: string, message: string) {
@@ -1149,6 +1150,43 @@ app.post('/bubble/close', async (req: Request, res: Response) => {
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
   const r = await closeBubbleResources(bubbleId);
   res.json({ ok: true, ...r });
+});
+
+// Resumen de una conversación usando `claude -p`. Lo invoca el botón
+// "Resumen" del NotesPanel. NO toca filesystem ni worktree, solo arma un
+// prompt con los messages slimmed y devuelve markdown.
+const NotesSummarizeSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  bubbleTitle: z.string().min(1).max(200),
+  workspace: z.string().max(4096).optional(),
+  // El chat del Claude SDK es secundario — la fuente principal es el PTY
+  // que el backend lee directo del ring buffer. Acá `messages` es opcional.
+  messages: z.array(z.object({
+    role: z.enum(['user', 'assistant', 'system']),
+    text: z.string(),
+    ts: z.number().optional(),
+  })).max(200).optional(),
+});
+app.post('/notes/summarize', (req: Request, res: Response) => {
+  const parsed = NotesSummarizeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+  }
+  const { bubbleId, bubbleTitle, workspace, messages } = parsed.data;
+  if (workspace && !isAllowedWorkspace(workspace)) {
+    return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
+  }
+  // Fuente principal: snapshot del PTY de esa bubble (ring buffer 128 KB).
+  const ptyBuffer = getBubblePtyBuffer(bubbleId);
+  try {
+    const r = summarizeBubble({ bubbleTitle, workspace, ptyBuffer, messages });
+    if (!r.ok) {
+      return res.status(500).json({ error: 'notes.summarize_failed', message: r.error });
+    }
+    res.json({ ok: true, markdown: r.markdown });
+  } catch (e) {
+    return fromException(res, e, 'notes.summarize_failed', 'No se pudo generar el resumen');
+  }
 });
 
 const shellConcurrency = { active: 0, max: 3 };

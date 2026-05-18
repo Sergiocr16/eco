@@ -17,6 +17,7 @@ import { GitMiniDock } from '@/components/GitMiniDock';
 import { BrowserPanel } from '@/components/BrowserPanel';
 import { ServerPanel } from '@/components/ServerPanel';
 import { FilesPanel } from '@/components/FilesPanel/FilesPanel';
+import { NotesPanel } from '@/components/NotesPanel/NotesPanel';
 import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
@@ -24,7 +25,7 @@ import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
-  IconCheck, IconX, IconBolt, IconGithub,
+  IconCheck, IconX, IconBolt, IconGithub, IconEdit,
   IconAgent, IconFolder, IconTrash, IconCopy,
   type IconProps,
 } from '@/design/icons';
@@ -195,7 +196,42 @@ type Props = {
   voiceInterim: string;
 };
 
-type Tab = 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files';
+type Tab = 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files' | 'notes';
+
+const ALL_TABS: ReadonlyArray<Tab> = ['chat', 'terminal', 'files', 'notes', 'browser', 'server', 'git', 'plan'];
+const TAB_ORDER_KEY = 'eco.detail.tab.order';
+
+function loadTabOrder(): Tab[] {
+  try {
+    const raw = localStorage.getItem(TAB_ORDER_KEY);
+    if (!raw) return [...ALL_TABS];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [...ALL_TABS];
+    const valid = arr.filter((x): x is Tab =>
+      typeof x === 'string' && (ALL_TABS as ReadonlyArray<string>).includes(x));
+    // Si en una versión futura agregamos un tab nuevo y el user ya tenía
+    // orden guardado, lo sumamos al final.
+    const missing = ALL_TABS.filter((t) => !valid.includes(t));
+    return [...valid, ...missing];
+  } catch { return [...ALL_TABS]; }
+}
+
+function saveTabOrder(order: Tab[]): void {
+  try { localStorage.setItem(TAB_ORDER_KEY, JSON.stringify(order)); } catch { /* noop */ }
+}
+
+// Metadata estática de cada tab — icono + key de i18n para el label.
+// 'git' es 'Git' literal (sin traducción) por convención existente.
+const TAB_DEFS: Record<Tab, { labelKey: string; icon: (p: IconProps) => JSX.Element }> = {
+  chat:     { labelKey: 'detail.tab.chat',    icon: IconCommand },
+  terminal: { labelKey: 'detail.tab.terminal', icon: IconTerminal },
+  files:    { labelKey: 'files.tab.label',     icon: IconFolder },
+  notes:    { labelKey: 'notes.tab.label',     icon: IconEdit },
+  browser:  { labelKey: 'detail.tab.browser',  icon: IconGlobe },
+  server:   { labelKey: 'detail.tab.server',   icon: IconCpu },
+  git:      { labelKey: 'Git',                 icon: IconGithub },
+  plan:     { labelKey: 'detail.tab.plan',     icon: IconLayers },
+};
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
@@ -227,7 +263,7 @@ export function AgentDetail({
       // entradas viejas con ese valor pasan directo al nuevo tab.
       if (saved === 'chat' || saved === 'terminal' || saved === 'git'
         || saved === 'plan' || saved === 'browser' || saved === 'server'
-        || saved === 'files') {
+        || saved === 'files' || saved === 'notes') {
         return saved as Tab;
       }
     } catch { /* noop */ }
@@ -237,6 +273,12 @@ export function AgentDetail({
     setTabState(next);
     try { window.localStorage.setItem(tabStorageKey, next); } catch { /* noop */ }
   };
+  // Orden global de los tabs (persistido para TODOS los agentes en
+  // `eco.detail.tab.order`). El user los reordena por drag-and-drop.
+  const [tabOrder, setTabOrder] = useState<Tab[]>(() => loadTabOrder());
+  const [draggingTabId, setDraggingTabId] = useState<Tab | null>(null);
+  const [dragOverTabId, setDragOverTabId] = useState<Tab | null>(null);
+
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -401,13 +443,43 @@ export function AgentDetail({
         borderBottom: `1px solid ${t.glassBorder}`,
         alignItems: 'center',
       }}>
-        <TabBtn active={tab === 'chat'} onClick={() => setTab('chat')} label={tr('detail.tab.chat')} icon={IconCommand} badge={bubble.messages.length}/>
-        <TabBtn active={tab === 'terminal'} onClick={() => setTab('terminal')} label={tr('detail.tab.terminal')} icon={IconTerminal}/>
-        <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label={tr('files.tab.label')} icon={IconFolder}/>
-        <TabBtn active={tab === 'browser'} onClick={() => setTab('browser')} label={tr('detail.tab.browser')} icon={IconGlobe}/>
-        <TabBtn active={tab === 'server'} onClick={() => setTab('server')} label={tr('detail.tab.server')} icon={IconCpu}/>
-        <TabBtn active={tab === 'git'} onClick={() => setTab('git')} label="Git" icon={IconGithub} badge={filesChanged.length}/>
-        <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')} label={tr('detail.tab.plan')} icon={IconLayers}/>
+        {tabOrder.map((id) => {
+          const def = TAB_DEFS[id];
+          const badge = id === 'chat' ? bubble.messages.length
+            : id === 'git' ? filesChanged.length
+            : undefined;
+          return (
+            <TabBtn
+              key={id}
+              tabId={id}
+              active={tab === id}
+              onClick={() => setTab(id)}
+              label={def.labelKey === 'Git' ? 'Git' : tr(def.labelKey)}
+              icon={def.icon}
+              badge={badge}
+              dragOver={dragOverTabId === id}
+              onDragStart={() => setDraggingTabId(id)}
+              onDragEnd={() => { setDraggingTabId(null); setDragOverTabId(null); }}
+              onDragOver={() => setDragOverTabId(id)}
+              onDragLeave={() => setDragOverTabId((v) => v === id ? null : v)}
+              onDrop={() => {
+                if (draggingTabId && draggingTabId !== id) {
+                  const next = [...tabOrder];
+                  const from = next.indexOf(draggingTabId);
+                  const to = next.indexOf(id);
+                  if (from >= 0 && to >= 0) {
+                    next.splice(from, 1);
+                    next.splice(to, 0, draggingTabId);
+                    setTabOrder(next);
+                    saveTabOrder(next);
+                  }
+                }
+                setDraggingTabId(null);
+                setDragOverTabId(null);
+              }}
+            />
+          );
+        })}
         <div style={{ flex: 1 }}/>
         <RemoteControlNavButton bubble={bubble}/>
       </div>
@@ -437,6 +509,7 @@ export function AgentDetail({
           )}
           {tab === 'plan' && <PlanPanel bubble={bubble}/>}
           <KeepAliveFiles visible={tab === 'files'} bubbleId={bubble.id} workspace={bubble.workspace}/>
+          {tab === 'notes' && <NotesPanel bubble={bubble}/>}
           {/* Navegador queda MONTADO siempre una vez abierto, solo se oculta cuando
               cambiás de pestaña. Así el iframe no recarga y la sesión del browser
               (cookies, localStorage del sitio, scroll position) se preserva. */}
@@ -472,21 +545,56 @@ function collectFilesChanged(bubble: Bubble): FileChange[] {
   return out;
 }
 
-function TabBtn({ active, onClick, label, icon: Icon, badge }: {
+function TabBtn({
+  active, onClick, label, icon: Icon, badge,
+  tabId, dragOver, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
+}: {
   active: boolean; onClick: () => void; label: string; icon: (p: IconProps) => JSX.Element; badge?: number;
+  tabId?: string;
+  dragOver?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+  onDragOver?: () => void;
+  onDragLeave?: () => void;
+  onDrop?: () => void;
 }) {
   const t = useTokens();
   return (
     <button
       type="button"
       onClick={onClick}
+      draggable={!!tabId}
+      onDragStart={(e) => {
+        if (!tabId) return;
+        // Necesario para que el drop event dispare en Firefox.
+        try { e.dataTransfer.setData('text/plain', tabId); } catch { /* noop */ }
+        e.dataTransfer.effectAllowed = 'move';
+        onDragStart?.();
+      }}
+      onDragEnd={() => onDragEnd?.()}
+      onDragOver={(e) => {
+        if (!tabId) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        onDragOver?.();
+      }}
+      onDragLeave={() => onDragLeave?.()}
+      onDrop={(e) => {
+        if (!tabId) return;
+        e.preventDefault();
+        onDrop?.();
+      }}
       style={{
+        position: 'relative',
         display: 'flex', alignItems: 'center', gap: 7,
         padding: '12px 14px', background: 'transparent', border: 0,
         borderBottom: `2px solid ${active ? t.accent : 'transparent'}`,
         color: active ? t.text0 : t.text2, cursor: 'pointer',
         fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
         transition: 'color 140ms', marginBottom: -1,
+        // Marcador visual durante el drag: barra vertical del color accent
+        // del lado izquierdo del target.
+        boxShadow: dragOver ? `inset 3px 0 0 ${t.accent}` : 'none',
       }}
     >
       <Icon size={14}/>

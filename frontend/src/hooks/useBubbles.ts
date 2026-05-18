@@ -203,6 +203,8 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
         // Tab Archivos (explorador + editor) — persistencia por bubble.
         'eco.files.openTabs.', 'eco.files.activeFile.',
         'eco.files.expanded.', 'eco.files.splitter.',
+        // Tab Notas — todas las notas + splitter + preview toggle por bubble.
+        'eco.notes.', 'eco.notes.splitter.', 'eco.notes.preview.',
       ];
       for (const p of prefixes) window.localStorage.removeItem(`${p}${id}`);
       // También las dual-mode meta y per-role command keys (`eco.dev.cmd.<role>.<id>`).

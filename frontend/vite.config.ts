@@ -53,6 +53,7 @@ export default defineConfig({
       '/shell': { target: HTTP_TARGET, changeOrigin: false },
       '/file': { target: HTTP_TARGET, changeOrigin: false },
       '/fs': { target: HTTP_TARGET, changeOrigin: false },
+      '/notes': { target: HTTP_TARGET, changeOrigin: false },
       '/config': { target: HTTP_TARGET, changeOrigin: false },
       '/git': { target: HTTP_TARGET, changeOrigin: false },
       '/pty': { target: HTTP_TARGET, changeOrigin: false },

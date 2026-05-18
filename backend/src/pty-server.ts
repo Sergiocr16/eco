@@ -152,6 +152,23 @@ export function runningPtyBubbleIds(): string[] {
   return [...out];
 }
 
+// Devuelve el snapshot acumulado del ring buffer del PTY de una burbuja.
+// Si la burbuja tiene varios terminales (default 'main' + extras), los
+// concatena en orden de ptyId. Cap implícito en RING_BUFFER_MAX por
+// sesión, así que el total acumulado es N * 128 KB.
+export function getBubblePtyBuffer(bubbleId: string): string {
+  const parts: Array<{ ptyId: string; buffer: string }> = [];
+  for (const s of sessions.values()) {
+    if (s.bubbleId !== bubbleId) continue;
+    if (!s.buffer) continue;
+    parts.push({ ptyId: s.ptyId, buffer: s.buffer });
+  }
+  if (parts.length === 0) return '';
+  parts.sort((a, b) => a.ptyId.localeCompare(b.ptyId));
+  if (parts.length === 1) return parts[0]!.buffer;
+  return parts.map((p) => `=== terminal ${p.ptyId} ===\n${p.buffer}`).join('\n\n');
+}
+
 export function attachPtyServer(httpServer: Server, authToken: string) {
   // Snapshot: cuando un cliente nuevo se conecta al /ws principal, recibe
   // un pty_status=true por cada PTY corriendo. Así sobrevive reload de UI.
