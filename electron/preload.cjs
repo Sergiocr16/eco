@@ -10,4 +10,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   log: (...args) => ipcRenderer.send('eco:renderer-log', args),
   // Folder picker nativo del OS.
   pickFolder: (opts) => ipcRenderer.invoke('eco:pick-folder', opts),
+  // Suscripción al estado fullscreen del BrowserWindow. Devuelve una función
+  // que cancela la suscripción. El callback se invoca con un bool tras cada
+  // cambio (incluye el estado inicial al did-finish-load).
+  onFullscreenChange: (cb) => {
+    const handler = (_e, isFull) => { try { cb(!!isFull); } catch { /* noop */ } };
+    ipcRenderer.on('eco:fullscreen-changed', handler);
+    return () => ipcRenderer.removeListener('eco:fullscreen-changed', handler);
+  },
 });

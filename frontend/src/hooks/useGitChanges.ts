@@ -69,10 +69,13 @@ export function useGitChanges(workspace: string, bubbleId?: string, intervalMs =
         if (!r.ok) return;
         const data = await r.json() as { workspace: string; files: { path: string; change: string; unstaged?: boolean }[]; git: boolean };
         if (cancelled) return;
-        // El backend devuelve `workspace` con el path efectivo (worktree si aplica).
-        const base = (data.workspace || workspace).endsWith('/') ? (data.workspace || workspace) : (data.workspace || workspace) + '/';
+        // Mantenemos los paths RELATIVOS al workdir efectivo. Antes los
+        // prefijábamos con el absoluto del worktree, pero eso (a) hacía que
+        // el UI mostrara `/Users/.../worktrees/<id>/src/foo.ts` en lugar de
+        // solo `src/foo.ts`, y (b) los endpoints backend aceptan ambos. Si
+        // alguien manda absoluto, lo dejamos pasar para compat.
         const normalized: GitChange[] = data.files.map((f) => ({
-          path: f.path.startsWith('/') ? f.path : base + f.path,
+          path: f.path,
           change: f.change,
           // Default true para compat con backends viejos (mejor mostrar
           // pendiente que aceptado por error).
@@ -161,9 +164,8 @@ async function refreshOne(workspace: string, bubbleId: string): Promise<void> {
       const r = await apiFetch(`/file/changes?${params}`);
       if (!r.ok) return;
       const data = await r.json() as { workspace: string; files: { path: string; change: string; unstaged?: boolean }[] };
-      const base = (data.workspace || workspace).endsWith('/') ? (data.workspace || workspace) : (data.workspace || workspace) + '/';
       const normalized: GitChange[] = data.files.map((f) => ({
-        path: f.path.startsWith('/') ? f.path : base + f.path,
+        path: f.path,
         change: f.change,
         unstaged: f.unstaged !== false,
       }));

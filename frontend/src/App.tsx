@@ -713,8 +713,16 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   ).length;
 
   // Inset superior para reservar el área de los traffic lights de macOS
-  // cuando corremos como app empaquetada (titleBarStyle: hiddenInset).
-  const topInset = getTopInset();
+  // cuando corremos como app empaquetada (titleBarStyle: hiddenInset). En
+  // fullscreen los traffic lights desaparecen, así que reset a 0.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.onFullscreenChange) return;
+    const unsub = api.onFullscreenChange((v) => setIsFullscreen(v));
+    return () => { try { unsub(); } catch { /* noop */ } };
+  }, []);
+  const topInset = isFullscreen ? 0 : getTopInset();
 
   // Inset inferior cuando el dock está activo y hay agentes — reserva ~76px
   // (alto del dock + margen) para que el contenido no quede tapado.

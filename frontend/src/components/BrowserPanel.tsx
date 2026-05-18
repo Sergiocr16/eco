@@ -174,9 +174,14 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
       ? isolatedPartition(bubbleId, newId)
       : (currentActive?.partition ?? defaultPartition(bubbleId));
     const isolated = mode === 'isolated' || (currentActive?.isolated ?? false);
+    // El tab nuevo hereda la URL del activo. Esto es lo que permite el
+    // use-case principal ("loguearme con otra cuenta en el mismo sitio"):
+    // el user clickea + → Sesión nueva → ya está en el mismo URL pero con
+    // partition limpia, lista para login con credenciales distintas.
+    const inheritedUrl = currentActive?.url ?? '';
     const newTab: BrowserTab = {
       id: newId,
-      url: opts?.url ?? '',
+      url: opts?.url ?? inheritedUrl,
       title: '',
       partition,
       isolated,

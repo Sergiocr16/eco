@@ -187,6 +187,20 @@ async function createWindow() {
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
+  // Estado fullscreen → renderer. En fullscreen los traffic lights de macOS
+  // desaparecen, así que el renderer no necesita reservar los 36px del top
+  // inset. Notificamos al renderer para que ajuste el layout.
+  const sendFullscreen = (isFull) => {
+    try { mainWindow?.webContents.send('eco:fullscreen-changed', !!isFull); }
+    catch { /* renderer no listo, ignoramos */ }
+  };
+  mainWindow.on('enter-full-screen', () => sendFullscreen(true));
+  mainWindow.on('leave-full-screen', () => sendFullscreen(false));
+  // Enviar estado inicial cuando el renderer está listo.
+  mainWindow.webContents.on('did-finish-load', () => {
+    sendFullscreen(mainWindow.isFullScreen());
+  });
+
   // macOS: el botón rojo "cierra" la ventana pero la app sigue corriendo.
   // Interceptamos el close para ocultar la ventana en lugar de destruirla
   // — así el backend, los PTYs y los dev servers no mueren, y al re-abrir

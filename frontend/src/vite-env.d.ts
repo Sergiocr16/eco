@@ -23,5 +23,6 @@ interface Window {
     getConfig: () => Promise<EcoElectronConfig>;
     log?: (...args: unknown[]) => void;
     pickFolder?: (opts?: { title?: string; defaultPath?: string }) => Promise<{ canceled: boolean; path: string }>;
+    onFullscreenChange?: (cb: (isFull: boolean) => void) => () => void;
   };
 }
