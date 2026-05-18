@@ -301,6 +301,7 @@ function PrDetailPane({
   async function doMerge(method: 'merge' | 'squash' | 'rebase') {
     setMergeConfirm(null);
     setBusyAction('merge'); setMsg(null);
+    ecoEmit('eco:git_busy', { bubbleId, busy: true, kind: 'pr_merge', label: tr('prs.banner.merging') });
     try {
       const r = await apiFetch('/git/pr/merge', {
         method: 'POST',
@@ -320,12 +321,14 @@ function PrDetailPane({
       setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusyAction(null);
+      ecoEmit('eco:git_busy', { bubbleId, busy: false, kind: 'pr_merge' });
     }
   }
 
   async function doClose(comment: string) {
     setCloseConfirm(null);
     setBusyAction('close'); setMsg(null);
+    ecoEmit('eco:git_busy', { bubbleId, busy: true, kind: 'pr_close', label: tr('prs.banner.closing') });
     try {
       const r = await apiFetch('/git/pr/close', {
         method: 'POST',
@@ -347,6 +350,7 @@ function PrDetailPane({
       setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusyAction(null);
+      ecoEmit('eco:git_busy', { bubbleId, busy: false, kind: 'pr_close' });
     }
   }
 

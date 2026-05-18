@@ -3,6 +3,7 @@ import { useTokens } from '@/design/theme';
 import { Glass } from '@/design/primitives';
 import { IconBolt } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
+import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useReviewState } from '@/hooks/useReviewState';
 import { useT } from '@/hooks/useI18n';
 
@@ -44,6 +45,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
   async function commit() {
     if (!message.trim()) return;
     setErr(null); setPhase('committing');
+    ecoEmit('eco:git_busy', { bubbleId, busy: true, kind: 'commit', label: tr('commit.committing') });
     try {
       const r = await apiFetch('/git/commit', {
         method: 'POST',
@@ -58,12 +60,17 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
         // Review estilo Cursor: tras un commit, todo lo "aceptado" ya quedó
         // en historia. Limpiamos el state local para que el banner desaparezca.
         review.clearAll();
+        // Refrescar branches (ahead/behind) y file changes para que el push
+        // aparezca inmediatamente sin necesidad de un fetch manual.
+        ecoEmit('eco:git_refresh', { bubbleId });
         onCommitted?.();
       } else {
         setErr(d.error || tr('commit.err.commit')); setPhase('error');
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : tr('common.error')); setPhase('error');
+    } finally {
+      ecoEmit('eco:git_busy', { bubbleId, busy: false, kind: 'commit' });
     }
   }
 

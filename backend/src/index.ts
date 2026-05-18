@@ -418,6 +418,7 @@ async function computeFileChanges(effective: string): Promise<FileChangesPayload
   if (!status.ok) return { workspace: effective, files: [], git: false };
 
   const files: FileChangesPayload['files'] = [];
+  const untrackedPaths: string[] = [];
   for (const line of status.out.split('\n')) {
     if (!line) continue;
     const xy = line.slice(0, 2);
@@ -432,28 +433,64 @@ async function computeFileChanges(effective: string): Promise<FileChangesPayload
     const unstaged = xy === '??' || (workCh !== undefined && workCh !== ' ');
     const finalPath = path.includes(' -> ') ? path.split(' -> ').pop()! : path;
     files.push({ path: finalPath, change, unstaged });
+    if (xy === '??') untrackedPaths.push(finalPath);
   }
 
-  // Filtrar archivos que matchean reglas de .gitignore — aunque git status
-  // los muestra (típicamente porque ya estaban tracked al momento de agregar
-  // la regla), el user no los quiere ver. `check-ignore --stdin -z` valida
-  // cada path con las reglas activas; exit 0 = matchea ignored, 1 = no.
-  if (files.length > 0) {
-    const stdin = files.map((f) => f.path).join('\0') + '\0';
+  // Filtrar archivos UNTRACKED que matchean reglas de .gitignore. Los
+  // tracked NO se filtran aunque matcheen — siguen siendo cambios reales
+  // que git reporta y bloquearían operaciones (merge/checkout). Si los
+  // ocultamos, el user ve "sin cambios" en la UI pero git aborta al
+  // intentar cambiar de branch sin poder explicarse por qué.
+  let filteredFiles = files;
+  if (untrackedPaths.length > 0) {
+    const stdin = untrackedPaths.join('\0') + '\0';
     const r = await gitCapture(effective, ['check-ignore', '--no-index', '-z', '--stdin'], stdin);
     if (r.ok && r.out) {
       const ignored = new Set(r.out.split('\0').filter(Boolean));
       if (ignored.size > 0) {
-        return {
-          workspace: effective,
-          files: files.filter((f) => !ignored.has(f.path)),
-          git: true,
-        };
+        filteredFiles = files.filter((f) => !ignored.has(f.path));
       }
     }
   }
 
-  return { workspace: effective, files, git: true };
+  // Detectar archivos con flags skip-worktree (S) o assume-unchanged (h).
+  // Esos archivos NO aparecen en `git status` aunque tengan cambios reales
+  // — pero git detiene merge/checkout cuando difieren del HEAD. Si no los
+  // exponemos al user, el merge falla con un mensaje incomprensible
+  // ("Your local changes... would be overwritten by merge") sin que aparezca
+  // nada en la UI para resolver. Los listamos como `modified` aparte para
+  // que el user pueda commitear/discartar/stashear.
+  const ls = await gitCapture(effective, ['ls-files', '-v']);
+  if (ls.ok && ls.out) {
+    const alreadyListed = new Set(filteredFiles.map((f) => f.path));
+    for (const line of ls.out.split('\n')) {
+      if (!line) continue;
+      // Formato: `<flag> <path>`, ej. "S gulp/serve.js" o "h foo.txt".
+      // S = skip-worktree, h = assume-unchanged (minúscula). H/M etc. son
+      // normales (tracked sin flag) — no nos interesan acá.
+      const m = /^([SH]|[hms])\s+(.+)$/.exec(line);
+      if (!m) continue;
+      const flag = m[1]!;
+      if (flag !== 'S' && flag !== 'h') continue;
+      const path = m[2]!;
+      if (alreadyListed.has(path)) continue;
+      // Verificar que efectivamente difiere de HEAD — sin esto listaríamos
+      // todos los skip-worktree aunque no tengan cambios reales. `git diff
+      // --quiet` retorna exit 1 si hay diferencias, 0 si está clean.
+      const hasDiff = await new Promise<boolean>((resolve) => {
+        import('node:child_process').then(({ spawn }) => {
+          const p = spawn('git', ['-C', effective, 'diff', '--quiet', '--', path], { timeout: 4000 });
+          p.on('close', (code) => resolve(code === 1));
+          p.on('error', () => resolve(false));
+        });
+      });
+      if (hasDiff) {
+        filteredFiles.push({ path, change: 'modified', unstaged: true });
+      }
+    }
+  }
+
+  return { workspace: effective, files: filteredFiles, git: true };
 }
 
 app.get('/file/changes', async (req: Request, res: Response) => {

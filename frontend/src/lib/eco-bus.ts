@@ -66,6 +66,11 @@ export type EcoBusEvents = {
   // desde otras tabs (ej. desde "Cambios" del Git, click en archivo → abrirlo
   // en el editor). El emisor normalmente dispara switch_tab → files antes.
   'eco:files:open_path': { bubbleId: string; path: string };
+  // Indicador global de "git ocupado" para una bubble. Lo emiten todas las
+  // acciones git (commit, push, pull, fetch, sync, merge PR, close PR) al
+  // empezar y al terminar. Un toast flotante muestra qué se está haciendo
+  // para que el user sepa que la app no está colgada.
+  'eco:git_busy': { bubbleId: string; busy: boolean; kind: string; label?: string };
   // Pide al BrowserPanel del agente crear un nuevo tab. `mode: 'shared'`
   // hereda la partition del tab activo (mismas cookies); `mode: 'isolated'`
   // genera una partition persistente única para login independiente.

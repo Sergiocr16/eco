@@ -18,6 +18,7 @@ import { BrowserPanel } from '@/components/BrowserPanel';
 import { ServerPanel } from '@/components/ServerPanel';
 import { FilesPanel } from '@/components/FilesPanel/FilesPanel';
 import { NotesPanel } from '@/components/NotesPanel/NotesPanel';
+import { GitBusyToast } from '@/components/GitBusyToast';
 import {
   Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
@@ -339,7 +340,8 @@ export function AgentDetail({
   }), [bubble.id]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+      <GitBusyToast bubbleId={bubble.id}/>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 14,
         padding: '14px 24px', borderBottom: `1px solid ${t.glassBorder}`,

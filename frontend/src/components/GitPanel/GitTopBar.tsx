@@ -76,6 +76,13 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
 
   async function doSync() {
     setBusy('sync'); setMsg(null);
+    // Etiqueta del toast global según la acción real que se va a ejecutar.
+    const busyLabel = syncAction === 'fetch' ? tr('git.action.label_fetch')
+      : syncAction === 'pull' ? tr('git.action.label_pull')
+      : syncAction === 'push' ? tr('git.action.label_push')
+      : syncAction === 'sync' ? tr('git.action.label_sync')
+      : tr('git.action.label_publish');
+    ecoEmit('eco:git_busy', { bubbleId, busy: true, kind: syncAction, label: busyLabel });
     try {
       if (syncAction === 'fetch') {
         const r = await callBackend('/git/fetch', {});
@@ -96,6 +103,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
       refreshBranches();
     } finally {
       setBusy(null);
+      ecoEmit('eco:git_busy', { bubbleId, busy: false, kind: syncAction });
     }
   }
 
