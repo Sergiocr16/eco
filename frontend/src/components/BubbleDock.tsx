@@ -555,6 +555,13 @@ function DockIcon({
         <span style={{
           fontFamily: t.fontSans, fontSize: letterSize, fontWeight: 600, letterSpacing: -0.3,
           color: active ? t.accent : accentColor,
+          // lineHeight 1 colapsa el line-box al em — sin esto el line-box
+          // hereda lineHeight ~1.5 y la letra queda corrida hacia abajo
+          // (descender ocupa espacio aunque la letra no lo use). Combinado
+          // con flex centering del button da centrado óptico parejo con el
+          // SVG del HomeDockIcon.
+          lineHeight: 1,
+          display: 'block',
         }}>{initial}</span>
         {isActive && (
           <span style={{
