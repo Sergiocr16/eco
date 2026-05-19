@@ -15,7 +15,7 @@ function parseEnvWorkspaces(): string[] {
     .filter(Boolean)
     .map((p) => {
       const abs = resolve(p);
-      try { return realpathSync(abs); } catch { return abs; }
+      try { return realpathSync.native(abs); } catch { return abs; }
     });
 }
 
@@ -43,7 +43,11 @@ function parseAllowedOrigins(): string[] {
 
 function safeRealpath(target: string): string | null {
   try {
-    return realpathSync(resolve(target));
+    // .native canonicaliza al case real del filesystem (en macOS APFS
+    // case-insensitive). Sin esto, `realpathSync` preserva el case del
+    // input y un mismo dir podía verse como dos paths distintos según
+    // cómo lo tipearas (Github vs GitHub) → 403 espurios.
+    return realpathSync.native(resolve(target));
   } catch {
     return null;
   }

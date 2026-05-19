@@ -28,7 +28,7 @@ export function validateWorkspacePath(input: string): WorkspaceValidation {
 
   let real: string;
   try {
-    real = realpathSync(resolve(trimmed));
+    real = realpathSync.native(resolve(trimmed));
   } catch {
     return fail('wsp.path_not_found', 'La carpeta no existe en el sistema');
   }
@@ -57,7 +57,19 @@ export function readStore(): string[] {
     const raw = readFileSync(STORE_PATH, 'utf-8');
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((p): p is string => typeof p === 'string').slice(0, 32);
+    // Normalizamos cada path con realpathSync.native — en macOS APFS la
+    // case-preserving + case-insensitive del FS hacía que la misma carpeta
+    // pudiera quedar guardada con distinta case (`Github` vs `GitHub`).
+    // Sin normalizar, isAllowedWorkspace comparaba string!=string y devolvía
+    // 403 silencioso aunque el path apuntara al mismo dir. Fallback al raw
+    // string si realpath falla (path no existe).
+    return parsed
+      .filter((p): p is string => typeof p === 'string')
+      .map((p) => {
+        try { return realpathSync.native(resolve(p)); }
+        catch { return p; }
+      })
+      .slice(0, 32);
   } catch {
     return [];
   }
@@ -80,7 +92,7 @@ export function addWorkspace(input: string): WorkspaceValidation {
 }
 
 export function removeWorkspace(path: string): { ok: boolean } {
-  const real = (() => { try { return realpathSync(resolve(path)); } catch { return path; } })();
+  const real = (() => { try { return realpathSync.native(resolve(path)); } catch { return path; } })();
   const current = readStore();
   const next = current.filter((p) => p !== real && p !== path);
   if (next.length !== current.length) writeStore(next);
