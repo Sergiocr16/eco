@@ -5,6 +5,7 @@ import { useI18n, useT } from '@/hooks/useI18n';
 import { useApiKey } from '@/hooks/useApiKey';
 import { useGithubCredentials } from '@/hooks/useGithubCredentials';
 import { GithubTokenHelp } from '@/components/GithubTokenHelp';
+import { GhStatusBanner } from '@/components/GhStatusBanner';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
@@ -459,13 +460,16 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
       </p>
 
       {gh.hasCredentials ? (
-        <div style={{
-          marginTop: 16, padding: 14, borderRadius: 10,
-          background: `color-mix(in oklch, ${t.ok} 8%, transparent)`,
-          border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
-          color: t.text0, fontSize: 13.5, fontFamily: t.fontSans,
-        }}>
-          {tr('settings.github.connected_as', { username: gh.username ?? '' })}
+        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{
+            padding: 14, borderRadius: 10,
+            background: `color-mix(in oklch, ${t.ok} 8%, transparent)`,
+            border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
+            color: t.text0, fontSize: 13.5, fontFamily: t.fontSans,
+          }}>
+            {tr('settings.github.connected_as', { username: gh.username ?? '' })}
+          </div>
+          <GhStatusBanner/>
         </div>
       ) : (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 540 }}>
@@ -499,6 +503,7 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
             {tr('settings.github.recommended_scopes')}
           </div>
           <GithubTokenHelp/>
+          <GhStatusBanner/>
 
           {needEmail && (
             <>

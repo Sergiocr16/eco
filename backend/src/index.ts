@@ -358,6 +358,13 @@ app.delete('/config/github', (_req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+// Status del binario `gh` en el sistema — usado por Onboarding y Settings
+// para avisar al user si la sub-pestaña PRs va a funcionar. El PAT no lo
+// reemplaza, hay que tener `gh` instalado.
+app.get('/config/gh-status', (_req: Request, res: Response) => {
+  res.json(gitOps.ghStatus());
+});
+
 // Silenciar warning de "import no usado" para hasGithubCredentials —
 // se exporta del store para uso futuro (verificación inline en endpoints).
 void hasGithubCredentials;

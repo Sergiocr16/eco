@@ -2071,6 +2071,24 @@ const DICT = {
     en: 'Drag to resize · double-click to reset',
   },
 
+  // ─────────────────────────── GitHub gh CLI status banner
+  'github.gh_status.installed': {
+    es: 'gh detectado · v{{version}}',
+    en: 'gh detected · v{{version}}',
+  },
+  'github.gh_status.installed_note': {
+    es: 'La sub-pestaña PRs del tab Git va a funcionar.',
+    en: 'The PRs sub-tab of the Git tab will work.',
+  },
+  'github.gh_status.missing': {
+    es: 'gh (GitHub CLI) no está instalado',
+    en: 'gh (GitHub CLI) is not installed',
+  },
+  'github.gh_status.missing_note': {
+    es: 'Sin gh, la sub-pestaña PRs del tab Git no funciona aunque guardes el PAT. El token solo se inyecta como GH_TOKEN — no reemplaza al binario. Instalalo con:',
+    en: "Without gh, the PRs sub-tab of the Git tab won't work even if you save the PAT. The token is only injected as GH_TOKEN — it doesn't replace the binary. Install it with:",
+  },
+
   // ─────────────────────────── ServerPanel (strings nuevos del merge)
   'server.config.preset_name_placeholder': { es: 'Nombre del preset', en: 'Preset name' },
   'server.config.resize_tooltip': { es: 'Arrastrá para cambiar el alto', en: 'Drag to resize height' },

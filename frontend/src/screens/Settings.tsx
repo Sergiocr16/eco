@@ -18,6 +18,7 @@ import { apiFetch } from '@/lib/api';
 import { useApiKey } from '@/hooks/useApiKey';
 import { useGithubCredentials } from '@/hooks/useGithubCredentials';
 import { GithubTokenHelp } from '@/components/GithubTokenHelp';
+import { GhStatusBanner } from '@/components/GhStatusBanner';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useI18n, useT } from '@/hooks/useI18n';
@@ -738,6 +739,7 @@ function SectionGithub() {
               }}
             >{tr('settings.github.remove')}</button>
           </div>
+          <GhStatusBanner/>
         </div>
       ) : null}
 
@@ -778,6 +780,7 @@ function SectionGithub() {
             <div style={{ marginTop: 6 }}>
               <GithubTokenHelp/>
             </div>
+            <GhStatusBanner/>
           </div>
 
           {(needEmail || email) && (

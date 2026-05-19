@@ -794,6 +794,22 @@ function ghAvailable(): boolean {
   return r.status === 0;
 }
 
+// Status público del `gh` CLI para la UI (Onboarding / Settings). Sin gh
+// no funciona el tab PRs aunque el PAT esté guardado — el badge informa
+// al user para que pueda instalarlo con `brew install gh`.
+export function ghStatus(): { installed: boolean; version?: string } {
+  const r = spawnSync('gh', ['--version'], {
+    timeout: 3_000,
+    encoding: 'utf-8',
+    env: buildSafeEnv({ ...githubEnvOverrides() }),
+  });
+  if (r.status !== 0) return { installed: false };
+  // Primera línea típica: "gh version 2.55.0 (2024-09-04)".
+  const first = (r.stdout ?? '').split('\n')[0]?.trim() ?? '';
+  const m = /gh version (\S+)/i.exec(first);
+  return { installed: true, version: m?.[1] };
+}
+
 export function listPullRequests(workspace: string): PullRequestsResult {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git', code: 'git.not_a_repo' };
   if (!ghAvailable()) {
