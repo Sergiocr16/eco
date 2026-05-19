@@ -52,6 +52,12 @@ export type Bubble = {
   // usa para colorear el nodo en la vista de grafo y agrupar visualmente.
   // Sin valor → el nodo usa el color del estado del agente (legacy).
   categoryId?: string;
+  // Soft delete: cuando es true, la burbuja desaparece del Dashboard y
+  // aparece en la pantalla "Archivados". El worktree git se mantiene
+  // intacto en disco para permitir des-archivar con todo el state.
+  // Eliminar definitivamente borra el worktree y limpia localStorage.
+  archived?: boolean;
+  archivedAt?: number;
 };
 
 export type BubbleAction =

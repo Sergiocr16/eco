@@ -99,6 +99,9 @@ export type UseBubblesResult = {
   activeBubbleId: string | null;
   createBubble: (opts?: { title?: string; workspace?: string; focus?: boolean; baseBranch?: string }) => Bubble;
   removeBubble: (id: string) => void;
+  archiveBubble: (id: string) => void;
+  unarchiveBubble: (id: string) => void;
+  deletePermanently: (id: string) => void;
   focusBubble: (id: string) => void;
   renameBubble: (id: string, title: string) => void;
   togglePin: (id: string) => void;
@@ -171,53 +174,105 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     return bubble;
   }, [bubbles, defaultWorkspace]);
 
-  const removeBubble = useCallback((id: string) => {
+  // Prefijos de localStorage por-bubble. Separados en dos grupos:
+  //  - RUNTIME: state efímero (URL del browser, comandos del dev server,
+  //    config de panes, etc.). Se limpia al ARCHIVAR — no tienen sentido
+  //    sin procesos vivos y se regenera al des-archivar.
+  //  - PERSISTENT: state del trabajo (notas, files state, git subtab,
+  //    detail tab). Se conserva al archivar para que al des-archivar
+  //    todo vuelva como estaba. Solo se limpia al ELIMINAR DEFINITIVAMENTE.
+  const RUNTIME_PREFIXES = [
+    'eco.dev.cmd.', 'eco.dev.dual.', 'eco.dev.config_collapsed.',
+    'eco.dev.min.frontend.', 'eco.dev.min.backend.', 'eco.dev.restartmode.',
+    'eco.browser.url.', 'eco.browser.tabs.',
+    'eco.remote.',
+    'eco.terminals.', 'eco.terminals.active.',
+  ];
+  const PERSISTENT_PREFIXES = [
+    'eco.browser.zoom.',
+    'eco.detail.tab.',
+    'eco.git.subtab.',
+    'eco.git.splitter.changes.', 'eco.git.splitter.history.',
+    'eco.git.pending_pr.', 'eco.git.selected_pr.',
+    'eco.git.selected_commit.', 'eco.git.selected_file.',
+    'eco.git.history.all_branches.',
+    'eco.files.openTabs.', 'eco.files.activeFile.',
+    'eco.files.expanded.', 'eco.files.splitter.',
+    'eco.notes.', 'eco.notes.splitter.', 'eco.notes.preview.',
+  ];
+
+  function clearRuntimeKeys(id: string) {
+    try {
+      for (const p of RUNTIME_PREFIXES) window.localStorage.removeItem(`${p}${id}`);
+      for (const role of ['frontend', 'backend']) {
+        window.localStorage.removeItem(`eco.dev.cmd.${role}.${id}`);
+      }
+      for (const role of ['main', 'frontend', 'backend']) {
+        window.localStorage.removeItem(`eco.dev.logheight.${id}.${role}`);
+      }
+      window.localStorage.removeItem(`eco.dev.dual.${id}.touched`);
+    } catch { /* noop */ }
+  }
+
+  function clearPersistentKeys(id: string) {
+    try {
+      for (const p of PERSISTENT_PREFIXES) window.localStorage.removeItem(`${p}${id}`);
+    } catch { /* noop */ }
+  }
+
+  // Archivar: soft delete. Mata PTY + dev servers en backend (keepWorktree),
+  // marca archived=true + archivedAt. Limpia state runtime de localStorage
+  // pero conserva chat, notas, files state, etc.
+  const archiveBubble = useCallback((id: string) => {
+    setBubbles((prev) => prev.map((b) => b.id === id
+      ? { ...b, archived: true, archivedAt: Date.now(), pinned: false }
+      : b,
+    ));
+    setActiveBubbleId((cur) => {
+      if (cur !== id) return cur;
+      const remaining = bubbles.filter((b) => b.id !== id && !b.archived);
+      return remaining[0]?.id ?? null;
+    });
+    void apiFetch('/bubble/archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bubbleId: id }),
+    }).catch(() => { /* noop */ });
+    clearRuntimeKeys(id);
+  }, [bubbles]);
+
+  // Des-archivar: solo cambia el flag. NO toca backend porque el worktree
+  // sigue intacto; el PTY/dev servers se reactivan a demanda cuando el user
+  // entra a las tabs.
+  const unarchiveBubble = useCallback((id: string) => {
+    setBubbles((prev) => prev.map((b) => b.id === id
+      ? { ...b, archived: false, archivedAt: undefined }
+      : b,
+    ));
+  }, []);
+
+  // Eliminar definitivamente: borra worktree + branch + TODAS las keys de
+  // localStorage + saca el bubble del array. Irreversible.
+  const deletePermanently = useCallback((id: string) => {
     setBubbles((prev) => prev.filter((b) => b.id !== id));
     setActiveBubbleId((cur) => {
       if (cur !== id) return cur;
       const remaining = bubbles.filter((b) => b.id !== id);
       return remaining[0]?.id ?? null;
     });
-    // Best-effort: cleanup completo en backend (PTY + dev servers + worktree
-    // + sessions Map). El endpoint /bubble/close engloba todo.
     void apiFetch('/bubble/close', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bubbleId: id }),
     }).catch(() => { /* noop */ });
-    // Cleanup de localStorage: las keys "eco.*.<bubbleId>" sobrevivirían a la
-    // bubble cerrada y crecen con cada nueva burbuja histórica. Las borramos
-    // todas — el suffix por id es consistente y predecible.
-    try {
-      const prefixes = [
-        'eco.dev.cmd.', 'eco.dev.dual.', 'eco.dev.config_collapsed.',
-        'eco.dev.min.frontend.', 'eco.dev.min.backend.', 'eco.dev.restartmode.',
-        'eco.browser.url.', 'eco.browser.zoom.', 'eco.browser.tabs.',
-        'eco.detail.tab.', 'eco.remote.',
-        'eco.terminals.', 'eco.terminals.active.',
-        'eco.git.subtab.',
-        'eco.git.splitter.changes.', 'eco.git.splitter.history.',
-        'eco.git.pending_pr.', 'eco.git.selected_pr.',
-        'eco.git.selected_commit.', 'eco.git.selected_file.',
-        'eco.git.history.all_branches.',
-        // Tab Archivos (explorador + editor) — persistencia por bubble.
-        'eco.files.openTabs.', 'eco.files.activeFile.',
-        'eco.files.expanded.', 'eco.files.splitter.',
-        // Tab Notas — todas las notas + splitter + preview toggle por bubble.
-        'eco.notes.', 'eco.notes.splitter.', 'eco.notes.preview.',
-      ];
-      for (const p of prefixes) window.localStorage.removeItem(`${p}${id}`);
-      // También las dual-mode meta y per-role command keys (`eco.dev.cmd.<role>.<id>`).
-      for (const role of ['frontend', 'backend']) {
-        window.localStorage.removeItem(`eco.dev.cmd.${role}.${id}`);
-      }
-      // Alto del pane de logs, una key por rol (`eco.dev.logheight.<id>.<role>`).
-      for (const role of ['main', 'frontend', 'backend']) {
-        window.localStorage.removeItem(`eco.dev.logheight.${id}.${role}`);
-      }
-      window.localStorage.removeItem(`eco.dev.dual.${id}.touched`);
-    } catch { /* noop */ }
+    clearRuntimeKeys(id);
+    clearPersistentKeys(id);
   }, [bubbles]);
+
+  // Alias retro-compat: el comportamiento default del menú del agente y de
+  // los comandos de voz cambió a ARCHIVAR. Los call sites que esperaban
+  // "remove" ahora archivan automáticamente.
+  const removeBubble = archiveBubble;
 
   const focusBubble = useCallback((id: string) => {
     setActiveBubbleId(id);
@@ -299,6 +354,9 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     activeBubbleId,
     createBubble,
     removeBubble,
+    archiveBubble,
+    unarchiveBubble,
+    deletePermanently,
     focusBubble,
     renameBubble,
     togglePin,

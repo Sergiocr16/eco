@@ -27,7 +27,7 @@ import {
   IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
   IconCheck, IconX, IconBolt, IconGithub, IconEdit,
-  IconAgent, IconFolder, IconTrash, IconCopy,
+  IconAgent, IconFolder, IconCopy, IconArchive,
   type IconProps,
 } from '@/design/icons';
 import type { Bubble, Message, ToolCall } from '@/lib/types';
@@ -166,8 +166,8 @@ function HeaderMenu({
         <IconCopy size={12}/> {tr('detail.menu.copy_chat')}
       </button>
       <div style={{ height: 1, background: t.glassBorder, margin: '4px 8px' }}/>
-      <button type="button" onClick={onCloseBubble} style={{ ...menuItemStyleAt(t), color: t.err }}>
-        <IconTrash size={12}/> {tr('detail.menu.close')}
+      <button type="button" onClick={onCloseBubble} style={{ ...menuItemStyleAt(t), color: t.text1 }}>
+        <IconArchive size={12}/> {tr('detail.menu.archive')}
       </button>
     </div>
   );

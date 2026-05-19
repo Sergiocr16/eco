@@ -61,6 +61,15 @@ export const IconFolderOpen = (p: IconProps) => (
 export const IconFile = (p: IconProps) => (
   <Base {...p}><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z"/><path d="M14 3v5h5"/></Base>
 );
+// Icono de archivo/caja-archivadora con tapa arriba y handle al centro.
+// Usado en el sidebar y en la pantalla Archivados.
+export const IconArchive = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="3" y="4" width="18" height="4" rx="1"/>
+    <path d="M5 8v11a1 1 0 001 1h12a1 1 0 001-1V8"/>
+    <path d="M10 12h4"/>
+  </Base>
+);
 export const IconTerminal = (p: IconProps) => (
   <Base {...p}><path d="M4 17l5-5-5-5M12 19h8"/></Base>
 );

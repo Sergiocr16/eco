@@ -7,11 +7,11 @@ import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
 import { Settings } from './screens/Settings';
 import { FileExplorer } from './screens/FileExplorer';
+import { ArchivedScreen } from './screens/ArchivedScreen';
 import { useVoice } from './hooks/useVoice';
 import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
 import { usePtyBusyTracker } from './hooks/usePtyBusyNotifier';
-import { peekHasFiles } from './hooks/useGitChanges';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
@@ -249,6 +249,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         setScreen('files'); setDetailBubbleId(null); return;
       case 'goto_history':
         setScreen('history'); setDetailBubbleId(null); return;
+      case 'goto_archived':
+        setScreen('archived'); setDetailBubbleId(null); return;
       case 'create_bubble':
       case 'open_or_create': {
         const title = action.kind === 'open_or_create' ? action.title : action.title;
@@ -615,15 +617,13 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   }
 
   function requestCloseBubble(id: string, opts?: { afterClose?: () => void }) {
-    const b = bubbles.bubbles.find((x) => x.id === id);
     const busy = bubbleIsBusy(id);
-    // Detectamos worktree "sucio" (archivos modificados sin commitear) usando
-    // el cache compartido de `useGitChanges`. Si la bubble nunca abrió la
-    // FilesPanel ni nadie polleó esta workspace, el peek devuelve undefined
-    // — en ese caso tratamos como limpio (no hay evidencia de cambios).
-    const dirty = !!(b?.workspace && peekHasFiles(b.workspace, id));
-    if (busy || dirty) {
-      setConfirmCloseReason(busy && dirty ? 'both' : busy ? 'busy' : 'dirty');
+    // Archivar es seguro (no borra worktree ni pierde cambios) así que solo
+    // confirmamos cuando hay procesos en curso para evitar interrumpir trabajo.
+    // El estado "dirty" del worktree ya no es problema porque archivar lo
+    // conserva intacto.
+    if (busy) {
+      setConfirmCloseReason('busy');
       setConfirmCloseId(id);
       return;
     }
@@ -819,6 +819,13 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   <Settings/>
                 ) : screen === 'history' ? (
                   <HistoryScreen bubbles={bubbles.bubbles} onOpen={handleOpenAgent}/>
+                ) : screen === 'archived' ? (
+                  <ArchivedScreen
+                    bubbles={bubbles.bubbles}
+                    onUnarchive={(id) => { bubbles.unarchiveBubble(id); }}
+                    onDelete={(id) => { bubbles.deletePermanently(id); }}
+                    onOpen={(id) => { bubbles.unarchiveBubble(id); handleOpenAgent(id); }}
+                  />
                 ) : screen === 'dashboard' ? (
                   <Dashboard
                     bubbles={bubbles.bubbles}
@@ -1032,14 +1039,12 @@ function ConfirmCloseBubble({
     : bubble.status === 'executing' ? 'ejecutando'
     : bubble.status === 'running' ? 'corriendo'
     : 'con shell abierta';
-  const heading = reason === 'dirty'
-    ? `¿Cerrar «${bubble.title}» con cambios sin commitear?`
-    : `¿Cerrar «${bubble.title}»?`;
+  const heading = `¿Archivar «${bubble.title}»?`;
   const body = reason === 'dirty'
-    ? 'El worktree de esta burbuja tiene archivos modificados sin commitear. Al cerrar, el worktree se BORRA y los cambios se pierden. La rama git queda viva en el repo padre.'
+    ? 'El worktree de esta burbuja tiene archivos modificados sin commitear. Se archiva tal cual; podés restaurarla desde Archivados con todo el state.'
     : reason === 'both'
-      ? `La burbuja está ${busyLabel} Y tiene archivos modificados sin commitear. Al cerrar se interrumpe el trabajo en curso, el worktree se BORRA y los cambios se pierden.`
-      : `La burbuja está ${busyLabel}. Si la cerrás ahora, se interrumpe el trabajo en curso y se libera su worktree.`;
+      ? `La burbuja está ${busyLabel} y tiene cambios sin commitear. Al archivar se interrumpe el trabajo en curso; el worktree y todos los cambios se conservan.`
+      : `La burbuja está ${busyLabel}. Al archivar se interrumpe el trabajo en curso; el worktree y todos los cambios se conservan.`;
   return (
     <div
       onClick={onCancel}

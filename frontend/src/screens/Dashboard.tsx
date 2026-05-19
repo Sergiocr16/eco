@@ -45,7 +45,10 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles, activeBubbleId, voiceState, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onSetCategory, availableWorkspaces, wakeActive } = props;
+  const { bubbles: rawBubbles, activeBubbleId, voiceState, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onSetCategory, availableWorkspaces, wakeActive } = props;
+  // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
+  // pantalla). Esto incluye stats, vistas y nodos del grafo.
+  const bubbles = rawBubbles.filter((b) => !b.archived);
   const { username } = useProfile();
   // onSend / interimText / voiceError siguen llegando por contrato pero ya
   // no se usan en el Dashboard tras remover la CommandBar — el input vive

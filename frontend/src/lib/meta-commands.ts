@@ -6,6 +6,7 @@ export type MetaAction =
   | { kind: 'goto_settings' }
   | { kind: 'goto_files' }
   | { kind: 'goto_history' }
+  | { kind: 'goto_archived' }
   | { kind: 'create_bubble'; title?: string }
   | { kind: 'open_or_create'; title: string }
   | { kind: 'rename_active'; title: string }
@@ -35,7 +36,7 @@ export type MetaAction =
   | { kind: 'help' }
   | { kind: 'unknown' };
 
-export type Screen = 'dashboard' | 'detail' | 'files' | 'history' | 'settings' | 'login' | 'onboarding';
+export type Screen = 'dashboard' | 'detail' | 'files' | 'history' | 'archived' | 'settings' | 'login' | 'onboarding';
 
 export type MetaActionFeedback = {
   title: string;
@@ -112,6 +113,11 @@ const ALIASES: Record<string, string> = {
   // 'historial' depende del contexto: pantalla History en dashboard / sub-pestaña
   // Historial del tab Git en detail.
   'historial': 'history_ctx', 'history': 'history_ctx',
+
+  // Pantalla Archivados (lista de agentes archivados con opciones de
+  // des-archivar o eliminar definitivamente).
+  'archivados': 'archived', 'archivado': 'archived', 'archive': 'archived',
+  'archived': 'archived', 'archivo_screen': 'archived',
 
   // Tab Git en detail.
   'git': 'tab_git',
@@ -416,6 +422,7 @@ export function parseMetaCommand(
     case 'dashboard': return { kind: 'goto_dashboard' };
     case 'settings':  return { kind: 'goto_settings' };
     case 'files':     return { kind: 'goto_files' };
+    case 'archived':  return { kind: 'goto_archived' };
     case 'history':   return { kind: 'goto_history' };
     case 'scroll': {
       // "scroll abajo" / "scroll al final" / "scroll arriba" / "scroll todo arriba"
@@ -524,6 +531,7 @@ export function describeAction(action: MetaAction, bubbles: Bubble[], lang: Lang
     case 'goto_settings':  return { title: tr('cmd.settings') };
     case 'goto_files':     return { title: tr('cmd.files') };
     case 'goto_history':   return { title: tr('cmd.history') };
+    case 'goto_archived':  return { title: tr('cmd.archived_screen') };
     case 'create_bubble':  return { title: tr('cmd.new_bubble'), detail: action.title ?? tr('cmd.no_title') };
     case 'open_or_create': return { title: tr('cmd.bubble_created'), detail: action.title };
     case 'rename_active':  return { title: tr('cmd.renamed'), detail: action.title };

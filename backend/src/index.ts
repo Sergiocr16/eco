@@ -1244,7 +1244,7 @@ app.post('/integrations/obsidian/save-session', (req: Request, res: Response) =>
   res.json({ ok: true, path: r.path });
 });
 
-async function closeBubbleResources(bubbleId: string) {
+async function closeBubbleResources(bubbleId: string, opts?: { keepWorktree?: boolean }) {
   const killed = killBubblePty(bubbleId);
   // Matamos también el dev server del agente si existe (cleanup completo de
   // process group + verificación de puerto) en los 3 roles posibles.
@@ -1257,9 +1257,11 @@ async function closeBubbleResources(bubbleId: string) {
   // sesiones detenidas siguen en RAM (64 KB ring buffer cada una) y en disco
   // (~/.eco/dev-sessions.json), creciendo con cada bubble cerrada.
   const forgotten = devServer.forgetSession(bubbleId);
-  // El worktree de la burbuja también se libera; la rama eco/<id> queda
-  // viva en el repo padre para que el usuario pueda mergear si quiere.
-  const worktreeRemoved = removeWorktree(bubbleId);
+  // Con keepWorktree (usado por /bubble/archive), el directorio del worktree
+  // git se conserva intacto en disco para poder des-archivar. Sin esa flag
+  // (default — /bubble/close = eliminar definitivamente), se borra junto
+  // con la rama eco/<id>.
+  const worktreeRemoved = opts?.keepWorktree ? false : removeWorktree(bubbleId);
   return { killed, worktreeRemoved, forgotten };
 }
 
@@ -1282,10 +1284,22 @@ app.post('/pty/kill-terminal', (req: Request, res: Response) => {
 
 // Alias semánticamente más claro de /pty/kill: el frontend lo llama al cerrar
 // una burbuja para liberar PTY + dev servers + worktree + sessions Map.
+// SEMÁNTICA: eliminación definitiva (borra worktree). Para "archivar" (soft
+// delete que conserva worktree), usar /bubble/archive.
 app.post('/bubble/close', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
   const r = await closeBubbleResources(bubbleId);
+  res.json({ ok: true, ...r });
+});
+
+// Archivar: mata PTY + dev servers PERO conserva el worktree git. Permite
+// que la pantalla "Archivados" del frontend restore el agente más tarde
+// con todo el state del trabajo (cambios sin commitear, ramas, etc.).
+app.post('/bubble/archive', async (req: Request, res: Response) => {
+  const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
+  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const r = await closeBubbleResources(bubbleId, { keepWorktree: true });
   res.json({ ok: true, ...r });
 });
 
