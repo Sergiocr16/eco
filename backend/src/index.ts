@@ -25,6 +25,10 @@ import { runShell, ShellRequestSchema } from './shell.js';
 import { fileDiff, DiffRequestSchema } from './file-diff.js';
 import { writeApiKey, deleteApiKey, hasApiKey, maskedApiKey, validateApiKey } from './api-key-store.js';
 import {
+  hasGithubCredentials, readGithubCredentials, writeGithubCredentials,
+  deleteGithubCredentials, maskedPat as maskedGithubPat, validateGithubPat,
+} from './github-credentials-store.js';
+import {
   hasUser, statusInfo, registerUser, verifyPin,
   recoverGetNewPhrase, deleteUser,
 } from './user-store.js';
@@ -287,6 +291,76 @@ app.delete('/config/api-key', (_req: Request, res: Response) => {
   deleteApiKey();
   res.json({ ok: true });
 });
+
+// ─── GitHub credentials (PAT) ─────────────────────────────────────────────
+// El user puede configurar su PAT en Settings/Onboarding. Si está, Eco lo
+// usa con prioridad sobre `gh auth login` y `git config user.*`.
+
+app.get('/config/github', (_req: Request, res: Response) => {
+  const c = readGithubCredentials();
+  if (!c) {
+    return res.json({ hasCredentials: false });
+  }
+  res.json({
+    hasCredentials: true,
+    username: c.username,
+    email: c.email,
+    maskedPat: maskedGithubPat(),
+    validatedAt: c.validatedAt,
+  });
+});
+
+const GithubConfigSchema = z.object({
+  pat: z.string().min(10).max(400),
+  // Opcional: si el PAT valida pero GitHub oculta el email del user, el
+  // frontend lo pide al user y lo manda en este field.
+  email: z.string().email().max(300).optional(),
+});
+app.post('/config/github', async (req: Request, res: Response) => {
+  const parsed = GithubConfigSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const { pat, email: emailOverride } = parsed.data;
+  const v = await validateGithubPat(pat);
+  if (!v.ok) {
+    const code = v.status === 401 ? 'github.invalid_pat' : 'github.network';
+    return res.status(v.status === 401 ? 401 : 502).json({ error: code, message: v.error });
+  }
+  // Email: si GitHub lo devuelve, lo usamos; sino requerimos override.
+  const effectiveEmail = v.email ?? emailOverride ?? '';
+  if (!effectiveEmail) {
+    return res.status(400).json({
+      error: 'github.email_required',
+      message: 'GitHub oculta tu email — ingresalo manualmente',
+      login: v.login,
+    });
+  }
+  try {
+    writeGithubCredentials({
+      username: v.login,
+      email: effectiveEmail,
+      pat,
+      validatedAt: Date.now(),
+    });
+    res.json({
+      ok: true,
+      username: v.login,
+      email: effectiveEmail,
+      maskedPat: maskedGithubPat(),
+      validatedAt: Date.now(),
+    });
+  } catch (e) {
+    fromException(res, e, 'github.save_failed', 'Error guardando credenciales');
+  }
+});
+
+app.delete('/config/github', (_req: Request, res: Response) => {
+  deleteGithubCredentials();
+  res.json({ ok: true });
+});
+
+// Silenciar warning de "import no usado" para hasGithubCredentials —
+// se exporta del store para uso futuro (verificación inline en endpoints).
+void hasGithubCredentials;
 
 const VoiceTranscribedSchema = z.object({
   text: z.string().min(1).max(4000),

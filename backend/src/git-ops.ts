@@ -7,6 +7,7 @@ import { homedir, tmpdir } from 'node:os';
 import { resolve as pathResolve, sep as pathSep, join as pathJoin } from 'node:path';
 import { buildSafeEnv } from './security.js';
 import { config } from './config.js';
+import { githubEnvOverrides, gitIdentityArgs } from './github-runtime.js';
 
 const GIT_TIMEOUT = 10_000;
 
@@ -59,11 +60,14 @@ export type BranchListResult = {
 };
 
 export function git(args: string[], cwd: string): { ok: boolean; stdout: string; stderr: string } {
+  // Inyectamos las env vars de GitHub configuradas en Eco (GH_TOKEN, identity)
+  // a TODO spawn de git. Si no hay credenciales, githubEnvOverrides() retorna
+  // {} y se ignora — el flow normal con git config global sigue funcionando.
   const r = spawnSync('git', args, {
     cwd,
     timeout: GIT_TIMEOUT,
     encoding: 'utf-8',
-    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
   });
   return {
     ok: r.status === 0,
@@ -71,6 +75,7 @@ export function git(args: string[], cwd: string): { ok: boolean; stdout: string;
     stderr: (r.stderr ?? '').toString(),
   };
 }
+
 
 export function isRepo(dir: string): boolean {
   if (!existsSync(dir)) return false;
@@ -731,12 +736,14 @@ export function commitWithMessage(workspace: string, message: string): GitAction
   const add = git(['add', '-A'], workspace);
   if (!add.ok) return { ok: false, error: (add.stderr || 'add falló').slice(0, 400) };
 
-  // git commit -F - lee el message del stdin.
-  const r = spawnSync('git', ['commit', '-F', '-'], {
+  // git commit -F - lee el message del stdin. Inyectamos gitIdentityArgs
+  // al inicio para que cuando el user configuró credenciales en Settings,
+  // el commit quede firmado con esa identidad (overridea `git config local`).
+  const r = spawnSync('git', [...gitIdentityArgs(), 'commit', '-F', '-'], {
     cwd: workspace,
     timeout: GIT_TIMEOUT,
     encoding: 'utf-8',
-    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
     input: cleaned,
   });
   if (r.status !== 0) {
@@ -782,7 +789,7 @@ function ghAvailable(): boolean {
   const r = spawnSync('gh', ['--version'], {
     timeout: 3_000,
     encoding: 'utf-8',
-    env: buildSafeEnv({}),
+    env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   return r.status === 0;
 }
@@ -803,7 +810,7 @@ export function listPullRequests(workspace: string): PullRequestsResult {
     cwd: workspace,
     timeout: 20_000,
     encoding: 'utf-8',
-    env: buildSafeEnv({}),
+    env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
     const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString()).trim();
@@ -826,7 +833,7 @@ export function listPullRequests(workspace: string): PullRequestsResult {
 
   // Para detectar forks, consultamos el owner del repo actual una sola vez.
   const ownerR = spawnSync('gh', ['repo', 'view', '--json', 'owner', '-q', '.owner.login'], {
-    cwd: workspace, timeout: 8_000, encoding: 'utf-8', env: buildSafeEnv({}),
+    cwd: workspace, timeout: 8_000, encoding: 'utf-8', env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   const repoOwner = ownerR.status === 0 ? ((ownerR.stdout ?? '').toString()).trim() : '';
 
@@ -878,7 +885,7 @@ export function currentPullRequest(workspace: string): CurrentPrResult {
     cwd: workspace,
     timeout: 15_000,
     encoding: 'utf-8',
-    env: buildSafeEnv({}),
+    env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
     const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString());
@@ -961,7 +968,7 @@ export function pullRequestDetails(workspace: string, number: number): PrDetails
     cwd: workspace,
     timeout: 25_000,
     encoding: 'utf-8',
-    env: buildSafeEnv({}),
+    env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
     const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString()).trim();
@@ -1061,7 +1068,7 @@ export function mergePullRequest(
     cwd: workspace,
     timeout: 90_000,
     encoding: 'utf-8',
-    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
     const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString());
@@ -1086,7 +1093,7 @@ export function closePullRequest(workspace: string, number: number, comment?: st
     cwd: workspace,
     timeout: 30_000,
     encoding: 'utf-8',
-    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
     const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString());
@@ -1111,7 +1118,7 @@ export function checkoutPullRequest(workspace: string, number: number): GitActio
     cwd: workspace,
     timeout: 60_000,
     encoding: 'utf-8',
-    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
     const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString()).trim();

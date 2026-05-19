@@ -3,13 +3,15 @@ import { useTokens, useTheme } from '@/design/theme';
 import { ACCENT_HUES } from '@/design/tokens';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { useApiKey } from '@/hooks/useApiKey';
+import { useGithubCredentials } from '@/hooks/useGithubCredentials';
+import { GithubTokenHelp } from '@/components/GithubTokenHelp';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { apiFetch } from '@/lib/api';
 import { EcoMark } from '@/design/EcoMark';
 import {
-  IconBolt, IconCheck, IconFolder, IconGlobe, IconKey, IconLayers,
+  IconBolt, IconCheck, IconFolder, IconGithub, IconGlobe, IconKey, IconLayers,
   IconMic, IconShield, type IconProps,
 } from '@/design/icons';
 
@@ -31,14 +33,14 @@ type ClaudeAuth = {
   effectiveMethod: 'cli' | 'apikey' | 'none';
 } | null;
 
-type StepId = 'welcome' | 'language' | 'appearance' | 'claude' | 'folder' | 'obsidian' | 'voice' | 'done';
+type StepId = 'welcome' | 'language' | 'appearance' | 'claude' | 'github' | 'folder' | 'obsidian' | 'voice' | 'done';
 
 export function OnboardingWizard({ username, onClose }: { username: string | null; onClose: () => void }) {
   const t = useTokens();
   const tr = useT();
   const [step, setStep] = useState<StepId>('welcome');
 
-  const order: StepId[] = ['welcome', 'language', 'appearance', 'claude', 'folder', 'obsidian', 'voice', 'done'];
+  const order: StepId[] = ['welcome', 'language', 'appearance', 'claude', 'github', 'folder', 'obsidian', 'voice', 'done'];
   const idx = order.indexOf(step);
 
   function next() {
@@ -95,6 +97,7 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
           {step === 'language'   && <StepLanguage/>}
           {step === 'appearance' && <StepAppearance/>}
           {step === 'claude'     && <StepClaude/>}
+          {step === 'github'     && <StepGithub onContinue={next}/>}
           {step === 'folder'     && <StepFolder/>}
           {step === 'obsidian'   && <StepObsidian/>}
           {step === 'voice'      && <StepVoice/>}
@@ -411,6 +414,148 @@ function StepClaude() {
           {err && (
             <div style={{ marginTop: 8, fontSize: 11, color: t.err }}>{err}</div>
           )}
+        </div>
+      )}
+    </StepShell>
+  );
+}
+
+function StepGithub({ onContinue }: { onContinue: () => void }) {
+  const t = useTokens();
+  const tr = useT();
+  const gh = useGithubCredentials();
+  const [pat, setPat] = useState('');
+  const [showPat, setShowPat] = useState(false);
+  const [email, setEmail] = useState('');
+  const [needEmail, setNeedEmail] = useState(false);
+  const [loginHint, setLoginHint] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSave() {
+    if (!pat.trim()) return;
+    setSaving(true);
+    setError(null);
+    const r = await gh.save({ pat: pat.trim(), email: email.trim() || undefined });
+    setSaving(false);
+    if (r.ok) {
+      onContinue();
+    } else if (r.needEmail) {
+      setNeedEmail(true);
+      setLoginHint(r.loginHint ?? null);
+    } else {
+      setError(r.error);
+    }
+  }
+
+  return (
+    <StepShell
+      icon={IconGithub}
+      title={tr('onboarding.github.title')}
+      sub={tr('onboarding.github.sub')}
+    >
+      <p style={{ marginTop: 0, color: t.text2, fontSize: 13.5, lineHeight: 1.6, maxWidth: 560 }}>
+        {tr('onboarding.github.body')}
+      </p>
+
+      {gh.hasCredentials ? (
+        <div style={{
+          marginTop: 16, padding: 14, borderRadius: 10,
+          background: `color-mix(in oklch, ${t.ok} 8%, transparent)`,
+          border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
+          color: t.text0, fontSize: 13.5, fontFamily: t.fontSans,
+        }}>
+          {tr('settings.github.connected_as', { username: gh.username ?? '' })}
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 540 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              type={showPat ? 'text' : 'password'}
+              value={pat}
+              onChange={(e) => setPat(e.target.value)}
+              placeholder={tr('settings.github.pat_placeholder')}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+              style={{
+                flex: 1, padding: '9px 12px', borderRadius: 8,
+                background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
+                fontFamily: t.fontMono, fontSize: 13, outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPat((v) => !v)}
+              style={{
+                padding: '0 12px', borderRadius: 8, border: `1px solid ${t.glassBorder}`,
+                background: 'transparent', color: t.text1,
+                fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+              }}
+            >{showPat ? tr('settings.github.pat_hide') : tr('settings.github.pat_show')}</button>
+          </div>
+
+          <div style={{ fontSize: 11.5, color: t.text3, lineHeight: 1.5 }}>
+            {tr('settings.github.recommended_scopes')}
+          </div>
+          <GithubTokenHelp/>
+
+          {needEmail && (
+            <>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={tr('settings.github.email_placeholder')}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  padding: '9px 12px', borderRadius: 8,
+                  background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
+                  fontFamily: t.fontMono, fontSize: 13, outline: 'none',
+                }}
+              />
+              <div style={{ fontSize: 11.5, color: t.warn }}>
+                {tr('settings.github.email_required_note')}
+                {loginHint && (
+                  <span style={{ marginLeft: 6, color: t.text2 }}>
+                    ({tr('settings.github.connected_as', { username: loginHint })})
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+
+          {error && (
+            <div style={{
+              padding: '8px 10px', borderRadius: 6,
+              background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
+              color: t.err, fontSize: 12.5, fontFamily: t.fontSans,
+            }}>{error}</div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+            <button
+              type="button"
+              onClick={() => void onSave()}
+              disabled={saving || !pat.trim()}
+              style={{
+                padding: '10px 18px', borderRadius: 10, border: 0,
+                background: t.accent, color: t.accentOn,
+                fontFamily: t.fontSans, fontSize: 13.5, fontWeight: 600,
+                cursor: saving || !pat.trim() ? 'not-allowed' : 'pointer',
+                opacity: saving || !pat.trim() ? 0.6 : 1,
+              }}
+            >{saving ? tr('settings.github.validating') : tr('onboarding.github.continue')}</button>
+            <button
+              type="button"
+              onClick={onContinue}
+              style={{
+                padding: '10px 14px', borderRadius: 10, border: `1px solid ${t.glassBorder}`,
+                background: 'transparent', color: t.text1,
+                fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
+              }}
+            >{tr('onboarding.github.skip')}</button>
+          </div>
         </div>
       )}
     </StepShell>

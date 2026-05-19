@@ -16,11 +16,13 @@ import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { apiFetch } from '@/lib/api';
 import { useApiKey } from '@/hooks/useApiKey';
+import { useGithubCredentials } from '@/hooks/useGithubCredentials';
+import { GithubTokenHelp } from '@/components/GithubTokenHelp';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useI18n, useT } from '@/hooks/useI18n';
 
-type Section = 'general' | 'claude' | 'voice' | 'folders' | 'security' | 'appearance' | 'integrations' | 'about';
+type Section = 'general' | 'claude' | 'github' | 'voice' | 'folders' | 'security' | 'appearance' | 'integrations' | 'about';
 
 export function Settings() {
   const t = useTokens();
@@ -29,6 +31,7 @@ export function Settings() {
   const sections: { id: Section; label: string; icon: (p: IconProps) => JSX.Element }[] = [
     { id: 'general', label: tr('settings.section.general'), icon: IconSettings },
     { id: 'claude', label: tr('settings.section.claude'), icon: IconKey },
+    { id: 'github', label: tr('settings.section.github'), icon: IconGithub },
     { id: 'voice', label: tr('settings.section.voice'), icon: IconMic },
     { id: 'folders', label: tr('settings.section.folders'), icon: IconFolder },
     { id: 'security', label: tr('settings.section.security'), icon: IconShield },
@@ -68,6 +71,7 @@ export function Settings() {
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
         {sec === 'general' && <SectionGeneral/>}
         {sec === 'claude' && <SectionClaude/>}
+        {sec === 'github' && <SectionGithub/>}
         {sec === 'voice' && <SectionVoice/>}
         {sec === 'folders' && <SectionFolders/>}
         {sec === 'security' && <SectionSecurity/>}
@@ -646,6 +650,246 @@ function ApiKeyEditor() {
       {success && (
         <div style={{ fontSize: 11.5, color: t.ok, paddingLeft: 4 }}>
           {tr('settings.claude.apikey.success')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionGithub() {
+  const t = useTokens();
+  const tr = useT();
+  const gh = useGithubCredentials();
+  const [pat, setPat] = useState('');
+  const [showPat, setShowPat] = useState(false);
+  const [email, setEmail] = useState('');
+  const [needEmail, setNeedEmail] = useState(false);
+  const [loginHint, setLoginHint] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [removeConfirm, setRemoveConfirm] = useState(false);
+
+  const showForm = editing || (!gh.loading && !gh.hasCredentials);
+
+  async function onSave() {
+    if (!pat.trim()) return;
+    setSaving(true);
+    setError(null);
+    const r = await gh.save({ pat: pat.trim(), email: email.trim() || undefined });
+    setSaving(false);
+    if (r.ok) {
+      setPat(''); setEmail(''); setNeedEmail(false); setLoginHint(null); setEditing(false);
+    } else if (r.needEmail) {
+      setNeedEmail(true);
+      setLoginHint(r.loginHint ?? null);
+    } else {
+      setError(r.error);
+    }
+  }
+
+  return (
+    <div>
+      <Header title={tr('settings.github.title')} sub={tr('settings.github.sub')}/>
+      <p style={{ marginTop: 0, color: t.text2, fontSize: 13, lineHeight: 1.6, maxWidth: 640 }}>
+        {tr('settings.github.explain')}
+      </p>
+
+      {!gh.loading && gh.hasCredentials && !editing ? (
+        <div style={{
+          marginTop: 16, padding: 16, borderRadius: 12,
+          background: `color-mix(in oklch, ${t.ok} 8%, transparent)`,
+          border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
+          display: 'flex', flexDirection: 'column', gap: 6,
+        }}>
+          <div style={{ fontSize: 14, color: t.text0, fontWeight: 600 }}>
+            {tr('settings.github.connected_as', { username: gh.username ?? '' })}
+          </div>
+          <div style={{ fontSize: 12.5, color: t.text1 }}>
+            {tr('settings.github.commit_email', { email: gh.email ?? '' })}
+          </div>
+          {gh.maskedPat && (
+            <div style={{ fontSize: 12, color: t.text2, fontFamily: t.fontMono }}>
+              {tr('settings.github.token_label', { masked: gh.maskedPat })}
+            </div>
+          )}
+          {gh.validatedAt && (
+            <div style={{ fontSize: 11.5, color: t.text3 }}>
+              {tr('settings.github.validated_at', { date: new Date(gh.validatedAt).toLocaleString() })}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => { setEditing(true); setPat(''); setEmail(''); setError(null); setNeedEmail(false); }}
+              style={{
+                padding: '6px 12px', borderRadius: 6, border: `1px solid ${t.glassBorder}`,
+                background: 'transparent', color: t.text1,
+                fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+              }}
+            >{tr('settings.github.change')}</button>
+            <button
+              type="button"
+              onClick={() => setRemoveConfirm(true)}
+              style={{
+                padding: '6px 12px', borderRadius: 6, border: `1px solid ${t.err}`,
+                background: 'transparent', color: t.err,
+                fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+              }}
+            >{tr('settings.github.remove')}</button>
+          </div>
+        </div>
+      ) : null}
+
+      {showForm && (
+        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 540 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 12.5, color: t.text1, marginBottom: 6, fontFamily: t.fontSans }}>
+              {tr('settings.github.pat_label')}
+            </label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type={showPat ? 'text' : 'password'}
+                value={pat}
+                onChange={(e) => setPat(e.target.value)}
+                placeholder={tr('settings.github.pat_placeholder')}
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
+                style={{
+                  flex: 1, padding: '8px 10px', borderRadius: 6,
+                  background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
+                  fontFamily: t.fontMono, fontSize: 12, outline: 'none',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPat((v) => !v)}
+                style={{
+                  padding: '0 10px', borderRadius: 6, border: `1px solid ${t.glassBorder}`,
+                  background: 'transparent', color: t.text1,
+                  fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+                }}
+              >{showPat ? tr('settings.github.pat_hide') : tr('settings.github.pat_show')}</button>
+            </div>
+            <div style={{ fontSize: 11.5, color: t.text3, marginTop: 6, lineHeight: 1.5 }}>
+              {tr('settings.github.recommended_scopes')}
+            </div>
+            <div style={{ marginTop: 6 }}>
+              <GithubTokenHelp/>
+            </div>
+          </div>
+
+          {(needEmail || email) && (
+            <div>
+              <label style={{ display: 'block', fontSize: 12.5, color: t.text1, marginBottom: 6, fontFamily: t.fontSans }}>
+                {tr('settings.github.email_label')}
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={tr('settings.github.email_placeholder')}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  padding: '8px 10px', borderRadius: 6,
+                  background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
+                  fontFamily: t.fontMono, fontSize: 12, outline: 'none',
+                }}
+              />
+              {needEmail && (
+                <div style={{ fontSize: 11.5, color: t.warn, marginTop: 6 }}>
+                  {tr('settings.github.email_required_note')}
+                  {loginHint && (
+                    <span style={{ marginLeft: 6, color: t.text2 }}>
+                      ({tr('settings.github.connected_as', { username: loginHint })})
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div style={{
+              padding: '8px 10px', borderRadius: 6,
+              background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
+              color: t.err, fontSize: 12, fontFamily: t.fontSans,
+            }}>{error}</div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => void onSave()}
+              disabled={saving || !pat.trim()}
+              style={{
+                padding: '8px 16px', borderRadius: 8, border: 0,
+                background: t.accent, color: t.accentOn,
+                fontFamily: t.fontSans, fontSize: 13, fontWeight: 600,
+                cursor: saving || !pat.trim() ? 'not-allowed' : 'pointer',
+                opacity: saving || !pat.trim() ? 0.6 : 1,
+              }}
+            >{saving ? tr('settings.github.validating') : tr('settings.github.validate_save')}</button>
+            {editing && (
+              <button
+                type="button"
+                onClick={() => { setEditing(false); setPat(''); setEmail(''); setError(null); setNeedEmail(false); }}
+                style={{
+                  padding: '8px 14px', borderRadius: 8, border: `1px solid ${t.glassBorder}`,
+                  background: 'transparent', color: t.text1,
+                  fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
+                }}
+              >{tr('common.cancel')}</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {removeConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setRemoveConfirm(false); }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
+          }}
+        >
+          <div style={{
+            maxWidth: 400, width: '90%', padding: 18,
+            background: t.windowBg, border: `1px solid ${t.glassBorder}`,
+            borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
+            boxShadow: t.shadowLg,
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+              {tr('settings.github.remove_confirm_title')}
+            </div>
+            <div style={{ fontSize: 13, color: t.text1, marginBottom: 14 }}>
+              {tr('settings.github.remove_confirm_body')}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setRemoveConfirm(false)}
+                style={{
+                  padding: '6px 12px', borderRadius: t.r2,
+                  background: 'transparent', color: t.text1,
+                  border: `1px solid ${t.glassBorder}`,
+                  cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
+                }}
+              >{tr('common.cancel')}</button>
+              <button
+                type="button"
+                onClick={async () => { await gh.remove(); setRemoveConfirm(false); setEditing(false); }}
+                style={{
+                  padding: '6px 12px', borderRadius: t.r2,
+                  background: t.err, color: '#fff', border: 0,
+                  cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 600,
+                }}
+              >{tr('settings.github.remove')}</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
