@@ -41,11 +41,12 @@ const SIZE_KEY = 'eco.dock.iconSize';
 const SIZE_MIN = 26;
 const SIZE_MAX = 72;
 const SIZE_DEFAULT = 40;
-// Sin label debajo de los iconos — antes había uno con el primer "word"
-// del título pero descalzaba el button respecto al icono del Home (Home
-// no tenía label así que su button quedaba a una altura distinta).
-// La identidad de la burbuja se ve por la inicial dentro del icono +
-// tooltip al hover. El layout de DockIcon ahora espeja al de HomeDockIcon.
+// Espacio reservado para la label debajo del icono. Ambos slots (Home y
+// Dock) reservan esta altura — Home la deja vacía, Dock la rellena con
+// el primer "word" del título. Así los buttons quedan en la MISMA
+// posición vertical en ambos casos (centrados en idéntica slotHeight)
+// y la label no descalza nada.
+const LABEL_AREA = 13;
 
 function loadIconSize(): number {
   try {
@@ -382,7 +383,10 @@ function HomeDockIcon({
   const tr = useT();
   const [hover, setHover] = useState(false);
   const HOME_SLOT = Math.round(iconSize * 1.2);
-  const SLOT_HEIGHT = iconSize + 17;
+  // Slot incluye espacio reservado para label aunque Home no la renderice
+  // — así Home y Dock tienen idéntica altura y los buttons (centrados) se
+  // alinean exacto entre sí.
+  const SLOT_HEIGHT = iconSize + 17 + LABEL_AREA;
   const iconGlyph = Math.round(iconSize * 0.6);
   return (
     <div
@@ -431,6 +435,19 @@ function HomeDockIcon({
   );
 }
 
+// Primera palabra del título, cortada a 8 chars. Solo separa por espacios
+// — "fix-bug-login" se muestra como "fix-bug-" (los primeros 8 chars de la
+// primera "palabra"), no como "fix". Preserva contexto útil para títulos
+// tipo TAR-660, jh-prod, eco-test, etc. fallback: string traducido para
+// títulos vacíos.
+function firstWord(title: string | undefined, fallback: string): string {
+  if (!title) return fallback;
+  const trimmed = title.trim();
+  if (!trimmed) return fallback;
+  const m = trimmed.match(/^\S+/);
+  const word = m ? m[0] : trimmed;
+  return word.slice(0, 8);
+}
 
 function DockIcon({
   bubble, index, active, onClick, iconSize,
@@ -445,12 +462,11 @@ function DockIcon({
   const tr = useT();
   const [hover, setHover] = useState(false);
   const [showTip, setShowTip] = useState(false);
-  // Mismas medidas que HomeDockIcon: slot 1.2× del icono, alto iconSize+17,
-  // button centrado verticalmente. Antes el slot era 1.5× con label debajo
-  // y bottom-aligned, lo que descalzaba visualmente los buttons respecto
-  // al Home (que no tenía label).
+  // Mismas medidas que HomeDockIcon: slot 1.2× del icono, alto incluye
+  // LABEL_AREA reservada abajo aunque Home no la use. Eso mantiene los
+  // buttons centrados en idéntica slotHeight → alineados pixel-perfect.
   const slotWidth = Math.round(iconSize * 1.2);
-  const slotHeight = iconSize + 17;
+  const slotHeight = iconSize + 17 + LABEL_AREA;
   const letterSize = Math.round(iconSize * 0.375);
   // Status dot escala con el icono — sin esto, en iconos chicos (<24px) el
   // dot se desborda del cuadrado.
@@ -573,6 +589,24 @@ function DockIcon({
           }}/>
         )}
       </motion.button>
+
+      {/* Label en el área reservada abajo del slot. Position absolute para
+          no afectar el centrado flex del button — la altura del slot ya
+          tiene LABEL_AREA contemplada arriba. */}
+      <span style={{
+        position: 'absolute',
+        bottom: 0, left: 0, right: 0,
+        height: LABEL_AREA,
+        textAlign: 'center',
+        fontFamily: t.fontSans, fontSize: 9.5, fontWeight: 600,
+        color: active ? t.accent : t.text3,
+        letterSpacing: 0.1,
+        lineHeight: 1,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        userSelect: 'none',
+      }}>{firstWord(bubble.title, tr('dock.no_name'))}</span>
 
       {active && (
         <span style={{
