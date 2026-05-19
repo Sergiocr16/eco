@@ -41,9 +41,13 @@ const SIZE_KEY = 'eco.dock.iconSize';
 const SIZE_MIN = 15;
 const SIZE_MAX = 72;
 const SIZE_DEFAULT = 40;
-// Bajo este tamaño la etiqueta de abajo queda más grande que el icono
-// y se ve mal. La ocultamos para mantener limpio el dock compacto.
-const LABEL_HIDE_BELOW = 28;
+// La etiqueta debajo del icono se desvanece continuamente entre estos
+// dos tamaños. Sin interpolación había un "salto" visible al cruzar el
+// threshold: el dock está bottom-anchored, así que perder ~13 px de
+// altura de un frame al siguiente empujaba el top hacia abajo.
+const LABEL_FADE_END = 20;   // bajo esto: label invisible y altura 0
+const LABEL_FADE_START = 28; // arriba de esto: label completa
+const LABEL_FULL_HEIGHT = 13; // altura aproximada del label + su marginTop
 
 function loadIconSize(): number {
   try {
@@ -314,7 +318,10 @@ function ResizeHandle({
     const onMove = (e: MouseEvent) => {
       if (!startRef.current) return;
       const dy = startRef.current.y - e.clientY; // mover hacia arriba = +
-      const next = Math.max(SIZE_MIN, Math.min(SIZE_MAX, startRef.current.size + Math.round(dy / 2)));
+      // Factor 1.4 ≈ dockHeight / iconSize (padV ~0.4×iconSize + iconSize +
+      // label). Sin esto el handle se "escapaba" del cursor al hacer drag
+      // porque el dock cambia altura más rápido que el iconSize cambia.
+      const next = Math.max(SIZE_MIN, Math.min(SIZE_MAX, startRef.current.size + Math.round(dy / 1.4)));
       onChange(next);
     };
     const onUp = () => { setDragging(false); startRef.current = null; };
@@ -573,20 +580,33 @@ function DockIcon({
         )}
       </motion.button>
 
-      {iconSize >= LABEL_HIDE_BELOW && (
-        <div style={{
-          marginTop: 3,
-          width: slotWidth,
-          textAlign: 'center',
-          fontFamily: t.fontSans, fontSize: 9.5, fontWeight: 600,
-          color: active ? t.accent : t.text3,
-          letterSpacing: 0.1,
-          lineHeight: 1.1,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          pointerEvents: 'none',
-          userSelect: 'none',
-        }}>{firstWord(bubble.title, tr('dock.no_name'))}</div>
-      )}
+      {/* Label siempre renderiza. Su altura, fontSize y opacidad se
+          interpolan continuamente entre LABEL_FADE_END y LABEL_FADE_START
+          — así no hay salto en la altura del dock al cruzar el threshold. */}
+      {(() => {
+        const t01 = iconSize >= LABEL_FADE_START
+          ? 1
+          : Math.max(0, (iconSize - LABEL_FADE_END) / (LABEL_FADE_START - LABEL_FADE_END));
+        const labelHeight = LABEL_FULL_HEIGHT * t01;
+        return (
+          <div style={{
+            marginTop: Math.round(3 * t01),
+            width: slotWidth,
+            height: Math.max(0, labelHeight - Math.round(3 * t01)),
+            textAlign: 'center',
+            fontFamily: t.fontSans,
+            fontSize: Math.max(6, 9.5 * t01),
+            fontWeight: 600,
+            opacity: t01,
+            color: active ? t.accent : t.text3,
+            letterSpacing: 0.1,
+            lineHeight: 1,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}>{firstWord(bubble.title, tr('dock.no_name'))}</div>
+        );
+      })()}
 
       {active && (
         <span style={{
