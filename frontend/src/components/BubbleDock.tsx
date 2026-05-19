@@ -41,13 +41,11 @@ const SIZE_KEY = 'eco.dock.iconSize';
 const SIZE_MIN = 15;
 const SIZE_MAX = 72;
 const SIZE_DEFAULT = 40;
-// La etiqueta debajo del icono se desvanece continuamente entre estos
-// dos tamaños. Sin interpolación había un "salto" visible al cruzar el
-// threshold: el dock está bottom-anchored, así que perder ~13 px de
-// altura de un frame al siguiente empujaba el top hacia abajo.
-const LABEL_FADE_END = 20;   // bajo esto: label invisible y altura 0
-const LABEL_FADE_START = 28; // arriba de esto: label completa
-const LABEL_FULL_HEIGHT = 13; // altura aproximada del label + su marginTop
+// Sin label debajo de los iconos — antes había uno con el primer "word"
+// del título pero descalzaba el button respecto al icono del Home (Home
+// no tenía label así que su button quedaba a una altura distinta).
+// La identidad de la burbuja se ve por la inicial dentro del icono +
+// tooltip al hover. El layout de DockIcon ahora espeja al de HomeDockIcon.
 
 function loadIconSize(): number {
   try {
@@ -429,21 +427,6 @@ function HomeDockIcon({
   );
 }
 
-// Primera palabra del título, cortada a 8 chars. Solo separa por
-// espacios — "fix-bug-login" se muestra como "fix-bug-" (los primeros 8
-// chars de la primera "palabra"), no como "fix". Eso preserva contexto
-// útil para títulos tipo TAR-660, jh-prod, eco-test, etc.
-// fallback: string traducido para títulos vacíos.
-function firstWord(title: string | undefined, fallback: string): string {
-  if (!title) return fallback;
-  const trimmed = title.trim();
-  if (!trimmed) return fallback;
-  // Cortamos solo en el primer espacio — guiones/underscores forman parte
-  // del nombre.
-  const m = trimmed.match(/^\S+/);
-  const word = m ? m[0] : trimmed;
-  return word.slice(0, 8);
-}
 
 function DockIcon({
   bubble, index, active, onClick, iconSize,
@@ -458,7 +441,12 @@ function DockIcon({
   const tr = useT();
   const [hover, setHover] = useState(false);
   const [showTip, setShowTip] = useState(false);
-  const slotWidth = Math.round(iconSize * 1.5);
+  // Mismas medidas que HomeDockIcon: slot 1.2× del icono, alto iconSize+17,
+  // button centrado verticalmente. Antes el slot era 1.5× con label debajo
+  // y bottom-aligned, lo que descalzaba visualmente los buttons respecto
+  // al Home (que no tenía label).
+  const slotWidth = Math.round(iconSize * 1.2);
+  const slotHeight = iconSize + 17;
   const letterSize = Math.round(iconSize * 0.375);
   // Status dot escala con el icono — sin esto, en iconos chicos (<24px) el
   // dot se desborda del cuadrado.
@@ -528,10 +516,10 @@ function DockIcon({
       }}
       onMouseLeave={() => { setHover(false); setShowTip(false); }}
       style={{
-        width: slotWidth, minHeight: iconSize,
+        width: slotWidth, height: slotHeight,
         position: 'relative',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'flex-end',
+        justifyContent: 'center',
         listStyle: 'none',
         cursor: dragging ? 'grabbing' : 'grab',
       }}
@@ -579,34 +567,6 @@ function DockIcon({
           }}/>
         )}
       </motion.button>
-
-      {/* Label siempre renderiza. Su altura, fontSize y opacidad se
-          interpolan continuamente entre LABEL_FADE_END y LABEL_FADE_START
-          — así no hay salto en la altura del dock al cruzar el threshold. */}
-      {(() => {
-        const t01 = iconSize >= LABEL_FADE_START
-          ? 1
-          : Math.max(0, (iconSize - LABEL_FADE_END) / (LABEL_FADE_START - LABEL_FADE_END));
-        const labelHeight = LABEL_FULL_HEIGHT * t01;
-        return (
-          <div style={{
-            marginTop: Math.round(3 * t01),
-            width: slotWidth,
-            height: Math.max(0, labelHeight - Math.round(3 * t01)),
-            textAlign: 'center',
-            fontFamily: t.fontSans,
-            fontSize: Math.max(6, 9.5 * t01),
-            fontWeight: 600,
-            opacity: t01,
-            color: active ? t.accent : t.text3,
-            letterSpacing: 0.1,
-            lineHeight: 1,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            pointerEvents: 'none',
-            userSelect: 'none',
-          }}>{firstWord(bubble.title, tr('dock.no_name'))}</div>
-        );
-      })()}
 
       {active && (
         <span style={{
