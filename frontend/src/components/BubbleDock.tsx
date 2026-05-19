@@ -152,10 +152,19 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
     });
   }, [bubbles, wsGroups]);
 
+  // Container del dock — todas las medidas son derivadas de iconSize para
+  // que cuando achicás los iconos el bar también achique proporcionalmente.
+  // Valores de referencia: iconSize=40 → padV=8, padH=10, radius=18. Cap en
+  // radius para que con iconos grandes no se vea exageradamente redondo.
+  const padV = Math.max(3, Math.round(iconSize * 0.2));
+  const padH = Math.max(5, Math.round(iconSize * 0.25));
+  const containerRadius = Math.min(24, Math.round(iconSize * 0.45));
+  const gap = Math.max(2, Math.round(iconSize * 0.1));
+
   const divider = (
     <span style={{
       width: 1, height: iconSize + 4, alignSelf: 'center',
-      background: t.glassBorder, margin: '0 6px',
+      background: t.glassBorder, margin: `0 ${gap + 2}px`,
     }}/>
   );
 
@@ -180,9 +189,9 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'flex-end',
-        gap: 4,
-        padding: '8px 10px',
-        borderRadius: 18,
+        gap,
+        padding: `${padV}px ${padH}px`,
+        borderRadius: containerRadius,
         background: t.glassBg,
         backdropFilter: 'blur(28px) saturate(180%)',
         WebkitBackdropFilter: 'blur(28px) saturate(180%)',
@@ -206,10 +215,15 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
           className="eco-thin-scroll"
           style={{
             minWidth: 0,
-            display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: 4,
+            display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap,
             overflowX: 'auto', overflowY: 'visible',
-            paddingTop: 22, paddingBottom: 8,
-            marginTop: -22, marginBottom: -8,
+            // Headroom para el hover (scale 1.35 + y -6) — proporcional al
+            // icon size para que iconos chicos no dejen tanto aire muerto.
+            // Min 12 cubre el y:-6 + un poquito del scale para los más mini.
+            paddingTop: Math.max(12, Math.round(iconSize * 0.55)),
+            paddingBottom: Math.max(4, Math.round(iconSize * 0.2)),
+            marginTop: -Math.max(12, Math.round(iconSize * 0.55)),
+            marginBottom: -Math.max(4, Math.round(iconSize * 0.2)),
           }}>
           {grouped ? (
             wsGroups.map((g, gi) => (
@@ -233,7 +247,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
                     onReorder={(newItems) => handleReorder(g.key, newItems.map((b) => b.id))}
                     style={{
                       display: 'flex', flexDirection: 'row',
-                      alignItems: 'flex-end', gap: 4,
+                      alignItems: 'flex-end', gap,
                       listStyle: 'none', margin: 0, padding: 0,
                     }}>
                     {g.items.map((b, i) => (
@@ -257,7 +271,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
               onReorder={(newItems) => handleReorder(null, newItems.map((b) => b.id))}
               style={{
                 display: 'flex', flexDirection: 'row',
-                alignItems: 'flex-end', gap: 4,
+                alignItems: 'flex-end', gap,
                 listStyle: 'none', margin: 0, padding: 0,
               }}>
               {ordered.map((b, i) => (
