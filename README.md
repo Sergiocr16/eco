@@ -1,1300 +1,356 @@
 # Eco
 
-Asistente personal para macOS Apple Silicon (`arm64`). Voz, archivos,
-código, git y navegador integrados — 100% local. Distribuido como
-**app nativa** (`.dmg`) vía Electron 33.
+Local-first personal assistant for macOS Apple Silicon. Voice, files, code, git, and an embedded browser — 100% local. Distributed as a native `.dmg` (~112 MB) via Electron 33.
 
 ```
-        ╭───────────────────────────────────────╮
+        ┌───────────────────────────────────────┐
         │                                       │
-        │   Eco escucha siempre · vos decís:    │
+        │   Eco is always listening:            │
         │                                       │
-        │     «Hey Eco abrí Aditum»             │
-        │     «Hey Eco terminal»                │
-        │     «Hey Eco al final»                │
-        │     «Hey Eco repetí»                  │
+        │     "Hey Eco abrí Aditum"             │
+        │     "Hey Eco terminal"                │
+        │     "Hey Eco al final"                │
+        │     "Hey Eco repetí"                  │
         │                                       │
-        │   Adentro de una conversación,        │
-        │   sin «Eco» adelante = mensaje al     │
-        │   agente de Claude.                   │
+        │   Inside a conversation,              │
+        │   no "Eco" prefix = message to the    │
+        │   Claude agent.                       │
         │                                       │
-        │   En la pestaña Shell, lo que digas   │
-        │   se tipea directo en el terminal.    │
+        │   In the Shell tab, what you say      │
+        │   is typed directly into the          │
+        │   terminal.                           │
         │                                       │
-        ╰───────────────────────────────────────╯
+        └───────────────────────────────────────┘
 ```
 
-**Qué es**: un orquestador de conversaciones con Claude Code SDK. Cada
-agente es una "burbuja" independiente con su propio sessionId, un
-**worktree git aislado** (desde la rama base que elijas), terminal real
-con PTY, dev server con puerto único y navegador con **partition propia**
-(cookies/localStorage NO se cruzan entre agentes). Voz siempre activa
-con dispatcher por prefijo: `Eco <comando>` ejecuta acción del sistema
-(parser local tolerante a sinónimos y rellenos); sin `Eco` adelante el
-texto va al agente activo, o al PTY si estás en la pestaña Shell.
+> **For agents working in this repo, the operational truth lives in [CLAUDE.md](./CLAUDE.md)** — rules, file maps, gotchas, endpoints, env vars, debug recipes. This README is the human-facing intro.
 
-**Aislamiento por agente**: cuando trabajás sobre un repo git, cada
-agente crea automáticamente su propio `git worktree` en
-`~/.eco/worktrees/<bubbleId>` sobre una rama `eco/<short>`. La rama
-base se elige al crear el agente (favoritos configurables por workspace).
-Dos agentes tocando el mismo repo nunca se pisan: cada uno tiene su
-puerto de dev server (auto-asignado serializado, sin race conditions),
-su browser session aislado, y su terminal. Al cerrar el agente, se borra
-el worktree y la rama `eco/<short>` (doble confirmación si hay cambios
-sin commitear).
+## Table of contents
 
-**Multi-detail keep-alive**: cambiar entre agentes A → B → A no recarga
-nada. Cada agente abierto mantiene su árbol de paneles vivo (webview,
-PTY, chat, server, files, todo). El cleanup se dispara solo al cerrar el
-agente explícitamente.
-
-**Review estilo Cursor**: el agente edita libremente al worktree, vos
-revisás los diffs después con dots ámbar/verde por archivo, aceptás/
-rechazás por hunk o por archivo inline. Banner persistente con
-pendientes. Toggle opt-in en Settings → General.
-
-**Git integrado**: branch picker, commit con IA (preview editable),
-push, pull/fetch, lista de PRs con checkout, banner del PR actual con
-merge/close. La sección Git en la sidebar muestra de qué rama salió el
-worktree y se refresca sola al cambiar de branch.
-
-**Privacidad**: el audio nunca sale de tu máquina. STT y wake word corren
-locales (faster-whisper + openwakeword). TTS también es local (Piper).
-Solo dos cosas tocan internet: la API de Claude (cuando la agente activa
-lo necesita) y validación de la API key al guardarla.
-
-**Idiomas**: la UI es bilingüe español ⇄ inglés. Detecta automáticamente
-el idioma del sistema y se cambia desde Ajustes → General. Los errores
-del backend viajan con un código estable y se traducen del lado del
-frontend (resistente a desfase entre versiones).
-
-**Auth local**: PIN de 4-8 dígitos + frase de recuperación BIP39 de 12
-palabras + opcional foto de perfil. La cuenta vive en `~/.eco/user.json`
-con argon2id y chmod 600. Sin servidor externo, sin Firebase. Bloquear /
-cerrar sesión / eliminar usuario desde el menú de cuenta.
-
-**Personalización**: **35 temas** (los clásicos + extravagantes:
-Vaporwave, Aurora Boreal, Volcán, Galaxia, Matrix, Atardecer, Bubblegum,
-Neon Night, Acid Yellow, Blood Moon, Mostaza, Cherry Bomb, Sakura,
-Esmeralda, Real, Carbón) y **26 accent hues** (Mint, Rojo sangre,
-Ladrillo, Coral, Ámbar, Naranja, Amarillo, Dorado, Mostaza, Verde lima,
-Esmeralda, Verde, Verde agua, Turquesa, Cian eléctrico, Cielo, Azul
-real, Azul, Índigo, Lavanda, Púrpura, Violeta, Fucsia, Magenta, Rosa).
-
-**App nativa**: empaquetable como `.dmg` para macOS Apple Silicon
-(arm64) con `npm run dmg`. Electron 33 spawnea el backend Node como
-subprocess interno (sin servers externos). Navegador interno con
-`<webview>` real Chromium — sin restricciones de `X-Frame-Options`/CSP,
-con DevTools propios.
-
-**Bundle compacto**: `.dmg` de **112 MB** (296 MB instalado). Logradas
-vía filtros multi-arch (sólo `arm64-darwin` para `node-pty`/`ripgrep`),
-eliminación de deps muertas, code-splitting Vite y compresión de
-assets. Detalles en la sección [Optimizaciones de bundle y memoria](#optimizaciones-de-bundle-y-memoria).
+1. [What is Eco](#what-is-eco)
+2. [Highlights](#highlights)
+3. [Requirements](#requirements)
+4. [Install + first run](#install)
+5. [Build the .dmg](#build)
+6. [Project structure](#structure)
+7. [Feature tour](#tour)
+8. [Voice commands cheatsheet](#voice)
+9. [Skills](#skills)
+10. [Privacy & security](#privacy)
+11. [Tech stack](#stack)
+12. [Roadmap](#roadmap)
+13. [License & credits](#license)
 
 ---
 
-## Arquitectura
+<a id="what-is-eco"></a>
+## 1. What is Eco
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  Electron main (electron/main.cjs)                                      │
-│  · Spawnea backend Node como subprocess (ELECTRON_RUN_AS_NODE=1)        │
-│  · titleBarStyle hiddenInset + trafficLightPosition (mac)               │
-│  · webPreferences.webviewTag: true → <webview> Chromium real            │
-│  · IPC eco:get-config (backend URL + token leído de ~/.eco/token)       │
-│  · IPC eco:renderer-log → stdout (debug del renderer)                   │
-│  · Backend en port 7100 empaquetado · 7050 en dev (7000 lo ocupa el    │
-│    AirPlay Receiver de macOS, por eso lo movimos)                       │
-└──────────────┬───────────────────────────────────────────────────────────┘
-               │   carga frontend desde http://127.0.0.1:7100/
-               ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  Frontend (Vite + React + TS + Tailwind v4 + Motion 11)                 │
-│  · Liquid Glass dark/light/AMOLED · 12 acentos · Dock macOS opt-in      │
-│  · Comandos meta «Eco …» con parser tolerante (rellenos + sinónimos)    │
-│  · Wake feedback: ListeningWave en el rail del Dashboard                │
-│  · STT dual: Web Speech API (dev en navegador) / Swift+SFSpeechRecognizer │
-│    on-device en el .dmg (sin Python, sin internet, sin enviar audio)      │
-│  · Picker de Skills + Picker de Branches en cada agente                 │
-│  · xterm.js en la pestaña Shell — PTY real con reattach                 │
-│  · Commit con AI con preview editable                                   │
-│  · Dashboard: grid · kanban · graph view con partículas hacia Eco +     │
-│    pulso pequeño desde cada nodo a sus satélites activos                │
-│  · Navegador por-agente (BrowserPanel + SmartBrowserView <webview>)     │
-│  · Dev server por agente, dual mode (frontend + backend), auto-puerto,  │
-│    presets por workspace, persistencia a disco para sobrevivir reload   │
-│  · Safe area top=36 para traffic lights · drag region invisible         │
-└──────────────┬───────────────────────────────────────────────────────────┘
-               │  WebSocket /ws       (Claude SDK streaming)
-               │  WebSocket /ws/pty   (PTY interactivo por agente)
-               │  HTTP /git/* /file/* /skills /shell /tts /pty/kill /auth/*
-               ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  Backend Node (Express + ws + node-pty + Claude Agent SDK)              │
-│  · Bind 127.0.0.1 + auth + origin + Zod + rate limit                    │
-│  · Sirve frontend bundle (express.static) cuando ECO_FRONTEND_DIST set  │
-│  · Auto-allowlist del propio origen (http://127.0.0.1:7100)             │
-│  · AppError tipado (code + message) → cliente traduce                   │
-│  · Tools MCP propias: open_bubble, rename_bubble, close_bubble          │
-│  · Tools MCP del usuario: mcp__* (Notion, Obsidian, Pencil, Vercel, …)  │
-│  · permissionMode: 'acceptEdits' (auto-mode) · Bash habilitado          │
-│  · Worktree manager: una rama eco/<id> por agente con cleanup           │
-│  · /git/branches /git/checkout /git/pull /git/fetch                     │
-│  · checkout auto-recovery: si branch ya está en worktree de Eco, lo     │
-│    desbloquea con `worktree remove --force` y reintenta                 │
-│  · /git/rename-branch /git/commit-suggest (vía claude -p) /git/commit   │
-│  · PTY: spawn por agente, ring buffer 128KB, broadcast pty_status       │
-│  · PTY cwd fallback: si workspace no existe → $HOME (no crash)          │
-│  · Snapshot WS al conectar (PTYs corriendo, status, etc.)               │
-│  · Dev server por agente (`dev-server.ts`) — `/dev/start|stop|restart`  │
-│    con roles 'main'/'frontend'/'backend', persistencia en               │
-│    `~/.eco/dev-sessions.json` (re-adopt al boot por pgid)               │
-│  · TTS: Piper + macOS `say` con voces Premium/Enhanced del sistema      │
-└──────────────┬───────────────────────────────────────────────────────────┘
-               │  spawn claude · spawn zsh PTY    ┌─────────────────────────┐
-               ▼                                  │ Piper TTS local (ONNX)  │
-       Claude Agent SDK ←── stdin/stdout ───►    └─────────────────────────┘
-                              │
-                              ▼
-                     git worktree por agente
-                     (~/.eco/worktrees/<id>)
+Eco is a Claude Code SDK orchestrator. Each conversation is a self-contained **"bubble"** with its own session, isolated git **worktree**, real terminal (PTY), file editor, dev server with auto-port, embedded Chromium browser with its own partition, and Claude-summarized notes. Voice is always on with a dispatcher by prefix — `Eco <command>` runs a system action; without the prefix the text goes to the active agent (or to the PTY if you're on the Shell tab).
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│  Listener Python (sidecar — solo dev opcional, NO se usa en .app)       │
-│  · openwakeword (ONNX local) escucha mic 24/7                           │
-│  · Wake word custom "Hey Eco" (training pipeline incluido)              │
-│  · faster-whisper (medium · 30-40% más preciso con initial_prompt)      │
-│  · POST /voice/transcribed → broadcast WS al frontend                   │
-└──────────────────────────────────────────────────────────────────────────┘
+When you work on a git repo, each bubble auto-creates a worktree at `~/.eco/worktrees/<bubbleId>` on its own `eco/<short>` branch (base branch chosen at creation, with per-workspace favourites). Two bubbles on the same repo never collide — separate dev server ports (race-free auto-assignment), isolated browser session, separate terminal. Closing the bubble wipes the worktree; the branch survives in the parent repo for review or merge.
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│  STT nativo macOS en el .dmg (electron/native/eco-stt.swift)             │
-│  · Binario universal arm64+x64 (~150KB) en Resources/bin/eco-stt         │
-│  · SFSpeechRecognizer + requiresOnDeviceRecognition = true               │
-│  · CFRunLoop activo durante recognitionTask (sin esto los callbacks      │
-│    nunca llegan desde un CLI sin app bundle propio)                      │
-│  · Renderer: Web Audio API → PCM 16kHz mono → WAV PCM16 en JS →          │
-│    POST /voice/transcribe-blob (chunks de 4s)                            │
-└──────────────────────────────────────────────────────────────────────────┘
-```
+Switching between bubbles A → B → A reloads nothing — each open bubble keeps its panel tree alive (webview, PTY, chat, files, notes, server). Cleanup only fires on explicit close.
 
 ---
 
-## Setup local (dev)
+<a id="highlights"></a>
+## 2. Highlights
 
-Prerequisitos: **Node 20+**, **Python 3.10+**, **claude CLI** (`@anthropic-ai/claude-code`) autenticado, **git**.
+- **Bubbles + worktrees** — every conversation gets an isolated git worktree, PTY, and dev server. Branch lives in the parent repo after close.
+- **Voice always on** — wake-prefix dispatcher tolerant to fillers, conjugations, free word order. On-device STT in the packaged .app (Apple Speech), Web Speech in the browser.
+- **Cursor-style review** — agent edits freely; you review diffs after with amber/green dots, accept/revert by hunk or by file. Opt-in toggle.
+- **FilesPanel** — mini-VS-Code per bubble: lazy gitignore-aware tree, CodeMirror 6 editor, `Cmd+P` Quick Open, `Cmd+Shift+F` global search, save with conflict detection, image preview.
+- **NotesPanel + summarizer** — markdown notes per bubble. One click runs Claude (`claude -p`) on the recent messages + last 60 KB of the PTY buffer and produces a 3-section summary (what we were doing / where we left off / next steps).
+- **Archiving** — kill the running processes, keep the worktree and branch. Restore or permanently delete from the Archived screen.
+- **GitHub PAT** — store a Personal Access Token once, validated against GitHub; auto-injected as `GH_TOKEN` + git author env into every spawned process.
+- **Dual dev server** — frontend + backend in parallel with auto-port. Eco assigns ports via `PORT` / `SERVER_PORT` / `JAVA_TOOL_OPTIONS=-Dserver.port=…` / `API_PORT` / `BACKEND_URL` env vars covering most frameworks. Backend boots first, frontend follows.
+- **Browser per agent** — real Chromium `<webview>` with persisted cookies (per-bubble partition), DevTools, persisted zoom and URL.
+- **Git tab** — GitHub Desktop-style layout: top bar with branch dropdown + sync, sub-tabs Changes / History / PRs. Cherry-pick, revert, hard-reset with safety prompt, op-in-progress banner with Continue/Abort.
+- **Obsidian integration** — save the current conversation as a `.md` note in your vault.
+- **Onboarding wizard** — 9-step setup on first run (language, theme, Claude auth, GitHub, workspace, Obsidian, voice).
+- **Bilingual** — Spanish ⇄ English UI. Detects system language; switch from Settings. Backend errors come with stable codes; the frontend translates.
+- **Local-first auth** — PIN + BIP39 recovery phrase + optional profile photo. argon2id hash in `~/.eco/user.json` (chmod 600). No external server.
+- **Themes** — 19 themes + accent hues, including AMOLED. `glassEffect` helper for Liquid Glass styling.
+
+---
+
+<a id="requirements"></a>
+## 3. Requirements
+
+- **macOS Apple Silicon** (arm64). x64 is not packaged.
+- **Node 20** (`nvm use 20.20.2` works).
+- **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated (`claude login` or an API key saved from Settings).
+- **git**.
+- Optional: **Python 3.10+** if you want the browser-dev wake-word listener. Not needed for the packaged .app.
+- Optional: **Xcode Command Line Tools** if you need to rebuild the Swift voice CLI.
+
+---
+
+<a id="install"></a>
+## 4. Install + first run
 
 ```bash
-# 1) Instalar deps de frontend + backend
+# 1) Install workspace deps (frontend + backend)
 npm install
-# Si node-pty pierde el bit ejecutable del spawn-helper (raro pero pasa):
-chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper
 
-# 2) Configurar workspaces permitidos (también editables desde Ajustes)
+# 2) Configure allowed workspaces (also editable from Settings)
 cp backend/.env.example backend/.env
-# Editar backend/.env: ECO_WORKSPACES=/Users/sergio/projects/aditum-jh
+# Edit backend/.env → ECO_WORKSPACES=/path/to/your/repo
 
-# 3) `.env.local` del frontend — dejá VITE_ECO_BACKEND vacío para que use el
-#    proxy de Vite. URL absoluta ahí fuerza cross-origin y depende de CORS.
+# 3) Frontend env: VITE_ECO_BACKEND empty so calls use the Vite proxy
 echo 'VITE_ECO_BACKEND=' > frontend/.env.local
-echo "VITE_ECO_TOKEN=$(cat ~/.eco/token 2>/dev/null || echo placeholder)" >> frontend/.env.local
 
-# 4a) Modo web (backend + Vite, abrís http://localhost:5173 en navegador)
+# 4a) Web mode (backend + Vite, open localhost:5173 in your browser)
 npm run web
-# Backend: http://127.0.0.1:7050
-# Frontend: http://127.0.0.1:5173
 
-# 4b) Modo app (todo lo anterior + ventana Electron con hot-reload)
+# 4b) App mode (Electron window + hot-reload + DevTools)
 npm run dev:app
 
-# 5) Primera vez: crear cuenta local (PIN + frase de recuperación + foto opcional)
-# La AuthScreen te muestra la frase ANTES de entrar a la app.
+# 5) First run → register a local account (PIN + recovery phrase + optional photo).
+#    The recovery phrase is shown BEFORE you enter the app; copy it to a safe place.
 
-# 6) (Opcional, solo si querés wake word "Hey Eco" en dev navegador)
-#    En el .dmg ya no hace falta — la voz va por SFSpeechRecognizer nativo.
-npm run listener:setup   # solo la primera vez
-npm run listener         # arranca el wake word + Whisper local
-
-# 7) (Opcional) Entrenar wake word "Hey Eco" custom (~20-35 min, una vez)
-cd listener
-source .venv/bin/activate
-pip install -r training/requirements-train.txt
-python training/train_wake.py --negatives-dir ~/Music/ -v
-# → genera listener/models/hey_eco.onnx
-
-# 8) (Solo si tocaste el CLI Swift) Recompilar eco-stt
-./electron/native/build.sh   # genera electron/build/bin/eco-stt (universal)
-# El dmg lo bundlea desde ahí; correlo siempre que modifiques eco-stt.swift
+# 6) (Optional, dev only) Python wake-word listener for browser dev.
+#    Not needed in the .dmg — voice goes through Apple Speech on-device there.
+npm run listener:setup    # first time only
+npm run listener
 ```
 
-> macOS: AirPlay Receiver ocupa el puerto 7000. Por eso el dev backend de Eco
-> corre en **7050** (override vía `ECO_PORT`). Si querés volver a 7000,
-> apagá AirPlay Receiver en *Ajustes → General → AirDrop y Handoff*.
+> **macOS AirPlay Receiver owns port 7000.** Eco's dev backend uses `:7050`. To free 7000, turn off AirPlay Receiver in *Settings → General → AirDrop & Handoff*. Override at any time with `ECO_PORT=<n>`.
+
+For env vars, see [CLAUDE.md §3](./CLAUDE.md#env).
 
 ---
 
-## Empaquetar como app nativa (.dmg arm64)
-
-Eco se distribuye como `.dmg` para **macOS Apple Silicon** vía **Electron 33** + **electron-builder**.
+<a id="build"></a>
+## 5. Build the .dmg
 
 ```bash
-# Mac (.dmg arm64)
 npm run dmg
-# → release/Eco-0.1.0-arm64.dmg  (~112 MB)
-# → release/mac-arm64/Eco.app    (~296 MB instalado)
-
-# Dev con Electron (hot-reload del renderer + backend en watch)
-npm run dev:app
+# → release/Eco-0.1.0-arm64.dmg     (~112 MB)
+# → release/mac-arm64/Eco.app       (~296 MB installed)
 ```
 
-> Windows / Linux targets fueron removidos del `electron/package.json` —
-> el uso es macOS-only. Si en el futuro hay que distribuir cross-platform,
-> se restauran agregando los bloques `win`/`linux` con sus targets.
+The `.dmg` is unsigned (`identity: null`) — fine for personal use. To distribute, add Apple Developer ID code signing + notarization.
 
-El pipeline:
+If you modified the Swift voice CLI, run `./electron/native/build.sh` first.
 
-1. `npm run build:backend` → compila TS → `backend/dist/*.js`
-2. `npm run build:frontend` → Vite build → `frontend/dist/` (con
-   code-splitting: `vendor-react`, `vendor-motion`, `vendor-xterm`
-   en chunks paralelos cacheables)
-3. `npm run build:backend-deps` → `npm install --omit=dev` en `backend/`
-   (workspaces hoist al root, así que necesita install dedicado) + `chmod
-   +x` del `spawn-helper` de node-pty (npm a veces pierde el bit)
-4. `electron-builder --mac dmg` → packaging final, sin firmar
-   (`identity: null` para uso personal — para distribuir más allá,
-   activar code signing con Apple Developer ID + notarization)
-
-El bundle aplica filtros agresivos en `electron/package.json`:
-
-- `mac.target.arch = ["arm64"]` (sólo Apple Silicon)
-- `mac.electronLanguages = ["en", "es"]` (descarta 54 packs `.lproj`)
-- Filtros en `extraResources` que excluyen:
-  - `@anthropic-ai/claude-agent-sdk/vendor/ripgrep/{arm64-linux,x64-darwin,x64-linux,x64-win32}/` (−43 MB)
-  - `node-pty/prebuilds/{darwin-x64,win32-arm64,win32-x64}/` y `deps/winpty/` (−59 MB)
-  - `bip39/src/wordlists/` salvo `english.json` (−300 KB)
-  - `typescript/`, `esbuild/`, `tsx/`, `@types/`, tests/docs/changelogs (−varios MB)
-
-**En tiempo de runtime de la app empaquetada**:
-
-- `main.cjs` spawnea el binario Electron con `ELECTRON_RUN_AS_NODE=1`
-  como Node puro para ejecutar el backend
-- Backend escucha en `127.0.0.1:7100` (vs `7000` en dev → coexisten)
-- Backend lee `ECO_FRONTEND_DIST` del env (seteado por main.cjs) y
-  sirve `frontend/dist` como `express.static` desde el mismo origen
-  → fetch + WS sin CORS
-- Token (`~/.eco/token`) lo lee el preload via IPC y se inyecta en
-  `lib/eco-config.ts` antes del primer render (refactor de `main.tsx`
-  con dynamic import del `<App>` para garantizar el orden)
-- Web Speech API se deshabilita en Electron (no tiene API key de
-  Google → entraría en loop start/end). En el .dmg la voz va por
-  Swift CLI `eco-stt` + Apple Speech framework on-device
-- macOS pide permiso 2 veces la primera vez que hablás: **Micrófono**
-  + **Speech Recognition** (NSMicrophone/NSSpeechRecognitionUsageDescription
-  van en Info.plist vía electron-builder `extendInfo`)
-- `setPermissionRequestHandler` en main.cjs concede `media/audioCapture/
-  microphone` para que Chromium no rechace `getUserMedia` antes de
-  llegar al prompt nativo de macOS
-- `<webview>` con UA Chrome 131 fijo (sin "Electron" → Google deja de
-  redirigir a `/sorry/index`)
+For the full reinstall recipe (kill running app, delete previous install, copy with `ditto`, strip quarantine, optional cache wipe), see [CLAUDE.md Appendix B](./CLAUDE.md#debug).
 
 ---
 
-## Optimizaciones de bundle y memoria
-
-Eco aplica varias capas de optimización para que el `.dmg` sea
-compacto y la app consuma poco RAM aunque haya múltiples burbujas
-activas en paralelo.
-
-### Bundle (.dmg arm64)
-
-| Antes | Después | Cambio |
-|---|---|---|
-| DMG 148 MB | **112 MB** | −36 MB (−24 %) |
-| App instalada 401 MB | **296 MB** | −105 MB (−26 %) |
-| `backend/node_modules` 165 MB | **50 MB** | −115 MB (−70 %) |
-
-Cambios clave:
-
-- **`better-sqlite3` eliminada** del `backend/package.json` — era dep
-  muerta (no se importaba en ningún `.ts`, −13 MB).
-- **Filtros multi-arch** en `electron/package.json` → `build.extraResources.filter`:
-  sólo `arm64-darwin` para los binarios nativos (`ripgrep` del SDK,
-  prebuilds de `node-pty`).
-- **`mac.target.arch = ["arm64"]`** y `mac.electronLanguages = ["en", "es"]`
-  para no bundlear x64, Linux ni packs de localización innecesarios.
-- **`icon.icns`** regenerado con `iconutil` desde un PNG limpio
-  (892 KB → 321 KB).
-- **`frontend/public/brand/eco-logo.png`** removido (no referenciado en
-  el bundle final, −894 KB).
-- **Vite `manualChunks`**: `vendor-react` / `vendor-motion` /
-  `vendor-xterm` separados — el bundle inicial baja de 891 KB a
-  463 KB y las libs pesadas se cachean independientemente.
-
-### Runtime (CPU / RAM / red)
-
-**Polling → WebSocket push**: los logs del dev server ya no se polean
-cada 1.5 s. El backend (`dev-server.ts:scheduleLogFlush`) batchea los
-chunks de stdout/stderr cada 80 ms y los broadcastea como mensaje
-`dev_log` por el WS existente. `ServerPanel` y `BrowserPanel` consumen
-el stream vía `eco-bus` (`eco:dev_log`). El polling `/file/changes`
-subió de 4 s a 10 s y se pausa cuando `document.visibilityState !==
-'visible'`. Idem `BranchPicker` (20 s) y `ClaudeAuthStatusCard` (30 s).
-
-**Animaciones pausadas en background**: cuando la ventana de Eco
-queda minimizada / detrás de otra app, `App.tsx` toggle la clase
-`eco-hidden` en `<body>`. La regla CSS en `index.css` aplica
-`animation-play-state: paused !important` a todo el árbol → cero
-gasto de GPU en aurora, partículas y shimmer cuando el user no nos
-ve. También respeta `prefers-reduced-motion`.
-
-**Coalesce de streaming WS**: durante el streaming de un mensaje del
-agente, los deltas de texto se acumulan en un `Map` y se flushean una
-sola vez por `requestAnimationFrame` (max 60 setState/s en vez de
-100+/s). Reduce trabajo de React durante respuestas largas de Claude.
-
-**Caps a buffers sin cota**:
-
-| Estructura | Antes | Después | Archivo |
-|---|---|---|---|
-| `bubble.messages` en memoria | sin cap | **300** últimos | `useBubbles.ts:appendMessage` |
-| `bubble.messages` en localStorage | sin cap | **100** últimos | `useBubbles.ts:persist` |
-| `toolCall.output` en localStorage | sin cap | **10 KB** + marker | `useBubbles.ts:thinMessageForStorage` |
-| `serverLogs` (BrowserPanel) | sin cap | **200 KB** | `BrowserPanel.tsx` |
-| `slot.logs` (ServerPanel) | sin cap | **200 KB** | `ServerPanel.tsx` |
-| `devLog` (DevTools console) | sin cap | **200 entries** | `BrowserPanel.tsx` |
-| xterm `scrollback` (Server) | 10 000 | **3 000** | `ServerPanel.tsx` |
-| xterm `scrollback` (Shell) | 5 000 | **2 000** | `RealTerminal.tsx` |
-| `s.output` ring buffer al stop | persistía | **liberado** | `dev-server.ts:stopDevServer` |
-
-**Cleanup atómico al cerrar burbuja**: `removeBubble` dispara
-`POST /bubble/close` (`/pty/kill` apunta al mismo handler) que:
-
-1. Mata el PTY (`killBubblePty`).
-2. Detiene los dev servers de los 3 roles
-   (`stopDevServer × main/frontend/backend`).
-3. **Borra las entries del `sessions` Map y del `logBuffers`** de
-   `dev-server.ts` vía `forgetSession(bubbleId)` (sin esto, las
-   sesiones quedaban en RAM con su ring buffer + en
-   `~/.eco/dev-sessions.json`).
-4. Remueve el git worktree.
-
-Además, el frontend limpia todas las keys `eco.*.${bubbleId}` de
-localStorage (`eco.dev.cmd.*`, `eco.browser.url.${id}`,
-`eco.browser.zoom.${id}`, `eco.detail.tab.${id}`, etc.) — antes
-quedaban como residuo histórico por cada bubble cerrada.
-
-**Otras defensas**:
-
-- `toolToBubble` Map del WS hook se `.clear()` al `done` / `error`
-  del turn.
-- `globalPromptTimestamps` con cap defensivo a 1000 entries.
-- DevTools en dev **no** se abre automático (toggle con
-  `ECO_DEVTOOLS=1` o `Cmd+Opt+I` a demanda) — antes consumía
-  ~50-80 MB del helper.
-
-### Métricas esperadas
-
-Con 5 agentes activos y server corriendo en algunos:
-
-- Renderer RAM: −75 a −270 MB (depende del histórico de mensajes y
-  cuán ruidosos son los dev servers).
-- localStorage: −90 % típicamente (5 MB → < 500 KB).
-- Red en idle: 0 req/min (antes ~120 req/min de polling de logs).
-- CPU/GPU en background: ~0 (animaciones pausadas).
-
----
-
-## Estructura del proyecto
+<a id="structure"></a>
+## 6. Project structure
 
 ```
 eco/
-├── README.md                  ← este archivo
-├── package.json               ← workspace root + scripts paralelos
+├── README.md                ← this file
+├── CLAUDE.md                ← operational manual (rules, gotchas, endpoints, debug)
+├── package.json             ← workspace root + parallel scripts
 │
-├── backend/                   ← Node + Express + Claude SDK + node-pty
-│   ├── src/
-│   │   ├── index.ts           ← HTTP + WS + middlewares de auth · monta /git, /pty, /auth, …
-│   │   ├── config.ts          ← env vars + workspace whitelist
-│   │   ├── auth.ts            ← Bearer token persistido ~/.eco/token
-│   │   ├── user-store.ts      ← PIN + BIP39 (argon2id, ~/.eco/user.json)
-│   │   ├── sessions.ts        ← Sesiones in-memory 1h TTL
-│   │   ├── api-key-store.ts   ← Anthropic API key (~/.eco/api-key)
-│   │   ├── app-error.ts       ← AppError con códigos traducibles
-│   │   ├── security.ts        ← bash blacklist + env allowlist
-│   │   ├── ws-server.ts       ← /ws con noServer + snapshot providers
-│   │   ├── pty-server.ts      ← /ws/pty: sesión por bubbleId, ring buffer, reattach
-│   │   ├── worktree-manager.ts ← `git worktree add/remove` por agente
-│   │   ├── git-ops.ts         ← list/checkout/pull/fetch/rename + commit-suggest (claude -p)
-│   │   ├── protocol.ts        ← tipos Zod de mensajes WS
-│   │   ├── agent.ts           ← wrapper del Claude Agent SDK · permissionMode acceptEdits
-│   │   ├── agent-tools.ts     ← MCP tools propias (open_bubble, etc.)
-│   │   ├── shell.ts           ← /shell legacy (one-shot, ya no se usa por default)
-│   │   ├── tts.ts             ← /tts con Piper local
-│   │   ├── skills.ts          ← scan ~/.claude + workspace + plugins/cache/<m>/<p>/<v>/…
-│   │   ├── file-diff.ts       ← /file/diff (resuelve worktree por bubbleId)
-│   │   ├── dev-server.ts      ← dev server por agente (start/stop/restart, dual,
-│   │   │                          auto-port, env-link FE↔BE, persistencia disco)
-│   │   ├── tts-macsay.ts      ← TTS via macOS `say` (voces Premium/Enhanced)
-│   │   ├── obsidian.ts        ← /integrations/obsidian/save-session
-│   │   └── workspaces-store.ts
-│   ├── tests/                 ← suite de seguridad
-│   ├── piper/                 ← Piper TTS bin + voces neurales (gitignored)
-│   └── .env.example
-│
-├── frontend/                  ← Vite + React + TS + Motion
-│   ├── src/
-│   │   ├── App.tsx            ← AuthGate + Shell + dispatcher Eco + wake feedback
-│   │   ├── main.tsx
-│   │   ├── design/            ← tokens, theme, primitives, icons, logo
-│   │   ├── components/
-│   │   │   ├── AppSidebar.tsx       ← nav + AccountMenu + BubbleDock (opt-in)
-│   │   │   ├── BubbleDock.tsx       ← dock estilo macOS con magnificación
-│   │   │   ├── AccountMenu.tsx      ← avatar (foto/initial), bloquear, eliminar usuario
-│   │   │   ├── RealTerminal.tsx     ← xterm.js conectado a /ws/pty
-│   │   │   ├── BranchPicker.tsx     ← branches + pull/fetch + rename
-│   │   │   ├── SkillsPicker.tsx     ← lista SKILL.md/agents/commands del workspace
-│   │   │   ├── DiffViewer.tsx       ← side-by-side estilo GitHub + buscador
-│   │   │   ├── BrowserPanel.tsx     ← webview por-agente + DevTools + zoom persistido
-│   │   │   ├── ServerPanel.tsx      ← dev server control + dual mode + presets workspace
-│   │   │   ├── SmartBrowserView.tsx ← wrapper <webview>/<iframe> persistente
-│   │   │   ├── CommitWithAI.tsx     ← suggest → preview editable → commit (no push)
-│   │   │   ├── CommandFeedback.tsx, StatusOverlay.tsx, WorkspacePicker.tsx
-│   │   ├── screens/
-│   │   │   ├── Dashboard.tsx        ← grid + graph + kanban view + DashboardRail
-│   │   │   ├── AgentDetail.tsx      ← chat + terminal + files + plan + browser + server + sidebar
-│   │   │   ├── Settings.tsx         ← General · Apariencia (12 acentos + AMOLED) · Dock
-│   │   │   ├── AuthScreen.tsx       ← register / login / recover con frase pre-auth
-│   │   │   └── FileExplorer.tsx
-│   │   ├── hooks/
-│   │   │   ├── useBubbles.ts        ← + bubble.ptyOpen + setBubblePtyOpen
-│   │   │   ├── useEcoSocket.ts      ← + pty_status handler + snapshot
-│   │   │   ├── useGitChanges.ts     ← polling de `git status --porcelain`
-│   │   │   ├── useProfile.ts        ← foto + username en localStorage
-│   │   │   ├── useSkills.ts, useVoice.ts, useTTS.ts, useAuth.ts, useI18n.ts,
-│   │   │   │  useApiKey.ts, useWorkspaces.ts, useDefaultWorkspace.ts,
-│   │   │   │  useQuickSuggestions.ts, useDevPresets.ts, useBubbleActive.ts,
-│   │   │   │  useWorkspaceServerDefaults.ts
-│   │   └── lib/
-│   │       ├── voice-router.ts      ← target='pty'|'chat' + writer registrado por RealTerminal
-│   │       ├── meta-commands.ts     ← parser tolerante (LEADING_FILLERS + scan)
-│   │       ├── platform.ts          ← detectRuntime() · web/electron/tauri/capacitor-ios
-│   │       ├── eco-config.ts        ← BACKEND + TOKEN resueltos al boot
-│   │       └── types, api, i18n, backend-errors, eco-bus, wake-beep
-│   ├── public/brand/                ← logo SVG + paleta oficial
-│   └── .env.example
-│
-├── electron/                  ← Wrapper Electron 33 para empaquetado
-│   ├── main.cjs               ← Main process: spawn backend, BrowserWindow, IPC,
-│   │                            setPermissionRequestHandler (mic/audioCapture)
-│   ├── preload.cjs            ← Expone window.electronAPI (getConfig, log)
-│   ├── package.json           ← Config electron-builder (mac/win/linux targets)
-│   │                            + NSMicrophoneUsageDescription / NSSpeechRecognition
-│   ├── native/                ← Código Swift compilado al build
-│   │   ├── eco-stt.swift      ← CLI Apple Speech framework (on-device)
-│   │   └── build.sh           ← swiftc → lipo universal arm64+x64
-│   ├── scripts/
-│   │   └── prepare-backend.cjs  ← npm install --omit=dev + chmod spawn-helper
-│   └── build/
-│       ├── icon.icns          ← Ícono mac (generado desde brand/eco-logo.svg)
-│       ├── icon.png           ← Ícono linux/fallback
-│       └── bin/eco-stt        ← Binario universal (bundleado en Resources/bin)
-│
-├── release/                   ← Output de electron-builder (gitignored)
-│   ├── Eco-0.1.0-arm64.dmg
-│   └── mac-arm64/Eco.app
-│
-└── listener/                  ← Python sidecar (wake word + STT)
-    ├── main.py                ← pipeline mic → wake → whisper → POST
-    ├── requirements.txt
-    ├── setup.sh
-    ├── models/                ← ONNX wake word (gitignored)
-    ├── training/              ← pipeline para "Hey Eco" custom
-    └── README.md
+├── backend/                 ← Node + Express + Claude SDK + node-pty
+├── frontend/                ← Vite + React + TS + Motion + Tailwind v4
+├── electron/                ← Electron 33 wrapper + Swift voice CLI
+├── listener/                ← Python sidecar (optional, browser-dev wake word)
+├── scripts/                 ← check-i18n.mjs and other tooling
+└── release/                 ← electron-builder output (gitignored)
 ```
 
+For the per-feature file map (which file does what, which hook drives which UI), see [CLAUDE.md §4](./CLAUDE.md#filemap).
+
 ---
 
-## Comandos disponibles
+<a id="tour"></a>
+## 7. Feature tour
 
-### Desarrollo
+### Bubbles + worktrees
 
-| Comando | Descripción |
+Every conversation is a bubble. When you create one in a git workspace, a worktree is checked out at `~/.eco/worktrees/<bubbleId>` on its own branch `eco/<short>`. The agent edits there. Two bubbles on the same repo never collide. On close, the worktree is removed (with a confirmation modal if it's dirty); the branch survives in the parent repo.
+
+### Terminal (PTY)
+
+Real `zsh` PTY per bubble (via `node-pty`), with `claude` auto-launched on open (configurable). Survives leaving the bubble — reconnect with a 128 KB replay buffer. On the Shell sub-tab, voice without a wake prefix is typed directly into the terminal.
+
+### FilesPanel
+
+A mini-VS-Code inside the bubble's worktree: lazy gitignore-aware tree, CodeMirror 6 editor, dirty indicator, `Cmd+S` save with conflict detection (`expectedMtime`), `Cmd+F` find-in-file, `Cmd+P` Quick Open, `Cmd+Shift+F` global search via ripgrep, inline image preview. Files with unstaged changes show an amber dot in the tree; ancestor folders get a dimmed dot. A "Send to Claude" floating button lets you push selected code + path into the agent's terminal.
+
+### NotesPanel
+
+Markdown notes per bubble with debounced autosave. The "Summarize" button runs Claude (`claude -p`) over the recent messages and the last 60 KB of the PTY buffer (90 s timeout) and writes back a 3-section summary: what we were doing / where we left off / next steps. Useful before a `/clear` or when handing off.
+
+### Git tab
+
+GitHub Desktop-style layout. The top bar carries the current branch dropdown (searchable, Local/Remote), a sync button that adapts to the state (`Publish` / `Push` / `Pull` / `Sync` / `Fetch`), and a `⋯` menu for merge, rename, view PRs. Three sub-tabs:
+
+- **Changes** — file list with amber/green dots from `git status --porcelain`; inline diff per file; sticky Commit-with-AI box at the bottom. Cursor-style review (opt-in setting) adds per-hunk accept / revert.
+- **History** — paginated log; cherry-pick to another branch, revert, reset to here (hard requires typing `HARD RESET`), copy SHA.
+- **PRs** — list with checkout; `CurrentPrBanner` on the right rail when the branch has an open PR.
+
+A floating `GitBusyToast` appears while a git op is in flight. An `OpInProgressBanner` detects cherry-pick / merge / revert in progress and offers Continue / Abort / "Resolve in Changes".
+
+### Dev server per bubble
+
+The **Server** tab manages gulp / Vite / Spring Boot / etc. inside the worktree. Single or dual mode (frontend + backend in parallel, persisted per bubble). Each slot receives a free random port injected as env vars (`PORT`, `SERVER_PORT`, `JAVA_TOOL_OPTIONS=-Dserver.port=…`, `API_PORT`, `BACKEND_URL`, etc.) covering most frameworks. In dual, backend boots first; frontend follows when backend reports `running`. Sessions persist to disk (`~/.eco/dev-sessions.json`) and re-adopt across backend reloads via pgid.
+
+> **Rule for commands**: do NOT hardcode ports. Use the env vars Eco injects.
+
+### Browser per bubble
+
+Real Chromium `<webview>` (Electron) or `<iframe>` (web dev). Per-bubble cookies via partition; persisted URL + zoom. DevTools available via right-click → Inspect. Auto-navigates to the dev server URL when it goes `running`.
+
+### Voice
+
+Always on. The wake prefix is mandatory (`Eco` alone is too common in natural Spanish), but tolerant: `Hey Eco`, `Oye Eco`, `Hola Eco`, `Ok Eco`, `Che Eco`, etc. Parser accepts fillers, conjugations, and free word order. In the `.dmg`, voice runs **on-device** through Apple Speech via a tiny Swift CLI — audio never leaves the Mac. In browser dev, it uses Web Speech API; the Python listener with wake word + Whisper is also available as an option.
+
+### Archiving
+
+When a bubble is no longer active but you don't want to lose its state, archive it. Eco kills the PTY and dev servers but **keeps the worktree and branch alive**. Restore from the Archived screen at any time; the bubble reappears with its tree intact. Permanent delete is a separate action and removes the worktree.
+
+### Dashboard
+
+Three views: **Grid** (Liquid Glass cards), **Kanban** (by state: Active / Waiting / Inactive / Shell open / Done / Error), **Graph** (nodes floating around the Eco hub with data particles when an agent is running/thinking/executing). The right rail shows the listening waveform, the connected Claude CLI, and quick stats.
+
+### Dock (opt-in)
+
+macOS-style dock of bubbles in the left sidebar with single-target hover magnification and an accent bar on the side when there's activity.
+
+### Onboarding
+
+First launch shows a 9-step wizard: welcome, language, appearance (theme + accent), Claude auth (CLI or API key), GitHub PAT (optional), workspace folder, Obsidian vault (optional), voice autostart, done. Skippable per step. The `eco.onboarded` flag prevents re-showing.
+
+---
+
+<a id="voice"></a>
+## 8. Voice commands cheatsheet
+
+Wake prefix is mandatory. Accepted: `Hey | Oye | Hola | Ok | Okey | Okay | Che | Epa | Oi` + `Eco | Jarvis | Ekko | Hector`.
+
+| Domain | Sample commands |
 |---|---|
-| `npm run web` | Backend + Vite (abrís en navegador `http://localhost:5173`) |
-| `npm run dev:app` | Backend + Vite + Electron (ventana nativa con DevTools + hot-reload) |
-| `npm run dmg` | Empaqueta `.dmg` para macOS (alias de `dist:mac`) |
-| `npm run dev` | Igual que `web` — backend + Vite en paralelo |
-| `npm run dev:backend` | Solo backend (puerto 7050) |
-| `npm run dev:frontend` | Solo Vite (puerto 5173) |
-| `npm run dev:electron` | Solo Electron (espera Vite up) |
-| `npm run typecheck` | TS de ambos workspaces |
-| `npm run test:security` | Suite de tests de seguridad del backend |
-| `npm run listener:setup` | Crea venv + instala deps + baja modelos |
-| `npm run listener` | Arranca el sidecar Python |
+| Navigation | `Eco dashboard`, `Eco inicio`, `Eco atras`, `Eco ajustes`, `Eco archivos`, `Eco historial`, `Eco estado`, `Eco ayuda` |
+| Agents | `Eco abrir <name>`, `Eco renombrar <name>`, `Eco cerrar`, `Eco ir <name>`, `Eco siguiente`, `Eco anterior`, `Eco pausar`, `Eco continuar` |
+| Tabs | `Eco chat`, `Eco terminal`, `Eco git`, `Eco plan`, `Eco navegador`, `Eco archivos`, `Eco notas` |
+| Git sub-tabs | `Eco cambios`, `Eco historial`, `Eco prs` |
+| Scrolling | `Eco scroll abajo`, `Eco scroll arriba`, `Eco al final` |
+| Dialogs | `Eco si`, `Eco no`, `Eco acepta`, `Eco cancela` |
+| Server | `Eco iniciar servidor`, `Eco detener servidor`, `Eco reiniciar servidor` |
+| Misc | `Eco repetir`, `Eco silencio`, `Eco hablar`, `Eco rapido`, `Eco lento`, `Eco oscuro`, `Eco claro`, `Eco guardar en obsidian` |
 
-### Build / Packaging
+The full alias table and parser rules live in `frontend/src/lib/meta-commands.ts`.
 
-| Comando | Descripción |
-|---|---|
-| `npm run build:backend` | TS → `backend/dist/` |
-| `npm run build:frontend` | Vite build → `frontend/dist/` (con manualChunks vendor-react/motion/xterm) |
-| `npm run build:backend-deps` | `npm install --omit=dev` en `backend/` + chmod node-pty |
-| `npm run build:all` | Encadena los 3 anteriores |
-| `npm run dmg` | Alias de `dist:mac`: build all + electron-builder → `.dmg` arm64 (~112 MB) |
-| `npm run dist:mac` | `.dmg` arm64 en `release/` |
+### Voice routing inside a bubble
 
-Para usar la app empaquetada: arrastrá `release/mac-arm64/Eco.app` a
-`/Applications/` (o abrí el `.dmg`). Si querés actualizar después de
-rebuildear: `rm -rf /Applications/Eco.app && ditto release/mac-arm64/Eco.app /Applications/Eco.app && xattr -dr com.apple.quarantine /Applications/Eco.app`.
-
-### Comandos de voz/texto en la app (prefijo `Hey Eco`)
-
-**Wake prefix obligatorio**: una palabra de invocación + `Eco` (o
-`Jarvis`/`Ekko`/`Héctor`). «Eco» solo no despierta — es muy corto y
-genera falsos positivos en español natural ("el **eco** del valle",
-"**eco**-amigable"). Aceptados:
-
-- `Hey Eco …` · `Oye Eco …` · `Hola Eco …`
-- `Ok Eco …` · `Okey Eco …` · `Okay Eco …`
-- `Che Eco …` · `Epa Eco …` · `Oi Eco …`
-
-En las tablas de abajo, donde aparece `Eco …` leelo como `Hey Eco …` (o
-cualquier otro prefijo aceptado).
-
-El parser tolera relleno discursivo, conjugaciones y orden libre dentro
-de cada frase:
-
-- **Leading fillers**: `me`, `te`, `por favor`, `porfa`, `necesito`,
-  `quiero`, `podes`, `ahora`, `ya`, etc. se saltean después del wake.
-- **Match de keyword**: si el primer token no es un alias, escanea todos
-  los tokens hasta encontrar uno (ej: «Hey Eco ayudame y **abrí** Aditum»).
-- **~200 alias** incluyen variantes como `entrar/entrame`, `abrime`,
-  `creame`, `lanzá`, `matar`, `pasame`, etc.
-
-**Navegación**
-
-| Comando | Acción |
-|---|---|
-| `Eco dashboard` / `Eco inicio` / `Eco atrás` | Volver al inicio |
-| `Eco ajustes` / `Eco archivos` / `Eco historial` | Cambiar de sección |
-| `Eco estado` | Overlay con todas las agentes + actividad |
-| `Eco ayuda` | Lista todos los comandos |
-
-**Agentes**
-
-| Comando | Acción |
-|---|---|
-| `Eco abrir <nombre>` · `Eco entrame en <nombre>` | Si existe, foco; sino crea |
-| `Eco renombrar <nombre>` / `Eco ponele <nombre>` | Renombra la agente activa |
-| `Eco cerrar` / `Eco matá esto` | Cierra la agente activa (confirma si está corriendo) |
-| `Eco ir <nombre>` / `Eco pasame a <nombre>` | Fuzzy match → focus |
-| `Eco siguiente` / `Eco anterior` | Navega entre agentes |
-| `Eco pausar` / `Eco continuar` | Toggle pausa de la activa |
-
-**Dentro de una agente**
-
-| Comando | Acción |
-|---|---|
-| `Eco chat` / `Eco terminal` / `Eco archivos` / `Eco plan` / `Eco navegador` | Cambia de pestaña |
-| `Eco scroll abajo` / `Eco arriba` / `Eco al final` | Scroll del panel activo |
-| `Eco repetir` / `Eco releer` | Re-lee el último mensaje del agente |
-| `Eco sí` / `Eco no` / `Eco acepta` / `Eco cancela` | Responde a diálogos de confirmación |
-| `Eco iniciar servidor` / `Eco levantar servidor` | Arranca dev server (respeta dual mode) |
-| `Eco detener servidor` / `Eco parar servidor` | Para dev server |
-| `Eco reiniciar servidor` / `Eco reiniciar` | Reinicia dev server |
-| `Eco activar remote control` / `Eco activar remote` | Activa Claude remote control en el agente |
-| `Eco desactivar remote` | Desactiva Claude remote control |
-| `Eco guardar en obsidian` / `Eco guardar nota` | POST a Obsidian con la conversación actual |
-
-**Voz y apariencia**
-
-| Comando | Acción |
-|---|---|
-| `Eco silencio` / `Eco hablar` | Toggle TTS |
-| `Eco rápido` / `Eco lento` / `Eco normal` | Velocidad de voz |
-| `Eco fuerte` / `Eco bajo` | Volumen de voz |
-| `Eco oscuro` / `Eco claro` / `Eco sistema` | Cambia tema |
-
-**Ruteo de voz dentro de una agente**:
-
-- Sin wake (`Hey Eco`, etc.), en pestaña **Chat** → mensaje al agente
-  como prompt.
-- Sin wake, en pestaña **Terminal → Shell** → se tipea al PTY con `\n`
-  (como si lo hubieras hablado al shell).
-- Con wake (`Hey Eco …`, `Oye Eco …`, etc.) → comando meta global, no
-  importa la pestaña.
-
-Al detectar el wake prefix, el rail del Dashboard muestra un
-**ListeningWave** animado (sin beep — solo visual).
+- No wake, in **Chat** → message to the agent.
+- No wake, in **Terminal → Shell** → typed straight to the PTY with `\n`.
+- With wake (`Hey Eco …`) → meta command, tab-independent.
 
 ---
 
-## Agentes, terminales y worktrees
+<a id="skills"></a>
+## 9. Skills
 
-### Worktree por agente
+Eco scans for Claude skills, commands, and sub-agents at:
 
-Cuando una agente tiene workspace que es un repo git, al primer
-prompt / shell / abrir Files tab, el backend crea automáticamente:
-
-```
-~/.eco/worktrees/<bubbleId>   ← worktree (checkout)
-                              ← sobre rama eco/<short>
-```
-
-El agente Claude, el PTY de la pestaña Shell, el polling de `git
-status`, y el `git diff` operan dentro del worktree. Dos agentes sobre
-el mismo repo trabajan aisladas.
-
-**Al cerrar la agente** (manualmente o por meta-command):
-- Si la agente está thinking / executing / running / con PTY abierto,
-  aparece un modal pidiendo confirmación.
-- Al confirmar: PTY se mata, worktree se borra (`git worktree remove
-  --force`), **la rama `eco/<short>` queda viva** en el repo padre para
-  que puedas mergear o revisar.
-
-Branches huérfanas: `git -C <repo> branch | grep eco/` para listarlas.
-
-### Terminal real (PTY)
-
-La pestaña **Terminal** tiene tres sub-vistas:
-
-| Sub-tab | Qué hace |
-|---|---|
-| **Shell** | PTY real (zsh) por agente. Por default lanza `claude` al iniciar (configurable con `ECO_PTY_AUTOCLAUDE=0`). Sobrevive si salís de la agente: la conexión se reanuda con replay del últimos 128KB de output. La voz se rutea acá si estás en este sub-tab. |
-| **Agente** | Read-only. Muestra todos los `Bash` que ejecutó el agente Claude en esta agente, con su comando, output, y estado. |
-| **Comandos** | Legacy: terminal simulado one-shot vía `/shell`. Sigue ahí por compatibilidad. |
-
-### Pestaña Archivos (explorador + editor)
-
-Cada agente tiene una tab **Archivos** tipo mini-VS-Code dentro de su
-worktree. Layout split redimensionable: árbol a la izquierda, editor
-con tabs de archivos abiertos a la derecha.
-
-- **Árbol lazy gitignore-aware**: el backend usa `git ls-files --cached
-  --others --exclude-standard` (rápido, respeta `.gitignore`
-  automáticamente) o un walker manual con `EXCLUDED_DIRS` si no es
-  repo git. Cap de 5000 entradas por bubble; se expande on-demand al
-  click en una carpeta. Botones de toolbar para Expandir todo /
-  Colapsar todo / Refrescar.
-- **Iconos por tipo de archivo**: ~30 extensiones con color propio
-  (TS/JS/TSX azul, JSON ámbar, CSS azul fuerte, MD gris, PY azul, Rust
-  marrón, Go cian, etc.). Filenames especiales (`Dockerfile`,
-  `.gitignore`, `.env*`) con su color. Carpetas con glyph claramente
-  distinto entre cerrada y abierta (tab + cuerpo cerrado vs trapezoide
-  con "boca"). Chevron lateral rota como indicador adicional.
-- **Editor CodeMirror 6**: el editor del bundle (~138 KB gzip / +1.5
-  MB en `.dmg`, vs ~15 MB de Monaco). Syntax highlighting eager para
-  TS/JS/JSON/CSS/HTML/MD; el resto se descarga lazy vía
-  `@codemirror/language-data`. Theme propio derivado de los tokens de
-  Eco con fondo neutro (negro puro en dark / blanco puro en light)
-  para mantener legibilidad sin importar qué theme tenga la app.
-- **Save explícito** con `Cmd+S` + dirty indicator: cambios en memoria
-  se marcan con dot ámbar y nombre en bold. El endpoint `POST
-  /file/save` usa `expectedMtime` para detectar conflicts cuando otro
-  proceso (el agente, un editor externo) modificó el archivo por
-  debajo, y el frontend abre un diálogo Recargar / Sobrescribir.
-- **Cambios sin commit visibles desde el árbol**: combinamos editor
-  dirty + git status. Archivos en cualquiera de los dos estados se ven
-  ámbar; las carpetas ancestras muestran un dot atenuado. Apenas
-  commitéas, `git status` se limpia y los dots se apagan solos.
-- **Find-in-file** (`Cmd+F` nativo de CodeMirror) con panel estilizado
-  a los tokens de Eco. **Quick Open** (`Cmd+P`) con fuzzy casero que
-  filtra el árbol completo (cacheado tras la primera apertura).
-  **Búsqueda global** (`Cmd+Shift+F`) con ripgrep (fallback a
-  `grep -rn`), timeout 8s, cap 500 hits, navega a la línea/columna
-  exacta del match al hacer click.
-- **Enviar a Claude**: al seleccionar texto, aparece un botón flotante
-  cerca del cursor. Click → switch a la pestaña Terminal y escribe el
-  snippet (path + bloque de código fenced) al PTY del agente, sin
-  trailing newline para que vos completes la pregunta y presiones
-  Enter para mandar.
-- **Preview de imágenes**: PNG/JPG/GIF/WEBP/SVG/ICO/BMP se renderizan
-  inline en el editor vía `GET /file/raw` (validación de extensión
-  whitelist + cap 5 MB).
-- **Estado persistente y multi-detail keep-alive**: archivos abiertos,
-  archivo activo, carpetas expandidas y ancho del splitter se guardan
-  en `eco.files.*.<bubbleId>`. La pestaña queda montada al cambiar
-  entre tabs (igual que Browser y Server), así el cursor del editor,
-  scroll y selección se preservan. Cleanup en `useBubbles.removeBubble`.
-- **Deep-link desde Git → Cambios**: cada fila tiene un botón "Abrir
-  en Archivos" — switchea a la tab Archivos, expande los dirs
-  ancestrales, scrollea el árbol hasta el archivo y lo abre en el
-  editor seleccionado.
-- **Comando de voz**: `Eco archivos` abre esta pestaña (aliases
-  `explorador`, `árbol`, `arbol`, `files`). `Eco cambios` y `Eco git`
-  siguen yendo a Git → Cambios.
-
-### Git → Cambios (review estilo Cursor)
-
-- La lista de archivos viene de `git status --porcelain=v1
-  --untracked-files=all` polleado cada 4-6 s. `useGitChanges` cachea
-  por bubble en module-scope (stale-while-revalidate). El polling se
-  pausa con `document.visibilityState !== 'visible'` y se dispara
-  on-demand via `eco:git_refresh` después de cada acción que toca git.
-- El backend reporta por archivo `{ change, unstaged }` donde
-  `unstaged` parsea el segundo carácter de `XY` del porcelain (cambios
-  en el work tree sin stagear). El dot ámbar/verde se basa en eso —
-  es la verdad absoluta, no depende solo del state local.
-- Click en un archivo → diff desplegable inline (sin modal): card que
-  se expande hacia abajo y muestra el diff side-by-side de 4 columnas
-  (lineNo viejo · texto viejo · lineNo nuevo · texto nuevo), hunks con
-  header azul, adds verde / dels rojo / contexto neutral.
-- **Botón "Rechazar todos"**: descarta TODOS los cambios sin commit
-  del worktree en un solo paso (con diálogo de confirmación). Al lado
-  del "Aceptar todos" en el header del panel.
-- **Búsqueda** en el diff: filtra hunks y resalta matches con `<mark>`.
-
-### Review estilo Cursor (modo opcional)
-
-Toggle: **Ajustes → General → "Revisar cambios estilo Cursor"**
-(`eco.agent.review_mode`, default OFF). Cuando se activa, el flujo se
-vuelve revisión-después-de-aceptar tipo Cursor / PR review:
-
-- El agente sigue editando libremente al worktree (sin pausa). El
-  comportamiento del `canUseTool` no cambia — sigue siendo
-  `permissionMode: 'acceptEdits'` con gate sólo de workspace bounds.
-- **Banner persistente** en la pestaña Archivos: `N cambios pendientes
-  — [Aceptar todos]`.
-- **Dot ámbar** en archivos con cambios sin stagear; **dot verde** en
-  los ya aceptados.
-- **Diff inline al expandir** una card del archivo, con toolbar arriba:
-  - **Aceptar archivo** → `POST /file/accept` → `git add <path>` → el
-    archivo pasa al index, el diff `vsIndex` queda vacío.
-  - **Descartar archivo** → `POST /file/discard` → distingue 3 estados:
-    en HEAD (`git checkout HEAD --`), staged-pero-nuevo (`git rm -f`),
-    untracked puro (`unlinkSync`).
-  - **Aceptar / Rechazar por hunk** (botones en el header de cada
-    hunk) → `POST /file/accept-hunk` (git apply --cached) o
-    `/file/revert-hunk` (git apply -R). Para archivos untracked con
-    un solo hunk, fallback a `git add` o `unlink` respectivamente.
-  - **Toggle "Nuevos / Todos"**: alterna el scope del diff entre
-    working tree vs index (sólo lo no aceptado) y working tree vs
-    HEAD (todo lo pendiente de commit incluyendo lo ya aceptado).
-- **Auto-invalidación**: si el agente vuelve a editar un archivo ya
-  aceptado, `useReviewState` lo trackea por timestamp y la próxima vez
-  que se procese `bubble.messages`, si hay un message con
-  `createdAt > acceptedAt`, el archivo se desmarca y vuelve a pendiente.
-- **`CommitWithAI` limpia** el state local del review al success
-  (`review.clearAll()`) — todo lo commiteado pasa a aceptado implícito.
-
-El estado persiste por bubble en `eco.review.accepted.<bubbleId>` como
-`{ [path]: timestamp }`. Sobrevive a unmount/remount del componente y a
-recargas de la app. Migración del formato boolean viejo a timestamp
-automática en `load()`.
-
-### Branch picker + Commit con AI
-
-En el sidebar derecho de cada agente (sección **Git**, debajo de
-"Próxima acción"):
-
-- **BranchPicker**: muestra rama actual + ↑ahead/↓behind. Botones
-  Fetch/Pull. Botón ✎ para renombrar la rama (útil para cambiar
-  `eco/<short>` a algo descriptivo). Click → expande: buscador, tabs
-  Local/Remoto, lista con SHA + subject + ↑↓. Checkout de remoto
-  trackea local automáticamente con `git checkout -t`.
-- **Commit con AI**: input opcional de contexto → "Generar mensaje" →
-  backend corre `claude -p` con `git status` + `git diff` + `git log
-  --oneline -10` y pide SOLO el mensaje del commit → preview editable
-  en textarea → "Hacer commit" ejecuta `git add -A && git commit -F -`
-  (mensaje vía stdin). Botón "Regenerar" repite la sugerencia. No hace
-  push.
-
----
-
-## Dashboard
-
-Tres vistas con toggle (`IconGrid` · `IconColumns` · `IconGraph`):
-
-- **Grid**: cards estilo Liquid Glass (blur + saturate + inset
-  highlight), entrada en cascada (stagger 30ms), `whileHover translateY
-  -1` para lift sutil, `AnimatePresence layout` para tweens en
-  reordenamientos.
-- **Kanban**: columnas por estado (Activos, En espera, Inactivos, Con
-  shell abierto, Terminados, Con error) con `KanbanCard` glass-effect
-  intensity:`subtle` y border accent cuando el agente está corriendo.
-- **Graph**: nodos flotando (`motion.g animate y:[…]` con fase
-  desfasada por índice), respiración del radio cuando están activos,
-  **partículas de datos** que viajan desde el hub Eco al nodo en loop
-  cuando está running/thinking/executing, líneas con `stroke-dasharray`
-  animado por keyframe `eco-flow`.
-- **DashboardRail** (lado derecho): incluye `ListeningWave` arriba del
-  card "Claude CLI" — barras animadas estilo waveform cuando hay wake
-  prefix detectado.
-
-`glassEffect(t, { intensity, hovered })` en `design/primitives.tsx`
-combina `backdrop-filter blur(18–32px) saturate(140–180%)`, background
-semi-transparente con tinte del tema y un inset highlight de 1px arriba
-que simula el catch-light estilo Apple — disponible para usar como
-spread en cualquier card de la app.
-
----
-
-## Navegador interno (por-agente)
-
-Cada conversación tiene su propia pestaña **Navegador** con
-`SmartBrowserView` que renderiza:
-
-- **`<webview>` real Chromium** en la app empaquetada Electron — sin
-  restricciones de `X-Frame-Options` / CSP frame-ancestors, con DevTools
-  propios (click derecho → Inspect), cookies persistidas vía partition
-  `persist:eco-browser`, y user-agent Chrome 131 puro (sin "Electron"
-  en el string → Google deja de marcarte como bot).
-- **`<iframe>` fallback** en web puro (dev). Sujeto a SOP — sitios con
-  XFO/CSP no cargan; abrilos en el sistema con el botón ↗.
-
-`SmartBrowserView` crea el `<webview>` **imperativamente** con
-`document.createElement` porque React no aplica atributos al elemento
-custom de manera fiable. Setea `allowpopups`, `partition`, `useragent`
-y `src` ANTES del `appendChild` — Electron monta el WebContents cuando
-ve el elemento en el DOM con `src` presente.
-
-**Webview persistente**: el webview se crea UNA SOLA VEZ al montar el
-panel. Cuando cambia la URL se navega vía `setAttribute('src', …)`
-en el webview existente — sin destruir y recrear (eso causaba reloads
-constantes con re-renders del padre).
-
-URL y zoom persistidos por-bubble en localStorage
-(`eco.browser.url.<bubbleId>` + `eco.browser.zoom.<bubbleId>`).
-`KeepAliveBrowser` wrapper preserva el state al cambiar de tab dentro
-de la conversación.
-
-### Plataforma
-
-`lib/platform.ts` exporta:
-
-- `detectRuntime()` → `web` · `electron` · `tauri` · `capacitor-ios` ·
-  `capacitor-android`
-- `canEmbedArbitrarySites()` → `true` en Electron/Tauri, `false` en web
-- `getTopInset()` → 36px en Electron (reserva para traffic lights mac)
-- `runtimeLabel()` → string legible para mostrar al usuario
-
----
-
-## Dev server por agente
-
-Pestaña **Server** dentro de cada conversación con control completo:
-start / stop / restart, logs en xterm.js (ANSI fiel), preset por
-workspace, dual mode (frontend + backend en paralelo) con auto-port.
-
-**Single vs dual mode**: por default cada conversación tiene UN slot
-('main'). Activando "Frontend + Backend en paralelo" (persistido en
-`eco.dev.dual.<bubbleId>`) abrís un segundo slot — Eco asigna puerto
-distinto a cada uno, los logs viven separados, podés minimizar uno
-para dar espacio al otro.
-
-**Auto-port**: cada slot recibe un puerto libre random vía
-`net.createServer().listen(0)`. Inyectado como env vars cubriendo casi
-todos los frameworks:
-
-- Backend slot: `PORT`, `SERVER_PORT`, `HTTP_PORT`,
-  `JAVA_TOOL_OPTIONS=-Dserver.port=<port>`, `VITE_PORT`,
-  `NEXT_PUBLIC_PORT`, `BROWSER_SYNC_PORT`, `GULP_PORT`,
-  `WEBPACK_DEV_SERVER_PORT`.
-- Frontend slot (en dual): todo lo anterior para su propio puerto, +
-  `API_PORT`, `BACKEND_PORT`, `BACKEND_URL`, `VITE_API_PORT`,
-  `NEXT_PUBLIC_API_PORT` apuntando al puerto del backend.
-
-Implicancia: los comandos NO deben hardcodear puertos. `./mvnw
-spring-boot:run` (no `-Dserver.port=8081`), `gulp serve` (no
-`API_PORT=8080 gulp serve`).
-
-**Orden de arranque en dual**: al darle "Iniciar servidor" Eco lanza
-el backend, espera `status: running` (hasta 90s), recién después
-larga el frontend — eso evita ECONNREFUSED del proxy frontend cuando
-el backend tarda en bindear.
-
-**Preset por workspace** (`eco.dev.workspace_defaults.<path>`): botón
-"Guardar como default del proyecto" en la sección Configuración del
-panel. Conversaciones nuevas en ese workspace heredan
-automáticamente `{dual, main, frontend, backend}`.
-
-**Persistencia a disco** (`~/.eco/dev-sessions.json`, chmod 600): cada
-cambio de estado serializa la session. Al boot Eco probe `process.kill
-(pgid, 0)` para cada session; si el process group sigue vivo, lo
-**re-adopta** con status `running`. Eso significa que reload del
-backend (tsx watch en dev, .app reabierta en prod) NO mata tus
-servers ni te deja sin handle para stop/restart. Limitación: el log
-buffer viejo se pierde — no podemos re-attachar stdout de un proceso
-detached ya corriendo.
-
-**Symlinks de install**: el worktree comparte `node_modules`,
-`vendor`, `.venv` del repo padre vía symlinks para que `gulp`/`vite`/
-etc. ejecuten sin reinstalar.
-
-**Endpoints**:
-
-- `POST /dev/start` `{workspace, bubbleId, command, role}` — arranca
-- `POST /dev/stop` `{bubbleId, role}` — stop por process group
-- `POST /dev/restart` `{bubbleId, role}` — kill + relaunch
-- `GET /dev/status?bubbleId=<id>&role=<role>` — snapshot de una session
-- `GET /dev/logs?bubbleId=<id>&role=<role>` — ring buffer 64KB
-- `GET /dev/active` — lista todas las sessions vivas (cualquier bubble,
-  cualquier role). El Dashboard la usa para sembrar el indicador del
-  nodo al montar.
-
----
-
-## Dock estilo macOS (opt-in)
-
-Activable desde **Ajustes → General → "Dock de agentes"** (default ON).
-
-Vive en el `AppSidebar` izquierdo (64px wide), debajo de los ítems de
-navegación. Cada agente se renderiza como un ícono rounded-square 36px:
-
-- Avatar con el color accent de la agente + inicial del título.
-- **Magnificación on hover** (single-target, no afecta vecinos):
-  `whileHover scale: 1.45` con `transformOrigin: left center` para que
-  crezca hacia el canvas y no contra el borde.
-- Status dot top-right cuando está running/thinking/executing (pulsa)
-  o cuando tiene un PTY abierto.
-- Dot accent al costado derecho cuando hay actividad — "conectado a
-  Eco".
-- Tooltip a la derecha con título + estado.
-
-`overflow: visible` global para que el zoom no genere scrollbar parásita.
-
----
-
-## Auth, cuenta y foto de perfil
-
-### Flujo de registro
-
-1. **AuthScreen** muestra `RegisterView` si no hay usuario en
-   `~/.eco/user.json`.
-2. El usuario ingresa username + PIN.
-3. Backend genera frase BIP39 de 12 palabras, escribe `user.json` con
-   `pinHash` y `recoveryHash` (argon2id), responde con la frase y un
-   session token.
-4. **Importante**: el frontend **no transiciona a "authenticated"** acá.
-   Muestra la frase en `ShowRecoveryView` con un checkbox "Guardé la
-   frase". Recién al confirmar dispara `refresh()` y entrás a la app.
-5. Si refrescás la página antes de confirmar, el token ya está en
-   localStorage y la próxima vez entrás directo (pero la frase ya la viste).
-
-### Menú de cuenta
-
-Click en el avatar abajo a la izquierda del `AppSidebar`:
-
-- Avatar muestra la **foto de perfil** si la subiste, o la **inicial**
-  del username.
-- Popover con tres opciones:
-  - **Cambiar foto** (`+` arriba del avatar grande) — abre file picker.
-    Se redimensiona a 128×128 JPEG con canvas (~5-8KB) y se guarda en
-    `localStorage`. Botón `×` para quitarla.
-  - **Bloquear pantalla** — invalida sesión local y server, vuelve al
-    `LoginView` pidiendo PIN. El username y la foto quedan.
-  - **Cerrar sesión y eliminar usuario** — abre modal de confirmación
-    con PIN. Si valida, `DELETE /auth/user` borra `~/.eco/user.json`.
-    Permite empezar desde cero con otra cuenta.
-
----
-
-## Skills picker
-
-Botón al lado de la pestaña **Plan** en cada agente. Muestra count de
-skills disponibles.
-
-El scanner del backend ahora incluye:
-
-- `~/.claude/skills/` (user-level SKILL.md)
-- `~/.claude/commands/` (user-level slash commands, ej: `kb.md`,
-  `save-session.md`)
-- `~/.claude/agents/` (user-level sub-agents)
-- `<workspace>/.claude/{skills,commands,agents}/` (project-level —
-  prioridad sobre user)
+- `~/.claude/{skills,commands,agents}/` (user-level)
+- `<workspace>/.claude/{skills,commands,agents}/` (project-level — wins over user)
 - `~/.claude/plugins/marketplaces/<m>/plugins/<p>/{skills,commands,agents}`
-- `~/.claude/plugins/cache/<m>/<p>/<version>/{skills,commands,agents}`
-  (es donde Claude Code expande los plugins activos)
+- `~/.claude/plugins/cache/<m>/<p>/<version>/{skills,commands,agents}` (active plugins)
 
-Click en una skill → manda `/<name>` al chat (Claude lo resuelve como
-slash command).
+The **Skills** picker next to the Plan tab shows the count and lets you click a skill to send `/<name>` to the agent.
 
 ---
 
-## Variables de configuración
+<a id="privacy"></a>
+## 10. Privacy & security
 
-### Backend (`backend/.env`)
+- **Audio never leaves your machine.** STT is on-device (Apple Speech in the `.dmg`, or `openwakeword` + `faster-whisper` locally in browser dev). TTS is Piper or `macOS say` — both local.
+- **All state on disk is `chmod 600`**: `~/.eco/token`, `~/.eco/user.json`, `~/.eco/api-key`, `~/.eco/github.json`, `~/.eco/dev-sessions.json`.
+- **No telemetry.** The only external calls are the Anthropic API (when the active agent needs it) and a one-shot validation when you save your API key or a GitHub PAT.
+- **Local auth**: PIN (argon2id) + BIP39 recovery phrase shown pre-authentication. No external auth server.
+- **Bind 127.0.0.1 only.** Host check, origin whitelist, `X-Eco-Client: 1` required header, in-memory session token TTL 1 h.
+- **Filesystem boundary**: `realpathSync` + workspace whitelist + path-traversal check on every endpoint that touches files.
+- **Git op safety**: SHA / branch / tag names validated against shell metacharacters; reset hard pre-checks lost commits and requires `force: true`.
 
-| Variable | Default | Descripción |
-|---|---|---|
-| `ECO_WORKSPACES` | `~/projects/eco-test` | Workspaces autorizados (CSV). Editables desde Ajustes |
-| `ECO_HOST` | `127.0.0.1` | Bind interface (no cambiar) |
-| `ECO_PORT` | `7000` (override en scripts: `7050` dev, `7100` empaquetado) | Puerto HTTP/WS |
-| `ECO_ALLOWED_ORIGINS` | `tauri://localhost,…` | Orígenes WS permitidos |
-| `ECO_MODEL` | `claude-sonnet-4-5-20250929` | Modelo de Claude |
-| `ECO_SKILL_SOURCES` | `user,project` | Skills de Claude a cargar |
-| `ECO_RATE_LIMIT` | `10` | Prompts/minuto |
-| `ECO_PROMPT_TIMEOUT_MS` | `600000` | Timeout absoluto de prompt |
-| `ECO_PTY_AUTOCLAUDE` | `1` | Auto-launch de `claude` en cada PTY nuevo. `0` para desactivar |
-| `CLAUDE_CLI_PATH` | `~/.local/bin/claude` | Ruta del binario Claude |
-| `ANTHROPIC_API_KEY` | (opcional) | Solo si no usás `claude login` ni guardás la key en `~/.eco/api-key` |
-| `ECO_DEVTOOLS` | (vacío) | `1` para auto-abrir DevTools al lanzar Electron (dev y prod). Default: cerrado — abrir con `Cmd+Opt+I` a demanda |
-
-### Frontend (`frontend/.env.local`)
-
-| Variable | Default | Descripción |
-|---|---|---|
-| `VITE_ECO_TOKEN` | (requerido) | Bearer token, copiar de `~/.eco/token` |
-| `VITE_ECO_BACKEND` | (vacío = relativo) | URL del backend; relativo usa Vite proxy |
-
-### Listener (`listener/`, env vars)
-
-| Variable | Default | Descripción |
-|---|---|---|
-| `ECO_BACKEND` | `http://127.0.0.1:7000` | URL del backend |
-| `ECO_TOKEN_FILE` | `~/.eco/token` | Archivo del Bearer token |
-| `ECO_WAKE_MODEL` | auto (`hey_eco` si existe, sino `hey_jarvis_v0.1`) | Modelo de wake word |
-| `ECO_WAKE_THRESHOLD` | `0.5` | Score mínimo (0–1) |
-| `ECO_WHISPER_MODEL` | `medium` | `tiny` / `base` / `small` / `medium` / `large-v3` |
-| `ECO_LANG` | `es` | Idioma |
-| `ECO_INITIAL_PROMPT` | (vocabulario Eco + Aditum) | Texto que sesga la transcripción al dominio |
+Run the security suite with `npm run test:security`.
 
 ---
 
-## Endpoints del backend
+<a id="stack"></a>
+## 11. Tech stack
 
-```
-GET   /health                   ← liveness
-GET   /info                     ← workspaces + modelo + voces TTS
-
-POST  /auth/register            ← PIN + username → frase BIP39
-POST  /auth/login               ← PIN → session
-POST  /auth/recover             ← frase + nuevo PIN → nueva frase
-POST  /auth/logout              ← destruye session
-DELETE /auth/user               ← elimina usuario (PIN required)
-GET   /auth/status              ← hasUser + username
-
-GET   /info /workspaces /skills /tts/voices
-POST  /workspaces /shell /tts /voice/transcribed
-DELETE /workspaces /config/api-key
-GET   /config/api-key
-
-GET   /file/changes             ← git status --porcelain (incluye `unstaged` por archivo)
-POST  /file/diff                ← unified diff. Param `vsIndex: bool` →
-                                  true = working tree vs index (review mode),
-                                  false = working tree vs HEAD (default).
-POST  /file/contents            ← contenido completo del archivo (cap 512 KB)
-POST  /file/discard             ← descarta archivo entero (3 estados:
-                                  checkout HEAD / git rm -f / unlinkSync)
-POST  /file/accept              ← `git add <path>` — stagea el archivo entero
-POST  /file/accept-hunk         ← `git apply --cached` — stagea UN hunk
-                                  (fallback a `git add` si archivo untracked)
-POST  /file/revert-hunk         ← `git apply -R` — revierte UN hunk
-                                  (fallback a `unlinkSync` si archivo untracked)
-
-GET   /git/branches             ← list + ahead/behind por bubbleId
-POST  /git/checkout             ← {branch, create?}
-POST  /git/pull                 ← ff-only
-POST  /git/fetch                ← --all --prune
-POST  /git/rename-branch        ← git branch -m
-POST  /git/commit-suggest       ← claude -p sugiere mensaje
-POST  /git/commit               ← git add -A && git commit -F -
-GET   /git/prs                  ← gh pr list (open PRs del repo)
-POST  /git/pr/checkout          ← gh pr checkout <num> (en el worktree)
-GET   /git/pr/current           ← gh pr view (PR de la rama actual, si hay)
-POST  /git/pr/merge             ← gh pr merge {number, method: merge|squash|rebase}
-POST  /git/pr/close             ← gh pr close <num>
-
-POST  /pty/kill                 ← mata PTY + dev servers + worktree + sessions Map (idem /bubble/close)
-POST  /bubble/close             ← cleanup completo al cerrar burbuja
-                                  (PTY + dev servers de los 3 roles + worktree +
-                                  entries del sessions Map en dev-server)
-
-POST  /dev/start                ← arranca dev server {workspace, bubbleId, command, role}
-POST  /dev/stop                 ← detiene server por process group {bubbleId, role}
-POST  /dev/restart              ← kill + relaunch {bubbleId, role}
-GET   /dev/status               ← snapshot {status, url, port, command, ...}
-GET   /dev/logs                 ← stdout + stderr (ring buffer 64KB)
-GET   /dev/active               ← lista de sessions vivas para todos los bubbles
-
-POST  /integrations/obsidian/save-session  ← guarda conversación como nota .md
-
-POST  /tts                      ← síntesis TTS (Piper o macOS say)
-GET   /tts/voices               ← {piper, macsay} disponibles
-
-POST  /voice/transcribe-blob    ← (macOS only) audio/* binary → eco-stt CLI →
-                                  Apple Speech on-device → texto. Renderer
-                                  manda WAV PCM16 16kHz mono cada 4s.
-POST  /voice/transcribed        ← legacy: el listener Python postea texto
-                                  ya transcribido para broadcast vía WS
-
-WS    /ws                       ← Claude SDK stream (Bearer via subprotocol)
-WS    /ws/pty                   ← PTY interactivo (Bearer via subprotocol)
-```
-
-Todos los endpoints requieren `Authorization: Bearer <token>` y
-`X-Eco-Client: 1`. Los endpoints `/auth/*` no requieren `X-Eco-Session`;
-el resto sí (cuando hay usuario registrado).
-
----
-
-## Seguridad
-
-Auditoría inicial pasada · 16 tests automatizados verdes. Capas:
-
-| Capa | Control |
+| Layer | Technology |
 |---|---|
-| Red | Bind 127.0.0.1 + Host check (anti DNS rebinding) + cap 12 conexiones |
-| Auth backend | Bearer token 32B `~/.eco/token` chmod 600 · `timingSafeEqual` |
-| Auth usuario | PIN argon2id + frase BIP39 12 palabras (`~/.eco/user.json` chmod 600) |
-| Sesión | In-memory 1h TTL · header `X-Eco-Session` |
-| CSRF | Origin whitelist + header `X-Eco-Client: 1` requerido |
-| Input | Zod schemas + max 50KB/prompt + rate limit |
-| Filesystem | `realpathSync` + workspace whitelist + path traversal check |
-| Tools Claude | allowlist explícita · MCP `mcp__*` permitidos (lo que el usuario configuró) |
-| Bash | habilitado en el agente con `permissionMode: 'acceptEdits'` · sigue habiendo blacklist de patrones peligrosos |
-| Subproceso | env allowlist (no filtra `AWS_*`, `GITHUB_TOKEN`, etc.) |
-| Errores | sanitizados antes de enviar al cliente · códigos estables traducibles |
-| Git ops | nombres de rama validados con regex anti-injection |
-
-Correr suite:
-
-```bash
-npm run test:security
-```
-
----
-
-## Stack técnico
-
-| Capa | Tecnología |
-|---|---|
-| Empaquetado | **Electron 33** + electron-builder 25 (mac arm64 únicamente · ~112 MB DMG) |
+| Packaging | Electron 33 + electron-builder 25 (mac arm64 only, ~112 MB DMG) |
 | Frontend | Vite 6, React 18, TS 5, Tailwind v4, Motion 11, Radix UI |
-| Navegador interno | `<webview>` Chromium real con UA Chrome 131 + partition persistida |
-| Terminal | xterm.js + addon-fit + addon-web-links + node-pty (PTY real) |
-| Voz STT (.dmg) | Swift CLI + Apple `SFSpeechRecognizer` on-device · captura PCM con Web Audio API → WAV PCM16 |
-| Voz STT (dev opcional) | openwakeword (ONNX local) + faster-whisper (CTranslate2, `medium`) — Python sidecar |
-| Voz TTS | Piper TTS (ONNX local) · macOS `say` con voces Premium/Enhanced (descargables desde Ajustes) |
+| Embedded browser | Chromium `<webview>` with UA Chrome 131 + persisted partition |
+| Terminal | xterm.js + addon-fit + addon-web-links + node-pty (real PTY) |
+| Voice STT (.dmg) | Swift CLI + Apple `SFSpeechRecognizer` on-device · PCM capture via Web Audio API → WAV PCM16 |
+| Voice STT (dev, optional) | openwakeword (ONNX local) + faster-whisper (CTranslate2, `medium`) — Python sidecar |
+| Voice TTS | Piper (ONNX local) + macOS `say` with Premium/Enhanced voices |
+| Editor | CodeMirror 6 with lazy `@codemirror/language-data` packs |
 | Backend | Node 20, Express 4, ws, node-pty, Zod, @node-rs/argon2, bip39, Claude Agent SDK |
-| Tema | Light / dark / system / **AMOLED** con `oklch()` + **12 acentos** + glassEffect helper |
-| i18n | Diccionario custom (TS), bilingüe ES/EN, sin lib externa |
+| i18n | Custom TS dictionary, bilingual ES/EN, no external lib |
+| Theme | Light / dark / system / AMOLED with `oklch()` + accents + `glassEffect` helper |
 
 ---
 
-## Roadmap
+<a id="roadmap"></a>
+## 12. Roadmap
 
-**Hecho ✓**:
+### Done
 
-- Backend funcional con Claude Agent SDK + auto-mode (`acceptEdits`)
-- Hardening de seguridad (16 tests)
-- Frontend rediseñado (Liquid Glass con inset highlight, dark/light/AMOLED, 12 acentos, `glassEffect` helper)
-- Multi-agente Stage Manager con persistencia local
-- **Worktrees git por agente** — aislamiento automático sobre cualquier repo
-- Skills/commands/agents de Claude descubiertos automático (user + project + plugins/cache)
-- **Terminal real con PTY** (node-pty + xterm.js) por agente
-- **PTY persistente** — sobrevive a salir de la agente, reattach con replay buffer 128KB
-- **Auto-launch de `claude`** en cada PTY nuevo
-- **Pestaña Agente** read-only con todos los Bash que ejecutó el agente
-- **Diff side-by-side estilo GitHub** + buscador
-- **Detección de cambios vía `git status`** (no solo tool calls del agente)
-- **BranchPicker** completo: list/checkout/pull/fetch/rename
-- **Commit con AI** con preview editable (`claude -p` → preview → confirm)
-- **Stop button** para interrumpir al agente en pleno trabajo
-- **Confirmación al cerrar agente** si está ocupada
-- Voz "siempre escuchando" con dispatcher tolerante a sinónimos + rellenos
-- **Voz → PTY**: en pestaña Shell, lo que decís se tipea al terminal
-- TTS local con Piper (con rate/volume ajustable por voz)
-- Wake word local con openwakeword + Whisper · pipeline de training "Hey Eco"
-- Workspaces editables desde UI + brand assets
-- **Auth local** con PIN + frase BIP39 mostrada PRE-autenticación
-- **Foto de perfil** subible (canvas → 128px JPEG → localStorage)
-- **Lock screen + delete user** desde el menú de cuenta
-- API key de Anthropic almacenada local con validación
-- i18n bilingüe ES/EN end-to-end (UI + errores del backend con códigos)
-- **MCP del usuario** (`mcp__*` — Notion, Obsidian, Vercel, etc.) habilitados automático
-- Comandos de navegación expandidos (scroll, tabs, sí/no, repetir, ajustes TTS)
-- **ListeningWave** en el rail (reemplaza el beep + pulso anteriores)
-- **Dock estilo macOS** opt-in en el sidebar izq con magnificación single-target + label corto + barra accent
-- **Animaciones en Dashboard**: grid stagger, graph view con nodos flotando + partículas de datos
-- **Kanban view** en el Dashboard (Activos / En espera / Inactivos / Con shell / Terminados / Con error)
-- **Detección de runtime** (`lib/platform.ts`) — `web`/`electron`/`tauri`/`capacitor`
-- **Navegador por-agente** (`BrowserPanel` + `SmartBrowserView`) con DevTools, zoom persistido y webview persistente
-- **Dev server por agente** con `ServerPanel` — start/stop/restart, dual mode (FE+BE),
-  auto-port via env (`SERVER_PORT`, `API_PORT`, `BACKEND_PORT`, etc.) que linkea FE↔BE,
-  preset por workspace, persistencia `~/.eco/dev-sessions.json` con re-adopt por pgid al boot
-- **Comandos de voz para server**: iniciar/detener/reiniciar servidor, activar remote, guardar en obsidian
-- **Pulso animado** del nodo a cada satélite en la vista grafo del Dashboard
-- **TTS dual backend**: Piper (offline) + macOS `say` con voces Apple Premium/Enhanced (Mónica, Paulina, etc.)
-- **Puerto dev 7050** por defecto (evita conflicto con AirPlay Receiver macOS en 7000)
-- **Voz nativa en el .dmg** — Swift CLI `eco-stt` + Apple `SFSpeechRecognizer` on-device
-  - Renderer captura PCM via Web Audio API → WAV PCM16 16kHz mono → `/voice/transcribe-blob`
-  - Backend spawnea el binario universal arm64+x64 (~150KB) bundleado en `Resources/bin/`
-  - 100% offline, audio nunca sale de la Mac
-  - macOS pide permiso Mic + Speech Recognition la primera vez (`extendInfo` en Info.plist)
-- Whisper `medium` por default + `initial_prompt` con vocabulario del producto
-- **Empaquetado Electron 33** — `.dmg` mac, `.exe` NSIS Windows, `.AppImage` Linux
-- **`<webview>` real Chromium** en el navegador interno (sin XFO/CSP, DevTools nativos)
-- **User-Agent Chrome 131** sin "Electron" → Google no marca como bot
-- **Backend en puerto 7100** en empaquetado (coexiste con `npm run dev` en 7000)
-- **Backend sirve frontend como static** + auto-allowlist del propio origen
-- **Safe area top=36px** + traffic light position fijo para mac
-- **PTY cwd fallback** a `$HOME` si workspace no existe (no crash con code=1)
-- **Auto-recovery de worktree conflicts** en `checkoutBranch` (limpia worktrees huérfanos de Eco)
-- **IPC log channel** `eco:renderer-log` → stdout del main process para debug
+- Claude Agent SDK integration with auto-mode (`acceptEdits`)
+- Security hardening (16 automated tests)
+- Liquid Glass redesign (dark / light / AMOLED, multiple accents, `glassEffect` helper)
+- Multi-agent Stage Manager with local persistence
+- Per-agent git worktrees with auto-recovery on conflict
+- Skills / commands / agents discovery (user + project + plugins/cache)
+- Persistent PTY (128 KB replay buffer) + auto-launch of `claude`
+- "Agent" sub-tab read-only with all `Bash` calls the agent ran
+- Branch picker (list / checkout / pull / fetch / rename) + Commit with AI (preview editable)
+- Side-by-side diff (GitHub style) + search
+- Cursor-style post-edit review (opt-in setting)
+- Always-on voice with tolerant dispatcher; voice → PTY in Shell tab; TTS with rate/volume
+- Local wake word with openwakeword + Whisper + custom "Hey Eco" training pipeline (browser dev)
+- **Native voice in the `.dmg`** — Swift CLI `eco-stt` + Apple `SFSpeechRecognizer` on-device. Audio never leaves the Mac.
+- Local auth with PIN + BIP39 phrase, lock screen, delete user, profile photo
+- Anthropic API key local storage with validation
+- Bilingual ES/EN end-to-end (UI + backend error codes)
+- User MCP servers (`mcp__*`) auto-enabled
+- Dashboard with Grid / Kanban / Graph views, animations, satellite pulses
+- macOS-style dock with single-target hover magnification (opt-in)
+- Per-agent browser (`BrowserPanel`) with DevTools, persisted zoom, persistent webview
+- Per-agent dev server (`ServerPanel`) with dual mode, auto-port, workspace presets, on-disk persistence + pgid re-adopt
+- TTS dual backend: Piper (offline) + macOS `say` with Premium/Enhanced voices
+- **Bundle compaction** — `.dmg` 148 → 112 MB; installed app 401 → 296 MB; `backend/node_modules` 165 → 50 MB (multi-arch filters, arm64-only, dead-dep removal)
+- **Live dev logs via WS push** (`dev_log` batched every 80 ms) — no more polling
+- Animations paused when window hidden (`document.visibilityState`); polling pauses too
+- Coalesced WS streaming (`requestAnimationFrame` flush, max 60 setState/s)
+- Memory caps on every unbounded buffer (messages, server logs, devLog, xterm scrollback)
+- Atomic bubble close: PTY + dev servers + `forgetSession` + worktree + localStorage `eco.*.${bubbleId}` cleanup
+- **FilesPanel** with lazy gitignore-aware tree, CodeMirror 6, Quick Open, global search, conflict detection, image preview, deep-link from Git Changes
+- **NotesPanel** with Claude `claude -p` summarizer (3-section markdown, 90 s timeout)
+- **Archiving** of bubbles (keeps worktree + branch, kills PTY/servers)
+- **GitHub PAT** support with validation + masked storage + env injection (`GH_TOKEN`, `GIT_AUTHOR_*`)
+- **GitBusyToast** + improved file change detection (`gitCapture` helper)
+- **OnboardingWizard** — 9-step setup on first run
 
-- **Bundle compacto** — `.dmg` reducido de 148 → 112 MB (−24 %), app
-  401 → 296 MB (−26 %), `backend/node_modules` 165 → 50 MB (−70 %)
-  via filtros multi-arch (sólo `arm64-darwin`), arm64-only,
-  eliminación de `better-sqlite3` muerta, `bip39` wordlist solo
-  inglés, `icon.icns` regenerado y `eco-logo.png` no-usado removido
-- **WebSocket push para logs del dev server** — `dev_log` batcheado
-  cada 80 ms en el backend, consumido por `ServerPanel`/`BrowserPanel`
-  via eco-bus → cero polling (antes ~80 req/min × server)
-- **Polling con `document.visibilityState`** — `useGitChanges` (10 s),
-  `BranchPicker` (20 s), `ClaudeAuthStatusCard` (30 s) pausan
-  cuando la ventana no está visible
-- **Animaciones pausadas en background** — `App.tsx` toggle clase
-  `eco-hidden` en `<body>` + CSS `animation-play-state: paused`
-  cuando `document.hidden`. También respeta `prefers-reduced-motion`
-- **Coalesce de streaming WS** — `useEcoSocket` flush de deltas con
-  `requestAnimationFrame` (max 60 setState/s)
-- **Caps a buffers sin cota** — `bubble.messages` (300 mem / 100
-  disk), `toolCall.output` truncate >10 KB en localStorage,
-  `serverLogs`/`slot.logs` cap 200 KB, `devLog` 200 entries, xterm
-  scrollback (3000/2000)
-- **Endpoint `POST /bubble/close`** — cleanup atómico al cerrar
-  burbuja: PTY + dev servers de los 3 roles + `forgetSession` del
-  Map + worktree + cleanup de keys `eco.*.${bubbleId}` en
-  localStorage
-- **Liberación del ring buffer dev-server al stop** — `s.output`
-  reseteado a `''` para liberar los 64 KB cuando el server queda
-  detenido
-- **Vite code-splitting** — `manualChunks` separa `vendor-react`,
-  `vendor-motion` y `vendor-xterm` en chunks paralelos cacheables
-  (App bundle 891 → 463 KB)
-- **Particle count reducido** — Dashboard graph view 14 → 7
-  partículas
+### Pending
 
-**Pendiente**:
-
-- Code signing + notarización Apple para distribuir `.dmg` firmado
-- Wake word detection en el .dmg (hoy SFSpeechRecognizer transcribe todo y el
-  parser de comandos detecta el prefijo "Eco" en JS — funciona pero no es lo
-  más eficiente)
-- Windows / Linux empaquetado (hoy `electron/package.json` declara sólo
-  `arm64-darwin`; si hace falta cross-platform habría que restaurar targets
-  + portar `eco-stt` Swift a una alternativa por OS)
-- Chat history de larga duración con paginación / lazy load (hoy
-  localStorage cap a 100 mensajes por bubble persiste; en memoria
-  cap a 300)
+- Code signing + Apple notarization for distributable `.dmg`
+- Wake-word detection inside the `.dmg` (today Apple Speech transcribes everything and the JS parser detects the prefix — works but isn't the most efficient)
+- Windows / Linux packaging (currently arm64-darwin only; would require porting `eco-stt` Swift to an alternative per OS)
+- Long-form chat history with pagination / lazy load (today: 100 messages per bubble in localStorage, 300 in memory)
 - Auto-update via `electron-updater` + S3/GitHub Releases
-- License gating con Paddle/LemonSqueezy (cuando vaya a venderse)
-- (Opcional) Compactación automática de bubbles inactivas >30 días al
-  boot, o botón manual "Limpiar burbujas inactivas" en Settings
+- License gating with Paddle / LemonSqueezy (when it goes to sale)
+- (Optional) Automatic compaction of inactive bubbles >30 days at boot, or a manual "Clean inactive bubbles" button in Settings
 
 ---
 
-## Licencia
+<a id="license"></a>
+## 13. License & credits
 
-Privada — no distribuir.
+Private — not for distribution.
 
-## Créditos
-
-Bundle de diseño inicial generado en [claude.ai/design](https://claude.ai/design).
-Logo y brand assets en `frontend/public/brand/`.
-Wake word training basado en [openwakeword](https://github.com/dscripka/openWakeWord) +
-[piper-tts](https://github.com/rhasspy/piper).
-Terminal interactivo vía [node-pty](https://github.com/microsoft/node-pty) +
-[xterm.js](https://xtermjs.org/).
+Initial design bundle generated at [claude.ai/design](https://claude.ai/design). Logo and brand assets in `frontend/public/brand/`. Wake-word training based on [openwakeword](https://github.com/dscripka/openWakeWord) + [piper-tts](https://github.com/rhasspy/piper). Interactive terminal via [node-pty](https://github.com/microsoft/node-pty) + [xterm.js](https://xtermjs.org/). Editor via [CodeMirror 6](https://codemirror.net/).
