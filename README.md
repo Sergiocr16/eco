@@ -82,6 +82,7 @@ Switching between bubbles A → B → A reloads nothing — each open bubble kee
 - **Node 20** (`nvm use 20.20.2` works).
 - **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated (`claude login` or an API key saved from Settings).
 - **git**.
+- **`gh` (GitHub CLI)** — required for the **PRs sub-tab** of the Git panel. Without `gh` installed, the Branches/History sub-tabs work fine but `PRs` shows `pr.gh_missing`. Install with `brew install gh`. The GitHub PAT you save in Settings is injected as `GH_TOKEN` into `gh` calls — it does NOT replace the `gh` binary itself.
 - Optional: **Python 3.10+** if you want the browser-dev wake-word listener. Not needed for the packaged .app.
 - Optional: **Xcode Command Line Tools** if you need to rebuild the Swift voice CLI.
 
@@ -185,7 +186,7 @@ GitHub Desktop-style layout. The top bar carries the current branch dropdown (se
 
 - **Changes** — file list with amber/green dots from `git status --porcelain`; inline diff per file; sticky Commit-with-AI box at the bottom. Cursor-style review (opt-in setting) adds per-hunk accept / revert.
 - **History** — paginated log; cherry-pick to another branch, revert, reset to here (hard requires typing `HARD RESET`), copy SHA.
-- **PRs** — list with checkout; `CurrentPrBanner` on the right rail when the branch has an open PR.
+- **PRs** — list with checkout; `CurrentPrBanner` on the right rail when the branch has an open PR. **Requires `gh` (GitHub CLI) installed** (`brew install gh`); the GitHub PAT alone is not enough.
 
 A floating `GitBusyToast` appears while a git op is in flight. An `OpInProgressBanner` detects cherry-pick / merge / revert in progress and offers Continue / Abort / "Resolve in Changes".
 

@@ -631,7 +631,7 @@ See §4 "Git tab" for the full file list. Highlights:
 - **Top bar** owns the current branch and ahead/behind. The legacy "Branches" sub-tab is gone — switching lives in the dropdown.
 - **Changes**: amber/green dots from `git status --porcelain` (the `unstaged` field is absolute truth, NOT `acceptedAt` from localStorage). Inline diff per file (no modal). Sticky `CommitWithAI` at the bottom.
 - **History**: paginated log + per-commit cherry-pick / revert / reset (hard requires typing `HARD RESET`).
-- **PRs**: list + checkout. `CurrentPrBanner` appears in `GitMiniDock` when the branch has an open PR.
+- **PRs**: list + checkout. `CurrentPrBanner` appears in `GitMiniDock` when the branch has an open PR. **Requires `gh` (GitHub CLI) installed** on the host (`brew install gh`); without it, every PR endpoint returns `code: 'pr.gh_missing'`. The GitHub PAT (§14) is injected as `GH_TOKEN` so `gh` authenticates without `gh auth login`, but it does NOT replace the `gh` binary.
 - **GitMiniDock** (right rail in non-Git tabs): branch chip + ahead/behind + quick commit + push + `CurrentPrBanner`.
 - **GitBusyToast**: floating toast for in-flight ops; listens to `eco:git_busy { bubbleId, busy, kind, label }`; clears only when matching `kind` ends (FIFO if two ops overlap).
 
@@ -765,6 +765,8 @@ POST /bubble/archive  {bubbleId}
 ## 14. GitHub PAT
 
 Personal Access Token stored locally for the agent's spawned processes (gh CLI, git push over HTTPS, PR listing).
+
+> **The PAT is NOT a substitute for the `gh` CLI binary.** The PAT becomes `GH_TOKEN` in the env of every spawn, which lets `gh` (if installed) authenticate without `gh auth login`. If `gh` is not installed at all (`pr.gh_missing`), no PAT will fix it — install `gh` first (`brew install gh`).
 
 ### Storage
 
@@ -988,7 +990,7 @@ If any fails, the PR is not ready.
 9. `npm run dmg` produces `.dmg` without errors; bundle contains `Resources/bin/eco-stt`
 10. Installed .app launches; login works; voice works (with macOS Mic + Speech Recognition prompts first time)
 11. Dev server persistence: with a server running, kill backend → `~/.eco/dev-sessions.json` has the entry → relaunch backend → server appears as running
-12. Git tab: in a worktree-bubble, open Git → cycle the 3 sub-tabs (Changes/History/PRs) with no console errors. Cherry-pick a commit → green. Trigger cherry-pick with conflict → `OpInProgressBanner` appears → Abort → state clean. Reset hard requires typing `HARD RESET`.
+12. Git tab: in a worktree-bubble, open Git → cycle the 3 sub-tabs (Changes/History/PRs) with no console errors. Cherry-pick a commit → green. Trigger cherry-pick with conflict → `OpInProgressBanner` appears → Abort → state clean. Reset hard requires typing `HARD RESET`. PRs sub-tab requires `gh` installed (`which gh` from terminal); without it, `pr.gh_missing` is the expected error.
 13. Language toggle: Settings → EN; cycle Dashboard / AgentDetail / Git / Server / Browser — no Spanish leftover. Back to ES — no English leftover.
 
 ---
