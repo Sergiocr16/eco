@@ -593,20 +593,19 @@ function DockIcon({
       {/* Label en el área reservada abajo del slot. Position absolute para
           no afectar el centrado flex del button — la altura del slot ya
           tiene LABEL_AREA contemplada arriba. */}
-      <span style={{
+      <div style={{
         position: 'absolute',
         bottom: 0, left: 0, right: 0,
         height: LABEL_AREA,
+        lineHeight: `${LABEL_AREA}px`,
         textAlign: 'center',
         fontFamily: t.fontSans, fontSize: 9.5, fontWeight: 600,
-        color: active ? t.accent : t.text3,
+        color: active ? t.accent : t.text2,
         letterSpacing: 0.1,
-        lineHeight: 1,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         pointerEvents: 'none',
         userSelect: 'none',
-      }}>{firstWord(bubble.title, tr('dock.no_name'))}</span>
+      }}>{firstWord(bubble.title, tr('dock.no_name'))}</div>
 
       {active && (
         <span style={{
