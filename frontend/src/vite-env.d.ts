@@ -24,5 +24,7 @@ interface Window {
     log?: (...args: unknown[]) => void;
     pickFolder?: (opts?: { title?: string; defaultPath?: string }) => Promise<{ canceled: boolean; path: string }>;
     onFullscreenChange?: (cb: (isFull: boolean) => void) => () => void;
+    notify?: (opts: { title: string; body?: string; bubbleId?: string; silent?: boolean }) => Promise<{ ok: boolean; error?: string }>;
+    onNotificationClicked?: (cb: (payload: { bubbleId: string }) => void) => () => void;
   };
 }

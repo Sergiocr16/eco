@@ -6,7 +6,7 @@
 // El sidecar listener Python NO se empaqueta — sigue corriéndose aparte.
 // En esta versión Eco funciona sin él (Web Speech API en dev).
 
-const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Notification, shell, ipcMain, dialog } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -230,6 +230,44 @@ ipcMain.handle('eco:pick-folder', async (_e, opts) => {
   });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true, path: '' };
   return { canceled: false, path: result.filePaths[0] };
+});
+
+// IPC: notificación nativa via `electron.Notification`. Usado por
+// `usePtyBusyNotifier` cuando un agente termina (PTY busy→idle). En
+// `.dmg` unsigned, `new Notification(...)` de la Web API NO aparece en
+// Notification Center de macOS — pero Electron.Notification sí, porque
+// Electron asocia internamente la notif con el bundle ID.
+// Click handler: trae la ventana al frente y manda al renderer un
+// `eco:notification_clicked` con el bubbleId para que abra el agente.
+ipcMain.handle('eco:notify', (_event, opts) => {
+  const o = opts || {};
+  if (!o.title) return { ok: false, error: 'title requerido' };
+  if (!Notification.isSupported()) return { ok: false, error: 'unsupported' };
+  try {
+    const n = new Notification({
+      title: String(o.title),
+      body: o.body ? String(o.body) : '',
+      silent: !!o.silent,
+    });
+    if (o.bubbleId) {
+      n.on('click', () => {
+        try {
+          if (!mainWindow) return;
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+          if (app.dock && typeof app.dock.show === 'function') {
+            try { app.dock.show(); } catch { /* noop */ }
+          }
+          mainWindow.webContents.send('eco:notification_clicked', { bubbleId: String(o.bubbleId) });
+        } catch { /* noop */ }
+      });
+    }
+    n.show();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'notify error' };
+  }
 });
 
 // IPC: el renderer pide el token o el backend URL desde el preload.

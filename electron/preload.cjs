@@ -18,4 +18,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('eco:fullscreen-changed', handler);
     return () => ipcRenderer.removeListener('eco:fullscreen-changed', handler);
   },
+  // Notificación nativa de macOS via electron.Notification (funciona en
+  // .dmg unsigned, a diferencia de la Web API). Click trae la app al frente
+  // y dispara onNotificationClicked con el bubbleId.
+  notify: (opts) => ipcRenderer.invoke('eco:notify', opts),
+  onNotificationClicked: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload); } catch { /* noop */ } };
+    ipcRenderer.on('eco:notification_clicked', handler);
+    return () => ipcRenderer.removeListener('eco:notification_clicked', handler);
+  },
 });

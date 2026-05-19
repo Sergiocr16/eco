@@ -5,7 +5,7 @@
 // El estado por sí solo está expuesto via `useBubbleBusy(bubbleId)` para
 // que la UI muestre indicadores visuales sin pedir permiso de notificación.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { on as ecoOn } from '@/lib/eco-bus';
 import type { Bubble } from '@/lib/types';
 
@@ -21,11 +21,36 @@ function notificationsEnabled(): boolean {
 }
 
 let permissionRequested = false;
-async function maybeShowDesktopNotification(bubble: Bubble) {
+
+// Decide si la notificación es relevante: el user no está mirando la
+// burbuja que terminó. Casos que disparan notificación:
+//   - Ventana oculta (visibilityState !== 'visible')
+//   - Ventana visible PERO `activeBubbleId !== bubble.id` (está mirando otra)
+function shouldNotify(bubbleId: string, activeBubbleId: string | null): boolean {
+  const hidden = typeof document !== 'undefined' && document.visibilityState !== 'visible';
+  if (hidden) return true;
+  return activeBubbleId !== bubbleId;
+}
+
+async function maybeShowDesktopNotification(bubble: Bubble, activeBubbleId: string | null) {
   if (!notificationsEnabled()) return;
+  if (!shouldNotify(bubble.id, activeBubbleId)) return;
+  const title = `Eco · ${bubble.title}`;
+  const body = 'Claude terminó de procesar.';
+
+  // En .dmg empaquetado, la Web Notification API a menudo NO aparece en
+  // Notification Center de macOS (la app no está code-signed). Si Electron
+  // expone `notify` via preload, usamos esa API que sí funciona unsigned.
+  const api = (typeof window !== 'undefined' ? window : undefined)?.electronAPI;
+  if (api?.notify) {
+    try {
+      await api.notify({ title, body, bubbleId: bubble.id, silent: false });
+      return;
+    } catch { /* fallback abajo */ }
+  }
+
+  // Fallback Web Notification (dev en browser).
   if (typeof Notification === 'undefined') return;
-  // Solo notificar si la ventana NO está visible (el user está en otra app).
-  if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
   let perm = Notification.permission;
   if (perm === 'default' && !permissionRequested) {
     permissionRequested = true;
@@ -33,8 +58,8 @@ async function maybeShowDesktopNotification(bubble: Bubble) {
   }
   if (perm !== 'granted') return;
   try {
-    const n = new Notification(`Eco · ${bubble.title}`, {
-      body: 'Claude terminó de procesar.',
+    const n = new Notification(title, {
+      body,
       tag: `eco-pty-${bubble.id}`,
       silent: false,
     });
@@ -46,7 +71,15 @@ async function maybeShowDesktopNotification(bubble: Bubble) {
  * Monta el listener global que actualiza el store + dispara la notificación
  * del sistema al transitar busy → idle. Llamar una sola vez en `App.tsx`.
  */
-export function usePtyBusyTracker(bubbles: Bubble[]) {
+export function usePtyBusyTracker(bubbles: Bubble[], activeBubbleId: string | null) {
+  // Usamos refs porque `bubbles` y `activeBubbleId` cambian seguido y no
+  // queremos re-suscribir al evento cada render — los leemos al momento de
+  // la notificación.
+  const bubblesRef = useRef(bubbles);
+  const activeRef = useRef(activeBubbleId);
+  useEffect(() => { bubblesRef.current = bubbles; }, [bubbles]);
+  useEffect(() => { activeRef.current = activeBubbleId; }, [activeBubbleId]);
+
   useEffect(() => {
     return ecoOn('eco:pty_busy_change', (e) => {
       const prev = busyByBubble.get(e.bubbleId) ?? false;
@@ -54,11 +87,11 @@ export function usePtyBusyTracker(bubbles: Bubble[]) {
       notify();
       // Transición busy → idle: Claude terminó. Notificar si corresponde.
       if (prev && !e.busy) {
-        const bubble = bubbles.find((b) => b.id === e.bubbleId);
-        if (bubble) void maybeShowDesktopNotification(bubble);
+        const bubble = bubblesRef.current.find((b) => b.id === e.bubbleId);
+        if (bubble) void maybeShowDesktopNotification(bubble, activeRef.current);
       }
     });
-  }, [bubbles]);
+  }, []);
 }
 
 /**

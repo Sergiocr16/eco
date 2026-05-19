@@ -96,7 +96,16 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // Mantiene un store global del estado busy/idle del PTY de cada bubble.
   // Dispara desktop notifications al transitar busy → idle (opt-in via
   // setting `eco.notify.on_finish`).
-  usePtyBusyTracker(bubbles.bubbles);
+  usePtyBusyTracker(bubbles.bubbles, detailBubbleId);
+
+  // Click en una notificación nativa del .dmg → abrir el agente que terminó.
+  useEffect(() => {
+    const off = window.electronAPI?.onNotificationClicked?.((payload) => {
+      if (payload?.bubbleId) handleOpenAgent(payload.bubbleId);
+    });
+    return () => { if (off) off(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const tts = useTTS();
   const lastSpokenRef = useRef<string | null>(null);
 
