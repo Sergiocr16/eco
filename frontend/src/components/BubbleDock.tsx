@@ -35,12 +35,15 @@ function saveOrder(ids: string[]) {
 }
 
 // Tamaño del icono — resizable estilo mac vía drag del handle superior.
-// Se persiste en localStorage. Min 32 px (cómodo en pantallas chicas),
+// Se persiste en localStorage. Min 20 px (ultra-compacto, sin label),
 // max 72 px (tope para que no tape pantalla).
 const SIZE_KEY = 'eco.dock.iconSize';
-const SIZE_MIN = 32;
+const SIZE_MIN = 20;
 const SIZE_MAX = 72;
 const SIZE_DEFAULT = 40;
+// Bajo este tamaño la etiqueta de abajo queda más grande que el icono
+// y se ve mal. La ocultamos para mantener limpio el dock compacto.
+const LABEL_HIDE_BELOW = 28;
 
 function loadIconSize(): number {
   try {
@@ -552,18 +555,20 @@ function DockIcon({
         )}
       </motion.button>
 
-      <div style={{
-        marginTop: 3,
-        width: slotWidth,
-        textAlign: 'center',
-        fontFamily: t.fontSans, fontSize: 9.5, fontWeight: 600,
-        color: active ? t.accent : t.text3,
-        letterSpacing: 0.1,
-        lineHeight: 1.1,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        pointerEvents: 'none',
-        userSelect: 'none',
-      }}>{firstWord(bubble.title, tr('dock.no_name'))}</div>
+      {iconSize >= LABEL_HIDE_BELOW && (
+        <div style={{
+          marginTop: 3,
+          width: slotWidth,
+          textAlign: 'center',
+          fontFamily: t.fontSans, fontSize: 9.5, fontWeight: 600,
+          color: active ? t.accent : t.text3,
+          letterSpacing: 0.1,
+          lineHeight: 1.1,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}>{firstWord(bubble.title, tr('dock.no_name'))}</div>
+      )}
 
       {active && (
         <span style={{
