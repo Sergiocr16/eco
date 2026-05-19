@@ -936,9 +936,10 @@ function FloatingBubbleDock({
 }) {
   const enabled = useDockPref();
   if (!enabled) return null;
+  const visible = bubbles.filter((b) => !b.archived);
   return (
     <BubbleDock
-      bubbles={bubbles} activeBubbleId={activeBubbleId}
+      bubbles={visible} activeBubbleId={activeBubbleId}
       onOpenAgent={onOpenAgent}
       onGoHome={onGoHome}
       atHome={atHome}

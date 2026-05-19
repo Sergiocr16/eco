@@ -2066,6 +2066,10 @@ const DICT = {
   'dock.no_name': { es: 'sin nombre', en: 'no name' },
   'dock.bubble_no_title': { es: 'Burbuja sin título', en: 'Untitled bubble' },
   'dock.processing': { es: 'procesando', en: 'processing' },
+  'dock.resize_tooltip': {
+    es: 'Arrastrá para cambiar el tamaño · doble click para resetear',
+    en: 'Drag to resize · double-click to reset',
+  },
 
   // ─────────────────────────── ServerPanel (strings nuevos del merge)
   'server.config.preset_name_placeholder': { es: 'Nombre del preset', en: 'Preset name' },

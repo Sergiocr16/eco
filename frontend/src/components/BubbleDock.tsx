@@ -34,6 +34,21 @@ function saveOrder(ids: string[]) {
   try { localStorage.setItem(ORDER_KEY, JSON.stringify(ids)); } catch { /* noop */ }
 }
 
+// Tamaño del icono — resizable estilo mac vía drag del handle superior.
+// Se persiste en localStorage. Min 32 px (cómodo en pantallas chicas),
+// max 72 px (tope para que no tape pantalla).
+const SIZE_KEY = 'eco.dock.iconSize';
+const SIZE_MIN = 32;
+const SIZE_MAX = 72;
+const SIZE_DEFAULT = 40;
+
+function loadIconSize(): number {
+  try {
+    const v = parseInt(localStorage.getItem(SIZE_KEY) || '', 10);
+    return Number.isFinite(v) && v >= SIZE_MIN && v <= SIZE_MAX ? v : SIZE_DEFAULT;
+  } catch { return SIZE_DEFAULT; }
+}
+
 // Dock estilo macOS — flotante en bottom-center, horizontal, con blur y
 // magnificación que crece hacia arriba (sin empujar vecinos). Los iconos
 // son reordenables con drag.
@@ -41,6 +56,10 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
   const t = useTokens();
   const tr = useT();
   const [customOrder, setCustomOrder] = useState<string[]>(loadOrder);
+  const [iconSize, setIconSize] = useState<number>(loadIconSize);
+  useEffect(() => {
+    try { localStorage.setItem(SIZE_KEY, String(iconSize)); } catch { /* noop */ }
+  }, [iconSize]);
   // Mostramos el dock si hay agentes O si hay home button (para navegar
   // siempre desde cualquier vista).
   if (bubbles.length === 0 && !onGoHome) return null;
@@ -132,7 +151,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
 
   const divider = (
     <span style={{
-      width: 1, height: 44, alignSelf: 'center',
+      width: 1, height: iconSize + 4, alignSelf: 'center',
       background: t.glassBorder, margin: '0 6px',
     }}/>
   );
@@ -154,6 +173,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
       }}>
       <div style={{
         pointerEvents: 'auto',
+        position: 'relative',
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'flex-end',
@@ -172,9 +192,10 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
         overflow: 'visible',
         maxWidth: 'calc(100vw - 96px)',
       }}>
+        <ResizeHandle iconSize={iconSize} onChange={setIconSize}/>
         {onGoHome && (
           <>
-            <HomeDockIcon active={!!atHome} onClick={onGoHome}/>
+            <HomeDockIcon active={!!atHome} onClick={onGoHome} iconSize={iconSize}/>
             {bubbles.length > 0 && divider}
           </>
         )}
@@ -219,6 +240,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
                         index={i}
                         active={b.id === activeBubbleId}
                         onClick={() => onOpenAgent(b.id)}
+                        iconSize={iconSize}
                       />
                     ))}
                   </Reorder.Group>
@@ -242,6 +264,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
                   index={i}
                   active={b.id === activeBubbleId}
                   onClick={() => onOpenAgent(b.id)}
+                  iconSize={iconSize}
                 />
               ))}
             </Reorder.Group>
@@ -252,15 +275,89 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
   );
 }
 
-const SIZE = 40;
-const SLOT_WIDTH = 60;
-
-function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => void }) {
+// Handle de resize estilo macOS: una pill chiquita en el borde superior del
+// dock. Drag vertical cambia el tamaño de los iconos; doble-click resetea
+// al default.
+function ResizeHandle({
+  iconSize, onChange,
+}: {
+  iconSize: number;
+  onChange: (n: number) => void;
+}) {
   const t = useTokens();
   const tr = useT();
   const [hover, setHover] = useState(false);
-  const HOME_SLOT = 48;
-  const SLOT_HEIGHT = SIZE + 17;
+  const [dragging, setDragging] = useState(false);
+  const startRef = useRef<{ y: number; size: number } | null>(null);
+
+  // mousemove/up se manejan en window mientras el drag está activo — sin
+  // listeners globales no captás el cursor cuando sale del handle.
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      if (!startRef.current) return;
+      const dy = startRef.current.y - e.clientY; // mover hacia arriba = +
+      const next = Math.max(SIZE_MIN, Math.min(SIZE_MAX, startRef.current.size + Math.round(dy / 2)));
+      onChange(next);
+    };
+    const onUp = () => { setDragging(false); startRef.current = null; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragging, onChange]);
+
+  return (
+    <div
+      title={tr('dock.resize_tooltip')}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        startRef.current = { y: e.clientY, size: iconSize };
+        setDragging(true);
+      }}
+      onDoubleClick={() => onChange(SIZE_DEFAULT)}
+      style={{
+        position: 'absolute',
+        top: -5,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 48,
+        height: 10,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'ns-resize',
+        zIndex: 2,
+      }}>
+      <span style={{
+        width: 36,
+        height: 3,
+        borderRadius: 999,
+        background: dragging || hover ? t.text2 : t.glassBorderHi,
+        opacity: dragging || hover ? 0.9 : 0.45,
+        transition: 'opacity 140ms, background 140ms',
+      }}/>
+    </div>
+  );
+}
+
+function HomeDockIcon({
+  active, onClick, iconSize,
+}: {
+  active: boolean;
+  onClick: () => void;
+  iconSize: number;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const [hover, setHover] = useState(false);
+  const HOME_SLOT = Math.round(iconSize * 1.2);
+  const SLOT_HEIGHT = iconSize + 17;
+  const iconGlyph = Math.round(iconSize * 0.6);
   return (
     <div
       onMouseEnter={() => setHover(true)}
@@ -279,9 +376,9 @@ function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => voi
         whileTap={{ scale: 0.92 }}
         transition={{ type: 'spring', stiffness: 380, damping: 22 }}
         style={{
-          width: SIZE, height: SIZE,
+          width: iconSize, height: iconSize,
           padding: 0, border: 0, cursor: 'pointer',
-          borderRadius: 11,
+          borderRadius: Math.round(iconSize * 0.28),
           background: active ? t.bg3 : (hover ? t.bg2 : 'rgba(255,255,255,0.04)'),
           color: active ? t.accent : t.text2,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -292,7 +389,7 @@ function HomeDockIcon({ active, onClick }: { active: boolean; onClick: () => voi
             ? `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px ${t.accent}33`
             : 'inset 0 1px 0 rgba(255,255,255,0.05)',
         }}>
-        <IconCommand size={24} strokeWidth={1.6}/>
+        <IconCommand size={iconGlyph} strokeWidth={1.6}/>
       </motion.button>
       {active && (
         <span style={{
@@ -325,17 +422,20 @@ function firstWord(title: string | undefined, fallback: string): string {
 }
 
 function DockIcon({
-  bubble, index, active, onClick,
+  bubble, index, active, onClick, iconSize,
 }: {
   bubble: Bubble;
   index: number;
   active: boolean;
   onClick: () => void;
+  iconSize: number;
 }) {
   const t = useTokens();
   const tr = useT();
   const [hover, setHover] = useState(false);
   const [showTip, setShowTip] = useState(false);
+  const slotWidth = Math.round(iconSize * 1.5);
+  const letterSize = Math.round(iconSize * 0.375);
   // Coordenadas absolutas para el tooltip (portal-based). Calculadas desde
   // el ref del wrapper al hacer hover — el portal queda en document.body
   // así no lo afecta el overflow:auto del scroll horizontal del dock.
@@ -400,7 +500,7 @@ function DockIcon({
       }}
       onMouseLeave={() => { setHover(false); setShowTip(false); }}
       style={{
-        width: SLOT_WIDTH, minHeight: SIZE,
+        width: slotWidth, minHeight: iconSize,
         position: 'relative',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'flex-end',
@@ -423,9 +523,9 @@ function DockIcon({
           delay: index * 0.02,
         }}
         style={{
-          width: SIZE, height: SIZE,
+          width: iconSize, height: iconSize,
           padding: 0, border: 0, cursor: dragging ? 'grabbing' : 'pointer',
-          borderRadius: 11,
+          borderRadius: Math.round(iconSize * 0.28),
           background: active ? t.bg3 : (hover ? t.bg2 : 'rgba(255,255,255,0.04)'),
           color: active ? t.accent : t.text2,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -437,7 +537,7 @@ function DockIcon({
             : 'inset 0 1px 0 rgba(255,255,255,0.05)',
         }}>
         <span style={{
-          fontFamily: t.fontSans, fontSize: 15, fontWeight: 600, letterSpacing: -0.3,
+          fontFamily: t.fontSans, fontSize: letterSize, fontWeight: 600, letterSpacing: -0.3,
           color: active ? t.accent : accentColor,
         }}>{initial}</span>
         {isActive && (
@@ -454,7 +554,7 @@ function DockIcon({
 
       <div style={{
         marginTop: 3,
-        width: SLOT_WIDTH,
+        width: slotWidth,
         textAlign: 'center',
         fontFamily: t.fontSans, fontSize: 9.5, fontWeight: 600,
         color: active ? t.accent : t.text3,
