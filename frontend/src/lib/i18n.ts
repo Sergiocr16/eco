@@ -716,7 +716,10 @@ const DICT = {
   'settings.github.change': { es: 'Cambiar', en: 'Change' },
   'settings.github.remove': { es: 'Eliminar', en: 'Remove' },
   'settings.github.remove_confirm_title': { es: '¿Eliminar credenciales de GitHub?', en: 'Remove GitHub credentials?' },
-  'settings.github.remove_confirm_body': { es: 'Eco volverá a usar el CLI `gh` del sistema como fallback.', en: 'Eco will fall back to the system\'s `gh` CLI.' },
+  'settings.github.remove_confirm_body': {
+    es: 'Eco va a borrar el PAT de ~/.eco/github.json. Los commits y `gh` van a usar lo que tengas configurado a nivel sistema (`git config user.*`, `gh auth login`). Si nunca corriste eso, push y PRs no van a funcionar hasta que reconfigures.',
+    en: "Eco will delete the PAT from ~/.eco/github.json. Commits and `gh` will fall back to whatever you have configured at the system level (`git config user.*`, `gh auth login`). If you never set those up, push and PRs won't work until you reconfigure.",
+  },
   'settings.github.how_to_create': { es: '¿Cómo creo un token?', en: 'How do I create a token?' },
   'settings.github.hide_help': { es: 'Ocultar ayuda', en: 'Hide help' },
   'settings.github.open_github': { es: 'Abrir GitHub', en: 'Open GitHub' },
