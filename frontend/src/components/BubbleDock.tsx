@@ -35,10 +35,10 @@ function saveOrder(ids: string[]) {
 }
 
 // Tamaño del icono — resizable estilo mac vía drag del handle superior.
-// Se persiste en localStorage. Min 20 px (ultra-compacto, sin label),
-// max 72 px (tope para que no tape pantalla).
+// Se persiste en localStorage. Min 15 px (ultra-compacto, sin label,
+// status dot escalado), max 72 px.
 const SIZE_KEY = 'eco.dock.iconSize';
-const SIZE_MIN = 20;
+const SIZE_MIN = 15;
 const SIZE_MAX = 72;
 const SIZE_DEFAULT = 40;
 // Bajo este tamaño la etiqueta de abajo queda más grande que el icono
@@ -439,6 +439,10 @@ function DockIcon({
   const [showTip, setShowTip] = useState(false);
   const slotWidth = Math.round(iconSize * 1.5);
   const letterSize = Math.round(iconSize * 0.375);
+  // Status dot escala con el icono — sin esto, en iconos chicos (<24px) el
+  // dot se desborda del cuadrado.
+  const dotSize = Math.min(8, Math.max(4, Math.round(iconSize * 0.18)));
+  const dotInset = Math.max(2, Math.round(iconSize * 0.12));
   // Coordenadas absolutas para el tooltip (portal-based). Calculadas desde
   // el ref del wrapper al hacer hover — el portal queda en document.body
   // así no lo afecta el overflow:auto del scroll horizontal del dock.
@@ -545,11 +549,11 @@ function DockIcon({
         }}>{initial}</span>
         {isActive && (
           <span style={{
-            position: 'absolute', top: 5, right: 5,
-            width: 7, height: 7, borderRadius: '50%',
+            position: 'absolute', top: dotInset, right: dotInset,
+            width: dotSize, height: dotSize, borderRadius: '50%',
             background: sColor,
-            border: `1.5px solid ${t.glassBg}`,
-            boxShadow: `0 0 6px ${sColor}`,
+            border: `${dotSize >= 6 ? 1.5 : 1}px solid ${t.glassBg}`,
+            boxShadow: `0 0 ${Math.max(3, dotSize - 1)}px ${sColor}`,
             animation: 'eco-shimmer 1.1s ease-in-out infinite',
           }}/>
         )}
