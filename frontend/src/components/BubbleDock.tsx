@@ -35,10 +35,10 @@ function saveOrder(ids: string[]) {
 }
 
 // Tamaño del icono — resizable estilo mac vía drag del handle superior.
-// Se persiste en localStorage. Min 15 px (ultra-compacto, sin label,
-// status dot escalado), max 72 px.
+// Se persiste en localStorage. Min 26 px (debajo de eso la inicial dentro
+// del icono se descalza visualmente respecto al SVG del Home), max 72 px.
 const SIZE_KEY = 'eco.dock.iconSize';
-const SIZE_MIN = 15;
+const SIZE_MIN = 26;
 const SIZE_MAX = 72;
 const SIZE_DEFAULT = 40;
 // Sin label debajo de los iconos — antes había uno con el primer "word"
@@ -47,15 +47,14 @@ const SIZE_DEFAULT = 40;
 // La identidad de la burbuja se ve por la inicial dentro del icono +
 // tooltip al hover. El layout de DockIcon ahora espeja al de HomeDockIcon.
 
-// Bajo este tamaño la inicial dentro del icono queda < 8px e ilegible.
-// La ocultamos para que el dock se vea limpio en modo "compacto" — sigue
-// siendo identificable por el color accent + tooltip al hover.
-const LETTER_HIDE_BELOW = 24;
-
 function loadIconSize(): number {
   try {
     const v = parseInt(localStorage.getItem(SIZE_KEY) || '', 10);
-    return Number.isFinite(v) && v >= SIZE_MIN && v <= SIZE_MAX ? v : SIZE_DEFAULT;
+    // Clampeamos al rango actual — si el user había guardado un valor
+    // que después dejó de ser válido (p.ej. tenía 15 y subimos el min a
+    // 26), volvemos al closest válido en vez de saltar al default.
+    if (Number.isFinite(v)) return Math.max(SIZE_MIN, Math.min(SIZE_MAX, v));
+    return SIZE_DEFAULT;
   } catch { return SIZE_DEFAULT; }
 }
 
@@ -557,14 +556,12 @@ function DockIcon({
             ? `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px ${t.accent}33`
             : 'inset 0 1px 0 rgba(255,255,255,0.05)',
         }}>
-        {iconSize >= LETTER_HIDE_BELOW && (
-          <span style={{
-            fontFamily: t.fontSans, fontSize: letterSize, fontWeight: 600, letterSpacing: -0.3,
-            color: active ? t.accent : accentColor,
-            lineHeight: 1,
-            display: 'block',
-          }}>{initial}</span>
-        )}
+        <span style={{
+          fontFamily: t.fontSans, fontSize: letterSize, fontWeight: 600, letterSpacing: -0.3,
+          color: active ? t.accent : accentColor,
+          lineHeight: 1,
+          display: 'block',
+        }}>{initial}</span>
         {isActive && (
           <span style={{
             position: 'absolute', top: dotInset, right: dotInset,
