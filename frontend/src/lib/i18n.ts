@@ -697,8 +697,8 @@ const DICT = {
   'settings.github.title': { es: 'Identidad GitHub', en: 'GitHub identity' },
   'settings.github.sub': { es: 'Personal Access Token para PRs, push y commits', en: 'Personal Access Token for PRs, push and commits' },
   'settings.github.explain': {
-    es: 'Eco usará estas credenciales para crear PRs, hacer push y commitear en tu nombre. Sin esto, se usa el CLI `gh` del sistema como fallback.',
-    en: 'Eco will use these credentials to create PRs, push and commit as you. Without this, the system\'s `gh` CLI is used as fallback.',
+    es: 'Eco inyecta este PAT como GH_TOKEN en todos los `gh` y `git push` que ejecuta el agente, y como autor/committer de los commits. Sin el PAT podés seguir usando `gh auth login` del sistema. El binario `gh` (instalable con `brew install gh`) es necesario aparte para que funcione la sub-pestaña PRs — el PAT por sí solo no lo reemplaza.',
+    en: 'Eco injects this PAT as GH_TOKEN into every `gh` and `git push` the agent runs, and as the commit author/committer. Without the PAT you can still rely on the system\'s `gh auth login`. The `gh` binary itself (install with `brew install gh`) is a separate requirement for the PRs sub-tab to work — the PAT alone does not replace it.',
   },
   'settings.github.pat_label': { es: 'Personal Access Token', en: 'Personal Access Token' },
   'settings.github.pat_placeholder': { es: 'ghp_… o github_pat_…', en: 'ghp_… or github_pat_…' },
@@ -1508,8 +1508,8 @@ const DICT = {
   'onboarding.github.title': { es: 'Conectar con GitHub', en: 'Connect GitHub' },
   'onboarding.github.sub': { es: 'Configurá tu Personal Access Token para que Eco haga PRs, push y commits en tu nombre.', en: 'Configure your Personal Access Token so Eco can create PRs, push and commit as you.' },
   'onboarding.github.body': {
-    es: 'Opcional. Si no lo configurás ahora, podés hacerlo más tarde desde Ajustes → GitHub. Mientras tanto, Eco usa el CLI `gh` del sistema.',
-    en: 'Optional. You can configure it later in Settings → GitHub. Until then, Eco uses the system\'s `gh` CLI.',
+    es: 'Opcional. Si no lo configurás ahora, podés hacerlo después desde Ajustes → GitHub. Para que funcione la sub-pestaña PRs del tab Git necesitás tener `gh` instalado (`brew install gh`) — el PAT por sí solo no lo reemplaza.',
+    en: 'Optional. You can configure it later in Settings → GitHub. The PRs sub-tab of the Git tab requires `gh` installed (`brew install gh`) — the PAT alone does not replace it.',
   },
   'onboarding.github.skip': { es: 'Configurar después', en: 'Configure later' },
   'onboarding.github.continue': { es: 'Continuar', en: 'Continue' },
