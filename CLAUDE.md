@@ -60,6 +60,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 | **No skipping git hooks** (`--no-verify`, `--no-gpg-sign`) unless explicitly asked. | Hooks exist for a reason. |
 | **No model downgrades to save cost.** Sergio chooses the model. | |
 | **No 0.0.0.0 binds, no external hostnames.** Always 127.0.0.1. | Local-first invariant. |
+| **Never clear the renderer cache** (`~/Library/Application Support/Eco/*`) unless Sergio explicitly asks. Reinstalling the `.app` does NOT require it. | Wiping it logs the user out (`eco.session`) and drops browser URLs / active tabs. |
 
 ### ALWAYS
 
@@ -1173,7 +1174,7 @@ grep -c '"<unique-string-from-your-change>"' \
 
 ### Renderer cache reset (rare)
 
-WARNING: wipes login session (`eco.session`), browser URLs, active tabs, etc. Does NOT touch `~/.eco/user.json` or `~/.eco/dev-sessions.json`.
+WARNING: wipes login session (`eco.session`), browser URLs, active tabs, etc. Does NOT touch `~/.eco/user.json` or `~/.eco/dev-sessions.json`. **Never run this unless Sergio explicitly asks** (see §2 — a normal reinstall does not need it).
 
 ```bash
 rm -rf "$HOME/Library/Application Support/Eco/Cache" \

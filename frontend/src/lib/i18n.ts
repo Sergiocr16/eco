@@ -2066,7 +2066,6 @@ const DICT = {
   // ─────────────────────────── BubbleDock
   'dock.no_folder': { es: 'Sin carpeta', en: 'No folder' },
   'dock.home_tooltip': { es: 'Ir al inicio', en: 'Go to home' },
-  'dock.no_name': { es: 'sin nombre', en: 'no name' },
   'dock.bubble_no_title': { es: 'Burbuja sin título', en: 'Untitled bubble' },
   'dock.processing': { es: 'procesando', en: 'processing' },
   'dock.resize_tooltip': {
