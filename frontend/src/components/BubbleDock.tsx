@@ -213,7 +213,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
           </>
         )}
         <div
-          className="eco-thin-scroll"
+          className="eco-dock-scroll"
           style={{
             minWidth: 0,
             display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap,

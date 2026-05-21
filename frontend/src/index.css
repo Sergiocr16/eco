@@ -25,9 +25,11 @@ select {
 ::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.20); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,0.35); }
 
-/* Scrollbar fina — usada por el dock cuando hay muchos agentes. */
-.eco-thin-scroll { scrollbar-width: thin; }
-.eco-thin-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+/* El dock scrollea horizontalmente con trackpad cuando hay muchos agentes,
+   pero SIN barra visible — un dock estilo macOS no muestra scrollbar, y la
+   barra de 5px desbordaba la altura del dock arrastrando un scroll vertical. */
+.eco-dock-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.eco-dock-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 @keyframes eco-pulse {
   0% { transform: scale(1); opacity: 0.7; }
