@@ -1,7 +1,7 @@
 // Operaciones git sobre el worktree de cada burbuja: listar branches, cambiar
 // de rama, pull, fetch. Pensado para usarse desde el frontend tipo GitHub app.
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, unlinkSync, writeFileSync, mkdtempSync, statSync, readFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { resolve as pathResolve, sep as pathSep, join as pathJoin } from 'node:path';
@@ -10,6 +10,66 @@ import { config } from './config.js';
 import { githubEnvOverrides, gitIdentityArgs } from './github-runtime.js';
 
 const GIT_TIMEOUT = 10_000;
+
+// ─── spawnAsync ───────────────────────────────────────────────────────────
+// Reemplazo no-bloqueante de spawnSync para llamadas que tocan red (gh CLI).
+// spawnSync detiene el event loop del backend — con 5+ agentes consultando
+// /git/prs simultáneamente la app se siente "pegada" mientras gh habla con
+// GitHub. spawnAsync devuelve una promesa equivalente para que Express pueda
+// seguir atendiendo otros requests durante la espera.
+//
+// Diseñado para ser drop-in respecto a spawnSync: devuelve los mismos campos
+// status/stdout/stderr y respeta el mismo timeout semánticamente (SIGTERM +
+// fallback SIGKILL si no muere). Si pasás `input`, se escribe al stdin y se
+// cierra el pipe — útil para `claude -p` y `git commit -F -`.
+type SpawnAsyncOpts = {
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  timeout?: number;
+  input?: string;
+};
+type SpawnAsyncResult = { status: number | null; stdout: string; stderr: string };
+
+async function spawnAsync(cmd: string, args: string[], opts: SpawnAsyncOpts = {}): Promise<SpawnAsyncResult> {
+  return new Promise((resolve) => {
+    const outChunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+    const stdio: ('pipe' | 'ignore')[] = [opts.input != null ? 'pipe' : 'ignore', 'pipe', 'pipe'];
+    let proc;
+    try {
+      proc = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, stdio });
+    } catch (e) {
+      resolve({ status: null, stdout: '', stderr: e instanceof Error ? e.message : 'spawn error' });
+      return;
+    }
+    let timedOut = false;
+    const timer = opts.timeout && opts.timeout > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          try { proc.kill('SIGTERM'); } catch { /* noop */ }
+          setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* noop */ } }, 500);
+        }, opts.timeout)
+      : null;
+    if (opts.input != null && proc.stdin) {
+      proc.stdin.write(opts.input);
+      proc.stdin.end();
+    }
+    proc.stdout?.on('data', (c: Buffer) => outChunks.push(c));
+    proc.stderr?.on('data', (c: Buffer) => errChunks.push(c));
+    proc.on('error', (err: Error) => {
+      if (timer) clearTimeout(timer);
+      resolve({ status: null, stdout: '', stderr: err.message });
+    });
+    proc.on('close', (code: number | null) => {
+      if (timer) clearTimeout(timer);
+      resolve({
+        status: timedOut ? null : code,
+        stdout: Buffer.concat(outChunks).toString('utf-8'),
+        stderr: Buffer.concat(errChunks).toString('utf-8'),
+      });
+    });
+  });
+}
 
 // Operación git que puede dejar el worktree en estado mixto (con
 // CHERRY_PICK_HEAD / MERGE_HEAD / REVERT_HEAD en .git). Se usa para
@@ -782,13 +842,12 @@ export type PullRequestsResult =
   | { ok: true; prs: PullRequest[] }
   | { ok: false; error: string; code?: string };
 
-function ghAvailable(): boolean {
+async function ghAvailable(): Promise<boolean> {
   // env: buildSafeEnv → PATH augmentado con /opt/homebrew/bin etc., así
   // `gh` se encuentra aunque Electron se haya lanzado desde Finder (que no
   // hereda el PATH del shell del user).
-  const r = spawnSync('gh', ['--version'], {
+  const r = await spawnAsync('gh', ['--version'], {
     timeout: 3_000,
-    encoding: 'utf-8',
     env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   return r.status === 0;
@@ -797,10 +856,9 @@ function ghAvailable(): boolean {
 // Status público del `gh` CLI para la UI (Onboarding / Settings). Sin gh
 // no funciona el tab PRs aunque el PAT esté guardado — el badge informa
 // al user para que pueda instalarlo con `brew install gh`.
-export function ghStatus(): { installed: boolean; version?: string } {
-  const r = spawnSync('gh', ['--version'], {
+export async function ghStatus(): Promise<{ installed: boolean; version?: string }> {
+  const r = await spawnAsync('gh', ['--version'], {
     timeout: 3_000,
-    encoding: 'utf-8',
     env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   if (r.status !== 0) return { installed: false };
@@ -810,14 +868,14 @@ export function ghStatus(): { installed: boolean; version?: string } {
   return { installed: true, version: m?.[1] };
 }
 
-export function listPullRequests(workspace: string): PullRequestsResult {
+export async function listPullRequests(workspace: string): Promise<PullRequestsResult> {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git', code: 'git.not_a_repo' };
-  if (!ghAvailable()) {
+  if (!(await ghAvailable())) {
     return { ok: false, error: 'GitHub CLI (gh) no está instalado. Instalalo con `brew install gh`.', code: 'pr.gh_missing' };
   }
   // gh pr list necesita un remote configurado. Si el repo no tiene origin de
   // GitHub, gh devuelve un error claro que pasamos tal cual.
-  const r = spawnSync('gh', [
+  const r = await spawnAsync('gh', [
     'pr', 'list',
     '--state', 'open',
     '--limit', '50',
@@ -825,7 +883,6 @@ export function listPullRequests(workspace: string): PullRequestsResult {
   ], {
     cwd: workspace,
     timeout: 20_000,
-    encoding: 'utf-8',
     env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
@@ -848,8 +905,8 @@ export function listPullRequests(workspace: string): PullRequestsResult {
   if (!Array.isArray(raw)) return { ok: true, prs: [] };
 
   // Para detectar forks, consultamos el owner del repo actual una sola vez.
-  const ownerR = spawnSync('gh', ['repo', 'view', '--json', 'owner', '-q', '.owner.login'], {
-    cwd: workspace, timeout: 8_000, encoding: 'utf-8', env: buildSafeEnv({ ...githubEnvOverrides() }),
+  const ownerR = await spawnAsync('gh', ['repo', 'view', '--json', 'owner', '-q', '.owner.login'], {
+    cwd: workspace, timeout: 8_000, env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   const repoOwner = ownerR.status === 0 ? ((ownerR.stdout ?? '').toString()).trim() : '';
 
@@ -889,18 +946,17 @@ export type CurrentPrResult =
   | { ok: true; pr: CurrentPr | null }
   | { ok: false; error: string };
 
-export function currentPullRequest(workspace: string): CurrentPrResult {
+export async function currentPullRequest(workspace: string): Promise<CurrentPrResult> {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
-  if (!ghAvailable()) return { ok: false, error: 'gh no instalado' };
+  if (!(await ghAvailable())) return { ok: false, error: 'gh no instalado' };
   // `gh pr view` sin número usa la rama actual del repo. Si no hay PR
   // asociado, devuelve exit code 1 con "no pull requests found".
-  const r = spawnSync('gh', [
+  const r = await spawnAsync('gh', [
     'pr', 'view',
     '--json', 'number,title,url,state,isDraft,mergeable,headRefName,baseRefName,author',
   ], {
     cwd: workspace,
     timeout: 15_000,
-    encoding: 'utf-8',
     env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
@@ -969,21 +1025,20 @@ export type PrDetailsResult =
   | { ok: true; pr: PrDetails }
   | { ok: false; error: string; code?: string };
 
-export function pullRequestDetails(workspace: string, number: number): PrDetailsResult {
+export async function pullRequestDetails(workspace: string, number: number): Promise<PrDetailsResult> {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git', code: 'git.not_a_repo' };
-  if (!ghAvailable()) return { ok: false, error: 'gh CLI no instalado', code: 'pr.gh_missing' };
+  if (!(await ghAvailable())) return { ok: false, error: 'gh CLI no instalado', code: 'pr.gh_missing' };
   if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
 
   // Pido en un solo gh call todos los campos que necesito para no spawnear
   // gh varias veces. `comments` trae los issue comments. `reviews` trae los
   // reviews completos (cada uno con su body + estado + comentarios inline).
-  const r = spawnSync('gh', [
+  const r = await spawnAsync('gh', [
     'pr', 'view', String(number),
     '--json', 'number,title,body,author,headRefName,baseRefName,state,isDraft,url,additions,deletions,commits,comments,reviews',
   ], {
     cwd: workspace,
     timeout: 25_000,
-    encoding: 'utf-8',
     env: buildSafeEnv({ ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
@@ -1071,19 +1126,18 @@ export function pullRequestDetails(workspace: string, number: number): PrDetails
  * (default), squash o rebase. Asume que el PR está mergeable — si hay
  * conflictos, gh devuelve error legible que pasamos al user.
  */
-export function mergePullRequest(
+export async function mergePullRequest(
   workspace: string,
   number: number,
   method: 'merge' | 'squash' | 'rebase' = 'merge',
-): GitActionResult {
+): Promise<GitActionResult> {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
-  if (!ghAvailable()) return { ok: false, error: 'gh no instalado' };
+  if (!(await ghAvailable())) return { ok: false, error: 'gh no instalado' };
   if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
   const flag = method === 'squash' ? '--squash' : method === 'rebase' ? '--rebase' : '--merge';
-  const r = spawnSync('gh', ['pr', 'merge', String(number), flag], {
+  const r = await spawnAsync('gh', ['pr', 'merge', String(number), flag], {
     cwd: workspace,
     timeout: 90_000,
-    encoding: 'utf-8',
     env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
@@ -1097,18 +1151,17 @@ export function mergePullRequest(
  * Cierra el PR sin mergear. Opcionalmente acepta un comentario que se
  * agrega al PR.
  */
-export function closePullRequest(workspace: string, number: number, comment?: string): GitActionResult {
+export async function closePullRequest(workspace: string, number: number, comment?: string): Promise<GitActionResult> {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
-  if (!ghAvailable()) return { ok: false, error: 'gh no instalado' };
+  if (!(await ghAvailable())) return { ok: false, error: 'gh no instalado' };
   if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
   const args = ['pr', 'close', String(number)];
   if (comment && comment.trim()) {
     args.push('--comment', comment.trim().slice(0, 1000));
   }
-  const r = spawnSync('gh', args, {
+  const r = await spawnAsync('gh', args, {
     cwd: workspace,
     timeout: 30_000,
-    encoding: 'utf-8',
     env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {
@@ -1125,15 +1178,14 @@ export function closePullRequest(workspace: string, number: number, comment?: st
  * pierde la rama actual del worktree (igual que con checkoutBranch),
  * pero como cada agente tiene su propio worktree, no afecta a otros.
  */
-export function checkoutPullRequest(workspace: string, number: number): GitActionResult {
+export async function checkoutPullRequest(workspace: string, number: number): Promise<GitActionResult> {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
-  if (!ghAvailable()) return { ok: false, error: 'gh CLI no instalado' };
+  if (!(await ghAvailable())) return { ok: false, error: 'gh CLI no instalado' };
   if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
 
-  const r = spawnSync('gh', ['pr', 'checkout', String(number)], {
+  const r = await spawnAsync('gh', ['pr', 'checkout', String(number)], {
     cwd: workspace,
     timeout: 60_000,
-    encoding: 'utf-8',
     env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
   });
   if (r.status !== 0) {

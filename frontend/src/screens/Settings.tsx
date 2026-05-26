@@ -22,8 +22,13 @@ import { GhStatusBanner } from '@/components/GhStatusBanner';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useI18n, useT } from '@/hooks/useI18n';
+import {
+  collectLocalStorage, restoreLocalStorage, buildBackupZip, parseBackupZip,
+  backupFilename, getElectronBackupAPI, u8ToBase64, base64ToU8,
+  type BackupBundle, type BackupMetadata, type WorktreeState,
+} from '@/lib/backup';
 
-type Section = 'general' | 'claude' | 'github' | 'voice' | 'folders' | 'security' | 'appearance' | 'integrations' | 'about';
+type Section = 'general' | 'claude' | 'github' | 'voice' | 'folders' | 'security' | 'appearance' | 'integrations' | 'backup' | 'about';
 
 export function Settings() {
   const t = useTokens();
@@ -38,6 +43,7 @@ export function Settings() {
     { id: 'security', label: tr('settings.section.security'), icon: IconShield },
     { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
     { id: 'integrations', label: tr('settings.section.integrations'), icon: IconBolt },
+    { id: 'backup', label: tr('settings.section.backup'), icon: IconShield },
     { id: 'about', label: tr('settings.section.about'), icon: IconInfo },
   ];
   return (
@@ -78,6 +84,7 @@ export function Settings() {
         {sec === 'security' && <SectionSecurity/>}
         {sec === 'appearance' && <SectionAppearance/>}
         {sec === 'integrations' && <SectionIntegrations/>}
+        {sec === 'backup' && <SectionBackup/>}
         {sec === 'about' && <SectionAbout/>}
       </div>
     </div>
@@ -2857,3 +2864,402 @@ function KbdRow({ keys }: { keys: string[] }) {
 
 // Use StatusDot to keep imports clean even if section doesn't yet render it
 void StatusDot; void Glass;
+
+// ──────────────────────────────────────────────────────────────────────────
+// SectionBackup: export e import del estado completo de Eco (agentes + configs
+// + cambios sin commitear por worktree). Más opción de auto-backup diario a
+// una carpeta elegida con retención rolling.
+
+type BackupConfig = {
+  enabled: boolean;
+  folder?: string;
+  retention: number;
+  lastBackup?: number;
+  lastError?: string;
+};
+
+function SectionBackup() {
+  const t = useTokens();
+  const tr = useT();
+  const [cfg, setCfg] = useState<BackupConfig | null>(null);
+  const [busy, setBusy] = useState<'export' | 'import' | 'config' | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [confirmingRestore, setConfirmingRestore] = useState<{ bundle: BackupBundle; filename: string } | null>(null);
+
+  // Cargar config al montar.
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/backup/config').then((r) => r.json()).then((d) => {
+      if (!cancelled) setCfg(d as BackupConfig);
+    }).catch(() => { if (!cancelled) setCfg({ enabled: false, retention: 7 }); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function patchConfig(patch: Partial<BackupConfig>) {
+    setBusy('config');
+    try {
+      const r = await apiFetch('/backup/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...cfg, ...patch }),
+      });
+      const d = await r.json();
+      if (d.ok) setCfg(d.config as BackupConfig);
+      else setMsg({ kind: 'err', text: d.error || tr('settings.backup.err.save_config') });
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doExport() {
+    setBusy('export'); setMsg(null);
+    try {
+      // 1) Snapshot del backend (~/.eco + worktree states)
+      const bubbleIds = collectBubbleIdsFromLocalStorage();
+      const r = await apiFetch('/backup/snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bubbleIds }),
+      });
+      const snap = await r.json() as {
+        ok: boolean;
+        eco?: Record<string, string>;
+        worktrees?: WorktreeState[];
+        error?: string;
+      };
+      if (!snap.ok) throw new Error(snap.error || 'snapshot failed');
+
+      // 2) localStorage del renderer
+      const localStorageDump = collectLocalStorage();
+
+      // 3) Bundle + zip
+      const metadata: BackupMetadata = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        localStorage: localStorageDump,
+        eco: snap.eco ?? {},
+      };
+      const bundle: BackupBundle = { metadata, worktrees: snap.worktrees ?? [] };
+      const zipBytes = await buildBackupZip(bundle);
+
+      // 4) Save dialog → write file
+      const api = getElectronBackupAPI();
+      const defaultName = backupFilename();
+      if (api?.saveDialog && api?.writeBinaryFile) {
+        const dlg = await api.saveDialog({
+          title: tr('settings.backup.export.dialog_title'),
+          defaultPath: defaultName,
+          filters: [{ name: 'Eco Backup', extensions: ['zip'] }],
+        });
+        if (dlg.canceled) { setBusy(null); return; }
+        const w = await api.writeBinaryFile({ path: dlg.path, base64: u8ToBase64(zipBytes) });
+        if (!w.ok) throw new Error(w.error || 'write failed');
+        setMsg({ kind: 'ok', text: tr('settings.backup.export.ok', { path: dlg.path }) });
+      } else {
+        // Fallback en browser: descarga del blob
+        const blob = new Blob([zipBytes as BlobPart], { type: 'application/zip' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = defaultName;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+        setMsg({ kind: 'ok', text: tr('settings.backup.export.ok_browser') });
+      }
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('settings.backup.err.export') });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doImport() {
+    setBusy('import'); setMsg(null);
+    try {
+      const api = getElectronBackupAPI();
+      let zipBytes: Uint8Array;
+      let filename = 'backup.zip';
+      if (api?.openDialog && api?.readBinaryFile) {
+        const dlg = await api.openDialog({
+          title: tr('settings.backup.import.dialog_title'),
+          filters: [{ name: 'Eco Backup', extensions: ['zip'] }],
+        });
+        if (dlg.canceled) { setBusy(null); return; }
+        filename = dlg.path.split('/').pop() || filename;
+        const r = await api.readBinaryFile({ path: dlg.path });
+        if (!r.ok || !r.base64) throw new Error(r.error || 'read failed');
+        zipBytes = base64ToU8(r.base64);
+      } else {
+        // Fallback browser: input type=file
+        const file = await pickFileViaInput();
+        if (!file) { setBusy(null); return; }
+        filename = file.name;
+        zipBytes = new Uint8Array(await file.arrayBuffer());
+      }
+      const bundle = await parseBackupZip(zipBytes);
+      // Mostramos modal de confirmación con preview antes de pisar nada.
+      setConfirmingRestore({ bundle, filename });
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('settings.backup.err.import') });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyRestore(bundle: BackupBundle) {
+    setConfirmingRestore(null);
+    setBusy('import'); setMsg(null);
+    try {
+      // 1) Restaurar ~/.eco + worktree diffs vía backend
+      const r = await apiFetch('/backup/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eco: bundle.metadata.eco, worktrees: bundle.worktrees }),
+      });
+      const d = await r.json() as {
+        ok: boolean;
+        eco?: { restored: string[]; errors: string[] };
+        worktrees?: { bubbleId: string; ok: boolean; warning?: string }[];
+        error?: string;
+      };
+      if (!d.ok) throw new Error(d.error || 'restore failed');
+
+      // 2) Restaurar localStorage
+      restoreLocalStorage(bundle.metadata.localStorage);
+
+      // 3) Reload — los componentes leen state al mount, no escuchamos events para todo.
+      setMsg({ kind: 'ok', text: tr('settings.backup.import.ok_reloading') });
+      setTimeout(() => { window.location.reload(); }, 600);
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('settings.backup.err.import') });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function pickBackupFolder() {
+    const w = window as unknown as { electronAPI?: { pickFolder?: (o: { title: string }) => Promise<{ canceled: boolean; path: string }> } };
+    const api = w.electronAPI;
+    if (!api?.pickFolder) {
+      setMsg({ kind: 'err', text: tr('settings.backup.err.no_picker') });
+      return;
+    }
+    const r = await api.pickFolder({ title: tr('settings.backup.auto.pick_folder_title') });
+    if (r.canceled || !r.path) return;
+    await patchConfig({ folder: r.path });
+  }
+
+  if (!cfg) {
+    return (
+      <div style={{ maxWidth: 760 }}>
+        <Header title={tr('settings.backup.title')} sub={tr('settings.backup.sub')}/>
+        <div style={{ fontSize: 12, color: t.text2 }}>{tr('common.loading')}</div>
+      </div>
+    );
+  }
+
+  const lastBackupLabel = cfg.lastBackup
+    ? new Date(cfg.lastBackup).toLocaleString()
+    : tr('settings.backup.never');
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <Header title={tr('settings.backup.title')} sub={tr('settings.backup.sub')}/>
+
+      {/* Manual export/import */}
+      <SectionLabel>{tr('settings.backup.manual.label')}</SectionLabel>
+      <Glass radius={12} style={{ padding: 16, marginBottom: 18 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Btn kind="primary" size="md" icon={IconBolt}
+            disabled={busy !== null}
+            onClick={() => void doExport()}>
+            {busy === 'export' ? tr('settings.backup.exporting') : tr('settings.backup.export_btn')}
+          </Btn>
+          <Btn kind="secondary" size="md" icon={IconFolder}
+            disabled={busy !== null}
+            onClick={() => void doImport()}>
+            {busy === 'import' ? tr('settings.backup.importing') : tr('settings.backup.import_btn')}
+          </Btn>
+          <div style={{ flex: 1 }}/>
+          <div style={{ fontSize: 11.5, color: t.text2 }}>
+            {tr('settings.backup.last_label')}: <strong style={{ color: t.text1 }}>{lastBackupLabel}</strong>
+          </div>
+        </div>
+      </Glass>
+
+      {/* Auto-daily */}
+      <SectionLabel>{tr('settings.backup.auto.label')}</SectionLabel>
+      <Glass radius={12} style={{ padding: 16, marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <Toggle on={cfg.enabled} onChange={(v) => void patchConfig({ enabled: v })}/>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{tr('settings.backup.auto.toggle_title')}</div>
+            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>{tr('settings.backup.auto.toggle_desc')}</div>
+          </div>
+        </div>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 12px', borderRadius: 8, background: t.bg2,
+          marginBottom: 10,
+        }}>
+          <IconFolder size={14}/>
+          <code style={{
+            flex: 1, minWidth: 0, fontFamily: t.fontMono, fontSize: 11.5,
+            color: cfg.folder ? t.text0 : t.text3,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{cfg.folder || tr('settings.backup.auto.no_folder')}</code>
+          <Btn kind="ghost" size="sm" onClick={() => void pickBackupFolder()} disabled={busy !== null}>
+            {tr('settings.backup.auto.choose_folder_btn')}
+          </Btn>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('settings.backup.auto.retention_label')}:</span>
+          <select
+            value={cfg.retention}
+            disabled={busy !== null}
+            onChange={(e) => void patchConfig({ retention: Number(e.target.value) })}
+            style={{
+              ...fieldStyle(t),
+              width: 80, padding: '4px 6px', fontSize: 12,
+            }}>
+            <option value={7}>7</option>
+            <option value={14}>14</option>
+            <option value={30}>30</option>
+            <option value={90}>90</option>
+          </select>
+          <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('settings.backup.auto.retention_unit')}</span>
+        </div>
+        {cfg.lastError && (
+          <div style={{
+            marginTop: 10, padding: '6px 10px', borderRadius: 6, fontSize: 11,
+            color: t.err, fontFamily: t.fontMono,
+            background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
+          }}>{tr('settings.backup.auto.last_error')}: {cfg.lastError}</div>
+        )}
+      </Glass>
+
+      {/* Info */}
+      <SectionLabel>{tr('settings.backup.info.label')}</SectionLabel>
+      <Glass radius={12} style={{ padding: 16, marginBottom: 18 }}>
+        <div style={{ fontSize: 12, color: t.text1, lineHeight: 1.55 }}>
+          <div style={{ marginBottom: 8 }}><strong style={{ color: t.text0 }}>{tr('settings.backup.info.included')}:</strong></div>
+          <ul style={{ margin: 0, paddingLeft: 18, color: t.text2 }}>
+            <li>{tr('settings.backup.info.li_agents')}</li>
+            <li>{tr('settings.backup.info.li_configs')}</li>
+            <li>{tr('settings.backup.info.li_diffs')}</li>
+          </ul>
+          <div style={{ margin: '12px 0 8px' }}><strong style={{ color: t.text0 }}>{tr('settings.backup.info.excluded')}:</strong></div>
+          <ul style={{ margin: 0, paddingLeft: 18, color: t.text2 }}>
+            <li>{tr('settings.backup.info.li_untracked')}</li>
+            <li>{tr('settings.backup.info.li_token')}</li>
+            <li>{tr('settings.backup.info.li_claude_dir')}</li>
+          </ul>
+        </div>
+      </Glass>
+
+      {msg && (
+        <div style={{
+          padding: '10px 12px', borderRadius: 8, fontSize: 12,
+          color: msg.kind === 'ok' ? t.ok : t.err,
+          background: `color-mix(in oklch, ${msg.kind === 'ok' ? t.ok : t.err} 12%, transparent)`,
+          border: `1px solid ${msg.kind === 'ok' ? t.ok : t.err}`,
+          fontFamily: t.fontMono,
+        }}>{msg.text}</div>
+      )}
+
+      {confirmingRestore && (
+        <RestoreConfirmModal
+          bundle={confirmingRestore.bundle}
+          filename={confirmingRestore.filename}
+          onCancel={() => setConfirmingRestore(null)}
+          onConfirm={() => void applyRestore(confirmingRestore.bundle)}
+        />
+      )}
+    </div>
+  );
+}
+
+function pickFileViaInput(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip';
+    input.onchange = () => resolve(input.files?.[0] ?? null);
+    input.click();
+  });
+}
+
+function collectBubbleIdsFromLocalStorage(): string[] {
+  try {
+    const raw = window.localStorage.getItem('eco.bubbles');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((b: { id?: string }) => b?.id).filter((id): id is string => typeof id === 'string');
+  } catch { return []; }
+}
+
+function RestoreConfirmModal({
+  bundle, filename, onCancel, onConfirm,
+}: {
+  bundle: BackupBundle;
+  filename: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const lsKeys = Object.keys(bundle.metadata.localStorage).length;
+  const ecoKeys = Object.keys(bundle.metadata.eco).length;
+  const wtCount = bundle.worktrees.length;
+  const exportedAt = bundle.metadata.exportedAt
+    ? new Date(bundle.metadata.exportedAt).toLocaleString()
+    : '?';
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }} onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: 'min(520px, 100%)',
+        background: t.bg1, border: `1px solid ${t.glassBorder}`, borderRadius: 16,
+        padding: 22, boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+      }}>
+        <h3 style={{ margin: 0, fontSize: 16, color: t.text0 }}>
+          {tr('settings.backup.confirm.title')}
+        </h3>
+        <div style={{ fontSize: 12, color: t.text2, marginTop: 4 }}>
+          {tr('settings.backup.confirm.subtitle', { filename })}
+        </div>
+        <div style={{
+          marginTop: 14, padding: 12, borderRadius: 8, background: t.bg2,
+          fontFamily: t.fontMono, fontSize: 11.5, color: t.text1, lineHeight: 1.6,
+        }}>
+          <div>{tr('settings.backup.confirm.exported_at')}: <strong>{exportedAt}</strong></div>
+          <div>{tr('settings.backup.confirm.ls_keys')}: <strong>{lsKeys}</strong></div>
+          <div>{tr('settings.backup.confirm.eco_files')}: <strong>{ecoKeys}</strong></div>
+          <div>{tr('settings.backup.confirm.worktrees')}: <strong>{wtCount}</strong></div>
+        </div>
+        <div style={{
+          marginTop: 12, padding: 10, borderRadius: 8,
+          background: `color-mix(in oklch, ${t.warn} 12%, transparent)`,
+          border: `1px solid ${t.warn}`,
+          fontSize: 12, color: t.text0, lineHeight: 1.5,
+        }}>
+          <strong style={{ color: t.warn }}>{tr('common.warning')}:</strong>{' '}
+          {tr('settings.backup.confirm.warning_body')}
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+          <Btn kind="secondary" onClick={onCancel}>{tr('common.cancel')}</Btn>
+          <button type="button" onClick={onConfirm} style={{
+            padding: '9px 14px', borderRadius: 9,
+            background: t.err, color: '#fff', border: 0,
+            fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+          }}>{tr('settings.backup.confirm.replace_btn')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}

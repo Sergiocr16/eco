@@ -4,6 +4,8 @@
 // background. El backend:
 //
 // - Asigna un puerto libre automático (net.createServer.listen(0))
+//   y lo REUSA en stop/start subsiguientes mientras siga libre — así el
+//   BrowserPanel mantiene la URL entre reinicios y no hay que re-navegar.
 // - Le pregunta a Claude (`claude -p`) cuál es el comando si no se especifica
 // - Spawnea bajo `bash -lc` con `PORT=<port>` env (+ otras pistas) en el worktree
 // - Captura stdout/stderr en un ring buffer
@@ -745,9 +747,20 @@ export async function startDevServer(
   const existing = sessions.get(key);
   if (existing && existing.proc) return { ok: false, error: `Ya hay un server (${role}) corriendo para este agente` };
 
+  // Si la session ya tuvo un puerto previo y sigue libre, lo reusamos.
+  // Esto evita que un stop/start (o restart) cambie la URL del BrowserPanel
+  // — el iframe sigue apuntando al mismo localhost:PORT y no hay que volver
+  // a navegar manualmente. Si el puerto está ocupado por otro proceso o si
+  // es la primera vez, pedimos uno libre.
   let port: number;
-  try { port = await findFreePort(); }
-  catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'No se pudo asignar puerto' }; }
+  const previousPort = existing?.port && existing.port > 0 ? existing.port : 0;
+  if (previousPort > 0 && pidsHoldingPort(previousPort).length === 0) {
+    port = previousPort;
+    markAssigned(port);
+  } else {
+    try { port = await findFreePort(); }
+    catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'No se pudo asignar puerto' }; }
+  }
 
   let cmd = command?.trim();
   if (!cmd) {

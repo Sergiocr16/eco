@@ -124,6 +124,13 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
         // actual podría cambiar a `main`/`master`.
         ecoEmit('eco:git_refresh', { bubbleId });
         await fetchCurrent();
+        // Segundo refresh ~1.5 s después: GitHub a veces tarda en propagar el
+        // merge a su API y la primera respuesta de `gh pr view` queda con
+        // state=OPEN. El segundo intento captura state=MERGED.
+        setTimeout(() => {
+          ecoEmit('eco:git_refresh', { bubbleId });
+          void fetchCurrent();
+        }, 1500);
       } else {
         setMsg({ kind: 'err', text: d.error || tr('prs.merge.fail') });
       }

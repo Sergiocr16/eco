@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 
 export type SkillKind = 'skill' | 'command' | 'agent';
@@ -18,26 +18,50 @@ export type UseSkillsResult = {
   loading: boolean;
 };
 
+// Cache global por workspace. `useSkills` se monta una vez por SkillsCard +
+// SkillsPicker + cada bubble en multi-detail, y antes cada montaje hacía un
+// fetch limpio. Con cache, los re-mounts (cambio de tab, abrir un bubble,
+// colapsar/expandir el sidebar) se ven instantáneos y el refetch ocurre
+// silencioso en background.
+type CacheEntry = { skills: SkillInfo[]; ts: number };
+const skillsCache = new Map<string, CacheEntry>();
+const cacheKey = (workspace?: string) => workspace ?? '__no_ws__';
+
 export function useSkills(workspace?: string): UseSkillsResult {
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const key = cacheKey(workspace);
+  const cached = skillsCache.get(key);
+  const [skills, setSkills] = useState<SkillInfo[]>(cached?.skills ?? []);
+  // Spinner solo en el primer fetch sin cache. Refetches subsecuentes son
+  // silenciosos — el viejo se ve mientras carga el nuevo.
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const hit = skillsCache.get(key);
+    if (hit) {
+      setSkills(hit.skills);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     const params = workspace ? `?workspace=${encodeURIComponent(workspace)}` : '';
     apiFetch(`/skills${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r)))
       .then((d) => {
         if (cancelled) return;
-        setSkills(Array.isArray(d?.skills) ? d.skills : []);
+        const fresh: SkillInfo[] = Array.isArray(d?.skills) ? d.skills : [];
+        skillsCache.set(key, { skills: fresh, ts: Date.now() });
+        setSkills(fresh);
       })
-      .catch(() => { if (!cancelled) setSkills([]); })
+      .catch(() => { if (!cancelled && !hit) setSkills([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [workspace]);
+  }, [workspace, key]);
 
-  const byName = new Map(skills.map((s) => [s.name, s]));
+  // Sin memo, `new Map(skills.map(...))` se reconstruía en cada render y
+  // forzaba useMemo downstream a invalidarse. Con memo, sólo cambia cuando
+  // `skills` realmente cambia.
+  const byName = useMemo(() => new Map(skills.map((s) => [s.name, s])), [skills]);
   return { skills, byName, loading };
 }
 

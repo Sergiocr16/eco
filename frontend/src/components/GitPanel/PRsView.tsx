@@ -314,6 +314,16 @@ function PrDetailPane({
         ecoEmit('eco:git_refresh', { bubbleId });
         // Recargamos detalles para reflejar el nuevo state (MERGED).
         void load(true);
+        // Re-disparamos el refresh ~1.5 s después. GitHub a veces tarda esos
+        // ms en propagar el merge a su API y `gh pr view` / `gh pr list`
+        // devuelven estado stale el primer intento — el GitMiniDock y la
+        // lista quedaban mostrando el PR como OPEN hasta que el user
+        // colapsaba+expandía el panel. El segundo emit captura el estado
+        // ya propagado sin que el user tenga que hacer nada.
+        setTimeout(() => {
+          ecoEmit('eco:git_refresh', { bubbleId });
+          void load(true);
+        }, 1500);
       } else {
         setMsg({ kind: 'err', text: d.error || tr('prs.merge.fail') });
       }

@@ -38,6 +38,7 @@ import { resolveSafePath } from './fs-paths.js';
 import { listTree } from './fs-tree.js';
 import { searchInWorkspace } from './fs-search.js';
 import { summarizeBubble } from './notes-summary.js';
+import * as backupMod from './backup.js';
 import { z } from 'zod';
 
 function errResponse(res: Response, status: number, code: string, message: string) {
@@ -361,8 +362,8 @@ app.delete('/config/github', (_req: Request, res: Response) => {
 // Status del binario `gh` en el sistema — usado por Onboarding y Settings
 // para avisar al user si la sub-pestaña PRs va a funcionar. El PAT no lo
 // reemplaza, hay que tener `gh` instalado.
-app.get('/config/gh-status', (_req: Request, res: Response) => {
-  res.json(gitOps.ghStatus());
+app.get('/config/gh-status', async (_req: Request, res: Response) => {
+  res.json(await gitOps.ghStatus());
 });
 
 // Silenciar warning de "import no usado" para hasGithubCredentials —
@@ -938,39 +939,39 @@ app.post('/git/commit', (req: Request, res: Response) => {
 
 // Pull requests del repo (vía gh CLI). El user hace click en uno y se le
 // ofrece checkoutear esa rama en el worktree del agente para revisar.
-app.get('/git/prs', (req: Request, res: Response) => {
+app.get('/git/prs', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
-  res.json(gitOps.listPullRequests(dir));
+  res.json(await gitOps.listPullRequests(dir));
 });
 
-app.post('/git/pr/checkout', (req: Request, res: Response) => {
+app.post('/git/pr/checkout', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const num = Number(req.body?.number);
   if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
-  res.json(gitOps.checkoutPullRequest(dir, num));
+  res.json(await gitOps.checkoutPullRequest(dir, num));
 });
 
 // Detalle completo de un PR: descripción + comentarios + reviews + commits.
 // Usado por la sub-pestaña PRs del tab Git cuando el user clickea "Ver detalle".
-app.get('/git/pr/details', (req: Request, res: Response) => {
+app.get('/git/pr/details', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const num = Number(req.query.number);
   if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
-  res.json(gitOps.pullRequestDetails(dir, num));
+  res.json(await gitOps.pullRequestDetails(dir, num));
 });
 
 // PR asociado a la rama actual del worktree (si lo hay). Lo consume el
 // banner del chat para mostrar "estás en el PR #N" + acciones merge/close.
-app.get('/git/pr/current', (req: Request, res: Response) => {
+app.get('/git/pr/current', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
-  res.json(gitOps.currentPullRequest(dir));
+  res.json(await gitOps.currentPullRequest(dir));
 });
 
-app.post('/git/pr/merge', (req: Request, res: Response) => {
+app.post('/git/pr/merge', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const num = Number(req.body?.number);
@@ -978,16 +979,16 @@ app.post('/git/pr/merge', (req: Request, res: Response) => {
   const rawMethod = typeof req.body?.method === 'string' ? req.body.method : 'merge';
   const method: 'merge' | 'squash' | 'rebase' =
     rawMethod === 'squash' || rawMethod === 'rebase' ? rawMethod : 'merge';
-  res.json(gitOps.mergePullRequest(dir, num, method));
+  res.json(await gitOps.mergePullRequest(dir, num, method));
 });
 
-app.post('/git/pr/close', (req: Request, res: Response) => {
+app.post('/git/pr/close', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const num = Number(req.body?.number);
   if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
   const comment = typeof req.body?.comment === 'string' ? req.body.comment : undefined;
-  res.json(gitOps.closePullRequest(dir, num, comment));
+  res.json(await gitOps.closePullRequest(dir, num, comment));
 });
 
 // ─── Git history (log + show) ─────────────────────────────────────────────
@@ -1405,6 +1406,82 @@ app.post('/tts', async (req: Request, res: Response) => {
   } finally {
     ttsConcurrency.active -= 1;
   }
+});
+
+// ─── Backup & restore ─────────────────────────────────────────────────────
+// El frontend usa estos endpoints para construir el zip de export y para
+// restaurar. El backend NO conoce el localStorage del renderer — lo agrega y
+// restaura el propio frontend.
+
+// Devuelve el snapshot de ~/.eco/* + estados de worktrees para los bubbleIds
+// pasados. El frontend luego mete el localStorage y arma el zip.
+const BackupSnapshotSchema = z.object({
+  bubbleIds: z.array(z.string().min(1).max(128)).max(500).optional(),
+});
+app.post('/backup/snapshot', (req: Request, res: Response) => {
+  const parsed = BackupSnapshotSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const ids = parsed.data.bubbleIds ?? backupMod.listKnownBubbleIds();
+  console.log(`[backup/snapshot] ids=${ids.length} (request)`);
+  try {
+    const eco = backupMod.snapshotEcoState();
+    const worktrees = backupMod.collectWorktreeStates(ids);
+    console.log(`[backup/snapshot] eco_keys=${Object.keys(eco).length} worktrees=${worktrees.length} (done)`);
+    res.json({ ok: true, eco, worktrees });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[backup/snapshot] error: ${msg}`);
+    res.status(500).json({ ok: false, error: msg });
+  }
+});
+
+const WorktreeStateSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  branch: z.string().max(256).optional(),
+  sha: z.string().max(64).optional(),
+  diff: z.string().optional(),
+  missing: z.boolean().optional(),
+});
+const BackupRestoreSchema = z.object({
+  eco: z.record(z.string()).optional(),
+  worktrees: z.array(WorktreeStateSchema).max(500).optional(),
+});
+app.post('/backup/restore', (req: Request, res: Response) => {
+  const parsed = BackupRestoreSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const ecoResult = parsed.data.eco
+    ? backupMod.restoreEcoState(parsed.data.eco as backupMod.EcoSnapshot)
+    : { restored: [], errors: [] };
+  const wtResult = parsed.data.worktrees ? backupMod.applyWorktreeStates(parsed.data.worktrees) : [];
+  res.json({ ok: true, eco: ecoResult, worktrees: wtResult });
+});
+
+app.get('/backup/config', (_req: Request, res: Response) => {
+  res.json(backupMod.readBackupConfig());
+});
+
+const BackupConfigSchema = z.object({
+  enabled: z.boolean(),
+  folder: z.string().max(4096).optional(),
+  retention: z.number().int().min(1).max(365).optional(),
+  lastBackup: z.number().int().optional(),
+  lastError: z.string().max(500).optional(),
+});
+app.post('/backup/config', (req: Request, res: Response) => {
+  const parsed = BackupConfigSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const current = backupMod.readBackupConfig();
+  backupMod.writeBackupConfig({
+    ...current,
+    ...parsed.data,
+    retention: parsed.data.retention ?? current.retention ?? 7,
+  });
+  res.json({ ok: true, config: backupMod.readBackupConfig() });
+});
+
+app.delete('/backup/config', (_req: Request, res: Response) => {
+  backupMod.resetBackupConfig();
+  res.json({ ok: true });
 });
 
 // SPA fallback final — si llegaste hasta acá sin matchear ningún API route,

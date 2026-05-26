@@ -10,7 +10,10 @@ export type ThemeMode =
   | 'bubblegum' | 'neon-night'
   // Más extravagantes (amarillos, rojos, otros)
   | 'acid-yellow' | 'blood-moon' | 'mustard' | 'cherry-bomb' | 'sakura'
-  | 'emerald' | 'royal' | 'carbon';
+  | 'emerald' | 'royal' | 'carbon'
+  // Claros nuevos con personalidad — para los que prefieren light mode
+  // pero no quieren el blanco estéril del basic light.
+  | 'mint' | 'sky' | 'sand' | 'linen' | 'peach';
 
 export type EffectiveThemeMode = Exclude<ThemeMode, 'system'>;
 
@@ -903,6 +906,113 @@ const NEON_NIGHT_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'acc
   desktopBg: '#020006',
 };
 
+// Mint — verde menta muy suave, fresco, fondo blanco con tinte verdoso.
+const MINT_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#f1f8f4',
+  bg1: '#e8f1ec',
+  bg2: 'rgba(20,80,55,0.03)',
+  bg3: 'rgba(20,80,55,0.06)',
+  bg4: 'rgba(20,80,55,0.10)',
+  glassBg: 'rgba(241, 248, 244, 0.82)',
+  glassBorder: 'rgba(20,80,55,0.10)',
+  glassBorderHi: 'rgba(20,80,55,0.16)',
+  text0: '#1f3a2a',
+  text1: '#3d5a48',
+  text2: '#6a8576',
+  text3: '#98ad9f',
+  chromeBg: 'rgba(241, 248, 244, 0.88)',
+  windowBg: '#f1f8f4',
+  windowBorder: 'rgba(20,80,55,0.10)',
+  desktopBg: '#dfeae3',
+};
+
+// Sky — azul cielo claro, fondo blanco con tinte celeste calmo.
+const SKY_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#f0f6fc',
+  bg1: '#e5eff8',
+  bg2: 'rgba(20,60,110,0.03)',
+  bg3: 'rgba(20,60,110,0.06)',
+  bg4: 'rgba(20,60,110,0.10)',
+  glassBg: 'rgba(240, 246, 252, 0.82)',
+  glassBorder: 'rgba(20,60,110,0.10)',
+  glassBorderHi: 'rgba(20,60,110,0.16)',
+  text0: '#1a2c4a',
+  text1: '#3b526f',
+  text2: '#6c829e',
+  text3: '#a0b1c4',
+  chromeBg: 'rgba(240, 246, 252, 0.88)',
+  windowBg: '#f0f6fc',
+  windowBorder: 'rgba(20,60,110,0.10)',
+  desktopBg: '#dde7f2',
+};
+
+// Sand — beige tostado cálido, evoca lectura al aire libre.
+const SAND_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#f7f1e0',
+  bg1: '#efe7cf',
+  bg2: 'rgba(95,72,30,0.04)',
+  bg3: 'rgba(95,72,30,0.08)',
+  bg4: 'rgba(95,72,30,0.12)',
+  glassBg: 'rgba(247, 241, 224, 0.82)',
+  glassBorder: 'rgba(95,72,30,0.12)',
+  glassBorderHi: 'rgba(95,72,30,0.18)',
+  text0: '#3d2f17',
+  text1: '#5f4a26',
+  text2: '#8a7350',
+  text3: '#a8957a',
+  chromeBg: 'rgba(247, 241, 224, 0.88)',
+  windowBg: '#f7f1e0',
+  windowBorder: 'rgba(95,72,30,0.12)',
+  desktopBg: '#eadfc1',
+};
+
+// Linen — crema/off-white muy neutro, cálido sin saturar. Para los que
+// quieren light mode pero el blanco puro les molesta los ojos.
+const LINEN_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#faf6ef',
+  bg1: '#f2ede2',
+  bg2: 'rgba(60,50,30,0.03)',
+  bg3: 'rgba(60,50,30,0.06)',
+  bg4: 'rgba(60,50,30,0.10)',
+  glassBg: 'rgba(250, 246, 239, 0.82)',
+  glassBorder: 'rgba(60,50,30,0.10)',
+  glassBorderHi: 'rgba(60,50,30,0.16)',
+  text0: '#2b2618',
+  text1: '#524a37',
+  text2: '#86795f',
+  text3: '#a89c84',
+  chromeBg: 'rgba(250, 246, 239, 0.88)',
+  windowBg: '#faf6ef',
+  windowBorder: 'rgba(60,50,30,0.10)',
+  desktopBg: '#ece4d4',
+};
+
+// Peach — durazno suave, warm light tipo bakery/coffee morning. Más
+// vibrante que sepia o sand, sin caer en pink.
+const PEACH_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
+  ...LIGHT_BASE,
+  bg0: '#fff3eb',
+  bg1: '#ffe8d8',
+  bg2: 'rgba(120,55,20,0.03)',
+  bg3: 'rgba(120,55,20,0.07)',
+  bg4: 'rgba(120,55,20,0.11)',
+  glassBg: 'rgba(255, 243, 235, 0.82)',
+  glassBorder: 'rgba(120,55,20,0.12)',
+  glassBorderHi: 'rgba(120,55,20,0.18)',
+  text0: '#4a2818',
+  text1: '#6e4127',
+  text2: '#9c6e51',
+  text3: '#b8917a',
+  chromeBg: 'rgba(255, 243, 235, 0.88)',
+  windowBg: '#fff3eb',
+  windowBorder: 'rgba(120,55,20,0.12)',
+  desktopBg: '#f5dcc8',
+};
+
 // Mapping de cada modo a su base. Mantenemos los tres originales por compat
 // y agregamos las nuevas variantes.
 const THEME_BASES: Record<EffectiveThemeMode, Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'>> = {
@@ -945,6 +1055,11 @@ const THEME_BASES: Record<EffectiveThemeMode, Omit<Tokens, 'accent' | 'accentDim
   'emerald': EMERALD_BASE,
   'royal': ROYAL_BASE,
   'carbon': CARBON_BASE,
+  'mint': MINT_BASE,
+  'sky': SKY_BASE,
+  'sand': SAND_BASE,
+  'linen': LINEN_BASE,
+  'peach': PEACH_BASE,
 };
 
 // Luminosidad del accent por tema — los oscuros usan accent claro (~76-82%),
@@ -989,6 +1104,12 @@ const ACCENT_LUMINOSITY: Record<EffectiveThemeMode, number> = {
   'emerald': 78,
   'royal': 78,
   'carbon': 76,
+  // Light themes: accent ~56-58% L para que contraste contra fondos claros.
+  'mint': 56,
+  'sky': 56,
+  'sand': 58,
+  'linen': 58,
+  'peach': 58,
 };
 
 // Metadata para mostrar al usuario en el picker de Apariencia.
@@ -1039,6 +1160,13 @@ export const THEME_VARIANTS: { id: EffectiveThemeMode; name: string; kind: Theme
   { id: 'emerald',          name: 'Esmeralda',       kind: 'dark',  preview: '#041810' },
   { id: 'royal',            name: 'Real',            kind: 'dark',  preview: '#0e0420' },
   { id: 'carbon',           name: 'Carbón',          kind: 'dark',  preview: '#0e1014' },
+  // Claros con personalidad — agrupados al final para que sea fácil
+  // explorarlos sin scrollear entre oscuros.
+  { id: 'mint',             name: 'Menta',           kind: 'light', preview: '#f1f8f4' },
+  { id: 'sky',              name: 'Cielo',           kind: 'light', preview: '#f0f6fc' },
+  { id: 'sand',             name: 'Arena',           kind: 'light', preview: '#f7f1e0' },
+  { id: 'linen',            name: 'Lino',            kind: 'light', preview: '#faf6ef' },
+  { id: 'peach',            name: 'Durazno',         kind: 'light', preview: '#fff3eb' },
 ];
 
 export function isLightTheme(mode: EffectiveThemeMode): boolean {
@@ -1048,7 +1176,12 @@ export function isLightTheme(mode: EffectiveThemeMode): boolean {
     mode === 'sepia' ||
     mode === 'baby-pink' ||
     mode === 'bubblegum' ||
-    mode === 'sakura'
+    mode === 'sakura' ||
+    mode === 'mint' ||
+    mode === 'sky' ||
+    mode === 'sand' ||
+    mode === 'linen' ||
+    mode === 'peach'
   );
 }
 

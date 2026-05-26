@@ -1647,7 +1647,7 @@ function SkillsCard({
             }}>{favSkills.length}</span>
           </button>
           {!favCollapsed && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {favSkills.map((s) => {
             const running = busy === s.name;
             const desc = s.description?.trim();
@@ -1662,88 +1662,65 @@ function SkillsCard({
                   if (busy) return;
                   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void run(s); }
                 }}
-                title={`Ejecuta /${s.name} en la terminal`}
+                title={desc ? `/${s.name} — ${desc}` : `/${s.name}`}
                 style={{
-                  position: 'relative',
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '10px 12px 10px 14px',
-                  borderRadius: 12,
-                  border: `1px solid ${running ? t.accent : t.glassBorder}`,
-                  background: running ? t.accentFaint : t.bg2,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  height: 26, padding: '0 6px 0 8px',
+                  borderRadius: 6,
+                  background: running ? t.accentFaint : 'transparent',
                   color: t.text0,
                   cursor: busy ? 'wait' : 'pointer',
-                  textAlign: 'left',
                   opacity: busy && !running ? 0.5 : 1,
                   overflow: 'hidden',
-                  transition: 'background 140ms, border-color 140ms, transform 140ms',
+                  transition: 'background 100ms',
                 }}
-                onMouseEnter={(e) => {
-                  if (!busy) {
-                    e.currentTarget.style.background = t.bg3;
-                    e.currentTarget.style.borderColor = t.accentDim;
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!busy) {
-                    e.currentTarget.style.background = running ? t.accentFaint : t.bg2;
-                    e.currentTarget.style.borderColor = running ? t.accent : t.glassBorder;
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }
-                }}>
-                {/* Barra accent a la izquierda */}
-                <div style={{
-                  position: 'absolute', left: 0, top: 0, bottom: 0, width: 3,
-                  background: running ? t.accent : `linear-gradient(180deg, ${t.warn} 0%, ${t.accent} 100%)`,
-                  opacity: running ? 1 : 0.7,
-                }}/>
-                {/* Icono */}
-                <div style={{
-                  width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                  background: running ? t.accent : t.bg3,
-                  color: running ? t.accentOn : t.warn,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 13, fontWeight: 600,
-                  transition: 'background 140ms',
+                onMouseEnter={(e) => { if (!busy && !running) e.currentTarget.style.background = t.bg3; }}
+                onMouseLeave={(e) => { if (!busy && !running) e.currentTarget.style.background = 'transparent'; }}>
+                {/* Estrella / spinner */}
+                <span style={{
+                  width: 12, height: 12, flexShrink: 0,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, lineHeight: 1,
+                  color: running ? t.accent : t.warn,
                 }}>
                   {running ? (
                     <span style={{
-                      width: 10, height: 10, borderRadius: '50%',
-                      border: `2px solid ${t.accentOn}`,
+                      width: 9, height: 9, borderRadius: '50%',
+                      border: `1.5px solid ${t.accent}`,
                       borderTopColor: 'transparent',
                       animation: 'eco-spin 0.7s linear infinite',
                     }}/>
                   ) : '★'}
-                </div>
-                {/* Info — nombre + descripción */}
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <code style={{
-                    fontFamily: t.fontMono, fontSize: 12.5,
-                    fontWeight: 600,
-                    color: running ? t.accent : t.text0,
+                </span>
+                {/* Nombre + descripción inline en una sola fila */}
+                <code style={{
+                  fontFamily: t.fontMono, fontSize: 11.5, fontWeight: 600,
+                  color: running ? t.accent : t.text0,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}>/{s.name}</code>
+                {desc && (
+                  <span style={{
+                    flex: 1, minWidth: 0,
+                    fontSize: 10.5, color: t.text3, lineHeight: 1,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>/{s.name}</code>
-                  {desc && (
-                    <div style={{
-                      fontSize: 10.5, color: t.text2, lineHeight: 1.4,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>{desc}</div>
-                  )}
-                </div>
+                  }}>{desc}</span>
+                )}
                 {/* Quitar de favoritos */}
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); toggleFav(skillIdOf(s)); }}
-                  title="Quitar de favoritos"
+                  title={tr('detail.skills.unfav_tooltip')}
                   style={{
-                    width: 22, height: 22, padding: 0, border: 0, borderRadius: 6,
+                    width: 16, height: 16, padding: 0, border: 0, borderRadius: 4,
                     background: 'transparent', color: t.text3, cursor: 'pointer',
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 14, lineHeight: 1,
+                    fontSize: 12, lineHeight: 1,
                     flexShrink: 0,
+                    marginLeft: 'auto',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = `color-mix(in oklch, ${t.err} 15%, transparent)`;
+                    e.currentTarget.style.background = `color-mix(in oklch, ${t.err} 18%, transparent)`;
                     e.currentTarget.style.color = t.err;
                   }}
                   onMouseLeave={(e) => {

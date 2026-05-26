@@ -232,6 +232,105 @@ ipcMain.handle('eco:pick-folder', async (_e, opts) => {
   return { canceled: false, path: result.filePaths[0] };
 });
 
+// ─── Save/Open dialogs + file I/O para backup ─────────────────────────────
+// El user elige dónde guardar el zip de backup y dónde abrirlo. El renderer
+// no puede escribir/leer files arbitrarios, pero el main sí — con un allowlist
+// que bloquea paths de sistema y el directorio ~/.eco (no querés que el user
+// pueda corromper su propio estado activo por accidente).
+
+function isSafeUserPath(absPath) {
+  if (typeof absPath !== 'string' || !absPath) return false;
+  // Path traversal o paths relativos no son seguros.
+  if (absPath.includes('\0')) return false;
+  if (!path.isAbsolute(absPath)) return false;
+  // Bloqueamos dirs de sistema y el dir de estado de Eco.
+  const home = os.homedir();
+  const blocked = [
+    '/System', '/Library', '/usr', '/bin', '/sbin', '/etc', '/private/etc',
+    '/private/var', path.join(home, '.eco'),
+  ];
+  for (const b of blocked) {
+    if (absPath === b || absPath.startsWith(b + path.sep)) return false;
+  }
+  return true;
+}
+
+ipcMain.handle('eco:save-dialog', async (_e, opts) => {
+  const o = opts || {};
+  const result = await dialog.showSaveDialog(mainWindow ?? undefined, {
+    title: o.title || 'Guardar',
+    defaultPath: o.defaultPath || undefined,
+    filters: Array.isArray(o.filters) ? o.filters : undefined,
+  });
+  if (result.canceled || !result.filePath) return { canceled: true, path: '' };
+  return { canceled: false, path: result.filePath };
+});
+
+ipcMain.handle('eco:open-dialog', async (_e, opts) => {
+  const o = opts || {};
+  const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
+    title: o.title || 'Abrir',
+    defaultPath: o.defaultPath || undefined,
+    filters: Array.isArray(o.filters) ? o.filters : undefined,
+    properties: ['openFile'],
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true, path: '' };
+  return { canceled: false, path: result.filePaths[0] };
+});
+
+ipcMain.handle('eco:write-binary', async (_e, opts) => {
+  const o = opts || {};
+  if (!isSafeUserPath(o.path)) return { ok: false, error: 'path_blocked' };
+  if (typeof o.base64 !== 'string') return { ok: false, error: 'base64_required' };
+  try {
+    fs.mkdirSync(path.dirname(o.path), { recursive: true });
+    fs.writeFileSync(o.path, Buffer.from(o.base64, 'base64'));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'write_error' };
+  }
+});
+
+ipcMain.handle('eco:read-binary', async (_e, opts) => {
+  const o = opts || {};
+  if (!isSafeUserPath(o.path)) return { ok: false, error: 'path_blocked' };
+  try {
+    const buf = fs.readFileSync(o.path);
+    return { ok: true, base64: buf.toString('base64') };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'read_error' };
+  }
+});
+
+ipcMain.handle('eco:list-dir', async (_e, opts) => {
+  const o = opts || {};
+  if (!isSafeUserPath(o.dir)) return { ok: false, error: 'path_blocked' };
+  try {
+    const entries = fs.readdirSync(o.dir, { withFileTypes: true })
+      .filter((d) => d.isFile())
+      .map((d) => {
+        const p = path.join(o.dir, d.name);
+        let mtime = 0;
+        try { mtime = fs.statSync(p).mtimeMs; } catch { /* noop */ }
+        return { name: d.name, path: p, mtime };
+      });
+    return { ok: true, entries };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'list_error' };
+  }
+});
+
+ipcMain.handle('eco:delete-file', async (_e, opts) => {
+  const o = opts || {};
+  if (!isSafeUserPath(o.path)) return { ok: false, error: 'path_blocked' };
+  try {
+    fs.unlinkSync(o.path);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'delete_error' };
+  }
+});
+
 // IPC: notificación nativa via `electron.Notification`. Usado por
 // `usePtyBusyNotifier` cuando un agente termina (PTY busy→idle). En
 // `.dmg` unsigned, `new Notification(...)` de la Web API NO aparece en

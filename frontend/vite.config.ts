@@ -61,6 +61,7 @@ export default defineConfig({
       '/dev': { target: HTTP_TARGET, changeOrigin: false },
       '/proxy': { target: HTTP_TARGET, changeOrigin: false },
       '/worktree': { target: HTTP_TARGET, changeOrigin: false },
+      '/backup': { target: HTTP_TARGET, changeOrigin: false },
     },
   },
 });

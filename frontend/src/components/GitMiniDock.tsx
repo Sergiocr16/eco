@@ -59,6 +59,7 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
   useEffect(() => {
     if (!workspace || !bubbleId) { setCurrentPr(null); return; }
     let cancelled = false;
+    let followUp: ReturnType<typeof setTimeout> | null = null;
     const fetchPr = async () => {
       try {
         const params = new URLSearchParams({ workspace, bubbleId });
@@ -71,11 +72,21 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
     };
     void fetchPr();
     // Refetch cuando algo cambia el estado git (checkout, commit, etc.).
+    // Además agendamos un segundo fetch ~1.5 s después: tras `gh pr merge`
+    // la API de GitHub a veces tarda en propagar y la primera consulta
+    // todavía devuelve OPEN. El follow-up captura el estado ya propagado
+    // sin que el user tenga que colapsar/expandir el panel.
     const offBus = ecoOn('eco:git_refresh', (e) => {
       if (e.bubbleId !== bubbleId) return;
       void fetchPr();
+      if (followUp) clearTimeout(followUp);
+      followUp = setTimeout(() => { followUp = null; void fetchPr(); }, 1500);
     });
-    return () => { cancelled = true; offBus(); };
+    return () => {
+      cancelled = true;
+      offBus();
+      if (followUp) clearTimeout(followUp);
+    };
   }, [workspace, bubbleId, branchesData?.current]);
 
   function openPrDetail(e: React.MouseEvent) {

@@ -17,6 +17,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 11. [FilesPanel — tree + editor](#filespanel)
 12. [NotesPanel — notes + summarizer](#notespanel)
 13. [Archiving](#archiving)
+13b. [Backup & Restore](#backup)
 14. [GitHub PAT](#githubpat)
 15. [Auth, workspaces, worktrees, onboarding](#auth)
 16. [Voice/text meta-commands](#metacommands)
@@ -306,6 +307,7 @@ Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources
 | `~/.eco/github.json` | GitHub PAT + cached username/email |
 | `~/.eco/dev-sessions.json` | `[{bubbleId, role, pgid, port, command, ...}]` |
 | `~/.eco/obsidian.json` | `{vaultPath, enabled}` |
+| `~/.eco/backup.json` | `{enabled, folder?, retention, lastBackup?, lastError?}` — config del auto-backup diario |
 | `~/.eco/worktrees/<bubbleId>` | Per-agent git worktree |
 
 ### Frontend localStorage
@@ -759,6 +761,59 @@ POST /bubble/archive  {bubbleId}
 - `backend/src/index.ts` `closeBubbleResources` with `keepWorktree` option
 
 > **WHY keep the worktree**: archived ≠ deleted. The `eco/<short>` branch stays alive for later review or merge; restoring an archived bubble can resume mid-task without re-cloning state.
+
+---
+
+<a id="backup"></a>
+## Backup & Restore
+
+Settings → **Backup** permite exportar e importar todo el estado de Eco (agentes, configs, cambios sin commitear por worktree) a un archivo `.zip`. También hay auto-backup diario configurable.
+
+### Qué se incluye en el .zip
+
+```
+eco-backup-YYYY-MM-DD-HHMM.zip
+├── version.txt          ← "1"
+├── metadata.json        ← localStorage (todas las claves eco.*) + ~/.eco/*.json + api-key
+└── worktrees/<bubbleId>/
+    ├── HEAD.txt         ← "branch\nsha"
+    └── diff.patch       ← `git diff HEAD --binary` (vacío si limpio)
+```
+
+**NO se incluye**: `~/.eco/token` (regenerable, security risk si el zip se filtra), archivos untracked de worktrees, `~/.claude/projects/*` (sesiones del CLI de Claude, viven fuera de Eco).
+
+### Endpoints
+
+```
+POST /backup/snapshot    {bubbleIds?} → {eco, worktrees}
+POST /backup/restore     {eco?, worktrees?} → {eco: {restored, errors}, worktrees: [{bubbleId, ok, warning?}]}
+GET  /backup/config       → {enabled, folder?, retention, lastBackup?, lastError?}
+POST /backup/config       → guarda + devuelve el config completo
+DELETE /backup/config     → resetea a default disabled
+```
+
+### Files
+
+- `backend/src/backup.ts` — `snapshotEcoState`, `restoreEcoState`, `collectWorktreeStates`, `applyWorktreeStates`, `readBackupConfig`/`writeBackupConfig`.
+- `frontend/src/lib/backup.ts` — `collectLocalStorage`/`restoreLocalStorage`, `buildBackupZip`/`parseBackupZip` (fflate), `backupFilename`, `getElectronBackupAPI`, `u8ToBase64`/`base64ToU8`.
+- `frontend/src/screens/Settings.tsx` `SectionBackup` — UI con cards: manual (export/import), auto-daily (toggle + folder picker + retention), info.
+- `frontend/src/hooks/useBackupScheduler.ts` — montado en `App.tsx:Shell`. Cada 1h chequea config; si `enabled && now-lastBackup > 24h && !document.hidden`, dispara backup. Borra los más viejos según `retention`. Pausa con visibilitychange.
+- `electron/main.cjs` + `electron/preload.cjs` — IPC handlers `eco:save-dialog`, `eco:open-dialog`, `eco:write-binary`, `eco:read-binary`, `eco:list-dir`, `eco:delete-file`. Allowlist bloquea `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/etc`, `/private/etc`, `/private/var`, `~/.eco`.
+
+### Restore flow
+
+1. Frontend lee el zip vía `parseBackupZip` y muestra modal de confirmación (lista cantidades de claves localStorage / archivos eco / worktrees).
+2. Si confirma: `POST /backup/restore` con `eco` + `worktrees`. Backend escribe los `~/.eco/*` (chmod 0o600) y aplica `git apply` por worktree (con `--check` previo para detectar conflicts — warnings por worktree que falló).
+3. Renderer hace `restoreLocalStorage(metadata.localStorage)` (limpia eco.* excepto `eco.session`, escribe los del backup).
+4. `window.location.reload()` para que todos los componentes lean state fresco.
+
+### Retención rolling
+
+Default 7. Configurable 7/14/30/90. El scheduler lista archivos del folder con `BACKUP_FILE_REGEX = /^eco-backup-\d{4}-\d{2}-\d{2}-\d{4}\.zip$/`, ordena descendente por mtime, borra todos los pasados el N.
+
+> **WHY ZIP y no JSON puro**: el diff binario de worktrees (con `--binary`) puede ser grande. Comprimirlo en zip baja típicamente 10x. Además fflate trae una API más limpia que el manejo manual de Base64 que requeriría JSON.
+
+> **WHY no incluimos el token**: si el zip se filtra (lo subís a Drive, te lo mandás por email), un atacante con acceso al zip + tu IP del backend podría auth. El user.json tiene PIN argon2id que sí es seguro de backupear.
 
 ---
 

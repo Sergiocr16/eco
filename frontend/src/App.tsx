@@ -23,6 +23,7 @@ import { WorkspacePicker } from './components/WorkspacePicker';
 import { AuthScreen } from './screens/AuthScreen';
 import { OnboardingWizard, hasOnboarded } from './screens/OnboardingWizard';
 import { useAuth } from './hooks/useAuth';
+import { useBackupScheduler } from './hooks/useBackupScheduler';
 import { useTheme } from './design/theme';
 import { I18nProvider, useI18n, useT } from './hooks/useI18n';
 import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
@@ -97,6 +98,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // Dispara desktop notifications al transitar busy → idle (opt-in via
   // setting `eco.notify.on_finish`).
   usePtyBusyTracker(bubbles.bubbles, detailBubbleId);
+  // Scheduler de auto-backup diario — chequea cada hora si pasaron 24h
+  // desde el último backup y dispara export silencioso al folder configurado.
+  useBackupScheduler();
 
   // Click en una notificación nativa del .dmg → abrir el agente que terminó.
   useEffect(() => {
