@@ -97,7 +97,7 @@ export type UseBubblesResult = {
   bubbles: Bubble[];
   activeBubble: Bubble | null;
   activeBubbleId: string | null;
-  createBubble: (opts?: { title?: string; workspace?: string; focus?: boolean; baseBranch?: string }) => Bubble;
+  createBubble: (opts?: { id?: string; title?: string; workspace?: string; focus?: boolean; baseBranch?: string }) => Bubble;
   removeBubble: (id: string) => void;
   archiveBubble: (id: string) => void;
   unarchiveBubble: (id: string) => void;
@@ -141,12 +141,50 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     persist(bubbles, activeBubbleId);
   }, [bubbles, activeBubbleId]);
 
-  const createBubble = useCallback((opts?: { title?: string; workspace?: string; focus?: boolean; baseBranch?: string }): Bubble => {
+  // Sync ligero hacia el backend para que clientes externos (MCP server stdio
+  // del Claude Code, etc.) puedan listar las bubbles vía GET /bubbles sin
+  // tener acceso al localStorage. Debouncea para no spamear el endpoint
+  // durante streaming de mensajes (status flips de thinking → executing →
+  // idle disparan varios re-renders por turn).
+  useEffect(() => {
+    const summary = bubbles.map((b) => ({
+      id: b.id,
+      title: b.title,
+      workspace: b.workspace,
+      status: b.status,
+      archived: !!b.archived,
+      updatedAt: b.updatedAt,
+    }));
+    const handle = setTimeout(() => {
+      void apiFetch('/bubbles/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bubbles: summary }),
+      }).catch(() => { /* sync best-effort */ });
+    }, 800);
+    return () => clearTimeout(handle);
+  }, [bubbles]);
+
+  const createBubble = useCallback((opts?: { id?: string; title?: string; workspace?: string; focus?: boolean; baseBranch?: string }): Bubble => {
     const accent = nextAccent(bubbles);
     const workspace = opts?.workspace ?? defaultWorkspace;
     const baseBranch = opts?.baseBranch?.trim() || undefined;
+    // `opts.id` viene cuando el origen es el backend (MCP server externo) y
+    // ya generó un bubbleId server-side. En el flujo normal (UI / voice /
+    // tool interno) opts.id es undefined y autogeneramos.
+    const presetId = opts?.id?.trim() || null;
+    // Si el id ya existe en estado (raro: la bubble ya fue materializada
+    // antes — ej. el frontend recibió el client_action dos veces), devolvemos
+    // la existente sin duplicar.
+    if (presetId) {
+      const existing = bubbles.find((b) => b.id === presetId);
+      if (existing) {
+        if (opts?.focus !== false) setActiveBubbleId(existing.id);
+        return existing;
+      }
+    }
     const bubble: Bubble = {
-      id: newId('b'),
+      id: presetId ?? newId('b'),
       title: opts?.title?.trim() || translate('agent.default_title', loadLang(), { n: bubbles.length + 1 }),
       workspace,
       sessionId: null,

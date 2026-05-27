@@ -193,12 +193,27 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       onError: () => { /* ya manejado en socket.error */ },
       onClientAction: (sourceBubbleId, action) => {
         if (action.kind === 'open_bubble') {
-          bubbles.createBubble({ title: action.title, focus: action.focus, baseBranch: defaultBaseBranchForWorkspace() });
+          // El backend (vía MCP externo) puede pasar id/workspace/baseBranch
+          // pre-determinados. El path interno (agent tool open_bubble) los
+          // omite y caemos al default del usuario.
+          bubbles.createBubble({
+            id: action.id,
+            title: action.title,
+            focus: action.focus,
+            workspace: action.workspace,
+            baseBranch: action.baseBranch ?? defaultBaseBranchForWorkspace(),
+          });
         } else if (action.kind === 'rename_bubble') {
-          bubbles.renameBubble(sourceBubbleId, action.title);
+          if (sourceBubbleId) bubbles.renameBubble(sourceBubbleId, action.title);
         } else if (action.kind === 'close_bubble') {
-          bubbles.removeBubble(sourceBubbleId);
+          if (sourceBubbleId) bubbles.removeBubble(sourceBubbleId);
         }
+      },
+      onInjectPrompt: (bubbleId, text, _workspace) => {
+        // Originado por POST /bubble/create con initialPrompt — el backend ya
+        // creó el worktree y disparó open_bubble; ahora arrancamos el agente
+        // mandando el prompt como si el user lo hubiese escrito.
+        sendTo(bubbleId, text);
       },
       onVoiceTranscribed: (text) => handleIncomingVoiceText(text),
     },

@@ -15,10 +15,11 @@ type ServerMsg =
   | { type: 'pty_status'; bubbleId: string; running: boolean }
   | { type: 'pty_busy_change'; bubbleId: string; busy: boolean }
   | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string }
-  | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string };
+  | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string }
+  | { type: 'inject_prompt'; bubbleId: string; text: string; workspace?: string };
 
 export type ClientAction =
-  | { kind: 'open_bubble'; id: string; title: string; focus: boolean }
+  | { kind: 'open_bubble'; id: string; title: string; focus: boolean; workspace?: string; baseBranch?: string }
   | { kind: 'rename_bubble'; title: string }
   | { kind: 'close_bubble' };
 
@@ -96,6 +97,10 @@ export type SocketHandlers = {
   ) => void;
   onClientAction?: (sourceBubbleId: string, action: ClientAction) => void;
   onVoiceTranscribed?: (text: string) => void;
+  // Originado por el MCP server externo via POST /bubble/create (initial_prompt).
+  // El App.tsx lo despacha como si el user hubiese tipeado el mensaje en el chat
+  // de la bubble recién creada.
+  onInjectPrompt?: (bubbleId: string, text: string, workspace?: string) => void;
 };
 
 export type EcoSocket = {
@@ -249,8 +254,15 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         const msg = JSON.parse(ev.data) as ServerMsg;
         if (msg.type === 'sdk_message') handleSdkMessage(msg.message);
         else if (msg.type === 'client_action') {
-          const src = activeBubbleIdRef.current;
-          if (src) handlersRef.current.onClientAction?.(src, msg.action);
+          // Acciones originadas por el agent loop normalmente — sourceBubbleId
+          // del último prompt activo. Acciones tipo open_bubble que vienen del
+          // MCP externo pueden no tener prompt activo en curso; en ese caso
+          // pasamos string vacío como source (rename/close ignoran cuando es
+          // open_bubble; open_bubble no usa el source).
+          handlersRef.current.onClientAction?.(activeBubbleIdRef.current ?? '', msg.action);
+        }
+        else if (msg.type === 'inject_prompt') {
+          handlersRef.current.onInjectPrompt?.(msg.bubbleId, msg.text, msg.workspace);
         }
         else if (msg.type === 'voice_transcribed') {
           handlersRef.current.onVoiceTranscribed?.(msg.text);

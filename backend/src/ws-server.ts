@@ -2,6 +2,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'node:http';
 import { runAgent } from './agent.js';
 import { ClientMessageSchema, type ServerMessage } from './protocol.js';
+import type { ClientAction } from './agent-tools.js';
 import { config } from './config.js';
 import { extractBearer, tokensMatch } from './auth.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
@@ -16,9 +17,29 @@ function hostAllowed(host: string | undefined): boolean {
 }
 
 let broadcastFn: ((msg: ServerMessage) => void) | null = null;
+let wssRef: WebSocketServer | null = null;
 
 export function broadcastServerMessage(msg: ServerMessage): void {
   broadcastFn?.(msg);
+}
+
+// Broadcast tipado para client_action — usado por endpoints HTTP (ej.
+// /bubble/create desde el MCP server) que necesitan inyectar acciones de
+// frontend sin pasar por el agent loop. Wrapper sobre broadcastServerMessage.
+export function broadcastClientAction(action: ClientAction): void {
+  broadcastFn?.({ type: 'client_action', action });
+}
+
+// Devuelve cuántos clientes WS hay actualmente conectados al `/ws` (frontend
+// del Electron app o el dev en :5173). Usado por /bubble/create para decidir
+// si vale la pena disparar la acción o devolver `eco.no_clients`.
+export function wsClientCount(): number {
+  if (!wssRef) return 0;
+  let n = 0;
+  for (const c of wssRef.clients) {
+    if (c.readyState === c.OPEN) n += 1;
+  }
+  return n;
 }
 
 // Snapshot opcional: cualquier módulo (pty-server, voice, …) registra un provider
@@ -75,6 +96,7 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       }
     }
   };
+  wssRef = wss;
 
   wss.on('connection', (ws) => {
     let activeAbort: AbortController | null = null;

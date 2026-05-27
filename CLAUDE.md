@@ -1257,3 +1257,62 @@ To understand features without flailing:
 - **Theme system**: `frontend/src/design/tokens.ts` and `theme.tsx` — accents + themes, `glassEffect` helper
 - **FilesPanel security**: `backend/src/fs-paths.ts:resolveSafePath` — single chokepoint for path validation
 - **Notes summarizer**: `backend/src/notes-summary.ts` — slimming + claude-p spawn + 3-section prompt
+
+## Appendix C: External MCP server (Claude Code)
+
+Paquete standalone en `mcp-server/` que expone tools MCP por stdio para
+que Claude Code (u otro cliente MCP) pueda crear bubbles en Eco desde
+cualquier terminal.
+
+### Tools v1
+
+- `create_bubble({ title, workspace?, base_branch?, initial_prompt? })` —
+  Crea una bubble en Eco. Si `initial_prompt`, el agente Claude interno
+  arranca con ese mensaje automáticamente. Si `workspace` se omite, el
+  server detecta el cwd con el que arrancó y busca un workspace permitido
+  que lo contenga.
+- `list_bubbles()` — Lista las bubbles activas (id, título, workspace,
+  status). Requiere que el frontend haya sincronizado al menos una vez.
+
+### Setup
+
+```bash
+cd mcp-server
+npm install
+npm run build
+claude mcp add eco -- node /home/pi/projects/eco/mcp-server/dist/index.js
+```
+
+Reiniciá Claude Code. Las tools quedan disponibles como
+`mcp__eco__create_bubble` y `mcp__eco__list_bubbles`.
+
+### Endpoints HTTP que consume
+
+- `POST /bubble/create` — Crea la bubble. Requiere Eco abierto (al menos un
+  WS conectado al `/ws`); devuelve `409 eco.no_clients` si no.
+- `GET /bubbles` — Lee snapshot que el frontend sincroniza periódicamente.
+- `POST /bubbles/sync` — Solo lo llama el frontend (debounce 800ms) para
+  mantener el snapshot actualizado.
+
+### Decisiones que parecen raras
+
+#### "¿Por qué la creación pasa por el frontend si el backend recibió el POST?"
+Porque las bubbles viven en `localStorage` del frontend (autoridad). El
+backend no tiene un registry de bubbles — solo de worktrees y dev sessions.
+Para crear una bubble "visualmente" hay que avisarle al frontend; el camino
+es `client_action: open_bubble` por WS, que ya existía para el tool MCP
+interno (`agent-tools.ts`). El endpoint nuevo reusa ese mismo path.
+
+#### "¿Por qué `inject_prompt` con setTimeout 500 ms y no inmediato?"
+El frontend tiene que terminar de procesar el `open_bubble` (crear la
+bubble en `useBubbles`, montar el componente, registrar el `activeBubbleId`
+del socket) antes de aceptar un prompt para ella. 500 ms es conservador
+y suficiente en práctica. Sin esto, el primer prompt puede caer en una
+bubble que todavía no existe o no es la activa, y se pierde.
+
+#### "¿Por qué `~/.eco/bubbles-index.json` y no consultar al frontend on-demand?"
+Long-poll WS request/response del frontend para `list_bubbles` agrega
+mucha complejidad para v1. El push periódico desde el frontend (8 KB cada
+~800 ms cuando algo cambia) es trivial, sobrevive reinicios del backend,
+y el caller MCP siempre obtiene una respuesta inmediata sin esperar al
+frontend.
