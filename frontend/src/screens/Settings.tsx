@@ -20,6 +20,7 @@ import { useGithubCredentials } from '@/hooks/useGithubCredentials';
 import { GithubTokenHelp } from '@/components/GithubTokenHelp';
 import { GhStatusBanner } from '@/components/GhStatusBanner';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
+import { useMcpConfig } from '@/hooks/useMcpConfig';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useI18n, useT } from '@/hooks/useI18n';
 import {
@@ -1880,7 +1881,146 @@ function SectionIntegrations() {
           </div>
         </div>
       </Glass>
+
+      <SectionLabel>{tr('settings.mcp.label')}</SectionLabel>
+      <McpCard/>
     </div>
+  );
+}
+
+function McpCard() {
+  const t = useTokens();
+  const tr = useT();
+  const mcp = useMcpConfig();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const installCommand = mcp.binaryPath
+    ? `claude mcp add eco -s user -- node ${mcp.binaryPath}`
+    : '';
+
+  async function handleInstall() {
+    setBusy(true);
+    setMsg(null);
+    const r = await mcp.install();
+    setBusy(false);
+    setMsg(r.ok
+      ? { ok: true, text: tr('settings.mcp.msg.installed') }
+      : { ok: false, text: r.error });
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  async function handleUninstall() {
+    setBusy(true);
+    setMsg(null);
+    const r = await mcp.uninstall();
+    setBusy(false);
+    setMsg(r.ok
+      ? { ok: true, text: tr('settings.mcp.msg.uninstalled') }
+      : { ok: false, text: r.error });
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  async function handleCopy() {
+    if (!installCommand) return;
+    try {
+      await navigator.clipboard.writeText(installCommand);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* noop */ }
+  }
+
+  const statusColor =
+    !mcp.binaryAvailable ? t.err
+    : !mcp.claudeAvailable ? t.warn
+    : mcp.installed ? t.ok
+    : t.text3;
+  const statusText =
+    !mcp.binaryAvailable ? tr('settings.mcp.status.binary_missing')
+    : !mcp.claudeAvailable ? tr('settings.mcp.status.claude_missing')
+    : mcp.installed ? tr('settings.mcp.status.installed', { scope: mcp.scope ?? 'user' })
+    : tr('settings.mcp.status.not_installed');
+
+  return (
+    <Glass radius={14} style={{ padding: 18, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+          background: t.accentFaint, color: t.accent,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <IconTerminal size={20}/>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: t.text0, marginBottom: 4 }}>
+            {tr('settings.mcp.title')}
+          </div>
+          <div style={{ fontSize: 12.5, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
+            {tr('settings.mcp.desc')}
+          </div>
+
+          <div style={{
+            padding: 10, marginBottom: 12, borderRadius: 10,
+            background: t.bg2, fontSize: 11.5, color: t.text2,
+            display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <StatusDot color={statusColor}/>
+              <span style={{ flex: 1 }}>{mcp.loading ? tr('common.loading') : statusText}</span>
+            </div>
+            {mcp.binaryPath && (
+              <div style={{
+                fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                paddingLeft: 16, wordBreak: 'break-all',
+              }}>
+                {mcp.binaryPath}
+              </div>
+            )}
+          </div>
+
+          {mcp.error && (
+            <div style={{ marginBottom: 12, fontSize: 11.5, color: t.err }}>
+              {mcp.error}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {mcp.installed ? (
+              <Btn kind="ghost" onClick={() => void handleUninstall()} disabled={busy || mcp.loading}>
+                {tr('settings.mcp.btn.uninstall')}
+              </Btn>
+            ) : (
+              <Btn
+                kind="primary"
+                onClick={() => void handleInstall()}
+                disabled={busy || mcp.loading || !mcp.binaryAvailable || !mcp.claudeAvailable}>
+                {tr('settings.mcp.btn.install')}
+              </Btn>
+            )}
+            <Btn kind="ghost" onClick={() => void mcp.refresh()} disabled={busy || mcp.loading}>
+              {tr('settings.mcp.btn.refresh')}
+            </Btn>
+            {installCommand && (
+              <Btn kind="ghost" onClick={() => void handleCopy()}>
+                {copied ? tr('settings.mcp.btn.copied') : tr('settings.mcp.btn.copy_cmd')}
+              </Btn>
+            )}
+          </div>
+
+          {msg && (
+            <div style={{ marginTop: 10, fontSize: 11.5, color: msg.ok ? t.ok : t.err }}>
+              {msg.text}
+            </div>
+          )}
+
+          <div style={{ marginTop: 14, padding: 10, borderRadius: 8, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
+            <strong style={{ color: t.text2 }}>{tr('settings.mcp.howto')}</strong>{' '}
+            {tr('settings.mcp.howto_desc')}
+          </div>
+        </div>
+      </div>
+    </Glass>
   );
 }
 

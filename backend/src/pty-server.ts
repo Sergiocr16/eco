@@ -142,6 +142,94 @@ export function killBubbleTerminal(bubbleId: string, ptyId: string): boolean {
   return true;
 }
 
+// Spawn server-side de un PTY para una burbuja sin necesitar cliente WS.
+// Idempotente: si ya existe sesión activa para ese (bubbleId, 'main'), la
+// reutiliza. Lo usa /bubble/create cuando viene `initialPrompt` para tener
+// el PTY listo en background y dejar que el user descubra la conversación
+// ya en marcha al clickear la bubble. broadcastPtyStatus avisa al frontend
+// para que el dot de "PTY activo" se prenda en dock/dashboard.
+export function ensureBubblePty(bubbleId: string, workspace: string): PtySession {
+  const ptyId = 'main';
+  const key = sessionKey(bubbleId, ptyId);
+  const existing = sessions.get(key);
+  if (existing && !existing.exited) return existing;
+
+  const isolated = (bubbleId && workspace && isAllowedWorkspace(workspace))
+    ? ensureWorktree(bubbleId, workspace)
+    : '';
+  const candidateCwd = isolated
+    || (workspace && isAllowedWorkspace(workspace) ? workspace : (config.workspaces[0] ?? homedir()));
+  const cwd = existsSync(candidateCwd) ? candidateCwd : homedir();
+
+  const pty = ptySpawn(defaultShell(), [], {
+    name: 'xterm-256color', cols: 120, rows: 30, cwd,
+    env: buildSafeEnv({ TERM: 'xterm-256color' }) as Record<string, string>,
+  });
+
+  const session: PtySession = {
+    pty, bubbleId, ptyId, cwd, buffer: '', exited: false,
+    activeWs: null, clients: new Set(),
+    lastOutputAt: Date.now(), busy: false,
+  };
+  sessions.set(key, session);
+
+  const broadcastToClients = (msg: Record<string, unknown>) => {
+    for (const c of session.clients) {
+      try { sendJson(c, msg); } catch { /* noop */ }
+    }
+  };
+
+  session.unsubData = pty.onData((data) => {
+    appendBuffer(session, data);
+    markBusy(session);
+    broadcastToClients({ type: 'data', data });
+  });
+  startIdleScanner();
+  session.unsubExit = pty.onExit(({ exitCode, signal }) => {
+    session.exited = true;
+    broadcastToClients({ type: 'exit', code: exitCode, signal });
+    for (const c of session.clients) { try { c.close(1000, 'pty_exited'); } catch { /* noop */ } }
+    sessions.delete(key);
+    if (!hasRunningPtyForBubble(bubbleId)) broadcastPtyStatus(bubbleId, false);
+  });
+
+  broadcastPtyStatus(bubbleId, true);
+
+  if (process.env.ECO_PTY_AUTOCLAUDE !== '0') {
+    setTimeout(() => {
+      if (session.exited) return;
+      try { session.pty.write('claude\r'); } catch { /* noop */ }
+    }, 350);
+  }
+
+  return session;
+}
+
+// Spawnea (o reusa) el PTY de la burbuja y le inyecta `text` como input del
+// CLI. Si la sesión es fresca, espera `coldStartMs` para que zsh termine de
+// exec'ear claude y claude imprima su prompt; sino, escribe casi inmediato.
+// Fire-and-forget — para el flujo de /bubble/create con initialPrompt.
+export function injectPromptToBubble(bubbleId: string, workspace: string, text: string): void {
+  const beforeKey = sessionKey(bubbleId, 'main');
+  const wasExisting = !!sessions.get(beforeKey) && !sessions.get(beforeKey)!.exited;
+  const session = ensureBubblePty(bubbleId, workspace);
+  // claude CLI cold start ~3-4 s desde el spawn (zsh exec + claude init).
+  // Si la sesión ya existía, asumimos que claude está listo y vamos rápido.
+  const delay = wasExisting ? 200 : 5000;
+  setTimeout(() => {
+    if (session.exited) return;
+    // Texto y Enter en escrituras separadas con un gap. Si los mandamos en
+    // un solo chunk (`text\r`), claude CLI a veces interpreta el `\r` como
+    // newline dentro del input multilínea (estilo paste) y no submitea.
+    // Dos writes con delay → primer write = "typing", segundo = "Enter".
+    try { session.pty.write(text.replace(/\n/g, '\r')); } catch { /* noop */ }
+    setTimeout(() => {
+      if (session.exited) return;
+      try { session.pty.write('\r'); } catch { /* noop */ }
+    }, 250);
+  }, delay);
+}
+
 // Lista de bubbleIds con PTY corriendo — para snapshot al conectar.
 // Devuelve únicos: una burbuja con 3 terminales aparece una sola vez.
 export function runningPtyBubbleIds(): string[] {

@@ -275,6 +275,14 @@ If you're touching X, the key files are:
 - `backend/src/obsidian.ts` — save-session, vault detection
 - `backend/src/index.ts` `/integrations/obsidian/save-session`
 
+### MCP Server (Claude Code)
+- `mcp-server/` — paquete standalone que se bundlea en el .dmg (ver §C)
+- `backend/src/mcp-config.ts` — resolve path + install/uninstall vía `claude mcp`
+- `backend/src/index.ts` `GET/POST/DELETE /config/mcp`
+- `frontend/src/hooks/useMcpConfig.ts`
+- `frontend/src/screens/Settings.tsx` `McpCard` (en `SectionIntegrations`)
+- `electron/scripts/prepare-mcp.cjs` — build pre-empaquetado (tsc + prune dev deps)
+
 ### Dashboard
 - `frontend/src/screens/Dashboard.tsx` — grid + kanban + graph views, satellite pulses
 
@@ -1043,7 +1051,7 @@ If any fails, the PR is not ready.
 6. ServerPanel single: `echo hola` → starts → idle (echo exits) → no crash
 7. ServerPanel dual: toggle on, valid commands → backend boots first, frontend follows with correct `API_PORT`
 8. Browser panel: navigate to `localhost:7100/health` → JSON → switch tab → return → no reload
-9. `npm run dmg` produces `.dmg` without errors; bundle contains `Resources/bin/eco-stt`
+9. `npm run dmg` produces `.dmg` without errors; bundle contains `Resources/bin/eco-stt` and `Resources/mcp-server/dist/index.js`
 10. Installed .app launches; login works; voice works (with macOS Mic + Speech Recognition prompts first time)
 11. Dev server persistence: with a server running, kill backend → `~/.eco/dev-sessions.json` has the entry → relaunch backend → server appears as running
 12. Git tab: in a worktree-bubble, open Git → cycle the 3 sub-tabs (Changes/History/PRs) with no console errors. Cherry-pick a commit → green. Trigger cherry-pick with conflict → `OpInProgressBanner` appears → Abort → state clean. Reset hard requires typing `HARD RESET`. PRs sub-tab requires `gh` installed (`which gh` from terminal); without it, `pr.gh_missing` is the expected error.
@@ -1262,37 +1270,84 @@ To understand features without flailing:
 
 Paquete standalone en `mcp-server/` que expone tools MCP por stdio para
 que Claude Code (u otro cliente MCP) pueda crear bubbles en Eco desde
-cualquier terminal.
+cualquier terminal o sesión.
 
 ### Tools v1
 
 - `create_bubble({ title, workspace?, base_branch?, initial_prompt? })` —
-  Crea una bubble en Eco. Si `initial_prompt`, el agente Claude interno
-  arranca con ese mensaje automáticamente. Si `workspace` se omite, el
-  server detecta el cwd con el que arrancó y busca un workspace permitido
-  que lo contenga.
+  Crea una bubble en Eco. Si viene `initial_prompt`, el backend spawnea el
+  PTY de la bubble + `claude` CLI server-side y tipea el prompt en el
+  terminal (no en el chat SDK). Si `workspace` se omite, el server detecta
+  el cwd con el que arrancó y busca un workspace permitido que lo contenga.
 - `list_bubbles()` — Lista las bubbles activas (id, título, workspace,
   status). Requiere que el frontend haya sincronizado al menos una vez.
 
-### Setup
+### Setup desde Eco (recomendado)
+
+Settings → Integraciones → **MCP Server (Claude Code)** → botón **Instalar**.
+Eco resuelve el path del binario, corre `claude mcp add eco -s user --
+node <path>` y muestra el estado. También expone "Copiar comando" si
+preferís pegarlo manualmente.
+
+### Setup manual
 
 ```bash
 cd mcp-server
 npm install
 npm run build
-claude mcp add eco -- node /home/pi/projects/eco/mcp-server/dist/index.js
+claude mcp add eco -s user -- node /Users/sergiocastro/Documents/GitHub/aditum-analisis-descalces-contables/eco/mcp-server/dist/index.js
 ```
 
 Reiniciá Claude Code. Las tools quedan disponibles como
 `mcp__eco__create_bubble` y `mcp__eco__list_bubbles`.
 
+### Files (Eco-side)
+
+- `mcp-server/src/index.ts` — server stdio, registra tools
+- `mcp-server/src/tools.ts` — `create_bubble` y `list_bubbles`
+- `mcp-server/src/client.ts` — cliente HTTP al backend de Eco (token desde
+  `~/.eco/token`)
+- `mcp-server/src/workspace.ts` — autodetect de workspace permitido por cwd
+- `backend/src/mcp-config.ts` — detect path + install/uninstall delegado
+  al binario `claude` (lee `claude mcp get eco` para status). NO parsea
+  `~/.claude.json` directamente.
+- `backend/src/pty-server.ts` `ensureBubblePty` + `injectPromptToBubble`
+  — spawn server-side del PTY + escritura del prompt cuando claude CLI
+  cold-startea (~5 s desde spawn; texto y Enter en writes separados con
+  gap 250 ms — sin el gap, claude CLI a veces trata el `\r` como newline
+  multilínea estilo paste y no submitea).
+- `backend/src/index.ts` `/bubble/create`, `/bubbles`, `/bubbles/sync`,
+  `/config/mcp` (GET/POST/DELETE)
+- `frontend/src/screens/Settings.tsx` `McpCard` — UI de instalación
+- `frontend/src/hooks/useMcpConfig.ts` — hook que envuelve `/config/mcp`
+- `electron/scripts/prepare-mcp.cjs` — pre-build del .dmg (compila TS,
+  poda dev deps, deja `mcp-server/{dist,node_modules,package.json}` listos
+  para que electron-builder los copie como extraResources)
+- `electron/package.json` — entries de `mcp-server/*` en `extraResources`
+
 ### Endpoints HTTP que consume
 
 - `POST /bubble/create` — Crea la bubble. Requiere Eco abierto (al menos un
-  WS conectado al `/ws`); devuelve `409 eco.no_clients` si no.
+  WS conectado al `/ws`); devuelve `409 eco.no_clients` si no. Si vino
+  `initialPrompt` y `workspace`, llama a `injectPromptToBubble` en lugar de
+  broadcastear un `inject_prompt` por WS (el frontend no participa).
 - `GET /bubbles` — Lee snapshot que el frontend sincroniza periódicamente.
 - `POST /bubbles/sync` — Solo lo llama el frontend (debounce 800ms) para
   mantener el snapshot actualizado.
+- `GET/POST/DELETE /config/mcp` — Status / install / uninstall consumidos
+  por Settings.
+
+### Bundling en el .dmg
+
+`prepare-mcp.cjs` corre como parte de `build:all` (antes de
+electron-builder). Hace `npm install` + `tsc` + `npm prune --omit=dev` en
+`mcp-server/`. Después electron-builder copia `mcp-server/dist`,
+`mcp-server/node_modules` y `package.json` como extraResources. Path final
+en el bundle: `Eco.app/Contents/Resources/mcp-server/dist/index.js`.
+
+`resolveBinaryPath()` en `backend/src/mcp-config.ts` usa el offset
+`../../mcp-server/dist/index.js` desde el módulo backend — funciona igual
+en dev (repo) y packaged (Resources/) porque la estructura es la misma.
 
 ### Decisiones que parecen raras
 
@@ -1303,12 +1358,17 @@ Para crear una bubble "visualmente" hay que avisarle al frontend; el camino
 es `client_action: open_bubble` por WS, que ya existía para el tool MCP
 interno (`agent-tools.ts`). El endpoint nuevo reusa ese mismo path.
 
-#### "¿Por qué `inject_prompt` con setTimeout 500 ms y no inmediato?"
-El frontend tiene que terminar de procesar el `open_bubble` (crear la
-bubble en `useBubbles`, montar el componente, registrar el `activeBubbleId`
-del socket) antes de aceptar un prompt para ella. 500 ms es conservador
-y suficiente en práctica. Sin esto, el primer prompt puede caer en una
-bubble que todavía no existe o no es la activa, y se pierde.
+#### "¿Por qué `initialPrompt` se ejecuta server-side y no por WS al frontend?"
+Probamos primero el path por WS (`inject_prompt` → frontend abre PTY ephemeral
+con `writeToBubblePty` → tipea el texto). Tres problemas: (1) si el user creó
+varias bubbles desde MCP en batch, cada `inject_prompt` quería hacerle un
+`switch_tab` y le robaba el foco; (2) el frontend tenía que estar montado
+con el `AgentDetail` para que el listener de `eco:switch_tab` escuchara —
+nunca lo estaba al instante; (3) el cold-start de `claude` CLI (~3-4 s)
+desincronizaba con cualquier `firstStartDelay` del frontend. Server-side
+resuelve todo: el backend tiene el control total del timing y no tiene que
+coordinar con el render lifecycle. El user descubre la conversación ya en
+marcha cuando entra a la bubble — sin foco robado, sin tabs cambiando.
 
 #### "¿Por qué `~/.eco/bubbles-index.json` y no consultar al frontend on-demand?"
 Long-poll WS request/response del frontend para `list_bubbles` agrega
@@ -1316,3 +1376,14 @@ mucha complejidad para v1. El push periódico desde el frontend (8 KB cada
 ~800 ms cuando algo cambia) es trivial, sobrevive reinicios del backend,
 y el caller MCP siempre obtiene una respuesta inmediata sin esperar al
 frontend.
+
+#### "¿Por qué texto y Enter en `pty.write` separados con 250 ms de gap?"
+Si los mandamos juntos (`text\r` en un solo chunk), claude CLI a veces
+interpreta el `\r` como newline dentro de un input multilínea estilo paste
+y no submitea. Dos writes con gap → primer write = "typing", segundo =
+"Enter discreto" → submit confiable.
+
+#### "¿Por qué `claude mcp get eco` y no parsear `~/.claude.json`?"
+El formato de `~/.claude.json` es interno de Claude Code y puede cambiar
+entre versiones; además contiene config sensible no relacionada al MCP.
+Delegar a la CLI usa un contrato estable (exit 0 = registrado).

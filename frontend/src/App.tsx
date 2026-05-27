@@ -209,12 +209,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           if (sourceBubbleId) bubbles.removeBubble(sourceBubbleId);
         }
       },
-      onInjectPrompt: (bubbleId, text, _workspace) => {
-        // Originado por POST /bubble/create con initialPrompt — el backend ya
-        // creó el worktree y disparó open_bubble; ahora arrancamos el agente
-        // mandando el prompt como si el user lo hubiese escrito.
-        sendTo(bubbleId, text);
-      },
+      onInjectPrompt: () => { /* legacy WS path — backend ahora inyecta server-side vía injectPromptToBubble */ },
       onVoiceTranscribed: (text) => handleIncomingVoiceText(text),
     },
   });

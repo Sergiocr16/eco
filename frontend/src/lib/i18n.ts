@@ -802,6 +802,43 @@ const DICT = {
     es: 'PARA-lite — 10 - Projects/<repo>/{_MOC.md, Sessions/, Decisions/, Notes/}. Si no existe, Eco la crea al guardar la primera sesión.',
     en: 'PARA-lite — 10 - Projects/<repo>/{_MOC.md, Sessions/, Decisions/, Notes/}. If it doesn\'t exist, Eco creates it when saving the first session.',
   },
+  'settings.mcp.label': { es: 'MCP Server (Claude Code)', en: 'MCP Server (Claude Code)' },
+  'settings.mcp.title': { es: 'Crear bubbles desde Claude Code', en: 'Create bubbles from Claude Code' },
+  'settings.mcp.desc': {
+    es: 'Registra el MCP server "eco" en Claude Code. Desde cualquier terminal o sesión podés crear bubbles con un tool call (create_bubble) y opcionalmente arrancarlas con un prompt inicial. Disponible globalmente para tu usuario.',
+    en: 'Registers the "eco" MCP server in Claude Code. From any terminal or session you can create bubbles via a tool call (create_bubble) and optionally start them with an initial prompt. Available globally for your user.',
+  },
+  'settings.mcp.status.binary_missing': {
+    es: 'mcp-server no compilado — corré `npm run build:mcp` o reinstalá el .dmg.',
+    en: 'mcp-server not built — run `npm run build:mcp` or reinstall the .dmg.',
+  },
+  'settings.mcp.status.claude_missing': {
+    es: 'No se encontró el binario `claude` en tu sistema — instalá Claude Code primero.',
+    en: 'The `claude` binary was not found on your system — install Claude Code first.',
+  },
+  'settings.mcp.status.installed': {
+    es: 'Instalado · scope {{scope}}',
+    en: 'Installed · scope {{scope}}',
+  },
+  'settings.mcp.status.not_installed': { es: 'No instalado', en: 'Not installed' },
+  'settings.mcp.btn.install': { es: 'Instalar', en: 'Install' },
+  'settings.mcp.btn.uninstall': { es: 'Desinstalar', en: 'Uninstall' },
+  'settings.mcp.btn.refresh': { es: 'Refrescar', en: 'Refresh' },
+  'settings.mcp.btn.copy_cmd': { es: 'Copiar comando', en: 'Copy command' },
+  'settings.mcp.btn.copied': { es: 'Copiado', en: 'Copied' },
+  'settings.mcp.msg.installed': {
+    es: 'MCP "eco" registrado en Claude Code. Abrí una sesión nueva para usarlo.',
+    en: 'MCP "eco" registered in Claude Code. Open a new session to use it.',
+  },
+  'settings.mcp.msg.uninstalled': {
+    es: 'MCP "eco" eliminado del registro de Claude Code.',
+    en: 'MCP "eco" removed from the Claude Code registry.',
+  },
+  'settings.mcp.howto': { es: 'Cómo se usa:', en: 'How it works:' },
+  'settings.mcp.howto_desc': {
+    es: 'Después de instalar, en cualquier sesión de Claude Code aparecen las tools `mcp__eco__create_bubble` y `mcp__eco__list_bubbles`. Eco tiene que estar abierto y logueado para que el tool call funcione.',
+    en: 'After installing, every Claude Code session exposes `mcp__eco__create_bubble` and `mcp__eco__list_bubbles`. Eco must be open and logged in for the tool call to work.',
+  },
   'settings.general.title': { es: 'General', en: 'General' },
   'settings.general.sub': { es: 'Comportamiento global de Eco.', en: 'Global behavior of Eco.' },
   'settings.general.listen_on_boot': { es: 'Escuchar al abrir Eco', en: 'Listen on startup' },

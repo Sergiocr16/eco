@@ -1,16 +1,21 @@
-// Auto-detección del workspace activo a partir del cwd con el que Claude Code
-// arrancó este MCP server. La pregunta clave que respondemos:
-//   "¿Cuál workspace de Eco contiene la carpeta donde estoy trabajando?"
+// Auto-detección del workspace para la bubble nueva a partir del cwd con
+// el que Claude Code arrancó este MCP server.
 //
-// Lógica:
-//   1. cwd = process.cwd() al momento de arrancar el server.
-//   2. Pedimos al backend de Eco la lista de workspaces permitidos.
-//   3. Devolvemos el primero que sea el cwd o un ancestro suyo.
-//   4. Si ninguno matchea, error con la lista para que el user lo agregue
-//      desde Settings de Eco.
+// Tres casos:
+//   1. cwd dentro de un worktree de Eco (~/.eco/worktrees/<bubbleId>) →
+//      extraemos el bubbleId, miramos /bubbles para conocer el workspace
+//      "real" al que pertenece esa burbuja, y usamos ese. Esto cubre el
+//      caso "abrí claude dentro de una conversación de Eco" — el user
+//      espera que el nuevo agente nazca en aditum-jh, no en $HOME/eco
+//      worktrees.
+//   2. cwd dentro de un workspace configurado de Eco → matcheamos el más
+//      específico (path más largo). El sub-directorio no importa porque
+//      git encuentra el repo arriba.
+//   3. Ninguno → error con la lista de workspaces disponibles.
 
 import { sep } from 'node:path';
-import { listWorkspaces } from './client.js';
+import { homedir } from 'node:os';
+import { listWorkspaces, listBubbles } from './client.js';
 
 // Capturado al arranque del proceso. Claude Code spawnea el MCP server con
 // el cwd del proyecto donde está corriendo, así que esto refleja "donde está
@@ -45,23 +50,51 @@ function isInside(child: string, parent: string): boolean {
  * PERO también es válido crear una bubble sin workspace (queda flotante,
  * sin worktree). Para ese caso conviene que el caller decida.
  */
+const ECO_WORKTREES_ROOT = `${homedir()}/.eco/worktrees`;
+
+// Si el cwd vive adentro de ~/.eco/worktrees/<bubbleId>/..., extraemos el
+// bubbleId. Sino, null.
+function extractBubbleIdFromCwd(cwd: string): string | null {
+  if (!cwd.startsWith(ECO_WORKTREES_ROOT + sep)) return null;
+  const rest = cwd.slice(ECO_WORKTREES_ROOT.length + 1);
+  const first = rest.split(sep)[0];
+  return first || null;
+}
+
+async function resolveFromWorktree(cwd: string): Promise<string | null> {
+  const bubbleId = extractBubbleIdFromCwd(cwd);
+  if (!bubbleId) return null;
+  try {
+    const { bubbles } = await listBubbles();
+    const b = bubbles.find((x) => x.id === bubbleId);
+    if (b && b.workspace) return b.workspace;
+  } catch { /* noop */ }
+  return null;
+}
+
 export async function resolveWorkspace(
   explicit?: string,
 ): Promise<WorkspaceResolution> {
   if (explicit) {
     return { ok: true, workspace: explicit, source: 'explicit' };
   }
+
+  // Caso 1: estoy adentro de un worktree de Eco → resuelvo al workspace
+  // padre de esa burbuja (lo que el user llama "el mismo workspace").
+  const fromWorktree = await resolveFromWorktree(STARTUP_CWD);
+  if (fromWorktree) {
+    return { ok: true, workspace: fromWorktree, source: 'cwd_match' };
+  }
+
+  // Caso 2: estoy en un workspace configurado (o sub-dir). Tomamos el match
+  // más específico — si workspaces son [/Users/sergio, /Users/sergio/repo],
+  // estando en /Users/sergio/repo queremos /Users/sergio/repo, no $HOME.
   let available: string[] = [];
   try {
     available = await listWorkspaces();
   } catch {
-    // Si no podemos contactar al backend para listar workspaces, igual
-    // dejamos que el caller intente con cwd; el backend lo validará al
-    // recibir el POST.
     return { ok: true, workspace: STARTUP_CWD, source: 'cwd_match' };
   }
-  // Match exacto o ancestro. Preferimos el match más específico (path más
-  // largo) por si hay workspaces anidados.
   const matches = available
     .filter((ws) => isInside(STARTUP_CWD, ws))
     .sort((a, b) => b.length - a.length);

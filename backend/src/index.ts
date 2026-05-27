@@ -10,7 +10,7 @@ import { config, isAllowedWorkspace } from './config.js';
 import { attachWebSocket, broadcastServerMessage, broadcastClientAction, wsClientCount } from './ws-server.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
 import { setBubblesSnapshot, getBubblesSnapshot, type BubbleSummary } from './bubbles-index.js';
-import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer } from './pty-server.js';
+import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
 import * as gitHistory from './git-history.js';
@@ -41,6 +41,7 @@ import { listTree } from './fs-tree.js';
 import { searchInWorkspace } from './fs-search.js';
 import { summarizeBubble } from './notes-summary.js';
 import * as backupMod from './backup.js';
+import * as mcpConfig from './mcp-config.js';
 import { z } from 'zod';
 
 function errResponse(res: Response, status: number, code: string, message: string) {
@@ -381,6 +382,40 @@ app.delete('/config/github', (_req: Request, res: Response) => {
 // reemplaza, hay que tener `gh` instalado.
 app.get('/config/gh-status', async (_req: Request, res: Response) => {
   res.json(await gitOps.ghStatus());
+});
+
+// MCP server registration en Claude Code. Settings → Integraciones permite
+// al user instalar/desinstalar el MCP "eco" con un click — delegamos al
+// binario `claude` para no parsear ~/.claude.json directamente.
+app.get('/config/mcp', async (_req: Request, res: Response) => {
+  try {
+    const status = await mcpConfig.getMcpStatus();
+    res.json({ ok: true, ...status });
+  } catch (e) {
+    fromException(res, e, 'mcp.status_failed', 'No se pudo consultar el estado del MCP');
+  }
+});
+
+app.post('/config/mcp', async (_req: Request, res: Response) => {
+  try {
+    const r = await mcpConfig.installMcp();
+    if (!r.ok) return errResponse(res, 400, r.code, r.message);
+    const status = await mcpConfig.getMcpStatus();
+    res.json({ ok: true, ...status });
+  } catch (e) {
+    fromException(res, e, 'mcp.install_failed', 'No se pudo instalar el MCP');
+  }
+});
+
+app.delete('/config/mcp', async (_req: Request, res: Response) => {
+  try {
+    const r = await mcpConfig.uninstallMcp();
+    if (!r.ok) return errResponse(res, 400, r.code, r.message);
+    const status = await mcpConfig.getMcpStatus();
+    res.json({ ok: true, ...status });
+  } catch (e) {
+    fromException(res, e, 'mcp.uninstall_failed', 'No se pudo desinstalar el MCP');
+  }
 });
 
 // Silenciar warning de "import no usado" para hasGithubCredentials —
@@ -1383,22 +1418,17 @@ app.post('/bubble/create', (req: Request, res: Response) => {
     ...(baseBranch ? { baseBranch } : {}),
   });
 
-  // Si vino prompt inicial, lo despachamos después de un pequeño delay para
-  // que el frontend termine de montar la bubble (crear `useEcoSocket` ref de
-  // activeBubble, etc.) antes de recibir el mensaje. Fire-and-forget.
-  if (initialPrompt) {
-    setTimeout(() => {
-      try {
-        broadcastServerMessage({
-          type: 'inject_prompt',
-          bubbleId,
-          text: initialPrompt,
-          ...(workspace ? { workspace } : {}),
-        });
-      } catch (e) {
-        console.error('[bubble/create] inject_prompt failed:', e);
-      }
-    }, 500);
+  // Si vino prompt inicial, spawneamos el PTY server-side y le tipeamos el
+  // texto cuando claude CLI esté listo (~5 s cold start). El user descubre
+  // la conversación ya en marcha al entrar a la bubble — NO le robamos el
+  // foco con un switch automático. Requiere worktreePath (worktree creado
+  // arriba) o cae al primer workspace permitido. Fire-and-forget.
+  if (initialPrompt && workspace) {
+    try {
+      injectPromptToBubble(bubbleId, workspace, initialPrompt);
+    } catch (e) {
+      console.error('[bubble/create] injectPromptToBubble failed:', e);
+    }
   }
 
   res.json({
