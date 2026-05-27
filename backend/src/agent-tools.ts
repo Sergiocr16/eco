@@ -3,7 +3,17 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
 export type ClientAction =
-  | { kind: 'open_bubble'; id: string; title: string; focus: boolean }
+  | {
+      kind: 'open_bubble';
+      id: string;
+      title: string;
+      focus: boolean;
+      // Opcionales: presentes cuando la acción viene del MCP server externo
+      // (HTTP /bubble/create). El agent tool interno los omite y el frontend
+      // cae al default del usuario para el workspace.
+      workspace?: string;
+      baseBranch?: string;
+    }
   | { kind: 'rename_bubble'; title: string }
   | { kind: 'close_bubble' };
 

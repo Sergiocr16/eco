@@ -105,6 +105,34 @@
         "from": "build/bin",
         "to": "bin",
         "filter": ["eco-stt"]
+      },
+      {
+        "from": "../mcp-server/dist",
+        "to": "mcp-server/dist"
+      },
+      {
+        "from": "../mcp-server/node_modules",
+        "to": "mcp-server/node_modules",
+        "filter": [
+          "**/*",
+          "!**/*.{md,markdown,ts,map,d.ts.map}",
+          "!**/test/**",
+          "!**/tests/**",
+          "!**/__tests__/**",
+          "!**/example/**",
+          "!**/examples/**",
+          "!**/docs/**",
+          "!**/.bin/**",
+          "!**/*.tsbuildinfo",
+          "!**/LICENSE*",
+          "!**/CHANGELOG*",
+          "!**/.github/**",
+          "!**/.vscode/**"
+        ]
+      },
+      {
+        "from": "../mcp-server/package.json",
+        "to": "mcp-server/package.json"
       }
     ],
     "mac": {

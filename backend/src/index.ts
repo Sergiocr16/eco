@@ -7,8 +7,10 @@ import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace } from './config.js';
-import { attachWebSocket, broadcastServerMessage } from './ws-server.js';
-import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer } from './pty-server.js';
+import { attachWebSocket, broadcastServerMessage, broadcastClientAction, wsClientCount } from './ws-server.js';
+import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
+import { setBubblesSnapshot, getBubblesSnapshot, type BubbleSummary } from './bubbles-index.js';
+import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
 import * as gitHistory from './git-history.js';
@@ -39,6 +41,7 @@ import { listTree } from './fs-tree.js';
 import { searchInWorkspace } from './fs-search.js';
 import { summarizeBubble } from './notes-summary.js';
 import * as backupMod from './backup.js';
+import * as mcpConfig from './mcp-config.js';
 import { z } from 'zod';
 
 function errResponse(res: Response, status: number, code: string, message: string) {
@@ -101,6 +104,20 @@ app.get('/health', (_req, res) => {
 
 const SESSION_HEADER = 'x-eco-session';
 const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login', '/auth/recover']);
+// Endpoints adicionales que NO requieren sesión interactiva — solo Bearer +
+// X-Eco-Client. Consumidos por clientes "bot" como el MCP server stdio (en
+// mcp-server/), que viven en otro proceso y no tienen UI de login. La
+// seguridad efectiva sigue siendo Bearer + host check 127.0.0.1. Se restringe
+// por método para no exponer mutaciones (POST/DELETE) de endpoints
+// compartidos como /workspaces.
+const MCP_FREE: Array<{ method: string; path: string }> = [
+  { method: 'POST', path: '/bubble/create' },
+  { method: 'GET', path: '/bubbles' },
+  { method: 'GET', path: '/workspaces' },
+];
+function isMcpFreePath(method: string, path: string): boolean {
+  return MCP_FREE.some((r) => r.method === method && r.path === path);
+}
 
 const RegisterSchema = z.object({
   username: z.string().min(1).max(80),
@@ -201,6 +218,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // excepto los de /auth/* y /health (este último ya pasó arriba).
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (AUTH_FREE_PATHS.has(req.path)) return next();
+  if (isMcpFreePath(req.method, req.path)) return next();
   if (!hasUser()) return next(); // sin user registrado, no se requiere sesión todavía
   const sessionId = req.headers[SESSION_HEADER] as string | undefined;
   const session = getSession(sessionId);
@@ -364,6 +382,40 @@ app.delete('/config/github', (_req: Request, res: Response) => {
 // reemplaza, hay que tener `gh` instalado.
 app.get('/config/gh-status', async (_req: Request, res: Response) => {
   res.json(await gitOps.ghStatus());
+});
+
+// MCP server registration en Claude Code. Settings → Integraciones permite
+// al user instalar/desinstalar el MCP "eco" con un click — delegamos al
+// binario `claude` para no parsear ~/.claude.json directamente.
+app.get('/config/mcp', async (_req: Request, res: Response) => {
+  try {
+    const status = await mcpConfig.getMcpStatus();
+    res.json({ ok: true, ...status });
+  } catch (e) {
+    fromException(res, e, 'mcp.status_failed', 'No se pudo consultar el estado del MCP');
+  }
+});
+
+app.post('/config/mcp', async (_req: Request, res: Response) => {
+  try {
+    const r = await mcpConfig.installMcp();
+    if (!r.ok) return errResponse(res, 400, r.code, r.message);
+    const status = await mcpConfig.getMcpStatus();
+    res.json({ ok: true, ...status });
+  } catch (e) {
+    fromException(res, e, 'mcp.install_failed', 'No se pudo instalar el MCP');
+  }
+});
+
+app.delete('/config/mcp', async (_req: Request, res: Response) => {
+  try {
+    const r = await mcpConfig.uninstallMcp();
+    if (!r.ok) return errResponse(res, 400, r.code, r.message);
+    const status = await mcpConfig.getMcpStatus();
+    res.json({ ok: true, ...status });
+  } catch (e) {
+    fromException(res, e, 'mcp.uninstall_failed', 'No se pudo desinstalar el MCP');
+  }
 });
 
 // Silenciar warning de "import no usado" para hasGithubCredentials —
@@ -1309,6 +1361,124 @@ app.post('/bubble/archive', async (req: Request, res: Response) => {
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
   const r = await closeBubbleResources(bubbleId, { keepWorktree: true });
   res.json({ ok: true, ...r });
+});
+
+// Crear una bubble desde un cliente HTTP externo (típicamente el MCP server
+// stdio que consume Claude Code). Reusa el camino `client_action: open_bubble`
+// para que el frontend materialice la bubble en su estado / localStorage —
+// no hay registry server-side.
+//
+// Flujo:
+//   1. Validar workspace (whitelist).
+//   2. Requerir al menos un cliente WS conectado (sin frontend abierto no
+//      hay nadie que cree la bubble visualmente).
+//   3. Generar bubbleId server-side (formato compatible con frontend).
+//   4. Si hay workspace y es repo git, pre-crear el worktree.
+//   5. Broadcast `client_action: open_bubble` con id/title/workspace/baseBranch.
+//   6. Si hay initialPrompt, programar un `inject_prompt` con un delay
+//      pequeño para que el frontend termine de montar la bubble antes de
+//      recibir el mensaje.
+const BubbleCreateSchema = z.object({
+  title: z.string().min(1).max(120),
+  workspace: z.string().min(1).max(4096).optional(),
+  baseBranch: z.string().min(1).max(256).optional(),
+  initialPrompt: z.string().min(1).max(16_000).optional(),
+});
+app.post('/bubble/create', (req: Request, res: Response) => {
+  const parsed = BubbleCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+  }
+  const { title, workspace, baseBranch, initialPrompt } = parsed.data;
+
+  if (workspace && !isAllowedWorkspace(workspace)) {
+    return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
+  }
+  if (wsClientCount() === 0) {
+    return errResponse(res, 409, 'eco.no_clients', 'Abrí Eco para que reciba el comando');
+  }
+
+  const bubbleId = newBubbleId();
+  let worktreePath: string | null = null;
+  if (workspace) {
+    try {
+      worktreePath = ensureWorktree(bubbleId, workspace, baseBranch);
+    } catch (e) {
+      console.error('[bubble/create] ensureWorktree failed:', e);
+      worktreePath = null;
+    }
+  }
+
+  broadcastClientAction({
+    kind: 'open_bubble',
+    id: bubbleId,
+    title: title.trim(),
+    focus: true,
+    ...(workspace ? { workspace } : {}),
+    ...(baseBranch ? { baseBranch } : {}),
+  });
+
+  // Si vino prompt inicial, spawneamos el PTY server-side y le tipeamos el
+  // texto cuando claude CLI esté listo (~5 s cold start). El user descubre
+  // la conversación ya en marcha al entrar a la bubble — NO le robamos el
+  // foco con un switch automático. Requiere worktreePath (worktree creado
+  // arriba) o cae al primer workspace permitido. Fire-and-forget.
+  if (initialPrompt && workspace) {
+    try {
+      injectPromptToBubble(bubbleId, workspace, initialPrompt);
+    } catch (e) {
+      console.error('[bubble/create] injectPromptToBubble failed:', e);
+    }
+  }
+
+  res.json({
+    ok: true,
+    bubbleId,
+    workspace: workspace ?? null,
+    worktreePath,
+  });
+});
+
+// Lista de bubbles activas según el último snapshot que sincronizó el
+// frontend (POST /bubbles/sync). Si el frontend no se conectó nunca desde
+// que arrancó el backend, devuelve lista vacía y lastSync=0 para que el
+// caller MCP pueda mostrar un mensaje útil ("Eco aún no sincronizó").
+app.get('/bubbles', (_req: Request, res: Response) => {
+  const snap = getBubblesSnapshot();
+  res.json({ ok: true, bubbles: snap.bubbles, lastSync: snap.lastSync });
+});
+
+// Sync interno frontend → backend. El frontend debouncea y postea su lista
+// resumida cada vez que cambia. Backend cachea + persiste a
+// ~/.eco/bubbles-index.json. Sin lógica de negocio acá; solo storage para
+// que /bubbles tenga algo que devolver a clientes externos.
+const BubblesSyncSchema = z.object({
+  bubbles: z.array(z.object({
+    id: z.string().min(1).max(128),
+    title: z.string().max(400),
+    workspace: z.string().max(4096).default(''),
+    status: z.string().max(64),
+    archived: z.boolean().optional(),
+    updatedAt: z.number(),
+  })).max(500),
+});
+app.post('/bubbles/sync', (req: Request, res: Response) => {
+  const parsed = BubblesSyncSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+  }
+  const sanitized: BubbleSummary[] = parsed.data.bubbles
+    .filter((b) => isValidBubbleId(b.id))
+    .map((b) => ({
+      id: b.id,
+      title: b.title,
+      workspace: b.workspace,
+      status: b.status,
+      archived: !!b.archived,
+      updatedAt: b.updatedAt,
+    }));
+  setBubblesSnapshot(sanitized);
+  res.json({ ok: true, count: sanitized.length });
 });
 
 // Resumen de una conversación usando `claude -p`. Lo invoca el botón
