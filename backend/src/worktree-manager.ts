@@ -14,19 +14,70 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isAllowedWorkspace } from './config.js';
+import { githubEnvOverrides } from './github-runtime.js';
 
 const WORKTREES_ROOT = join(homedir(), '.eco', 'worktrees');
 
 // Map en memoria: bubbleId → path absoluto del worktree (si existe).
 const worktrees = new Map<string, string>();
 
-function runGit(args: string[], cwd: string, timeoutMs = 8_000): { ok: boolean; stdout: string; stderr: string } {
-  const r = spawnSync('git', args, { cwd, timeout: timeoutMs, encoding: 'utf-8' });
+function runGit(
+  args: string[],
+  cwd: string,
+  timeoutMs = 8_000,
+  env?: NodeJS.ProcessEnv,
+): { ok: boolean; stdout: string; stderr: string } {
+  const r = spawnSync('git', args, { cwd, timeout: timeoutMs, encoding: 'utf-8', ...(env ? { env } : {}) });
   return {
     ok: r.status === 0,
     stdout: (r.stdout ?? '').toString(),
     stderr: (r.stderr ?? '').toString(),
   };
+}
+
+// Trae lo último del remoto para la rama base y devuelve el ref remote-tracking
+// (`<remote>/<base>`) desde el cual basar el worktree, así arranca actualizado.
+// Devuelve null si no hay remoto, no hay token/credenciales para HTTPS privado,
+// o el fetch falla — en ese caso el caller usa la rama local tal cual.
+//
+// No mutamos la rama local del repo padre (no hacemos checkout ni reset). Solo
+// actualizamos el remote-tracking y basamos la rama nueva del worktree en él.
+function fetchUpdatedBaseRef(parentWorkspace: string, baseName: string): string | null {
+  const remoteRes = runGit(['remote'], parentWorkspace, 3_000);
+  if (!remoteRes.ok) return null;
+  const remotes = remoteRes.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  // Preferimos 'origin' si existe; sino el primero.
+  const remote = remotes.includes('origin') ? 'origin' : remotes[0];
+  if (!remote) return null;
+
+  // Env para el fetch: identidad/token de GitHub de Eco + credential helper
+  // inline que lee $GH_TOKEN (para remotos HTTPS privados). GIT_TERMINAL_PROMPT=0
+  // hace que git falle en vez de colgarse pidiendo user/pass.
+  const overrides = githubEnvOverrides();
+  const env: NodeJS.ProcessEnv = { ...process.env, ...overrides, GIT_TERMINAL_PROMPT: '0' };
+  const credArgs = overrides.GH_TOKEN
+    ? ['-c', 'credential.helper=!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f']
+    : [];
+
+  const fetchRes = runGit([...credArgs, 'fetch', remote, baseName], parentWorkspace, 25_000, env);
+  if (!fetchRes.ok) {
+    console.warn(`[worktree] fetch de ${remote}/${baseName} falló, uso base local:`, fetchRes.stderr.slice(0, 200));
+    return null;
+  }
+  const remoteRef = `${remote}/${baseName}`;
+  const verify = runGit(['rev-parse', '--verify', '--quiet', remoteRef], parentWorkspace, 3_000);
+  if (!verify.ok || !verify.stdout.trim()) return null;
+
+  // ¿Existe la rama base local? Si no, basamos directo desde el remoto.
+  const localVerify = runGit(['rev-parse', '--verify', '--quiet', `refs/heads/${baseName}`], parentWorkspace, 3_000);
+  if (!localVerify.ok || !localVerify.stdout.trim()) return remoteRef;
+
+  // La rama local existe: solo usamos el remoto si la local está DETRÁS
+  // (es ancestro del remoto). Si tiene commits locales sin pushear, la local
+  // no es ancestro → la respetamos para no perder trabajo (mejor que un pull
+  // que mergearía o fallaría).
+  const isAncestor = runGit(['merge-base', '--is-ancestor', baseName, remoteRef], parentWorkspace, 5_000);
+  return isAncestor.ok ? remoteRef : null;
 }
 
 function isGitRepo(dir: string): boolean {
@@ -86,10 +137,25 @@ export function ensureWorktree(
     ? baseBranch
     : null;
 
-  // Crear worktree + rama nueva. Si hay baseBranch válido, partimos de ahí;
+  // Determinamos el nombre de la rama base para actualizar desde el remoto.
+  // Si vino baseBranch explícito, ese; sino la rama actual del repo padre
+  // (salvo que esté en detached HEAD → no actualizamos, usamos HEAD).
+  let baseName = safeBase;
+  if (!baseName) {
+    const cur = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], parentWorkspace, 3_000);
+    const name = cur.ok ? cur.stdout.trim() : '';
+    if (name && name !== 'HEAD') baseName = name;
+  }
+
+  // Pull de la rama base antes de crear el worktree: traemos lo último del
+  // remoto y basamos la rama nueva en `<remote>/<base>` para que arranque
+  // actualizada. Si no hay remoto o el fetch falla, caemos a la base local.
+  const startPoint = baseName ? (fetchUpdatedBaseRef(parentWorkspace, baseName) ?? safeBase) : safeBase;
+
+  // Crear worktree + rama nueva. Si hay start point válido, partimos de ahí;
   // sino, del HEAD del repo padre (comportamiento legacy).
-  const addArgs = safeBase
-    ? ['worktree', 'add', '-b', branch, target, safeBase]
+  const addArgs = startPoint
+    ? ['worktree', 'add', '-b', branch, target, startPoint]
     : ['worktree', 'add', '-b', branch, target];
   let result = runGit(addArgs, parentWorkspace);
   if (!result.ok) {
