@@ -2206,6 +2206,38 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     return () => window.removeEventListener('eco:remote-changed', onChange);
   }, []);
 
+  // Navegadores con URL — reactivo. nodeFlags leía localStorage directo, así
+  // que el satélite de navegador no aparecía hasta el próximo re-render. Acá
+  // sembramos del storage y escuchamos eco:browser_url_changed para vivo.
+  // OJO: el navegador guarda sus tabs en `eco.browser.tabs.<id>` (JSON); la
+  // vieja `eco.browser.url.<id>` es legacy y se borra al migrar — por eso
+  // antes el satélite nunca salía. Parseamos la key real + fallback legacy.
+  const [browsersByBubble, setBrowsersByBubble] = useState<Record<string, boolean>>(() => {
+    const out: Record<string, boolean> = {};
+    try {
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (!k) continue;
+        if (k.startsWith('eco.browser.tabs.')) {
+          const id = k.slice('eco.browser.tabs.'.length);
+          try {
+            const parsed = JSON.parse(window.localStorage.getItem(k) || '{}') as { tabs?: Array<{ url?: string }> };
+            if (parsed.tabs?.some((tab) => !!tab.url && tab.url.trim() !== '')) out[id] = true;
+          } catch { /* noop */ }
+        } else if (k.startsWith('eco.browser.url.')) {
+          const id = k.slice('eco.browser.url.'.length);
+          if (window.localStorage.getItem(k)) out[id] = true;
+        }
+      }
+    } catch { /* noop */ }
+    return out;
+  });
+  useEffect(() => {
+    return ecoOn('eco:browser_url_changed', (e) => {
+      setBrowsersByBubble((prev) => ({ ...prev, [e.bubbleId]: !!e.hasUrl }));
+    });
+  }, []);
+
   // Dimensiones del canvas — se miden del container real con ResizeObserver.
   // Así el viewBox siempre coincide con los píxeles reales y el contenido
   // no se comprime para caber en una aspect ratio fija.
@@ -2243,8 +2275,7 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
     const hasChat = b.messages.length > 0;
     const hasPty = !!b.ptyOpen;
     const hasServer = anyServerRunning(b.id);
-    let hasBrowser = false;
-    try { hasBrowser = !!window.localStorage.getItem(`eco.browser.url.${b.id}`); } catch { /* noop */ }
+    const hasBrowser = !!browsersByBubble[b.id];
     const hasRemote = !!remoteByBubble[b.id];
     // hasFiles real: viene de `git status` via `useBubbleHasFilesMap`.
     const hasFiles = hasFilesMap.get(b.id) ?? false;

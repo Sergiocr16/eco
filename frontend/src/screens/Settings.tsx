@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTheme, useTokens } from '@/design/theme';
-import { ACCENT_HUES, THEME_VARIANTS } from '@/design/tokens';
+import { ACCENT_HUES, THEME_VARIANTS, defaultHueForTheme } from '@/design/tokens';
 import {
   Glass, Btn, StatusDot, SectionLabel, Toggle, fieldStyle,
 } from '@/design/primitives';
@@ -1424,7 +1424,7 @@ function SectionSecurity() {
 function SectionAppearance() {
   const t = useTokens();
   const tr = useT();
-  const { mode, setMode, accentHue, setAccentHue } = useTheme();
+  const { mode, effectiveMode, setMode, accentHue, setAccentHue } = useTheme();
 
   // Grupo 1: modos generales (dark/light/system) — comportamiento adaptable.
   const basicModes = [
@@ -1461,9 +1461,12 @@ function SectionAppearance() {
       </div>
 
       <SectionLabel>{tr('settings.appearance.theme.curated')}</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 22 }}>
         {curatedThemes.map((v) => {
           const selected = mode === v.id;
+          // Color de firma del tema — el dot muestra de qué color "se ve" el
+          // tema antes de seleccionarlo (cada tema trae su acento coordinado).
+          const sig = `oklch(76% ${v.defaultChroma ?? 0.13} ${v.defaultHue})`;
           return (
             <button key={v.id} type="button" onClick={() => setMode(v.id)} style={{
               padding: 8, border: `1px solid ${selected ? t.accentDim : t.glassBorder}`,
@@ -1476,12 +1479,12 @@ function SectionAppearance() {
                 background: v.preview, border: `1px solid ${t.glassBorder}`,
                 position: 'relative',
               }}>
-                {/* Mini accent dot para preview de cómo se ve el accent encima del fondo */}
+                {/* Dot con el acento de firma del tema (no el global) */}
                 <span style={{
                   position: 'absolute', bottom: 5, right: 5,
                   width: 8, height: 8, borderRadius: '50%',
-                  background: `oklch(76% 0.13 ${accentHue})`,
-                  boxShadow: `0 0 4px oklch(76% 0.13 ${accentHue})`,
+                  background: sig,
+                  boxShadow: `0 0 4px ${sig}`,
                 }}/>
               </div>
               <div style={{
@@ -1490,14 +1493,29 @@ function SectionAppearance() {
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
                 {selected && <IconCheck size={10} strokeWidth={3}/>}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.name}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {tr(`settings.appearance.theme.name.${v.id}`)}
+                </span>
               </div>
             </button>
           );
         })}
       </div>
 
-      <SectionLabel>{tr('settings.appearance.accent')}</SectionLabel>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <SectionLabel>{tr('settings.appearance.accent.override')}</SectionLabel>
+        <button type="button"
+          onClick={() => setAccentHue(defaultHueForTheme(effectiveMode))}
+          style={{
+            border: 0, background: 'transparent', color: t.text3,
+            fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans, padding: '2px 6px',
+          }}>
+          {tr('settings.appearance.accent.reset')}
+        </button>
+      </div>
+      <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
+        {tr('settings.appearance.accent.override_desc')}
+      </div>
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10,
         marginBottom: 22,

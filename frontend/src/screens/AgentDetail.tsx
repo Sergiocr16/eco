@@ -7,6 +7,7 @@ import { SkillsPicker } from '@/components/SkillsPicker';
 import { useSkills, type SkillInfo } from '@/hooks/useSkills';
 import { useSkillFavorites, skillIdOf } from '@/hooks/useSkillFavorites';
 import { useProfile } from '@/hooks/useProfile';
+import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
 import { setVoiceTarget } from '@/lib/voice-router';
 import { ecoToken } from '@/lib/eco-config';
 import { writeToBubblePty } from '@/lib/pty-bridge';
@@ -283,7 +284,14 @@ export function AgentDetail({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
   const [menuOpen, setMenuOpen] = useState(false);
-  const state = (bubble.status as AgentState) || 'idle';
+  // El agente trabaja mayormente en el PTY (claude CLI), cuyo "busy" se
+  // trackea aparte de bubble.status (que refleja el chat SDK). Sin esto el
+  // título quedaba "idle" aunque el agente estuviera procesando en la terminal.
+  const ptyBusy = useBubbleBusy(bubble.id);
+  const rawState = (bubble.status as AgentState) || 'idle';
+  const state: AgentState = ptyBusy && (rawState === 'idle' || rawState === 'done')
+    ? 'thinking'
+    : rawState;
   const sColor = stateColor(state, t);
 
   useEffect(() => { setDraft(bubble.title); }, [bubble.title]);

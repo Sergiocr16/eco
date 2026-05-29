@@ -345,8 +345,8 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                 <button key={s} type="button"
                   onClick={() => setDiffScope(s)}
                   title={s === 'unstaged'
-                    ? 'Solo cambios sin aceptar (working tree vs index)'
-                    : 'Todos los cambios desde el último commit (vs HEAD)'}
+                    ? tr('diff.scope.unstaged_tooltip')
+                    : tr('diff.scope.all_tooltip')}
                   style={{
                     padding: '4px 10px', borderRadius: 5, border: 0,
                     background: diffScope === s ? t.accent : 'transparent',
@@ -354,7 +354,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                     fontSize: 11, fontWeight: 600,
                     fontFamily: t.fontSans, cursor: 'pointer',
                   }}>
-                  {s === 'unstaged' ? 'Nuevos' : 'Todos'}
+                  {s === 'unstaged' ? tr('diff.scope.unstaged') : tr('diff.scope.all')}
                 </button>
               ))}
             </div>
@@ -366,8 +366,8 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
             <button type="button"
               onClick={() => setCompactMode(!compactMode)}
               title={compactMode
-                ? 'Mostrar el archivo completo expandido'
-                : 'Solo regiones cambiadas con 3 líneas de contexto'}
+                ? tr('diff.compact.expand_tooltip')
+                : tr('diff.compact.compact_tooltip')}
               style={{
                 padding: '5px 10px', borderRadius: 7,
                 background: t.bg2, color: t.text1,
@@ -375,7 +375,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                 fontSize: 11, fontWeight: 600,
                 fontFamily: t.fontSans, cursor: 'pointer',
               }}>
-              {compactMode ? 'Archivo completo' : 'Vista compacta'}
+              {compactMode ? tr('diff.compact.full') : tr('diff.compact.compact')}
             </button>
           )}
 
@@ -438,12 +438,12 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                 fontSize: 10.5, fontWeight: 600,
                 textTransform: 'uppercase', letterSpacing: 0.4,
               }}>
-                <IconCheck size={9}/> Revisado
+                <IconCheck size={9}/> {tr('diff.reviewed')}
               </span>
             )}
             <span style={{ flex: 1 }}/>
             <button type="button" onClick={() => void discardFileAll()}
-              title="Descartar todos los cambios del archivo (git checkout HEAD)"
+              title={tr('diff.discard_file_tooltip')}
               style={{
                 padding: '6px 12px', borderRadius: 7,
                 background: 'transparent', color: t.err,
@@ -451,11 +451,11 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                 fontSize: 11.5, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 600,
                 display: 'inline-flex', alignItems: 'center', gap: 5,
               }}>
-              <IconTrash size={10}/> Descartar archivo
+              <IconTrash size={10}/> {tr('diff.discard_file')}
             </button>
             <button type="button" onClick={acceptFileAll}
               disabled={fileAccepted}
-              title="Marcar el archivo como revisado (no toca el filesystem)"
+              title={tr('diff.accept_file_tooltip')}
               style={{
                 padding: '6px 14px', borderRadius: 7,
                 background: fileAccepted ? t.bg3 : t.ok, color: fileAccepted ? t.text3 : '#fff',
@@ -465,7 +465,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                 fontFamily: t.fontSans,
                 display: 'inline-flex', alignItems: 'center', gap: 5,
               }}>
-              <IconCheck size={10}/> {fileAccepted ? 'Revisado' : 'Aceptar archivo'}
+              <IconCheck size={10}/> {fileAccepted ? tr('diff.reviewed') : tr('diff.accept_file')}
             </button>
           </div>
         )}
@@ -656,6 +656,10 @@ type HunkCbs = {
   reject?: (i: number, raw: string) => void;
   hunks: DiffHunk[];
   t: ReturnType<typeof useTokens>;
+  // Labels traducidos — el widget es una clase (sin hooks), así que la
+  // traducción llega desde el componente vía este ref.
+  acceptLabel: string;
+  rejectLabel: string;
 };
 
 // Block widget que se inserta encima de cada chunk en el lado B (after) con
@@ -688,8 +692,8 @@ class HunkActionsWidget extends WidgetType {
       });
       return b;
     };
-    if (c.reject) wrap.appendChild(mk('Rechazar', 'reject'));
-    if (c.accept) wrap.appendChild(mk('Aceptar', 'accept'));
+    if (c.reject) wrap.appendChild(mk(c.rejectLabel, 'reject'));
+    if (c.accept) wrap.appendChild(mk(c.acceptLabel, 'accept'));
     return wrap;
   }
 }
@@ -699,6 +703,7 @@ function DiffMergeView({
   onAcceptHunk, onRejectHunk,
 }: MergeViewProps) {
   const t = useTokens();
+  const tr = useT();
   const { effectiveMode } = useTheme();
   const isLight = isLightTheme(effectiveMode);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -716,9 +721,15 @@ function DiffMergeView({
   // Datos frescos para los block widgets de Aceptar/Rechazar por chunk.
   // Se actualiza en cada render para que los botones (creados al montar el
   // editor) usen siempre los callbacks/hunks/tokens actuales.
-  const cbsRef = useRef<HunkCbs>({ reviewMode, accept: onAcceptHunk, reject: onRejectHunk, hunks, t });
+  const cbsRef = useRef<HunkCbs>({
+    reviewMode, accept: onAcceptHunk, reject: onRejectHunk, hunks, t,
+    acceptLabel: tr('diff.accept'), rejectLabel: tr('diff.reject'),
+  });
   useEffect(() => {
-    cbsRef.current = { reviewMode, accept: onAcceptHunk, reject: onRejectHunk, hunks, t };
+    cbsRef.current = {
+      reviewMode, accept: onAcceptHunk, reject: onRejectHunk, hunks, t,
+      acceptLabel: tr('diff.accept'), rejectLabel: tr('diff.reject'),
+    };
   });
 
   // Mount/unmount del MergeView. Lo recreamos cuando cambia el archivo
@@ -879,13 +890,13 @@ function DiffMergeView({
           fontSize: 11.5, fontFamily: t.fontSans,
         }}>
           <button type="button" onClick={prevChunk}
-            title="Cambio anterior"
+            title={tr('diff.prev_change')}
             style={navBtnStyle(t)}>◀</button>
           <span style={{ color: t.text2, fontFamily: t.fontMono, minWidth: 70, textAlign: 'center' }}>
-            Cambio {activeChunk + 1} / {totalChunks}
+            {tr('diff.change_counter', { n: activeChunk + 1, total: totalChunks })}
           </span>
           <button type="button" onClick={nextChunk}
-            title="Cambio siguiente"
+            title={tr('diff.next_change')}
             style={navBtnStyle(t)}>▶</button>
         </div>
       )}
@@ -1012,6 +1023,7 @@ function DiffRender({
   onRejectHunk?: (hunkIndex: number, hunkRawText: string) => void;
 }) {
   const t = useTokens();
+  const tr = useT();
   const q = query.trim().toLowerCase();
 
   if (mode === 'plain') {
@@ -1077,7 +1089,7 @@ function DiffRender({
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                   <button type="button"
                     onClick={() => onRejectHunk?.(h.origIndex, h.rawText)}
-                    title="Revertir este cambio (git apply -R)"
+                    title={tr('diff.revert_hunk_tooltip')}
                     style={{
                       padding: '3px 8px', borderRadius: 5,
                       background: 'transparent', color: t.err,
@@ -1085,12 +1097,12 @@ function DiffRender({
                       fontSize: 10.5, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 600,
                       display: 'inline-flex', alignItems: 'center', gap: 3,
                     }}>
-                    <IconX size={9}/> Rechazar
+                    <IconX size={9}/> {tr('diff.reject')}
                   </button>
                   <button type="button"
                     onClick={() => onAcceptHunk?.(h.origIndex, h.rawText)}
                     disabled={accepted}
-                    title="Marcar este cambio como revisado"
+                    title={tr('diff.accept_hunk_tooltip')}
                     style={{
                       padding: '3px 10px', borderRadius: 5,
                       background: accepted ? t.bg3 : t.ok, color: accepted ? t.text3 : '#fff',
@@ -1100,7 +1112,7 @@ function DiffRender({
                       fontFamily: t.fontSans,
                       display: 'inline-flex', alignItems: 'center', gap: 3,
                     }}>
-                    <IconCheck size={9}/> {accepted ? 'OK' : 'Aceptar'}
+                    <IconCheck size={9}/> {accepted ? tr('diff.accepted_short') : tr('diff.accept')}
                   </button>
                 </div>
               )}

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { buildTokens, isLightTheme, type ThemeMode, type EffectiveThemeMode, type Tokens } from './tokens';
+import { buildTokens, isLightTheme, defaultHueForTheme, THEME_VARIANTS, type ThemeMode, type EffectiveThemeMode, type Tokens } from './tokens';
 
 type ThemeContextValue = {
   mode: ThemeMode;
@@ -23,13 +23,41 @@ function readStored<T extends string>(key: string, fallback: T): T {
   } catch { return fallback; }
 }
 
+// El set de temas se curó (de ~38 a 12). Un `eco.theme.mode` viejo —o uno
+// restaurado por backup.ts, que repone todas las eco.*— puede tener un id que
+// ya no existe. Este guard es la fuente autoritativa de validación: si el id
+// guardado no es válido, lo mapeamos al tema sobreviviente más cercano (o
+// 'dark'). NO reescribe localStorage en el load; solo resuelve en runtime.
+const VALID_MODES = new Set<string>(['system', ...THEME_VARIANTS.map((v) => v.id)]);
+const MODE_MIGRATION: Record<string, ThemeMode> = {
+  amoled: 'dark', monokai: 'dark', carbon: 'dark',
+  nord: 'slate', tokyo: 'slate',
+  'solarized-dark': 'ocean', aurora: 'ocean',
+  forest: 'emerald', matrix: 'emerald',
+  coffee: 'gruvbox', mustard: 'gruvbox', 'acid-yellow': 'gruvbox',
+  cyberpunk: 'dracula', synthwave: 'dracula', galaxy: 'dracula',
+  vaporwave: 'dracula', 'neon-night': 'dracula', royal: 'dracula',
+  'catppuccin-mocha': 'rose-pine', pink: 'rose-pine',
+  volcano: 'blood-moon', 'cherry-bomb': 'blood-moon', sunset: 'blood-moon',
+  // Claros
+  'solarized-light': 'sand', sepia: 'sand', linen: 'sand', peach: 'sand',
+  'catppuccin-latte': 'light',
+  'baby-pink': 'mint', bubblegum: 'mint', sakura: 'mint',
+};
+
+function readStoredMode(): ThemeMode {
+  const raw = readStored(STORAGE_MODE, 'dark');
+  if (VALID_MODES.has(raw)) return raw as ThemeMode;
+  return MODE_MIGRATION[raw] ?? 'dark';
+}
+
 function resolveSystem(): 'dark' | 'light' {
   if (typeof window === 'undefined' || !window.matchMedia) return 'dark';
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>(() => readStored(STORAGE_MODE, 'dark') as ThemeMode);
+  const [mode, setModeState] = useState<ThemeMode>(() => readStoredMode());
   const [systemMode, setSystemMode] = useState<'dark' | 'light'>(resolveSystem);
   const [accentHue, setAccentHueState] = useState<number>(() => Number(readStored(STORAGE_HUE, '165')));
 
@@ -45,13 +73,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const t = useMemo(() => buildTokens(effectiveMode, accentHue), [effectiveMode, accentHue]);
 
-  const setMode = (m: ThemeMode) => {
-    setModeState(m);
-    try { window.localStorage.setItem(STORAGE_MODE, m); } catch { /* noop */ }
-  };
   const setAccentHue = (h: number) => {
     setAccentHueState(h);
     try { window.localStorage.setItem(STORAGE_HUE, String(h)); } catch { /* noop */ }
+  };
+  const setMode = (m: ThemeMode) => {
+    setModeState(m);
+    try { window.localStorage.setItem(STORAGE_MODE, m); } catch { /* noop */ }
+    // Coupling: al elegir un tema se aplica su acento de firma coordinado, así
+    // el tema "se ve" de su color. El usuario lo puede sobrescribir después y
+    // queda hasta el próximo cambio de tema. 'system' resuelve por systemMode.
+    const resolved = m === 'system' ? systemMode : m;
+    setAccentHue(defaultHueForTheme(resolved));
   };
 
   useEffect(() => {
