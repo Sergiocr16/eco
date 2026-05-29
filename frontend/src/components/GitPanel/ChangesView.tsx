@@ -223,7 +223,7 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
         </div>
       }
       right={
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: t.bg0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, background: t.bg0 }}>
           {selected ? (
             <DiffPane
               key={selected}

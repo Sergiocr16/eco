@@ -258,50 +258,51 @@ function SyncButton({
     : '⇅';
 
   const actionable = action !== 'fetch';
-  const isSync = action === 'sync';
+  const [hover, setHover] = useState(false);
+
+  // Estilo alineado al resto de la barra (BranchChip / rename): height 28,
+  // radius 7, plano. Acción real = accent plano (tipo Btn primary, sin
+  // gradiente/sombra/shimmer); fetch = quiet (bg2 + hover accent).
+  const bg = actionable
+    ? (hover && !disabled ? t.accent : t.accentDim)
+    : t.bg2;
+  const fg = actionable ? t.accentOn : (hover && !disabled ? t.accent : t.text1);
+  const border = actionable
+    ? `1px solid ${t.accent}`
+    : `1px solid ${hover && !disabled ? t.accent : t.glassBorder}`;
+  const badgeBg = actionable ? 'rgba(0,0,0,0.18)' : t.bg3;
 
   return (
     <button type="button"
       onClick={onClick}
       disabled={busy || disabled}
       title={disabled ? tr('git.topbar.sync.detached_disabled') : tr('git.topbar.sync.action_tooltip', { label })}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
-        marginLeft: 10,
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        height: 34, padding: '0 14px',
-        borderRadius: 9,
-        border: actionable
-          ? `1px solid ${t.accent}`
-          : `1px solid ${t.glassBorder}`,
-        background: actionable
-          ? `linear-gradient(180deg, ${t.accent}, color-mix(in oklch, ${t.accent} 86%, black))`
-          : t.bg2,
-        color: actionable ? t.accentOn : t.text1,
-        fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 700,
-        letterSpacing: 0.1,
+        marginLeft: 2,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        height: 28, padding: '0 12px',
+        borderRadius: 7,
+        border,
+        background: bg,
+        color: fg,
+        fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 600,
         cursor: busy ? 'wait' : (disabled ? 'not-allowed' : 'pointer'),
         opacity: disabled ? 0.45 : 1,
-        // Sombra solo cuando hay acción real — atrae el ojo.
-        boxShadow: actionable
-          ? `0 1px 0 color-mix(in oklch, ${t.accent} 60%, black) inset, 0 4px 12px color-mix(in oklch, ${t.accent} 30%, transparent)`
-          : 'none',
-        // Pulso sutil cuando es Sync (la acción "más urgente" con ambos lados).
-        animation: isSync && !busy ? 'eco-shimmer 2s ease-in-out infinite' : undefined,
-        transition: 'transform 80ms, box-shadow 120ms',
-      }}
-      onMouseDown={(e) => { if (!busy && !disabled) e.currentTarget.style.transform = 'translateY(1px)'; }}
-      onMouseUp={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}>
+        whiteSpace: 'nowrap',
+        transition: 'background 120ms, border-color 120ms, color 120ms',
+      }}>
       {busy ? (
         <span style={{
-          width: 14, height: 14, borderRadius: '50%',
+          width: 12, height: 12, borderRadius: '50%',
           border: `2px solid color-mix(in oklch, ${actionable ? t.accentOn : t.text2} 40%, transparent)`,
           borderTopColor: actionable ? t.accentOn : t.text1,
           animation: 'eco-spin 0.7s linear infinite',
           display: 'inline-block',
         }}/>
       ) : (
-        <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>{icon}</span>
+        <span style={{ fontSize: 13, lineHeight: 1 }}>{icon}</span>
       )}
       <span>{label}</span>
       {/* Badges ahead/behind cuando hay algo */}
@@ -314,23 +315,19 @@ function SyncButton({
           {behind > 0 && (
             <span title={behind === 1 ? tr('git.topbar.sync.behind_one', { n: behind }) : tr('git.topbar.sync.behind_many', { n: behind })}
               style={{
-                fontFamily: t.fontMono, fontSize: 11, fontWeight: 700,
-                padding: '1px 6px', borderRadius: 4,
-                background: actionable
-                  ? 'rgba(0,0,0,0.18)'
-                  : `color-mix(in oklch, ${t.warn} 18%, transparent)`,
-                color: actionable ? '#fff' : t.warn,
+                fontFamily: t.fontMono, fontSize: 10.5, fontWeight: 700,
+                padding: '0 5px', borderRadius: 4,
+                background: badgeBg,
+                color: actionable ? t.accentOn : t.warn,
               }}>↓{behind}</span>
           )}
           {ahead > 0 && (
             <span title={ahead === 1 ? tr('git.topbar.sync.ahead_one', { n: ahead }) : tr('git.topbar.sync.ahead_many', { n: ahead })}
               style={{
-                fontFamily: t.fontMono, fontSize: 11, fontWeight: 700,
-                padding: '1px 6px', borderRadius: 4,
-                background: actionable
-                  ? 'rgba(0,0,0,0.18)'
-                  : `color-mix(in oklch, ${t.ok} 18%, transparent)`,
-                color: actionable ? '#fff' : t.ok,
+                fontFamily: t.fontMono, fontSize: 10.5, fontWeight: 700,
+                padding: '0 5px', borderRadius: 4,
+                background: badgeBg,
+                color: actionable ? t.accentOn : t.ok,
               }}>↑{ahead}</span>
           )}
         </span>
@@ -687,12 +684,15 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
   const t = useTokens();
   const tr = useT();
   const [source, setSource] = useState('');
+  const [query, setQuery] = useState('');
   const [noFf, setNoFf] = useState(false);
   const [squash, setSquash] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const options = branches.filter((b) => !b.isRemote && !b.isCurrent).map((b) => b.name);
+  const q = query.trim().toLowerCase();
+  const filtered = q ? options.filter((b) => b.toLowerCase().includes(q)) : options;
 
   async function submit() {
     if (!source) return;
@@ -737,19 +737,55 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
         <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
           {tr('git.topbar.merge.body', { branch: currentBranch })}
         </div>
-        <select
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
+        {/* Buscador + lista filtrable de ramas locales (reemplaza el <select>
+            nativo, que no permitía buscar). */}
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={tr('branch.search_placeholder')}
           disabled={busy}
           autoFocus
           style={{
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
             borderRadius: 6, padding: '8px 10px',
             fontFamily: t.fontMono, fontSize: 13, color: t.text0, outline: 'none',
-          }}>
-          <option value="">{tr('git.topbar.merge.pick')}</option>
-          {options.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
+          }}
+        />
+        <div style={{
+          maxHeight: 220, overflow: 'auto',
+          border: `1px solid ${t.glassBorder}`, borderRadius: 6,
+          background: t.bg2,
+          display: 'flex', flexDirection: 'column',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 12px', fontSize: 12, color: t.text3 }}>
+              {tr('git.topbar.dropdown.no_branches')}
+            </div>
+          ) : filtered.map((b) => {
+            const sel = b === source;
+            return (
+              <button
+                key={b} type="button"
+                onClick={() => setSource(b)}
+                disabled={busy}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  width: '100%', textAlign: 'left',
+                  padding: '7px 12px', border: 0,
+                  background: sel ? t.accentFaint : 'transparent',
+                  color: sel ? t.accent : t.text1,
+                  fontFamily: t.fontMono, fontSize: 12.5,
+                  cursor: busy ? 'default' : 'pointer',
+                }}
+                onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = t.bg3; }}
+                onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = 'transparent'; }}>
+                <IconCheck size={12} style={{ opacity: sel ? 1 : 0, flexShrink: 0 }}/>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b}</span>
+              </button>
+            );
+          })}
+        </div>
         <div style={{ display: 'flex', gap: 12 }}>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: t.text2, cursor: 'pointer' }}>
             <input type="checkbox" checked={noFf} onChange={(e) => setNoFf(e.target.checked)} disabled={squash || busy} style={{ margin: 0 }}/>

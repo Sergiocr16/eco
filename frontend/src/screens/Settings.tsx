@@ -23,6 +23,7 @@ import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useMcpConfig } from '@/hooks/useMcpConfig';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useI18n, useT } from '@/hooks/useI18n';
+import { getExternalIde, setExternalIde, ideDisplayLabel, type ExternalIde } from '@/lib/ide-uri';
 import {
   collectLocalStorage, restoreLocalStorage, buildBackupZip, parseBackupZip,
   backupFilename, getElectronBackupAPI, u8ToBase64, base64ToU8,
@@ -180,6 +181,7 @@ function SectionGeneral() {
       <Row icon={IconCommand} title={tr('settings.general.shortcut')} desc={tr('settings.general.shortcut_desc')}
         control={<KbdRow keys={['⌥', '⇧', 'E']}/>}/>
       <LanguageRow/>
+      <ExternalIdeRow/>
       <WorktreesCleanRow/>
 
       <div style={{ marginTop: 24 }}>
@@ -239,6 +241,32 @@ function WorktreesCleanRow() {
           }}>
           {busy ? tr('settings.general.worktrees_cleaning') : tr('settings.general.worktrees_run')}
         </button>
+      }/>
+  );
+}
+
+function ExternalIdeRow() {
+  const t = useTokens();
+  const tr = useT();
+  const [ide, setIde] = useState<ExternalIde>(getExternalIde());
+  function onChange(next: ExternalIde) {
+    setIde(next);
+    setExternalIde(next);
+  }
+  const options: ExternalIde[] = ['auto', 'vscode', 'cursor', 'intellij', 'webstorm', 'none'];
+  return (
+    <Row
+      icon={IconCommand}
+      title={tr('settings.general.external_ide') || 'Editor externo (IDE)'}
+      desc={tr('settings.general.external_ide_desc') ||
+        'Click en "↗ IDE" del editor abre el archivo en la línea exacta. Eco no tiene debugger; usá el IDE externo para breakpoints.'}
+      control={
+        <select value={ide} onChange={(e) => onChange(e.target.value as ExternalIde)}
+          style={{ ...fieldStyle(t), width: 220 }}>
+          {options.map((o) => (
+            <option key={o} value={o}>{ideDisplayLabel(o)}</option>
+          ))}
+        </select>
       }/>
   );
 }

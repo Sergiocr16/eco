@@ -220,6 +220,21 @@ ipcMain.on('eco:renderer-log', (_e, args) => {
   console.log('[renderer]', ...(Array.isArray(args) ? args : [args]));
 });
 
+// Abre un URL/URI con el handler default del OS. Pensado para URIs custom
+// (vscode://, idea://, cursor://) que disparan el "Open in IDE" del
+// FileEditor. shell.openExternal sigue las mismas reglas que el browser:
+// no se ejecuta nada local arbitrariamente, solo se invoca el protocol
+// handler registrado.
+ipcMain.handle('eco:open-external', async (_e, url) => {
+  if (typeof url !== 'string' || !url) return { ok: false, error: 'url requerido' };
+  try {
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'open failed' };
+  }
+});
+
 // Folder picker nativo del OS — usado por Settings → Integraciones para
 // elegir la carpeta del vault Obsidian.
 ipcMain.handle('eco:pick-folder', async (_e, opts) => {

@@ -60,7 +60,8 @@ Switching between bubbles A → B → A reloads nothing — each open bubble kee
 - **Bubbles + worktrees** — every conversation gets an isolated git worktree, PTY, and dev server. Branch lives in the parent repo after close.
 - **Voice always on** — wake-prefix dispatcher tolerant to fillers, conjugations, free word order. On-device STT in the packaged .app (Apple Speech), Web Speech in the browser.
 - **Cursor-style review** — agent edits freely; you review diffs after with amber/green dots, accept/revert by hunk or by file. Opt-in toggle.
-- **FilesPanel** — mini-VS-Code per bubble: lazy gitignore-aware tree, CodeMirror 6 editor, `Cmd+P` Quick Open, `Cmd+Shift+F` global search, save with conflict detection, image preview.
+- **Diff viewer with merge view** — full file shown side-by-side with diffs highlighted (powered by `@codemirror/merge`), sync scroll, collapse unchanged regions on/off, per-chunk navigation + Accept/Reject in review mode.
+- **FilesPanel** — mini-VS-Code per bubble: lazy gitignore-aware tree, CodeMirror 6 editor, `Cmd+P` Quick Open, `Cmd+Shift+F` global search, save with conflict detection, image preview, **"↗ IDE" button** to open the current file at the exact line in VSCode / IntelliJ / WebStorm / Cursor (configurable). Eco has no built-in debugger — set breakpoints in the external IDE.
 - **NotesPanel + summarizer** — markdown notes per bubble. One click runs Claude (`claude -p`) on the recent messages + last 60 KB of the PTY buffer and produces a 3-section summary (what we were doing / where we left off / next steps).
 - **Archiving** — kill the running processes, keep the worktree and branch. Restore or permanently delete from the Archived screen.
 - **GitHub PAT** — store a Personal Access Token once, validated against GitHub; auto-injected as `GH_TOKEN` + git author env into every spawned process.
