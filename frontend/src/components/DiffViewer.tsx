@@ -7,9 +7,9 @@ import { useT } from '@/hooks/useI18n';
 import { translateBackendError } from '@/lib/backend-errors';
 import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
 import { emit as ecoEmit } from '@/lib/eco-bus';
-import { MergeView, getChunks, goToNextChunk, goToPreviousChunk } from '@codemirror/merge';
-import { EditorState, Compartment } from '@codemirror/state';
-import { EditorView, lineNumbers } from '@codemirror/view';
+import { MergeView } from '@codemirror/merge';
+import { EditorState, Compartment, StateField } from '@codemirror/state';
+import { EditorView, lineNumbers, Decoration, WidgetType, type DecorationSet } from '@codemirror/view';
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import { buildEcoCmExtension } from './FilesPanel/cm-theme';
 import { loadLang } from './FilesPanel/lang-loader';
@@ -484,7 +484,8 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
         )}
 
         <div style={{
-          flex: 1, overflow: 'auto', padding: 0,
+          flex: 1, minHeight: 0, overflow: 'auto', padding: 0,
+          display: 'flex', flexDirection: 'column',
           background: t.bg0,
         }}>
           {loading && (
@@ -600,6 +601,99 @@ type MergeViewProps = {
   onRejectHunk?: (hunkIndex: number, hunkRawText: string) => void;
 };
 
+// Theme estilo GitHub Desktop para el MergeView. Reemplaza el subrayado por
+// gradiente de @codemirror/merge con fondos sólidos verde/rojo, pone fondo
+// gris oscuro (no negro), y deja que el host scrollee (editor height auto).
+// Como EditorView.theme tiene mayor precedencia que el baseTheme del merge,
+// estos overrides ganan.
+function githubDiffTheme(isLight: boolean) {
+  const dark = !isLight;
+  const bg = dark ? '#24292e' : '#ffffff';
+  const gutterBg = dark ? '#1c2024' : '#f6f8fa';
+  const gutterFg = dark ? '#768390' : '#8c959f';
+  // Fondo de línea a opacidad total (verde/rojo sólido). En oscuro usamos los
+  // verdes/rojos de GitHub que dejan legible el texto claro encima.
+  const addLine = dark ? '#1b5e2a' : '#aceebb';
+  const addGutter = dark ? '#238636' : '#6fdd8b';
+  const delLine = dark ? '#6e2329' : '#ffc8c2';
+  const delGutter = dark ? '#b62324' : '#ff9a91';
+  return EditorView.theme({
+    // Scroll: editor crece a su contenido, host (overflow:auto) scrollea.
+    '&': { height: 'auto', backgroundColor: bg },
+    '.cm-scroller': { overflow: 'visible', backgroundColor: bg },
+    '.cm-content': { backgroundColor: bg },
+    '.cm-gutters': { backgroundColor: gutterBg, color: gutterFg, border: 'none' },
+    '.cm-activeLine': { backgroundColor: 'transparent' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+    // Fondos de línea: verde (después / lado b) y rojo (antes / lado a).
+    '&.cm-merge-b .cm-changedLine, .cm-inlineChangedLine, .cm-insertedLine': {
+      backgroundColor: addLine,
+    },
+    '&.cm-merge-a .cm-changedLine, .cm-deletedChunk, .cm-deletedLine': {
+      backgroundColor: delLine,
+    },
+    // Estilo GitHub Desktop: se tinta la LÍNEA entera, no las palabras. Por
+    // eso anulamos el resaltado por-palabra (gradiente/box que se veía como
+    // un parche gris encima del texto). El texto queda intacto.
+    '&.cm-merge-b .cm-changedText': { background: 'transparent', backgroundImage: 'none' },
+    '&.cm-merge-a .cm-changedText, .cm-deletedChunk .cm-deletedText': {
+      background: 'transparent', backgroundImage: 'none',
+    },
+    '&.cm-merge-b .cm-deletedText': { background: 'transparent' },
+    '.cm-insertedLine, .cm-deletedLine, .cm-deletedLine del': { textDecoration: 'none' },
+    // Marcadores del gutter en las líneas cambiadas (números con tinte).
+    '&.cm-merge-b .cm-changedLineGutter': { backgroundColor: addGutter },
+    '&.cm-merge-a .cm-changedLineGutter, .cm-deletedLineGutter': { backgroundColor: delGutter },
+  }, { dark });
+}
+
+// Datos frescos para los widgets de acción por chunk. Vive en un ref para que
+// los botones (creados una vez al montar el MergeView) siempre usen los
+// callbacks/hunks actuales sin recrear el editor.
+type HunkCbs = {
+  reviewMode: boolean;
+  accept?: (i: number, raw: string) => void;
+  reject?: (i: number, raw: string) => void;
+  hunks: DiffHunk[];
+  t: ReturnType<typeof useTokens>;
+};
+
+// Block widget que se inserta encima de cada chunk en el lado B (after) con
+// botones Aceptar/Rechazar mapeados a /file/{accept,revert}-hunk del backend.
+class HunkActionsWidget extends WidgetType {
+  constructor(readonly idx: number, readonly get: () => HunkCbs) { super(); }
+  eq(o: HunkActionsWidget) { return o.idx === this.idx; }
+  ignoreEvent() { return true; }
+  toDOM() {
+    const c = this.get();
+    const t = c.t;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `display:flex;gap:6px;justify-content:flex-end;align-items:center;padding:3px 10px;background:${t.bg1};border-top:1px solid ${t.glassBorder};font-family:${t.fontSans};`;
+    const mk = (label: string, kind: 'accept' | 'reject') => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      const color = kind === 'accept' ? t.ok : t.err;
+      b.style.cssText = kind === 'accept'
+        ? `padding:2px 10px;border-radius:6px;background:${t.ok};color:#fff;border:0;font-size:10.5px;font-weight:600;cursor:pointer;font-family:${t.fontSans};`
+        : `padding:2px 10px;border-radius:6px;background:transparent;color:${color};border:1px solid color-mix(in oklch, ${color} 50%, transparent);font-size:10.5px;font-weight:600;cursor:pointer;font-family:${t.fontSans};`;
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+      b.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const cc = this.get();
+        const h = cc.hunks[this.idx];
+        if (!h) return;
+        if (kind === 'accept') cc.accept?.(this.idx, h.rawText);
+        else cc.reject?.(this.idx, h.rawText);
+      });
+      return b;
+    };
+    if (c.reject) wrap.appendChild(mk('Rechazar', 'reject'));
+    if (c.accept) wrap.appendChild(mk('Aceptar', 'accept'));
+    return wrap;
+  }
+}
+
 function DiffMergeView({
   before, after, diff, path, compactMode, reviewMode,
   onAcceptHunk, onRejectHunk,
@@ -619,6 +713,14 @@ function DiffMergeView({
   const hunks = useMemo(() => parseUnifiedDiff(diff), [diff]);
   const totalChunks = hunks.length;
 
+  // Datos frescos para los block widgets de Aceptar/Rechazar por chunk.
+  // Se actualiza en cada render para que los botones (creados al montar el
+  // editor) usen siempre los callbacks/hunks/tokens actuales.
+  const cbsRef = useRef<HunkCbs>({ reviewMode, accept: onAcceptHunk, reject: onRejectHunk, hunks, t });
+  useEffect(() => {
+    cbsRef.current = { reviewMode, accept: onAcceptHunk, reject: onRejectHunk, hunks, t };
+  });
+
   // Mount/unmount del MergeView. Lo recreamos cuando cambia el archivo
   // (different path o before/after totalmente distintos) — el contenido
   // chico no justifica diffing incremental.
@@ -626,12 +728,47 @@ function DiffMergeView({
     if (!hostRef.current) return;
     const host = hostRef.current;
 
+    // Decoraciones: un block widget con botones Aceptar/Rechazar encima de
+    // cada hunk en el lado B. Posicionamos por el `+C` del header del hunk
+    // (línea de inicio en el archivo nuevo), NO por getChunks() — getChunks
+    // llega async/vacío y dejaba la barra sin botones. El doc B = `after` es
+    // el archivo completo, así que la línea del header mapea 1:1.
+    function buildHunkDecos(state: EditorState): DecorationSet {
+      const cbs = cbsRef.current;
+      if (!cbs.accept && !cbs.reject) return Decoration.none;
+      const ranges = cbs.hunks
+        .map((h, i) => {
+          const m = /^@@\s+-\d+(?:,\d+)?\s+\+(\d+)/.exec(h.header);
+          const newStart = m ? Math.max(1, Number(m[1])) : 1;
+          if (newStart > state.doc.lines) return null;
+          const line = state.doc.line(newStart);
+          return Decoration.widget({
+            widget: new HunkActionsWidget(i, () => cbsRef.current),
+            block: true, side: -1,
+          }).range(line.from);
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null);
+      if (ranges.length === 0) return Decoration.none;
+      return Decoration.set(ranges, true);
+    }
+    const hunkActionsField = StateField.define<DecorationSet>({
+      create: (state) => buildHunkDecos(state),
+      update: (_deco, tr) => buildHunkDecos(tr.state),
+      provide: (f) => EditorView.decorations.from(f),
+    });
+
     const sharedExtensions = [
       lineNumbers(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       buildEcoCmExtension(t, isLight),
       EditorView.lineWrapping,
       EditorState.readOnly.of(true),
+      // Look estilo GitHub Desktop para el diff: fondo gris (no negro puro),
+      // líneas agregadas en verde / eliminadas en rojo de FONDO (no subrayado),
+      // y palabras cambiadas con fondo sólido. También arregla el scroll: el
+      // editor crece a su contenido (height auto, scroller visible) y el
+      // contenedor host hace el scroll.
+      githubDiffTheme(isLight),
     ];
 
     const mv = new MergeView({
@@ -648,20 +785,8 @@ function DiffMergeView({
         extensions: [
           ...sharedExtensions,
           langCompartmentB.current.of([]),
-          // Listener para trackear el chunk activo según la posición del cursor.
-          EditorView.updateListener.of((update) => {
-            if (!update.selectionSet && !update.docChanged) return;
-            const view = mv.b;
-            if (!view) return;
-            const pos = view.state.selection.main.head;
-            const chunks = getChunks(view.state);
-            if (!chunks) return;
-            // Buscar el chunk que contiene `pos` en el lado B.
-            const idx = chunks.chunks.findIndex(
-              (c) => pos >= c.fromB && pos <= c.toB
-            );
-            if (idx >= 0) setActiveChunk(idx);
-          }),
+          // Botones Aceptar/Rechazar por chunk (block widgets).
+          hunkActionsField,
         ],
       },
       collapseUnchanged: compactMode ? { margin: 3, minSize: 4 } : undefined,
@@ -675,6 +800,29 @@ function DiffMergeView({
       revertControls: undefined,
     });
     viewRef.current = mv;
+
+    // El .cm-mergeView trae overflow-y:auto propio que competía con el scroll
+    // del host. Lo desactivamos para que el host (acotado, overflow:auto) sea
+    // el único scroller — un bloque alto que se desplaza completo. El fondo
+    // gris lo seteamos inline para que gane sobre cualquier stylesheet del
+    // theme base (evita el negro puro).
+    mv.dom.style.overflowY = 'visible';
+    // El theme de FilesPanel (compartido) pinta .cm-editor/.cm-content de negro
+    // puro y a veces gana en el cascade. Forzamos el gris inline en los nodos
+    // reales del merge — el inline gana sobre cualquier stylesheet. Los fondos
+    // verde/rojo de línea son más específicos (van en .cm-changedLine), así que
+    // no se pisan. setTimeout 0 para que el DOM del MergeView ya exista.
+    const codeBg = isLight ? '#ffffff' : '#24292e';
+    const gutBg = isLight ? '#f6f8fa' : '#1c2024';
+    mv.dom.style.background = codeBg;
+    setTimeout(() => {
+      mv.dom.querySelectorAll<HTMLElement>('.cm-editor, .cm-scroller, .cm-content').forEach((el) => {
+        el.style.background = codeBg;
+      });
+      mv.dom.querySelectorAll<HTMLElement>('.cm-gutters').forEach((el) => {
+        el.style.background = gutBg;
+      });
+    }, 0);
 
     // Carga lazy del language pack (sintaxis para el path). Si no soporta el
     // tipo de archivo, queda en texto plano (ok).
@@ -693,38 +841,35 @@ function DiffMergeView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [before, after, path, compactMode, isLight]);
 
-  // Navegación entre chunks. Reusa los commands de @codemirror/merge.
-  function nextChunk() {
+  // Navegación entre cambios: scroll determinístico a la línea de inicio del
+  // hunk en el lado B (del header `+C`). No usamos los commands de merge
+  // porque dependían de getChunks (que llegaba vacío).
+  function goToChunk(idx: number) {
     const view = viewRef.current?.b;
     if (!view) return;
-    goToNextChunk(view);
-    view.focus();
-  }
-  function prevChunk() {
-    const view = viewRef.current?.b;
-    if (!view) return;
-    goToPreviousChunk(view);
-    view.focus();
-  }
-
-  function handleAccept() {
-    if (!onAcceptHunk) return;
-    const h = hunks[activeChunk];
+    const h = hunks[idx];
     if (!h) return;
-    onAcceptHunk(activeChunk, h.rawText);
+    const m = /^@@\s+-\d+(?:,\d+)?\s+\+(\d+)/.exec(h.header);
+    const newStart = m ? Math.max(1, Number(m[1])) : 1;
+    const lineNo = Math.min(newStart, view.state.doc.lines);
+    const pos = view.state.doc.line(lineNo).from;
+    // El scroller es el host (overflow:auto), no el editor (overflow:visible),
+    // así que scrolleamos el nodo DOM de la línea, que arrastra al ancestro
+    // scrollable. scrollIntoView de CM no sirve acá (el editor no scrollea).
+    const dn = view.domAtPos(pos).node;
+    const el = (dn.nodeType === 3 ? dn.parentElement : dn) as HTMLElement | null;
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setActiveChunk(idx);
   }
-  function handleReject() {
-    if (!onRejectHunk) return;
-    const h = hunks[activeChunk];
-    if (!h) return;
-    onRejectHunk(activeChunk, h.rawText);
-  }
+  function nextChunk() { goToChunk(Math.min(activeChunk + 1, totalChunks - 1)); }
+  function prevChunk() { goToChunk(Math.max(activeChunk - 1, 0)); }
 
   return (
     <div style={{
       flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
     }}>
-      {/* Toolbar de navegación entre chunks + acciones per-hunk (review). */}
+      {/* Toolbar de navegación entre chunks. Aceptar/Rechazar viven por chunk
+          (block widgets dentro del editor B), no acá. */}
       {totalChunks > 0 && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8,
@@ -734,46 +879,19 @@ function DiffMergeView({
           fontSize: 11.5, fontFamily: t.fontSans,
         }}>
           <button type="button" onClick={prevChunk}
-            title="Chunk anterior"
+            title="Cambio anterior"
             style={navBtnStyle(t)}>◀</button>
           <span style={{ color: t.text2, fontFamily: t.fontMono, minWidth: 70, textAlign: 'center' }}>
-            Chunk {activeChunk + 1} / {totalChunks}
+            Cambio {activeChunk + 1} / {totalChunks}
           </span>
           <button type="button" onClick={nextChunk}
-            title="Chunk siguiente"
+            title="Cambio siguiente"
             style={navBtnStyle(t)}>▶</button>
-          <span style={{ flex: 1 }}/>
-          {reviewMode && onRejectHunk && (
-            <button type="button" onClick={handleReject}
-              title="Revertir este hunk (git apply -R)"
-              style={{
-                padding: '4px 10px', borderRadius: 6,
-                background: 'transparent', color: t.err,
-                border: `1px solid color-mix(in oklch, ${t.err} 50%, transparent)`,
-                fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 600,
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-              }}>
-              <IconX size={10}/> Rechazar
-            </button>
-          )}
-          {reviewMode && onAcceptHunk && (
-            <button type="button" onClick={handleAccept}
-              title="Marcar este hunk como revisado (git add)"
-              style={{
-                padding: '4px 12px', borderRadius: 6,
-                background: t.ok, color: '#fff', border: 0,
-                fontSize: 11, fontWeight: 600,
-                cursor: 'pointer', fontFamily: t.fontSans,
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-              }}>
-              <IconCheck size={10}/> Aceptar
-            </button>
-          )}
         </div>
       )}
       <div ref={hostRef} style={{
         flex: 1, minHeight: 0, overflow: 'auto',
-        background: t.bg0,
+        background: isLight ? '#ffffff' : '#24292e',
       }}/>
     </div>
   );
@@ -959,7 +1077,7 @@ function DiffRender({
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                   <button type="button"
                     onClick={() => onRejectHunk?.(h.origIndex, h.rawText)}
-                    title="Revertir este hunk (git apply -R)"
+                    title="Revertir este cambio (git apply -R)"
                     style={{
                       padding: '3px 8px', borderRadius: 5,
                       background: 'transparent', color: t.err,
@@ -972,7 +1090,7 @@ function DiffRender({
                   <button type="button"
                     onClick={() => onAcceptHunk?.(h.origIndex, h.rawText)}
                     disabled={accepted}
-                    title="Marcar este hunk como revisado"
+                    title="Marcar este cambio como revisado"
                     style={{
                       padding: '3px 10px', borderRadius: 5,
                       background: accepted ? t.bg3 : t.ok, color: accepted ? t.text3 : '#fff',
