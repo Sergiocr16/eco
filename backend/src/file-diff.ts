@@ -15,6 +15,11 @@ export const DiffRequestSchema = z.object({
   // Eso permite "review incremental": cuando aceptás un cambio lo
   // staged-eamos, y los próximos diffs muestran solo lo nuevo unstaged.
   vsIndex: z.boolean().optional(),
+  // Si true, además del unified patch incluye `before` y `after` con el
+  // contenido completo de ambos lados — pensado para que el DiffViewer
+  // pueda renderear el archivo entero con resaltado de cambios (merge view)
+  // en lugar de solo los hunks. No breaking: campos opcionales en el response.
+  withFullContent: z.boolean().optional(),
 });
 
 export type DiffRequest = z.infer<typeof DiffRequestSchema>;
@@ -24,6 +29,9 @@ export type DiffResult = {
   diff: string;
   hasChanges: boolean;
   message?: string;
+  // Presentes solo cuando withFullContent === true. Cap individual = MAX_DIFF_BYTES.
+  before?: string;
+  after?: string;
 };
 
 const MAX_DIFF_BYTES = 512 * 1024;
@@ -98,13 +106,22 @@ export async function fileDiff(req: DiffRequest): Promise<DiffResult> {
       : ['diff', '--no-color', '-U3', req.ref ?? 'HEAD', '--', rel];
     const { stdout } = await runGit(args, effectiveWorkspace);
     if (stdout.trim()) {
-      return { mode: 'git', diff: stdout, hasChanges: true };
+      const result: DiffResult = { mode: 'git', diff: stdout, hasChanges: true };
+      if (req.withFullContent) {
+        // before = lo que git tiene cuando comparamos. vsIndex=true compara
+        // con el index, así que el "before" es :rel. vsIndex=false compara con
+        // HEAD (o req.ref), así que el "before" es <ref>:rel.
+        const beforeRef = req.vsIndex ? '' : (req.ref ?? 'HEAD');
+        result.before = await readBeforeFromGit(effectiveWorkspace, rel, beforeRef);
+        result.after = readFileCapped(fullPath);
+      }
+      return result;
     }
     // Sin cambios contra el target — probar si es archivo nuevo no trackeado
     const untracked = await runGit(['ls-files', '--others', '--exclude-standard', '--', rel], effectiveWorkspace);
     if (untracked.stdout.trim()) {
       // Archivo nuevo — mostrar todo el contenido con prefijo +
-      return readAsCreated(fullPath, rel);
+      return readAsCreated(fullPath, rel, req.withFullContent === true);
     }
     return {
       mode: 'git', diff: '', hasChanges: false,
@@ -113,7 +130,28 @@ export async function fileDiff(req: DiffRequest): Promise<DiffResult> {
   }
 
   // Sin git: mostrar contenido plano
-  return readAsPlain(fullPath, req.path);
+  return readAsPlain(fullPath, req.path, req.withFullContent === true);
+}
+
+// Lee el contenido del archivo desde git (HEAD, otra ref, o el index).
+// beforeRef === '' significa "el index" (`git show :rel`). beforeRef === 'HEAD'
+// (o otra ref) significa "esa ref" (`git show HEAD:rel`).
+// Si git devuelve error (archivo nuevo, ref no existe), devuelve '' — eso es
+// semánticamente correcto para una merge view ("no había contenido antes").
+async function readBeforeFromGit(workspace: string, rel: string, beforeRef: string): Promise<string> {
+  const target = beforeRef ? `${beforeRef}:${rel}` : `:${rel}`;
+  const { stdout, code } = await runGit(['show', target], workspace);
+  if (code !== 0) return '';
+  return stdout;
+}
+
+function readFileCapped(fullPath: string): string {
+  try {
+    const stat = statSync(fullPath);
+    if (!stat.isFile()) return '';
+    if (stat.size > MAX_DIFF_BYTES) return '';
+    return readFileSync(fullPath, 'utf-8');
+  } catch { return ''; }
 }
 
 function realpathSafe(p: string): string | null {
@@ -127,7 +165,7 @@ function relativeTo(workspace: string, fullPath: string): string {
   return fullPath;
 }
 
-function readAsCreated(fullPath: string, rel: string): DiffResult {
+function readAsCreated(fullPath: string, rel: string, withFullContent: boolean): DiffResult {
   try {
     const stat = statSync(fullPath);
     if (!stat.isFile()) return { mode: 'not_found', diff: '', hasChanges: false };
@@ -144,13 +182,18 @@ function readAsCreated(fullPath: string, rel: string): DiffResult {
       `@@ -0,0 +1,${lines.length} @@`,
     ];
     const body = lines.map((l) => `+${l}`).join('\n');
-    return { mode: 'created', diff: head.join('\n') + '\n' + body, hasChanges: true };
+    const result: DiffResult = { mode: 'created', diff: head.join('\n') + '\n' + body, hasChanges: true };
+    if (withFullContent) {
+      result.before = '';
+      result.after = content;
+    }
+    return result;
   } catch (e) {
     return { mode: 'not_found', diff: '', hasChanges: false, message: e instanceof Error ? e.message : 'Error' };
   }
 }
 
-function readAsPlain(fullPath: string, originalPath: string): DiffResult {
+function readAsPlain(fullPath: string, _originalPath: string, withFullContent: boolean): DiffResult {
   try {
     const stat = statSync(fullPath);
     if (!stat.isFile()) return { mode: 'not_found', diff: '', hasChanges: false };
@@ -158,7 +201,12 @@ function readAsPlain(fullPath: string, originalPath: string): DiffResult {
       return { mode: 'plain', diff: '', hasChanges: true, message: 'Archivo demasiado grande' };
     }
     const content = readFileSync(fullPath, 'utf-8');
-    return { mode: 'plain', diff: content, hasChanges: true, message: 'Workspace sin git — mostrando contenido completo' };
+    const result: DiffResult = { mode: 'plain', diff: content, hasChanges: true, message: 'Workspace sin git — mostrando contenido completo' };
+    if (withFullContent) {
+      result.before = '';
+      result.after = content;
+    }
+    return result;
   } catch (e) {
     return { mode: 'not_found', diff: '', hasChanges: false, message: e instanceof Error ? e.message : 'Error' };
   }

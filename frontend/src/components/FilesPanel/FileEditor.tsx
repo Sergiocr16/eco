@@ -8,6 +8,7 @@ import { IconX } from '@/design/icons';
 import { ecoBackend, ecoToken } from '@/lib/eco-config';
 import { baseExtensions, type SelectionInfo } from './cm-extensions';
 import { loadLang } from './lang-loader';
+import { openInIde, resolveAbsPath, getExternalIde, ideDisplayLabel } from '@/lib/ide-uri';
 import type { OpenFile } from './types';
 
 type Props = {
@@ -193,6 +194,7 @@ export function FileEditor({
         display: 'flex', alignItems: 'center', borderBottom: `1px solid ${t.glassBorder}`,
         overflow: 'auto', flexShrink: 0, minHeight: 36, background: t.bg1,
       }}>
+        <div style={{ display: 'flex', overflow: 'auto', minWidth: 0, flex: 1 }}>
         {openFiles.map((f) => {
           const isActive = activeFile && f.path === activeFile.path;
           const isDirty = f.content !== f.originalContent;
@@ -233,6 +235,47 @@ export function FileEditor({
             </div>
           );
         })}
+        </div>
+        {/* Open in IDE — abre el archivo activo en VSCode/IntelliJ/Cursor
+            (configurable en Settings → Editor externo) en la línea exacta
+            del cursor. Útil cuando necesitás breakpoints reales: Eco no
+            tiene debugger, el IDE externo sí. */}
+        {activeFile && (() => {
+          const ide = getExternalIde();
+          if (ide === 'none') return null;
+          return (
+            <button
+              type="button"
+              onClick={async () => {
+                const view = viewRef.current;
+                const f = activeFile;
+                if (!f) return;
+                const pos = view?.state.selection.main.head ?? 0;
+                const lineInfo = view?.state.doc.lineAt(pos);
+                const line = lineInfo?.number ?? 1;
+                const col = lineInfo ? (pos - lineInfo.from + 1) : 1;
+                const abs = resolveAbsPath(workspace, f.path);
+                const result = await openInIde(abs, line, col);
+                if (!result.ok) {
+                  cbRef.current = cbRef.current; // noop — preserva ref
+                  // Toast simple via alert si no hay sistema de toast; reemplazable.
+                  console.warn('[FileEditor] openInIde falló', result);
+                }
+              }}
+              title={`Abrir en ${ideDisplayLabel(ide)} en la línea actual`}
+              style={{
+                margin: '0 8px',
+                padding: '4px 10px', borderRadius: 6,
+                background: 'transparent', color: t.text1,
+                border: `1px solid ${t.glassBorder}`,
+                fontSize: 11, fontWeight: 600,
+                fontFamily: t.fontSans, cursor: 'pointer',
+                whiteSpace: 'nowrap', flexShrink: 0,
+              }}>
+              ↗ {ideDisplayLabel(ide)}
+            </button>
+          );
+        })()}
       </div>
       )}
       {/* Body */}

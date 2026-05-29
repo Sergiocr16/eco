@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('eco:fullscreen-changed', handler);
     return () => ipcRenderer.removeListener('eco:fullscreen-changed', handler);
   },
+  // Abre un URL/URI con el handler default del OS (shell.openExternal).
+  // Sirve para http(s):// y también URI schemes custom como vscode://,
+  // idea://, cursor:// — útil para el botón "Open in IDE" del FileEditor.
+  openExternal: (url) => ipcRenderer.invoke('eco:open-external', url),
   // Notificación nativa de macOS via electron.Notification (funciona en
   // .dmg unsigned, a diferencia de la Web API). Click trae la app al frente
   // y dispara onNotificationClicked con el bubbleId.

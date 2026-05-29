@@ -640,7 +640,7 @@ useEffect(() => {
 See §4 "Git tab" for the full file list. Highlights:
 
 - **Top bar** owns the current branch and ahead/behind. The legacy "Branches" sub-tab is gone — switching lives in the dropdown.
-- **Changes**: amber/green dots from `git status --porcelain` (the `unstaged` field is absolute truth, NOT `acceptedAt` from localStorage). Inline diff per file (no modal). Sticky `CommitWithAI` at the bottom.
+- **Changes**: amber/green dots from `git status --porcelain` (the `unstaged` field is absolute truth, NOT `acceptedAt` from localStorage). Inline diff per file (no modal). The diff renders with **`@codemirror/merge` MergeView** (split-view side-by-side, sync scroll, full file with diffs highlighted) when the backend returns `before`/`after` (default — `withFullContent: true` in `/file/diff`); falls back to the legacy custom hunk-table renderer if not. Header toggle "Vista compacta / Archivo completo" switches `collapseUnchanged: { margin: 3, minSize: 4 }` on/off. Per-chunk navigation toolbar (◀ Chunk X/Y ▶) + Accept/Reject buttons in review mode hit `/file/accept-hunk` / `/file/revert-hunk`. Sticky `CommitWithAI` at the bottom.
 - **History**: paginated log + per-commit cherry-pick / revert / reset (hard requires typing `HARD RESET`).
 - **PRs**: list + checkout. `CurrentPrBanner` appears in `GitMiniDock` when the branch has an open PR. **Requires `gh` (GitHub CLI) installed** on the host (`brew install gh`); without it, every PR endpoint returns `code: 'pr.gh_missing'`. The GitHub PAT (§14) is injected as `GH_TOKEN` so `gh` authenticates without `gh auth login`, but it does NOT replace the `gh` binary.
 - **GitMiniDock** (right rail in non-Git tabs): branch chip + ahead/behind + quick commit + push + `CurrentPrBanner`.
@@ -685,7 +685,23 @@ State persists per bubble in `eco.review.accepted.<bubbleId>` as `{[path]: times
 - **Send to Claude**: text-selection floating button → switches to Terminal and types the snippet (path + fenced code) to the agent's PTY without trailing newline.
 - **Image preview**: PNG/JPG/GIF/WEBP/SVG/ICO/BMP rendered inline via `GET /file/raw` (extension whitelist + **`RAW_MAX_SIZE` 5 MB** cap).
 - **Deep-link from Git → Changes**: each row has "Open in Files" → switches tab, expands ancestors, scrolls, opens.
+- **Open in IDE**: button "↗ VSCode/IntelliJ/Cursor/WebStorm" in the tabs toolbar opens the active file in the configured external IDE at the exact line of the cursor, via URI scheme (`vscode://file/<abs>:<line>:<col>`, `cursor://file/...`, `idea://open?file=...&line=...`). Setting at Settings → General → Editor externo (`auto` | `vscode` | `cursor` | `intellij` | `webstorm` | `none`). Helper in `frontend/src/lib/ide-uri.ts`. Bridge: `electronAPI.openExternal(url)` → `ipcMain.handle('eco:open-external')` → `shell.openExternal`. Browser fallback uses `window.open(uri, '_blank')` so the OS protocol handler triggers.
 - **Voice command**: `Eco archivos` opens this tab (aliases `explorador`, `arbol`, `files`).
+
+### Debugger: por qué NO
+
+Eco does **NOT** ship a functional debugger (breakpoints, step-over, variable inspection). Rationale:
+
+- A real debugger requires implementing the **Debug Adapter Protocol (DAP)** client (frontend), a server-side adapter relay (backend), and per-language debug adapters (Node `--inspect`, Java JDWP, Python debugpy, etc.).
+- Plus a full debug UI: gutter breakpoints, scopes/variables panel, call stack panel, watch expressions, debug controls (continue / step-in / step-out / step-over / pause / restart).
+- Estimated cost: **2000+ LOC** sustained + permanent maintenance per language adapter we want to support. Out of scope for Eco's roadmap.
+
+**Functional alternative shipped**: the **"↗ IDE" button** in the FileEditor opens the active file in VSCode / IntelliJ / WebStorm / Cursor at the exact line, via URI scheme. The user sets real breakpoints in the external IDE — which already has a mature debugger for every language. This is a one-click bridge, not a half-baked in-house debugger.
+
+If you ever consider re-evaluating, the integration points to know:
+- `backend/src/dev-server.ts` spawns dev servers with `spawn()` — no `--inspect` / `-agentlib:jdwp` flags injected today. Would need a per-bubble setting + dynamic env vars.
+- `backend/src/pty-server.ts` is unrelated (it's the interactive shell, not the runtime).
+- `frontend/src/components/FilesPanel/cm-extensions.ts` is where a `gutterBreakpoints` extension would live if we ever add visual breakpoints.
 
 ### Endpoints
 

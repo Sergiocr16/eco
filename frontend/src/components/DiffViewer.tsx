@@ -1,17 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useTokens } from '@/design/theme';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTokens, useTheme } from '@/design/theme';
+import { isLightTheme } from '@/design/tokens';
 import { IconX, IconDiff, IconSearch, IconCheck, IconTrash } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { useT } from '@/hooks/useI18n';
 import { translateBackendError } from '@/lib/backend-errors';
 import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
 import { emit as ecoEmit } from '@/lib/eco-bus';
+import { MergeView, getChunks, goToNextChunk, goToPreviousChunk } from '@codemirror/merge';
+import { EditorState, Compartment } from '@codemirror/state';
+import { EditorView, lineNumbers } from '@codemirror/view';
+import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import { buildEcoCmExtension } from './FilesPanel/cm-theme';
+import { loadLang } from './FilesPanel/lang-loader';
 
 type DiffResult = {
   mode: 'git' | 'created' | 'plain' | 'not_found';
   diff: string;
   hasChanges: boolean;
   message?: string;
+  // Cuando el request lleva withFullContent:true, el backend incluye el
+  // contenido completo de antes/después para que la merge view pueda
+  // renderear el archivo entero con highlights, no solo los hunks.
+  before?: string;
+  after?: string;
 };
 
 type PaneProps = {
@@ -47,6 +59,9 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
   //    el último commit (incluye lo que ya fue staged/aceptado).
   // El user lo alterna con el toggle "Nuevos / Todos los cambios" en el header.
   const [diffScope, setDiffScope] = useState<'unstaged' | 'all'>(reviewMode ? 'unstaged' : 'all');
+  // Vista compacta = solo regiones cambiadas + 3 líneas de contexto (collapse
+  // del resto). Vista completa = archivo entero expandido. Default compacto.
+  const [compactMode, setCompactMode] = useState(true);
   // Hunks aceptados localmente (solo visual feedback — no toca el archivo).
   // El user "acepta" para marcar revisado; rechazar sí revierte el cambio.
   const [acceptedHunks, setAcceptedHunks] = useState<Set<number>>(new Set());
@@ -84,6 +99,10 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
         // 'unstaged' = working tree vs index (lo nuevo desde aceptar).
         // 'all'      = working tree vs HEAD (todo desde el último commit).
         ...(diffScope === 'unstaged' ? { vsIndex: true } : {}),
+        // Pedimos siempre el contenido completo de antes/después para la
+        // merge view; si el backend no lo manda (versión vieja), el render
+        // cae al renderer custom de hunks (fallback compat).
+        withFullContent: true,
       }),
     })
       .then(async (r) => {
@@ -341,6 +360,25 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
             </div>
           )}
 
+          {/* Toggle Compacto / Archivo completo — visible solo cuando el
+              backend devolvió before/after (merge view disponible). */}
+          {result?.before !== undefined && result?.after !== undefined && (
+            <button type="button"
+              onClick={() => setCompactMode(!compactMode)}
+              title={compactMode
+                ? 'Mostrar el archivo completo expandido'
+                : 'Solo regiones cambiadas con 3 líneas de contexto'}
+              style={{
+                padding: '5px 10px', borderRadius: 7,
+                background: t.bg2, color: t.text1,
+                border: `1px solid ${t.glassBorder}`,
+                fontSize: 11, fontWeight: 600,
+                fontFamily: t.fontSans, cursor: 'pointer',
+              }}>
+              {compactMode ? 'Archivo completo' : 'Vista compacta'}
+            </button>
+          )}
+
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '4px 8px', borderRadius: 8,
@@ -461,13 +499,28 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
             </div>
           )}
           {result?.hasChanges && (
-            <DiffRender
-              diff={result.diff} mode={result.mode} query={query}
-              reviewMode={reviewMode}
-              acceptedHunks={acceptedHunks}
-              onAcceptHunk={acceptHunkAt}
-              onRejectHunk={rejectHunkAt}
-            />
+            // Merge view nueva cuando el backend devolvió before/after.
+            // Fallback al renderer custom (hunks-only) si no.
+            result.before !== undefined && result.after !== undefined ? (
+              <DiffMergeView
+                before={result.before}
+                after={result.after}
+                diff={result.diff}
+                path={path}
+                compactMode={compactMode}
+                reviewMode={reviewMode}
+                onAcceptHunk={acceptHunkAt}
+                onRejectHunk={rejectHunkAt}
+              />
+            ) : (
+              <DiffRender
+                diff={result.diff} mode={result.mode} query={query}
+                reviewMode={reviewMode}
+                acceptedHunks={acceptedHunks}
+                onAcceptHunk={acceptHunkAt}
+                onRejectHunk={rejectHunkAt}
+              />
+            )
           )}
         </div>
     </div>
@@ -521,6 +574,218 @@ export function DiffViewer({ open, path, workspace, bubbleId, onClose, pathList,
       </div>
     </div>
   );
+}
+
+// ─── Merge view (archivo completo, scroll sincronizado) ──────────────────
+// Renderea el archivo entero usando @codemirror/merge.MergeView (split view).
+// Cuando `compactMode` está activo, las regiones sin cambios se colapsan
+// dejando 3 líneas de contexto alrededor de cada chunk. Cuando está OFF,
+// muestra el archivo completo expandido.
+//
+// Sync scroll, line numbers, syntax highlighting y theme son del shared
+// cm-theme / cm-extensions del FilesPanel — la vista de diff y el editor
+// se ven idénticos (consistencia visual).
+//
+// Read-only en ambos lados: este componente solo visualiza. Para Accept/
+// Reject por hunk, ver Fase 4 (toolbar arriba del merge view).
+
+type MergeViewProps = {
+  before: string;
+  after: string;
+  diff: string;
+  path: string;
+  compactMode: boolean;
+  reviewMode: boolean;
+  onAcceptHunk?: (hunkIndex: number, hunkRawText: string) => void;
+  onRejectHunk?: (hunkIndex: number, hunkRawText: string) => void;
+};
+
+function DiffMergeView({
+  before, after, diff, path, compactMode, reviewMode,
+  onAcceptHunk, onRejectHunk,
+}: MergeViewProps) {
+  const t = useTokens();
+  const { effectiveMode } = useTheme();
+  const isLight = isLightTheme(effectiveMode);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<MergeView | null>(null);
+  const langCompartmentA = useRef(new Compartment());
+  const langCompartmentB = useRef(new Compartment());
+  // Index del chunk activo (para el toolbar de navegación + per-hunk action).
+  const [activeChunk, setActiveChunk] = useState(0);
+  // Parseo de hunks del unified diff: index aquí matchea con index del Chunk
+  // que devuelve getChunks(view) — mismo orden, misma cantidad (los dos
+  // vienen del mismo diff git).
+  const hunks = useMemo(() => parseUnifiedDiff(diff), [diff]);
+  const totalChunks = hunks.length;
+
+  // Mount/unmount del MergeView. Lo recreamos cuando cambia el archivo
+  // (different path o before/after totalmente distintos) — el contenido
+  // chico no justifica diffing incremental.
+  useEffect(() => {
+    if (!hostRef.current) return;
+    const host = hostRef.current;
+
+    const sharedExtensions = [
+      lineNumbers(),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      buildEcoCmExtension(t, isLight),
+      EditorView.lineWrapping,
+      EditorState.readOnly.of(true),
+    ];
+
+    const mv = new MergeView({
+      parent: host,
+      a: {
+        doc: before,
+        extensions: [
+          ...sharedExtensions,
+          langCompartmentA.current.of([]),
+        ],
+      },
+      b: {
+        doc: after,
+        extensions: [
+          ...sharedExtensions,
+          langCompartmentB.current.of([]),
+          // Listener para trackear el chunk activo según la posición del cursor.
+          EditorView.updateListener.of((update) => {
+            if (!update.selectionSet && !update.docChanged) return;
+            const view = mv.b;
+            if (!view) return;
+            const pos = view.state.selection.main.head;
+            const chunks = getChunks(view.state);
+            if (!chunks) return;
+            // Buscar el chunk que contiene `pos` en el lado B.
+            const idx = chunks.chunks.findIndex(
+              (c) => pos >= c.fromB && pos <= c.toB
+            );
+            if (idx >= 0) setActiveChunk(idx);
+          }),
+        ],
+      },
+      collapseUnchanged: compactMode ? { margin: 3, minSize: 4 } : undefined,
+      highlightChanges: true,
+      gutter: true,
+      orientation: 'a-b',
+      // revertControls: 'a-to-b' agrega flechas para revertir chunk por chunk
+      // del lado del editor. Lo dejamos OFF — usamos nuestros propios botones
+      // Accept/Reject que mapean a /file/accept-hunk y /file/revert-hunk del
+      // backend (que manejan el index correctamente).
+      revertControls: undefined,
+    });
+    viewRef.current = mv;
+
+    // Carga lazy del language pack (sintaxis para el path). Si no soporta el
+    // tipo de archivo, queda en texto plano (ok).
+    void loadLang(path).then((lang) => {
+      if (lang && viewRef.current === mv) {
+        mv.a.dispatch({ effects: langCompartmentA.current.reconfigure(lang) });
+        mv.b.dispatch({ effects: langCompartmentB.current.reconfigure(lang) });
+      }
+    });
+
+    return () => {
+      try { mv.destroy(); } catch { /* noop */ }
+      if (viewRef.current === mv) viewRef.current = null;
+    };
+    // Recreamos cuando cambia el archivo o el contenido — pesado pero simple.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [before, after, path, compactMode, isLight]);
+
+  // Navegación entre chunks. Reusa los commands de @codemirror/merge.
+  function nextChunk() {
+    const view = viewRef.current?.b;
+    if (!view) return;
+    goToNextChunk(view);
+    view.focus();
+  }
+  function prevChunk() {
+    const view = viewRef.current?.b;
+    if (!view) return;
+    goToPreviousChunk(view);
+    view.focus();
+  }
+
+  function handleAccept() {
+    if (!onAcceptHunk) return;
+    const h = hunks[activeChunk];
+    if (!h) return;
+    onAcceptHunk(activeChunk, h.rawText);
+  }
+  function handleReject() {
+    if (!onRejectHunk) return;
+    const h = hunks[activeChunk];
+    if (!h) return;
+    onRejectHunk(activeChunk, h.rawText);
+  }
+
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
+    }}>
+      {/* Toolbar de navegación entre chunks + acciones per-hunk (review). */}
+      {totalChunks > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '6px 12px',
+          background: t.bg1,
+          borderBottom: `1px solid ${t.glassBorder}`,
+          fontSize: 11.5, fontFamily: t.fontSans,
+        }}>
+          <button type="button" onClick={prevChunk}
+            title="Chunk anterior"
+            style={navBtnStyle(t)}>◀</button>
+          <span style={{ color: t.text2, fontFamily: t.fontMono, minWidth: 70, textAlign: 'center' }}>
+            Chunk {activeChunk + 1} / {totalChunks}
+          </span>
+          <button type="button" onClick={nextChunk}
+            title="Chunk siguiente"
+            style={navBtnStyle(t)}>▶</button>
+          <span style={{ flex: 1 }}/>
+          {reviewMode && onRejectHunk && (
+            <button type="button" onClick={handleReject}
+              title="Revertir este hunk (git apply -R)"
+              style={{
+                padding: '4px 10px', borderRadius: 6,
+                background: 'transparent', color: t.err,
+                border: `1px solid color-mix(in oklch, ${t.err} 50%, transparent)`,
+                fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+              }}>
+              <IconX size={10}/> Rechazar
+            </button>
+          )}
+          {reviewMode && onAcceptHunk && (
+            <button type="button" onClick={handleAccept}
+              title="Marcar este hunk como revisado (git add)"
+              style={{
+                padding: '4px 12px', borderRadius: 6,
+                background: t.ok, color: '#fff', border: 0,
+                fontSize: 11, fontWeight: 600,
+                cursor: 'pointer', fontFamily: t.fontSans,
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+              }}>
+              <IconCheck size={10}/> Aceptar
+            </button>
+          )}
+        </div>
+      )}
+      <div ref={hostRef} style={{
+        flex: 1, minHeight: 0, overflow: 'auto',
+        background: t.bg0,
+      }}/>
+    </div>
+  );
+}
+
+function navBtnStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
+  return {
+    padding: '3px 8px', borderRadius: 6,
+    background: 'transparent', color: t.text1,
+    border: `1px solid ${t.glassBorder}`,
+    fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans,
+  };
 }
 
 // ─── Parser de unified diff a hunks con líneas izquierda/derecha ───────────
