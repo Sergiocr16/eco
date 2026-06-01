@@ -103,7 +103,12 @@ app.get('/health', (_req, res) => {
 });
 
 const SESSION_HEADER = 'x-eco-session';
-const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login', '/auth/recover']);
+// `/auth/session` no requiere sesión interactiva, pero SÍ pasa por la guardia
+// de Bearer (se registra después de ese middleware). Permite al frontend
+// re-mintar una sesión desde el bearer token permanente cuando la suya expiró
+// por inactividad, sin volver a pedir PIN. El lock manual no se ve afectado:
+// el frontend solo dispara la renovación si todavía tenía una sesión guardada.
+const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login', '/auth/recover', '/auth/session']);
 // Endpoints adicionales que NO requieren sesión interactiva — solo Bearer +
 // X-Eco-Client. Consumidos por clientes "bot" como el MCP server stdio (en
 // mcp-server/), que viven en otro proceso y no tienen UI de login. La
@@ -224,6 +229,17 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const session = getSession(sessionId);
   if (!session) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
   next();
+});
+
+// Renueva la sesión interactiva a partir del bearer token (ya validado por el
+// middleware de arriba). No pide PIN: el bearer es la credencial permanente de
+// la máquina. El frontend lo invoca de forma transparente cuando una sesión
+// expiró por inactividad, evitando el re-login.
+app.post('/auth/session', (_req: Request, res: Response) => {
+  if (!hasUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
+  const info = statusInfo();
+  const session = createSession(info.username ?? 'user');
+  res.json({ ok: true, username: info.username, session });
 });
 
 app.get('/info', async (_req, res) => {
