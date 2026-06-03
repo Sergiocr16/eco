@@ -26,5 +26,9 @@ interface Window {
     onFullscreenChange?: (cb: (isFull: boolean) => void) => () => void;
     notify?: (opts: { title: string; body?: string; bubbleId?: string; silent?: boolean }) => Promise<{ ok: boolean; error?: string }>;
     onNotificationClicked?: (cb: (payload: { bubbleId: string }) => void) => () => void;
+    openBubbleWindow?: (bubbleId: string) => Promise<{ ok: boolean; existing?: boolean; error?: string }>;
+    closeBubbleWindow?: (bubbleId: string) => Promise<{ ok: boolean }>;
+    listBubbleWindows?: () => Promise<string[]>;
+    onBubbleWindowChange?: (cb: (payload: { bubbleId: string; open: boolean }) => void) => () => void;
   };
 }

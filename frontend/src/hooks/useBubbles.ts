@@ -77,17 +77,29 @@ function thinMessageForStorage(m: Message): Message {
   return { ...m, toolCalls: thinnedToolCalls };
 }
 
+function serializeBubbles(bubbles: Bubble[]): string {
+  const serializable = bubbles.map((b) => ({
+    ...b,
+    status: 'idle' as const,
+    unread: 0,
+    // Solo los últimos N mensajes + sus tool outputs truncados.
+    messages: b.messages.slice(-MAX_MESSAGES_IN_STORAGE).map(thinMessageForStorage),
+  }));
+  return JSON.stringify(serializable);
+}
+
 function persist(bubbles: Bubble[], activeId: string | null) {
   if (typeof window === 'undefined') return;
   try {
-    const serializable = bubbles.map((b) => ({
-      ...b,
-      status: 'idle' as const,
-      unread: 0,
-      // Solo los últimos N mensajes + sus tool outputs truncados.
-      messages: b.messages.slice(-MAX_MESSAGES_IN_STORAGE).map(thinMessageForStorage),
-    }));
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
+    const json = serializeBubbles(bubbles);
+    // Deduplicamos contra lo que ya hay en disco. Esto evita el ping-pong
+    // entre ventanas (principal + ventana "solo bubble"): cuando una ventana
+    // adopta el estado escrito por la otra vía el evento `storage`, re-serializa
+    // contenido idéntico — si no comparamos, lo re-escribiríamos y dispararíamos
+    // otro `storage` event en bucle.
+    if (json !== window.localStorage.getItem(STORAGE_KEY)) {
+      window.localStorage.setItem(STORAGE_KEY, json);
+    }
     if (activeId) window.localStorage.setItem(ACTIVE_KEY, activeId);
     else window.localStorage.removeItem(ACTIVE_KEY);
   } catch { /* quota or disabled */ }
@@ -140,6 +152,34 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
   useEffect(() => {
     persist(bubbles, activeBubbleId);
   }, [bubbles, activeBubbleId]);
+
+  // Sync entre ventanas de la misma origin (ventana principal + ventanas
+  // "solo bubble" de Electron comparten localStorage). Cuando otra ventana
+  // escribe el store, reconciliamos: adoptamos su versión salvo para los
+  // bubbles que ESTA ventana está streameando ahora (su copia en memoria es
+  // más fresca que el disco — no la pisamos para no cortar el stream).
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== STORAGE_KEY) return;
+      const remote = loadStored().bubbles;
+      setBubbles((local) => {
+        const localById = new Map(local.map((b) => [b.id, b]));
+        const merged = remote.map((r) => {
+          const l = localById.get(r.id);
+          if (l && l.status !== 'idle') return l;
+          return r;
+        });
+        // Bubbles locales aún no reflejados en disco (creados acá y todavía
+        // no persistidos por la otra ventana) — los conservamos.
+        for (const l of local) {
+          if (!merged.some((m) => m.id === l.id)) merged.push(l);
+        }
+        return merged;
+      });
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   // Sync ligero hacia el backend para que clientes externos (MCP server stdio
   // del Claude Code, etc.) puedan listar las bubbles vía GET /bubbles sin

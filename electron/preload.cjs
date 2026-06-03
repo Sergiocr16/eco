@@ -42,4 +42,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('eco:notification_clicked', handler);
     return () => ipcRenderer.removeListener('eco:notification_clicked', handler);
   },
+  // Abre (o enfoca) un bubble en una ventana aparte — para tirarlo a otro
+  // monitor y trabajarlo solo. Devuelve {ok, existing}.
+  openBubbleWindow: (bubbleId) => ipcRenderer.invoke('eco:open-bubble-window', bubbleId),
+  closeBubbleWindow: (bubbleId) => ipcRenderer.invoke('eco:close-bubble-window', bubbleId),
+  // Lista los bubbleIds actualmente abiertos en ventana aparte. La ventana
+  // principal lo consulta al montar para reconstruir su estado "detached".
+  listBubbleWindows: () => ipcRenderer.invoke('eco:list-bubble-windows'),
+  // Notifica a la ventana principal cuando una ventana de bubble se abre o
+  // cierra. Devuelve una función para desuscribirse.
+  onBubbleWindowChange: (cb) => {
+    const onOpen = (_e, payload) => { try { cb({ ...payload, open: true }); } catch { /* noop */ } };
+    const onClose = (_e, payload) => { try { cb({ ...payload, open: false }); } catch { /* noop */ } };
+    ipcRenderer.on('eco:bubble-window-opened', onOpen);
+    ipcRenderer.on('eco:bubble-window-closed', onClose);
+    return () => {
+      ipcRenderer.removeListener('eco:bubble-window-opened', onOpen);
+      ipcRenderer.removeListener('eco:bubble-window-closed', onClose);
+    };
+  },
 });

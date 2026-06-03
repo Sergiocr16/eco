@@ -28,7 +28,7 @@ import {
   IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
   IconCheck, IconX, IconBolt, IconGithub, IconEdit,
-  IconAgent, IconFolder, IconCopy, IconArchive,
+  IconAgent, IconFolder, IconCopy, IconArchive, IconNewWindow,
   type IconProps,
 } from '@/design/icons';
 import type { Bubble, Message, ToolCall } from '@/lib/types';
@@ -58,7 +58,7 @@ function copyTranscriptToClipboard(bubble: Bubble) {
 
 function HeaderMenu({
   workspaces, currentWorkspace, onClose, onRename, onChangeWorkspace,
-  onCopyTranscript, onCloseBubble, currentCategoryId, onSetCategory,
+  onCopyTranscript, onCloseBubble, onOpenInNewWindow, currentCategoryId, onSetCategory,
 }: {
   workspaces: string[];
   currentWorkspace: string;
@@ -67,6 +67,7 @@ function HeaderMenu({
   onChangeWorkspace: (ws: string) => void;
   onCopyTranscript: () => void;
   onCloseBubble: () => void;
+  onOpenInNewWindow?: () => void;
   currentCategoryId?: string;
   onSetCategory: (categoryId: string | undefined) => void;
 }) {
@@ -166,6 +167,11 @@ function HeaderMenu({
       <button type="button" onClick={onCopyTranscript} style={menuItemStyleAt(t)}>
         <IconCopy size={12}/> {tr('detail.menu.copy_chat')}
       </button>
+      {onOpenInNewWindow && (
+        <button type="button" onClick={onOpenInNewWindow} style={menuItemStyleAt(t)}>
+          <IconNewWindow size={12}/> {tr('detail.menu.open_window')}
+        </button>
+      )}
       <div style={{ height: 1, background: t.glassBorder, margin: '4px 8px' }}/>
       <button type="button" onClick={onCloseBubble} style={{ ...menuItemStyleAt(t), color: t.text1 }}>
         <IconArchive size={12}/> {tr('detail.menu.archive')}
@@ -196,6 +202,11 @@ type Props = {
   onMicToggle: () => void;
   listening: boolean;
   voiceInterim: string;
+  // Presente solo en Electron: abre este bubble en una ventana aparte.
+  onOpenInNewWindow?: () => void;
+  // True cuando este AgentDetail ES la ventana aparte: oculta el mic y el
+  // "abrir en ventana nueva"; el back cierra la ventana.
+  solo?: boolean;
 };
 
 type Tab = 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files' | 'notes';
@@ -237,7 +248,7 @@ const TAB_DEFS: Record<Tab, { labelKey: string; icon: (p: IconProps) => JSX.Elem
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
-  onSetCategory, onMicToggle, listening, voiceInterim,
+  onSetCategory, onMicToggle, listening, voiceInterim, onOpenInNewWindow, solo = false,
 }: Props) {
   const t = useTokens();
   const tr = useT();
@@ -421,15 +432,17 @@ export function AgentDetail({
         </div>
 
         <div style={{ display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
-          <Btn
-            icon={listening ? IconStop : IconMic}
-            kind={listening ? 'primary' : 'secondary'}
-            size="sm"
-            onClick={onMicToggle}
-            title={listening ? tr('detail.btn.listen_off_title') : tr('detail.btn.listen_on_title')}
-          >
-            {listening ? tr('detail.btn.listening') : tr('detail.btn.listen')}
-          </Btn>
+          {!solo && (
+            <Btn
+              icon={listening ? IconStop : IconMic}
+              kind={listening ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={onMicToggle}
+              title={listening ? tr('detail.btn.listen_off_title') : tr('detail.btn.listen_on_title')}
+            >
+              {listening ? tr('detail.btn.listening') : tr('detail.btn.listen')}
+            </Btn>
+          )}
           <IconBtn icon={IconMore} size={32} onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}/>
           {menuOpen && (
             <HeaderMenu
@@ -440,6 +453,7 @@ export function AgentDetail({
               onChangeWorkspace={(ws) => { setMenuOpen(false); onChangeWorkspace(ws); }}
               onCopyTranscript={() => { setMenuOpen(false); copyTranscriptToClipboard(bubble); }}
               onCloseBubble={() => { setMenuOpen(false); onClose(); }}
+              onOpenInNewWindow={onOpenInNewWindow ? () => { setMenuOpen(false); onOpenInNewWindow(); } : undefined}
               currentCategoryId={bubble.categoryId}
               onSetCategory={onSetCategory}
             />

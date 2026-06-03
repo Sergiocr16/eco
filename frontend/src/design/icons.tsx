@@ -103,6 +103,9 @@ export const IconArrowL = (p: IconProps) => (
 export const IconArrowR = (p: IconProps) => (
   <Base {...p}><path d="M5 12h14M12 5l7 7-7 7"/></Base>
 );
+export const IconNewWindow = (p: IconProps) => (
+  <Base {...p}><path d="M14 4h6v6M20 4l-8 8M18 13v5a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h5"/></Base>
+);
 export const IconShield = (p: IconProps) => (
   <Base {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></Base>
 );

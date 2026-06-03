@@ -322,11 +322,14 @@ const DICT = {
   'detail.menu.rename': { es: 'Renombrar agente', en: 'Rename agent' },
   'detail.menu.change_workspace': { es: 'Cambiar workspace', en: 'Change workspace' },
   'detail.menu.copy_chat': { es: 'Copiar conversación', en: 'Copy conversation' },
+  'detail.menu.open_window': { es: 'Abrir en ventana nueva', en: 'Open in new window' },
   'detail.menu.close': { es: 'Cerrar agente', en: 'Close agent' },
   'detail.menu.archive': { es: 'Archivar agente', en: 'Archive agent' },
   'detail.menu.archive_confirm_title': { es: '¿Archivar este agente?', en: 'Archive this agent?' },
   'detail.menu.archive_confirm_body': { es: 'El agente quedará en la sección Archivados. Su worktree git se conserva, así que podés restaurarlo cuando quieras sin perder cambios.', en: 'The agent will move to the Archived section. Its git worktree stays intact, so you can restore it anytime without losing changes.' },
   'detail.menu.archive_confirm_action': { es: 'Archivar', en: 'Archive' },
+  'solo.not_found': { es: 'Este agente ya no está disponible.', en: 'This agent is no longer available.' },
+  'solo.close': { es: 'Cerrar ventana', en: 'Close window' },
 
   // ─────────────────────────── Pantalla Archivados
   'archived.title': { es: 'Agentes archivados', en: 'Archived agents' },

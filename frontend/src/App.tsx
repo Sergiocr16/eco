@@ -26,10 +26,13 @@ import { useAuth } from './hooks/useAuth';
 import { useBackupScheduler } from './hooks/useBackupScheduler';
 import { useTheme } from './design/theme';
 import { I18nProvider, useI18n, useT } from './hooks/useI18n';
-import type { Bubble, BubbleStatus, Message, ToolCall, VoiceState } from './lib/types';
+import type { Bubble, Message, VoiceState } from './lib/types';
 
 import { ecoBackend, ecoToken } from './lib/eco-config';
 import { getTopInset } from './lib/platform';
+import { getSoloBubbleId } from './lib/solo';
+import { bubbleStreamHandlers } from './lib/bubble-socket';
+import { SoloBubbleShell } from './screens/SoloBubbleShell';
 const BACKEND = ecoBackend();
 const TOKEN = ecoToken();
 
@@ -59,12 +62,17 @@ export function App() {
 
 function AuthGate() {
   const auth = useAuth();
+  // ?solo=<bubbleId> → ventana aparte que corre un solo bubble (abierta desde
+  // Electron para tirarla a otro monitor). Comparte sesión via localStorage,
+  // así que el gate de auth es el mismo.
+  const soloBubbleId = getSoloBubbleId();
   if (auth.state.status === 'loading') {
     return null; // splash en blanco mientras pinga /auth/status
   }
   if (auth.state.status !== 'authenticated') {
     return <AuthScreen authState={auth.state} authActions={auth}/>;
   }
+  if (soloBubbleId) return <SoloBubbleShell bubbleId={soloBubbleId}/>;
   return <Shell auth={auth}/>;
 }
 
@@ -80,6 +88,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // una para que al volver entre ellas el webview, PTY, chat, etc. NO se
   // recreen. Solo el detailBubbleId es visible; las demás van a display:none.
   const [visitedBubbleIds, setVisitedBubbleIds] = useState<string[]>([]);
+  // Bubbles que ahora corren en una ventana aparte (Electron). Mientras estén
+  // acá, esta ventana NO renderiza su AgentDetail — su click va a enfocar la
+  // ventana. La verdad la tiene el main process (sabe qué ventanas existen).
+  const [detachedIds, setDetachedIds] = useState<Set<string>>(() => new Set());
   const [feedback, setFeedback] = useState<FeedbackPayload | null>(null);
   const [overlay, setOverlay] = useState<'status' | 'help' | null>(null);
   const [wsPickerForBubble, setWsPickerForBubble] = useState<string | null>(null);
@@ -110,6 +122,25 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     return () => { if (off) off(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Estado "detached": qué bubbles corren en ventana aparte. Seed inicial +
+  // suscripción a aperturas/cierres. Cuando una ventana de bubble se cierra,
+  // el main process avisa y re-adoptamos el bubble acá.
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.onBubbleWindowChange) return;
+    api.listBubbleWindows?.().then((ids) => {
+      if (Array.isArray(ids)) setDetachedIds(new Set(ids));
+    }).catch(() => { /* noop */ });
+    const off = api.onBubbleWindowChange(({ bubbleId, open }) => {
+      setDetachedIds((prev) => {
+        const next = new Set(prev);
+        if (open) next.add(bubbleId); else next.delete(bubbleId);
+        return next;
+      });
+    });
+    return () => { if (off) off(); };
+  }, []);
   const tts = useTTS();
   const lastSpokenRef = useRef<string | null>(null);
 
@@ -127,69 +158,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     url: BACKEND,
     token: TOKEN,
     handlers: {
-      onSessionStarted: (bubbleId, sessionId) => {
-        bubbles.setBubbleSessionId(bubbleId, sessionId);
-      },
-      onAssistantTextDelta: (bubbleId, assistantMessageId, text) => {
-        bubbles.setBubbleMessages(bubbleId, (msgs) => {
-          const idx = msgs.findIndex((m) => m.id === assistantMessageId);
-          if (idx >= 0) {
-            return msgs.map((m, i) => i === idx ? { ...m, text: m.text + text } : m);
-          }
-          const newMsg: Message = {
-            id: assistantMessageId,
-            role: 'assistant', text, toolCalls: [], createdAt: Date.now(),
-          };
-          return [...msgs, newMsg];
-        });
-      },
-      onToolUse: (bubbleId, assistantMessageId, toolCall) => {
-        bubbles.setBubbleMessages(bubbleId, (msgs) => {
-          const idx = msgs.findIndex((m) => m.id === assistantMessageId);
-          if (idx >= 0) {
-            return msgs.map((m, i) => i === idx ? { ...m, toolCalls: [...(m.toolCalls ?? []), toolCall] } : m);
-          }
-          const newMsg: Message = {
-            id: assistantMessageId, role: 'assistant', text: '',
-            toolCalls: [toolCall], createdAt: Date.now(),
-          };
-          return [...msgs, newMsg];
-        });
-      },
-      onToolResult: (bubbleId, toolUseId, output, status) => {
-        bubbles.setBubbleMessages(bubbleId, (msgs) =>
-          msgs.map((m) => ({
-            ...m,
-            toolCalls: m.toolCalls?.map((tc: ToolCall) =>
-              tc.id === toolUseId ? { ...tc, output, status } : tc,
-            ),
-          })),
-        );
-      },
-      onThinkingChange: (bubbleId, thinking) => {
-        const status: BubbleStatus = thinking ? 'thinking' : 'idle';
-        bubbles.setBubbleStatus(bubbleId, status);
-      },
-      onExecutingChange: (bubbleId, executing) => {
-        const status: BubbleStatus = executing ? 'executing' : 'idle';
-        bubbles.setBubbleStatus(bubbleId, status);
-      },
-      onDone: (bubbleId) => bubbles.setBubbleStatus(bubbleId, 'idle'),
-      onPtyStatus: (bubbleId, running) => {
-        // El shell PTY siempre está "vivo" mientras la sesión exista (zsh queda
-        // esperando input). Si propagamos esto a bubble.status, la burbuja
-        // se queda en "Ejecutando" para siempre, lo cual es engañoso porque
-        // realmente no hay un comando corriendo. Lo trackeamos aparte como
-        // ptyOpen para una indicación visual eventual, sin tocar el status
-        // del agente.
-        bubbles.setBubblePtyOpen(bubbleId, running);
-      },
-      onDevStatus: (bubbleId, status, url, command, skill, role) => {
-        ecoEmit('eco:dev_status', { bubbleId, role, status, url, command, ...(skill ? { skill } : {}) });
-      },
-      onDevLog: (bubbleId, role, chunk) => {
-        ecoEmit('eco:dev_log', { bubbleId, role, chunk });
-      },
+      ...bubbleStreamHandlers(bubbles),
       onError: () => { /* ya manejado en socket.error */ },
       onClientAction: (sourceBubbleId, action) => {
         if (action.kind === 'open_bubble') {
@@ -608,6 +577,12 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   }
 
   function handleOpenAgent(id: string) {
+    // Si el bubble está corriendo en una ventana aparte, no lo abrimos acá:
+    // traemos esa ventana al frente.
+    if (detachedIds.has(id)) {
+      void window.electronAPI?.openBubbleWindow?.(id);
+      return;
+    }
     setDetailBubbleId(id);
     // Mantenemos esta bubble en el set de "visitadas" para que su
     // AgentDetail viva más allá del bubble switch.
@@ -628,6 +603,20 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     // burbuja para que la AgentDetail sobreviva oculta y conserve su PTY,
     // chat y demás state.
     setScreen('dashboard');
+  }
+
+  // Abre el bubble en una ventana aparte (otro monitor). El bubble "se mueve":
+  // esta ventana lo desmonta para soltar PTY/webview/dev servers y la ventana
+  // nueva queda como único cliente. Al cerrar esa ventana, se re-adopta acá.
+  function handleOpenInNewWindow(id: string) {
+    const api = window.electronAPI;
+    if (!api?.openBubbleWindow) return;
+    void api.openBubbleWindow(id).then((r) => {
+      if (!r?.ok) return;
+      setDetachedIds((prev) => new Set(prev).add(id));
+      setVisitedBubbleIds((prev) => prev.filter((x) => x !== id));
+      if (detailBubbleId === id) { setDetailBubbleId(null); setScreen('dashboard'); }
+    }).catch(() => { /* noop */ });
   }
 
   function bubbleIsBusy(id: string): boolean {
@@ -810,6 +799,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                 {visitedBubbleIds.map((id) => {
                   const b = bubbles.bubbles.find((x) => x.id === id);
                   if (!b) return null;
+                  // Bubble corriendo en ventana aparte → no lo renderizamos acá
+                  // (su AgentDetail vive en la otra ventana, único cliente del PTY).
+                  if (detachedIds.has(id)) return null;
                   const isActive = id === detailBubbleId && screen === 'detail';
                   return (
                     <div key={id} style={{
@@ -832,6 +824,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                         onMicToggle={handleMicToggle}
                         listening={voice.state === 'listening'}
                         voiceInterim={voice.interimText}
+                        onOpenInNewWindow={window.electronAPI?.openBubbleWindow ? () => handleOpenInNewWindow(b.id) : undefined}
                       />
                     </div>
                   );

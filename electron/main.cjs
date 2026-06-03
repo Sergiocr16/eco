@@ -23,6 +23,11 @@ const DEV_FRONTEND_URL = 'http://127.0.0.1:5173';
 
 let mainWindow = null;
 let backendProc = null;
+// Ventanas "solo bubble" — un BrowserWindow por bubbleId que renderiza UNA
+// sola conversación a pantalla completa (?solo=<id>). Pensado para tirar el
+// bubble a otro monitor y trabajarlo aparte. Map para que re-abrir el mismo
+// bubble enfoque la ventana existente en vez de duplicarla.
+const bubbleWindows = new Map();
 // En macOS, cerrar la ventana NO sale de la app (convención del sistema).
 // Interceptamos el close del botón rojo para ocultar en lugar de destruir,
 // preservando el backend y el state. Cuando el user hace Cmd+Q (o el menú
@@ -115,6 +120,42 @@ async function waitForBackend(url, timeoutMs = 15_000) {
   return false;
 }
 
+// Aplica las mismas reglas de seguridad a cualquier BrowserWindow: links
+// externos al navegador del OS y permisos de getUserMedia. Compartido entre
+// la ventana principal y las ventanas "solo bubble".
+function hardenWindow(win) {
+  // Links externos → navegador del sistema (no abrir nuevas ventanas de Electron).
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) {
+      shell.openExternal(url).catch(() => { /* noop */ });
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
+  // Permisos del renderer (getUserMedia, etc.). Sin esto Chromium rechaza
+  // mic/cámara antes de que el OS pueda mostrar su prompt nativo. Concedemos
+  // media/audioCapture, y dejamos que macOS muestre el prompt de TCC al usuario
+  // la primera vez (gracias a NSMicrophoneUsageDescription en Info.plist).
+  const allowed = new Set(['media', 'audioCapture', 'videoCapture', 'microphone', 'clipboard-read', 'clipboard-sanitized-write']);
+  const sess = win.webContents.session;
+  sess.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(allowed.has(permission));
+  });
+  // Algunas versiones de Chromium también usan setPermissionCheckHandler para
+  // chequeos sincrónicos (ej. al instanciar AudioContext). Lo concedemos para
+  // los mismos permisos. Si no existe el método, ignoramos.
+  if (typeof sess.setPermissionCheckHandler === 'function') {
+    sess.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+  }
+}
+
+// URL base del renderer según el modo (dev sirve Vite, packaged lo sirve el
+// backend como static en el mismo origen).
+function rendererBaseUrl() {
+  return isDev ? DEV_FRONTEND_URL : BACKEND_URL + '/';
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -140,33 +181,7 @@ async function createWindow() {
     },
   });
 
-  // Links externos → navegador del sistema (no abrir nuevas ventanas de Electron).
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) {
-      shell.openExternal(url).catch(() => { /* noop */ });
-      return { action: 'deny' };
-    }
-    return { action: 'allow' };
-  });
-
-  // Permisos del renderer (getUserMedia, etc.). Sin esto Chromium rechaza
-  // mic/cámara antes de que el OS pueda mostrar su prompt nativo. Concedemos
-  // media/audioCapture, y dejamos que macOS muestre el prompt de TCC al usuario
-  // la primera vez (gracias a NSMicrophoneUsageDescription en Info.plist).
-  const sess = mainWindow.webContents.session;
-  sess.setPermissionRequestHandler((_wc, permission, callback) => {
-    const allowed = new Set(['media', 'audioCapture', 'videoCapture', 'microphone', 'clipboard-read', 'clipboard-sanitized-write']);
-    callback(allowed.has(permission));
-  });
-  // Algunas versiones de Chromium también usan setPermissionCheckHandler para
-  // chequeos sincrónicos (ej. al instanciar AudioContext). Lo concedemos para
-  // los mismos permisos. Si no existe el método, ignoramos.
-  if (typeof sess.setPermissionCheckHandler === 'function') {
-    sess.setPermissionCheckHandler((_wc, permission) => {
-      const allowed = new Set(['media', 'audioCapture', 'videoCapture', 'microphone', 'clipboard-read', 'clipboard-sanitized-write']);
-      return allowed.has(permission);
-    });
-  }
+  hardenWindow(mainWindow);
 
   if (isDev) {
     await mainWindow.loadURL(DEV_FRONTEND_URL);
@@ -382,6 +397,102 @@ ipcMain.handle('eco:notify', (_event, opts) => {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'notify error' };
   }
+});
+
+// Notifica a la ventana principal qué bubbles están abiertos en ventana
+// aparte, para que mueva el foco al dashboard y los marque como "detached".
+function notifyBubbleWindows(channel, bubbleId) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, { bubbleId });
+    }
+  } catch { /* renderer no listo */ }
+}
+
+// Crea (o enfoca) la ventana "solo bubble" para un bubbleId. El renderer
+// carga el mismo origen con ?solo=<id> y App.tsx detecta el query param para
+// montar SOLO ese AgentDetail, sin sidebar ni dashboard. Comparte backend,
+// token (~/.eco) y localStorage con la ventana principal.
+function createBubbleWindow(bubbleId) {
+  const id = typeof bubbleId === 'string' ? bubbleId.trim() : '';
+  if (!id) return { ok: false, error: 'bubbleId requerido' };
+  // Solo ids con forma de bubble (alfanum + _ -). Defensa antes de meterlo en
+  // la URL del renderer.
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return { ok: false, error: 'bubbleId inválido' };
+
+  const existing = bubbleWindows.get(id);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return { ok: true, existing: true };
+  }
+
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 820,
+    minWidth: 720,
+    minHeight: 520,
+    backgroundColor: '#0a0a0c',
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 14, y: 14 },
+    } : {}),
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      webviewTag: true,
+    },
+  });
+
+  hardenWindow(win);
+  bubbleWindows.set(id, win);
+
+  const url = `${rendererBaseUrl()}?solo=${encodeURIComponent(id)}`;
+  win.loadURL(url).catch((e) => console.error('[electron] solo window loadURL falló', e));
+
+  win.once('ready-to-show', () => win.show());
+  if (process.env.ECO_DEVTOOLS === '1') {
+    win.webContents.once('did-finish-load', () => win.webContents.openDevTools({ mode: 'detach' }));
+  }
+
+  // Estado fullscreen → su propio renderer (mismo contrato que mainWindow).
+  const sendFull = (isFull) => {
+    try { win.webContents.send('eco:fullscreen-changed', !!isFull); } catch { /* noop */ }
+  };
+  win.on('enter-full-screen', () => sendFull(true));
+  win.on('leave-full-screen', () => sendFull(false));
+  win.webContents.on('did-finish-load', () => sendFull(win.isFullScreen()));
+
+  // A diferencia de mainWindow, estas SÍ se destruyen al cerrar (no se ocultan).
+  // Al cerrarse, avisamos a la principal para que re-adopte el bubble.
+  win.on('closed', () => {
+    bubbleWindows.delete(id);
+    notifyBubbleWindows('eco:bubble-window-closed', id);
+  });
+
+  notifyBubbleWindows('eco:bubble-window-opened', id);
+  return { ok: true, existing: false };
+}
+
+ipcMain.handle('eco:open-bubble-window', (_e, bubbleId) => createBubbleWindow(bubbleId));
+
+ipcMain.handle('eco:close-bubble-window', (_e, bubbleId) => {
+  const id = typeof bubbleId === 'string' ? bubbleId.trim() : '';
+  const win = id ? bubbleWindows.get(id) : null;
+  if (win && !win.isDestroyed()) win.close();
+  return { ok: true };
+});
+
+ipcMain.handle('eco:list-bubble-windows', () => {
+  const ids = [];
+  for (const [id, win] of bubbleWindows) {
+    if (win && !win.isDestroyed()) ids.push(id);
+  }
+  return ids;
 });
 
 // IPC: el renderer pide el token o el backend URL desde el preload.
