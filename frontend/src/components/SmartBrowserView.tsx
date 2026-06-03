@@ -54,6 +54,7 @@ type ElectronWebview = HTMLElement & {
   getURL: () => string;
   openDevTools: () => void;
   closeDevTools: () => void;
+  isDevToolsOpened: () => boolean;
   setZoomFactor: (factor: number) => void;
   addEventListener: (event: string, cb: (e: Event & Record<string, unknown>) => void) => void;
   removeEventListener: (event: string, cb: (e: Event & Record<string, unknown>) => void) => void;
@@ -92,7 +93,23 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
         else try { iframeRef.current?.contentWindow?.history.forward(); } catch { /* noop */ }
       },
       openDevTools: () => {
-        if (useWebview) webviewRef.current?.openDevTools();
+        if (!useWebview) return;
+        const wv = webviewRef.current;
+        if (!wv) return;
+        // El DevTools del <webview> vive en una ventana aparte. Si ya está
+        // abierto pero quedó detrás de Eco, reabrir es un no-op en Electron y
+        // el usuario no lo recupera. Lo cerramos y reabrimos para forzar que
+        // vuelva al frente cada vez que se toca el botón.
+        try {
+          if (wv.isDevToolsOpened()) {
+            wv.closeDevTools();
+            setTimeout(() => { try { wv.openDevTools(); } catch { /* noop */ } }, 50);
+          } else {
+            wv.openDevTools();
+          }
+        } catch {
+          try { wv.openDevTools(); } catch { /* noop */ }
+        }
       },
       getURL: () => {
         if (useWebview) return webviewRef.current?.getURL() ?? src;
