@@ -86,13 +86,13 @@ export function AuthScreen({ authState, authActions }: Props) {
         display: 'flex', alignItems: 'baseline', gap: 6,
       }}>
         <span style={{ color: t.text2, fontWeight: 500 }}>eco</span>
-        <span>v0.1.0</span>
+        <span>v1.0.0</span>
       </div>
     </div>
   );
 }
 
-function DriftingOrbs() {
+export function DriftingOrbs() {
   const t = useTokens();
   return (
     <>

@@ -2116,7 +2116,7 @@ type AboutSectionDef = {
 function SectionAbout() {
   const t = useTokens();
   const tr = useT();
-  const [version, setVersion] = useState<string>('0.1.0');
+  const [version, setVersion] = useState<string>('1.0.0');
   const [platform, setPlatform] = useState<string>('');
   const [isPackaged, setIsPackaged] = useState<boolean>(false);
   const [activeId, setActiveId] = useState<string>(() => {
@@ -2128,7 +2128,7 @@ function SectionAbout() {
     const api = window.electronAPI;
     if (api?.getConfig) {
       void api.getConfig().then((cfg) => {
-        setVersion(cfg.appVersion ?? '0.1.0');
+        setVersion(cfg.appVersion ?? '1.0.0');
         setPlatform(cfg.platform ?? '');
         setIsPackaged(cfg.isPackaged ?? false);
       }).catch(() => { /* noop */ });

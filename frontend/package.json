@@ -1,6 +1,6 @@
 {
   "name": "@eco/frontend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "UI de Eco con estética Liquid Glass",
   "private": true,
   "type": "module",

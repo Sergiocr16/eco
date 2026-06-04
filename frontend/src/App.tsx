@@ -20,7 +20,7 @@ import { getVoiceTarget, writeVoiceToPty } from './lib/voice-router';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
-import { AuthScreen } from './screens/AuthScreen';
+import { AuthScreen, DriftingOrbs } from './screens/AuthScreen';
 import { OnboardingWizard, hasOnboarded } from './screens/OnboardingWizard';
 import { useAuth } from './hooks/useAuth';
 import { useBackupScheduler } from './hooks/useBackupScheduler';
@@ -114,20 +114,41 @@ function SoloLockedScreen() {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexDirection: 'column', gap: 14, padding: 24,
-      background: t.windowBg, fontFamily: t.fontSans,
+      overflow: 'hidden',
+      background: t.windowBg, color: t.text0, fontFamily: t.fontSans,
     }}>
+      {/* Mismo fondo animado que la pantalla del PIN (auroras + partículas). */}
+      <DriftingOrbs/>
+
       <div style={{
-        width: 52, height: 52, borderRadius: '50%',
+        position: 'absolute', top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)', zIndex: 2,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: t.bg2, border: `1px solid ${t.glassBorder}`, color: t.text2,
+        flexDirection: 'column', gap: 14, padding: 24,
+        width: 'min(380px, calc(100vw - 48px))', textAlign: 'center',
       }}>
-        <IconLock size={22} strokeWidth={2}/>
+        <div style={{
+          width: 52, height: 52, borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: t.bg2, border: `1px solid ${t.glassBorder}`, color: t.text2,
+          boxShadow: `0 0 40px 6px color-mix(in oklch, ${t.accent} 16%, transparent)`,
+        }}>
+          <IconLock size={22} strokeWidth={2}/>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: t.text0 }}>{tr('solo.locked.title')}</div>
+        <div style={{ fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
+          {tr('solo.locked.sub')}
+        </div>
       </div>
-      <div style={{ fontSize: 15, fontWeight: 600, color: t.text0 }}>{tr('solo.locked.title')}</div>
-      <div style={{ fontSize: 13, color: t.text2, textAlign: 'center', maxWidth: 320, lineHeight: 1.5 }}>
-        {tr('solo.locked.sub')}
+
+      {/* eco · version — abajo a la derecha, igual que en el PIN. */}
+      <div style={{
+        position: 'absolute', bottom: 14, right: 18, zIndex: 2,
+        color: t.text3, fontSize: 10.5, fontFamily: t.fontMono,
+        pointerEvents: 'none', display: 'flex', alignItems: 'baseline', gap: 6,
+      }}>
+        <span style={{ color: t.text2, fontWeight: 500 }}>eco</span>
+        <span>v1.0.0</span>
       </div>
     </div>
   );
