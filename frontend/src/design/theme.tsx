@@ -69,6 +69,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener?.('change', onChange);
   }, []);
 
+  // Sync entre ventanas (la principal y las ventanas "solo bubble" de otro
+  // monitor comparten el mismo localStorage). El evento `storage` solo se
+  // dispara en las OTRAS ventanas, así que al cambiar el tema en una, las
+  // demás se re-pintan sin tocar nada propio. `null` key = localStorage.clear().
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_MODE || e.key === null) setModeState(readStoredMode());
+      if (e.key === STORAGE_HUE || e.key === null) {
+        const h = Number(readStored(STORAGE_HUE, '165'));
+        if (Number.isFinite(h)) setAccentHueState(h);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   const effectiveMode: EffectiveThemeMode = mode === 'system' ? systemMode : mode;
 
   const t = useMemo(() => buildTokens(effectiveMode, accentHue), [effectiveMode, accentHue]);

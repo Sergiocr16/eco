@@ -1,7 +1,7 @@
 // Preload: expone una API mínima al renderer (contextIsolation: true).
 // El renderer puede leer el token + backend URL desde acá en lugar de
 // depender de env vars de Vite (que solo existen en dev).
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('eco:get-config'),
@@ -42,6 +42,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('eco:notification_clicked', handler);
     return () => ipcRenderer.removeListener('eco:notification_clicked', handler);
   },
+  // Zoom de toda la UI de ESTA ventana (webFrame.setZoomFactor opera sobre el
+  // frame del renderer actual). En Electron 11+ el zoom es por-webContents, así
+  // que cada ventana escala independiente — la principal y cada satélite de otro
+  // monitor mantienen su propio factor. 1 = 100%.
+  setZoomFactor: (factor) => { try { webFrame.setZoomFactor(factor); return true; } catch { return false; } },
+  getZoomFactor: () => { try { return webFrame.getZoomFactor(); } catch { return 1; } },
+  // El menú Vista (Cmd +/−/0) emite 'in' | 'out' | 'reset' a ESTA ventana.
+  // Devuelve una función para desuscribirse.
+  onZoom: (cb) => {
+    const handler = (_e, dir) => { try { cb(dir); } catch { /* noop */ } };
+    ipcRenderer.on('eco:zoom', handler);
+    return () => ipcRenderer.removeListener('eco:zoom', handler);
+  },
+  // Etiquetas traducidas del menú nativo (siguen el idioma de la app).
+  setMenuLabels: (labels) => ipcRenderer.invoke('eco:set-menu-labels', labels),
   // Abre (o enfoca) un bubble en una ventana aparte — para tirarlo a otro
   // monitor y trabajarlo solo. Devuelve {ok, existing}.
   openBubbleWindow: (bubbleId) => ipcRenderer.invoke('eco:open-bubble-window', bubbleId),

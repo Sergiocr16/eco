@@ -330,6 +330,8 @@ const DICT = {
   'detail.menu.archive_confirm_action': { es: 'Archivar', en: 'Archive' },
   'solo.not_found': { es: 'Este agente ya no está disponible.', en: 'This agent is no longer available.' },
   'solo.close': { es: 'Cerrar ventana', en: 'Close window' },
+  'solo.locked.title': { es: 'Eco está bloqueado', en: 'Eco is locked' },
+  'solo.locked.sub': { es: 'Desbloqueá Eco desde la ventana principal para volver a esta conversación.', en: 'Unlock Eco from the main window to return to this conversation.' },
 
   // ─────────────────────────── Pantalla Archivados
   'archived.title': { es: 'Agentes archivados', en: 'Archived agents' },
@@ -2341,6 +2343,13 @@ const DICT = {
   'detail.remote.activating_short': { es: 'Activando…', en: 'Activating…' },
   'detail.obsidian.session_default': { es: 'Sesión', en: 'Session' },
   'detail.obsidian.saved': { es: 'Guardado: {{path}}', en: 'Saved: {{path}}' },
+  // Etiquetas del menú nativo de Electron (se envían al main process).
+  'menu.edit': { es: 'Edición', en: 'Edit' },
+  'menu.view': { es: 'Vista', en: 'View' },
+  'menu.window': { es: 'Ventana', en: 'Window' },
+  'menu.zoom_in': { es: 'Acercar', en: 'Zoom In' },
+  'menu.zoom_out': { es: 'Alejar', en: 'Zoom Out' },
+  'menu.zoom_actual': { es: 'Tamaño real', en: 'Actual Size' },
 } as const;
 
 type DictKey = keyof typeof DICT;

@@ -24,6 +24,13 @@ interface Window {
     log?: (...args: unknown[]) => void;
     pickFolder?: (opts?: { title?: string; defaultPath?: string }) => Promise<{ canceled: boolean; path: string }>;
     onFullscreenChange?: (cb: (isFull: boolean) => void) => () => void;
+    setZoomFactor?: (factor: number) => boolean;
+    getZoomFactor?: () => number;
+    onZoom?: (cb: (dir: 'in' | 'out' | 'reset') => void) => () => void;
+    setMenuLabels?: (labels: {
+      edit: string; view: string; window: string;
+      zoomIn: string; zoomOut: string; zoomActual: string;
+    }) => Promise<{ ok: boolean }>;
     notify?: (opts: { title: string; body?: string; bubbleId?: string; silent?: boolean }) => Promise<{ ok: boolean; error?: string }>;
     onNotificationClicked?: (cb: (payload: { bubbleId: string }) => void) => () => void;
     openBubbleWindow?: (bubbleId: string) => Promise<{ ok: boolean; existing?: boolean; error?: string }>;

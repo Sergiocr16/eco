@@ -31,6 +31,8 @@ import type { Bubble, Message, VoiceState } from './lib/types';
 import { ecoBackend, ecoToken } from './lib/eco-config';
 import { getTopInset } from './lib/platform';
 import { getSoloBubbleId } from './lib/solo';
+import { IconLock } from './design/icons';
+import { WindowZoomController } from './components/WindowZoomController';
 import { bubbleStreamHandlers } from './lib/bubble-socket';
 import { SoloBubbleShell } from './screens/SoloBubbleShell';
 const BACKEND = ecoBackend();
@@ -54,10 +56,31 @@ export function App() {
   return (
     <ThemeProvider>
       <I18nProvider>
+        <WindowZoomController/>
+        <NativeMenuLabels/>
         <AuthGate/>
       </I18nProvider>
     </ThemeProvider>
   );
+}
+
+// Envía las etiquetas traducidas del menú nativo al main process al montar y en
+// cada cambio de idioma. El menú es global de la app (uno solo en macOS), así
+// que con que la ventana principal lo sincronice alcanza. No-op fuera de Electron.
+function NativeMenuLabels() {
+  const tr = useT();
+  const { lang } = useI18n();
+  useEffect(() => {
+    void window.electronAPI?.setMenuLabels?.({
+      edit: tr('menu.edit'),
+      view: tr('menu.view'),
+      window: tr('menu.window'),
+      zoomIn: tr('menu.zoom_in'),
+      zoomOut: tr('menu.zoom_out'),
+      zoomActual: tr('menu.zoom_actual'),
+    });
+  }, [lang, tr]);
+  return null;
 }
 
 function AuthGate() {
@@ -69,11 +92,45 @@ function AuthGate() {
   if (auth.state.status === 'loading') {
     return null; // splash en blanco mientras pinga /auth/status
   }
+  // Ventana "solo bubble" de otro monitor: no pide PIN propio. Refleja el
+  // bloqueo de la principal — muestra una pantalla de "bloqueado" y espera a
+  // que la principal desbloquee (que repone `eco.session` → re-autentica acá).
+  if (soloBubbleId) {
+    if (auth.state.status !== 'authenticated') return <SoloLockedScreen/>;
+    return <SoloBubbleShell bubbleId={soloBubbleId}/>;
+  }
   if (auth.state.status !== 'authenticated') {
     return <AuthScreen authState={auth.state} authActions={auth}/>;
   }
-  if (soloBubbleId) return <SoloBubbleShell bubbleId={soloBubbleId}/>;
   return <Shell auth={auth}/>;
+}
+
+// Pantalla de bloqueo de la ventana "solo bubble". No tiene PIN: el desbloqueo
+// vive en la ventana principal. Cuando esa repone `eco.session`, el storage
+// listener de useAuth re-autentica y esta pantalla desaparece sola.
+function SoloLockedScreen() {
+  const t = useTokens();
+  const tr = useT();
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'column', gap: 14, padding: 24,
+      background: t.windowBg, fontFamily: t.fontSans,
+    }}>
+      <div style={{
+        width: 52, height: 52, borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: t.bg2, border: `1px solid ${t.glassBorder}`, color: t.text2,
+      }}>
+        <IconLock size={22} strokeWidth={2}/>
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: t.text0 }}>{tr('solo.locked.title')}</div>
+      <div style={{ fontSize: 13, color: t.text2, textAlign: 'center', maxWidth: 320, lineHeight: 1.5 }}>
+        {tr('solo.locked.sub')}
+      </div>
+    </div>
+  );
 }
 
 function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {

@@ -66,6 +66,25 @@ export function useAuth() {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  // Sync de sesión entre ventanas (la principal y las ventanas "solo bubble"
+  // comparten `eco.session` en localStorage). El evento `storage` solo se
+  // dispara en las OTRAS ventanas: cuando la principal bloquea (borra la
+  // sesión) o desbloquea (la repone), las satélites reaccionan acá. La
+  // satélite nunca escribe la sesión, así que esto nunca re-dispara en la
+  // principal por culpa de una satélite.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== SESSION_KEY && e.key !== null) return;
+      if (readSession()) {
+        void refresh();
+      } else {
+        setState((s) => ({ ...s, status: s.username ? 'needs_login' : 'no_user' }));
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [refresh]);
+
   // Sync username a localStorage para que componentes globales (avatar, etc.)
   // puedan derivar la inicial sin tener que recibir prop drilling de auth.
   useEffect(() => { writeProfileUsername(state.username); }, [state.username]);

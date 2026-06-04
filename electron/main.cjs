@@ -6,7 +6,7 @@
 // El sidecar listener Python NO se empaqueta — sigue corriéndose aparte.
 // En esta versión Eco funciona sin él (Web Speech API en dev).
 
-const { app, BrowserWindow, Notification, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Notification, shell, ipcMain, dialog } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -504,7 +504,89 @@ ipcMain.handle('eco:get-config', () => ({
   isPackaged: app.isPackaged,
 }));
 
+// Rutea el zoom al renderer ENFOCADO (puede ser la principal o una satélite de
+// otro monitor) para que él aplique+persista su propio factor por ventana.
+function sendZoomToFocused(dir) {
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win || win.isDestroyed()) return;
+  try { win.webContents.send('eco:zoom', dir); } catch { /* noop */ }
+}
+
+// Etiquetas del menú traducidas por el renderer (vía eco:set-menu-labels) para
+// que sigan el toggle ES/EN de la app. null = aún no llegó → usamos defaults ES
+// (idioma default de la app). Los ítems con `role` los localiza Electron solo.
+let menuLabels = null;
+
+// Menú de app propio. Reemplaza al default de Electron para poder rutear el
+// zoom (Cmd +/−/0) a nuestra lógica por-ventana en vez de los roles built-in
+// (zoomIn/zoomOut/resetZoom), que operan sobre webContents sin persistir ni
+// distinguir ventana. Mantenemos los roles estándar de macOS (Edit, Window,
+// About/Quit/Hide) para no romper Cmd+C/V/X/Z/A/Q ni los atajos del sistema.
+function buildAppMenu() {
+  const isMac = process.platform === 'darwin';
+  const L = menuLabels || {};
+  const zoomIn = L.zoomIn || 'Acercar';
+  const zoomItems = [
+    { label: zoomIn, accelerator: 'CommandOrControl+Plus', click: () => sendZoomToFocused('in') },
+    // Cmd+= (sin Shift) es el atajo real en teclados US para "zoom in".
+    { label: zoomIn, accelerator: 'CommandOrControl+=', visible: false, acceleratorWorksWhenHidden: true, click: () => sendZoomToFocused('in') },
+    { label: L.zoomOut || 'Alejar', accelerator: 'CommandOrControl+-', click: () => sendZoomToFocused('out') },
+    { label: L.zoomActual || 'Tamaño real', accelerator: 'CommandOrControl+0', click: () => sendZoomToFocused('reset') },
+  ];
+  const template = [
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    }] : []),
+    {
+      label: L.edit || 'Edición',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: L.view || 'Vista',
+      submenu: [
+        { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' },
+        { type: 'separator' },
+        ...zoomItems,
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: L.window || 'Ventana',
+      role: 'window',
+      submenu: [
+        { role: 'minimize' }, { role: 'zoom' },
+        ...(isMac ? [{ type: 'separator' }, { role: 'front' }] : [{ role: 'close' }]),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// El renderer manda las etiquetas traducidas al montar y en cada cambio de
+// idioma. Reconstruimos el menú con ellas.
+ipcMain.handle('eco:set-menu-labels', (_e, labels) => {
+  if (labels && typeof labels === 'object') {
+    menuLabels = labels;
+    buildAppMenu();
+  }
+  return { ok: true };
+});
+
 app.whenReady().then(async () => {
+  buildAppMenu();
   spawnBackend();
   if (!isDev) {
     const ok = await waitForBackend(BACKEND_URL);
