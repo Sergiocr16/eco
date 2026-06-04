@@ -13,6 +13,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 const isDev = !app.isPackaged;
+
+// Mantener vivas las ventanas en segundo plano / ocluidas (satélites en otro
+// monitor). Sin esto Chromium throttlea o SUSPENDE el render de las ventanas
+// que no tienen foco o están tapadas, y solo la última enfocada anima — las
+// pantallas de bloqueo de las demás quedan congeladas. Deben setearse antes de
+// app.whenReady. `disable-backgrounding-occluded-windows` es la clave en macOS.
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+
 const BACKEND_HOST = '127.0.0.1';
 // Default dev port: 7050 (en macOS AirPlay Receiver usa :7000). Default
 // empaquetado: 7100 para que la .app coexista con `npm run dev` corriendo
@@ -445,6 +455,10 @@ function createBubbleWindow(bubbleId) {
       nodeIntegration: false,
       sandbox: false,
       webviewTag: true,
+      // Las ventanas satélite viven en otro monitor y se miran aunque no tengan
+      // foco (ej. la pantalla de bloqueo, o el agente trabajando). Sin esto,
+      // Chromium congela su render en segundo plano y solo la enfocada anima.
+      backgroundThrottling: false,
     },
   });
 

@@ -111,12 +111,18 @@ function AuthGate() {
 function SoloLockedScreen() {
   const t = useTokens();
   const tr = useT();
+  // Fondo basado en el tema (igual que el PIN). `eco-keep-animating` exime esta
+  // pantalla de la pausa global de animaciones. Para que TODAS las ventanas de
+  // bloqueo animen —no solo la enfocada— las ventanas satélite se crean con
+  // backgroundThrottling off (ver createBubbleWindow en main.cjs); si no,
+  // Chromium congela el render de las que están en segundo plano.
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 1,
-      overflow: 'hidden',
-      background: t.windowBg, color: t.text0, fontFamily: t.fontSans,
-    }}>
+    <div
+      className="eco-keep-animating"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1, overflow: 'hidden',
+        background: t.windowBg, color: t.text0, fontFamily: t.fontSans,
+      }}>
       {/* Mismo fondo animado que la pantalla del PIN (auroras + partículas). */}
       <DriftingOrbs/>
 
@@ -131,7 +137,7 @@ function SoloLockedScreen() {
           width: 52, height: 52, borderRadius: '50%',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: t.bg2, border: `1px solid ${t.glassBorder}`, color: t.text2,
-          boxShadow: `0 0 40px 6px color-mix(in oklch, ${t.accent} 16%, transparent)`,
+          boxShadow: `0 0 44px 8px color-mix(in oklch, ${t.accent} 20%, transparent)`,
         }}>
           <IconLock size={22} strokeWidth={2}/>
         </div>

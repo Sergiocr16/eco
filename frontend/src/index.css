@@ -68,6 +68,17 @@ body.eco-hidden *::after {
   animation-play-state: paused !important;
 }
 
+/* Excepción: la pantalla de bloqueo de la ventana satélite se mira en otro
+   monitor mientras la principal tiene foco, así que sus animaciones deben
+   seguir corriendo aunque el body esté marcado como hidden. Specificity
+   (0,2,1) > (0,1,1) de la regla de pausa, así que gana. */
+body.eco-hidden .eco-keep-animating,
+body.eco-hidden .eco-keep-animating *,
+body.eco-hidden .eco-keep-animating *::before,
+body.eco-hidden .eco-keep-animating *::after {
+  animation-play-state: running !important;
+}
+
 /* Respetar reduced motion: usuarios con la preferencia desactivan
    animaciones decorativas (shimmer/spin/typing) — preservamos solo las
    transiciones cortas de hover/feedback que ya son sub-200ms. */
