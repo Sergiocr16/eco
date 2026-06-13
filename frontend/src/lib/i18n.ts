@@ -56,6 +56,20 @@ const DICT = {
     es: '¿Olvidaste el PIN? Recuperar con tu frase',
     en: 'Forgot your PIN? Recover with your phrase',
   },
+  'auth.connect.title': { es: 'Conectar al servidor', en: 'Connect to server' },
+  'auth.connect.sub': {
+    es: 'Este Eco corre en otra máquina. Pegá el token de acceso que te compartieron para continuar.',
+    en: 'This Eco runs on another machine. Paste the access token you were given to continue.',
+  },
+  'auth.connect.placeholder': { es: 'Token de acceso', en: 'Access token' },
+  'auth.connect.btn': { es: 'Conectar', en: 'Connect' },
+  'auth.connect.btn_loading': { es: 'Validando…', en: 'Validating…' },
+  'auth.connect.err.invalid': { es: 'Token inválido — revisá que esté completo', en: 'Invalid token — check it is complete' },
+  'auth.connect.err.network': { es: 'No se pudo contactar al servidor', en: 'Could not reach the server' },
+  'auth.connect.note': {
+    es: 'El token vive en ~/.eco/token de la máquina servidor. Pedíselo al dueño por un canal seguro.',
+    en: 'The token lives in ~/.eco/token on the server machine. Ask the owner for it over a secure channel.',
+  },
   'auth.recover.title': { es: 'Recuperar acceso', en: 'Recover access' },
   'auth.recover.sub': {
     es: 'Pegá tu frase de 12 palabras y elegí un nuevo PIN. Se te dará una frase nueva.',
@@ -1970,6 +1984,11 @@ const DICT = {
   'files.err.read_failed': { es: 'Error al leer el archivo', en: 'Failed to read file' },
 
   // ─────────────────────────── Navegador: tabs + viewport
+  'browser.mixed.msg': {
+    es: 'El navegador no puede mostrar un preview HTTP dentro de Eco (que corre en HTTPS). Abrilo en una pestaña nueva:',
+    en: "The browser can't show an HTTP preview inside Eco (which runs over HTTPS). Open it in a new tab:",
+  },
+  'browser.mixed.btn': { es: 'Abrir en pestaña nueva ↗', en: 'Open in new tab ↗' },
   'browser.tab.untitled': { es: 'Nueva pestaña', en: 'New tab' },
   'browser.tab.close': { es: 'Cerrar pestaña', en: 'Close tab' },
   'browser.tab.new': { es: 'Nueva pestaña', en: 'New tab' },
@@ -2276,8 +2295,9 @@ const DICT = {
   'settings.obsidian.mode_custom_desc': { es: 'Eco ejecuta tu comando con la sesión por stdin. Útil para usar tu skill global (ej: claude -p "/kb").', en: 'Eco runs your command with the session via stdin. Useful for invoking your global skill (e.g. claude -p "/kb").' },
 
   // ─────────────────────────── Dashboard (strings nuevos del merge)
-  'dash.category.label': { es: 'Categoría', en: 'Category' },
-  'dash.category.change_tooltip': { es: 'Cambiar categoría', en: 'Change category' },
+  'dash.category.label': { es: 'Categorías', en: 'Categories' },
+  'dash.category.change_tooltip': { es: 'Cambiar categorías', en: 'Change categories' },
+  'dash.category.none': { es: 'Sin categoría', en: 'No category' },
   'dash.branch_name_placeholder': { es: 'nombre de la rama', en: 'branch name' },
   'dash.empty.cell': { es: 'Vacío.', en: 'Empty.' },
   'dash.no_folder': { es: 'Sin carpeta', en: 'No folder' },

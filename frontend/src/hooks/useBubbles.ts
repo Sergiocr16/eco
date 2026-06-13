@@ -50,12 +50,21 @@ function loadStored(): { bubbles: Bubble[]; activeId: string | null } {
     if (!raw) return { bubbles: [], activeId: null };
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return { bubbles: [], activeId: null };
-    const bubbles: Bubble[] = parsed.map((b) => ({
-      ...b,
-      messages: Array.isArray(b.messages) ? b.messages : [],
-      status: 'idle',
-      unread: 0,
-    }));
+    const bubbles: Bubble[] = parsed.map((b) => {
+      // Migración: `categoryId` (single, legacy) → `categoryIds` (multi).
+      const legacySingle = typeof b.categoryId === 'string' ? b.categoryId : undefined;
+      const categoryIds: string[] | undefined = Array.isArray(b.categoryIds)
+        ? b.categoryIds.filter((x: unknown): x is string => typeof x === 'string')
+        : legacySingle ? [legacySingle] : undefined;
+      const { categoryId: _legacy, ...rest } = b;
+      return {
+        ...rest,
+        categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : undefined,
+        messages: Array.isArray(b.messages) ? b.messages : [],
+        status: 'idle',
+        unread: 0,
+      };
+    });
     return { bubbles, activeId: active };
   } catch {
     return { bubbles: [], activeId: null };
@@ -123,7 +132,8 @@ export type UseBubblesResult = {
   setBubbleSessionId: (id: string, sessionId: string) => void;
   setBubbleMessages: (id: string, updater: (messages: Message[]) => Message[]) => void;
   setBubbleWorkspace: (id: string, workspace: string) => void;
-  setBubbleCategory: (id: string, categoryId: string | undefined) => void;
+  // Toggle de una categoría en la burbuja (agrega/quita). `undefined` limpia todas.
+  toggleBubbleCategory: (id: string, categoryId: string | undefined) => void;
   setBubblePtyOpen: (id: string, open: boolean) => void;
 };
 
@@ -418,10 +428,16 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     ));
   }, []);
 
-  const setBubbleCategory = useCallback((id: string, categoryId: string | undefined) => {
-    setBubbles((prev) => prev.map((b) =>
-      b.id === id ? { ...b, categoryId, updatedAt: Date.now() } : b,
-    ));
+  const toggleBubbleCategory = useCallback((id: string, categoryId: string | undefined) => {
+    setBubbles((prev) => prev.map((b) => {
+      if (b.id !== id) return b;
+      if (!categoryId) return { ...b, categoryIds: undefined, updatedAt: Date.now() };
+      const current = b.categoryIds ?? [];
+      const next = current.includes(categoryId)
+        ? current.filter((c) => c !== categoryId)
+        : [...current, categoryId];
+      return { ...b, categoryIds: next.length > 0 ? next : undefined, updatedAt: Date.now() };
+    }));
   }, []);
 
   const activeBubble = bubbles.find((b) => b.id === activeBubbleId) ?? null;
@@ -444,7 +460,7 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     setBubbleSessionId,
     setBubbleMessages,
     setBubbleWorkspace,
-    setBubbleCategory,
+    toggleBubbleCategory,
     setBubblePtyOpen,
   };
 }

@@ -7,6 +7,7 @@ import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
 import { IconCommand } from '@/design/icons';
 import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
+import { useCategories } from '@/hooks/useCategories';
 import { useT } from '@/hooks/useI18n';
 
 type Props = {
@@ -465,6 +466,22 @@ function DockIcon({
   const isActive = busy || state === 'thinking' || state === 'executing' || state === 'running';
   const initial = bubbleLetter(bubble.title);
   const accentColor = bubble.accent || t.accent;
+  // Categorías como anillo teñido en el borde del icono — mismo lenguaje
+  // que el stroke del nodo en la vista de grafo. Una categoría = anillo
+  // sólido; varias = arcos iguales (conic-gradient). Cap 4 como el nodo.
+  const { byId: categoryById } = useCategories();
+  const ringCategories = (bubble.categoryIds ?? [])
+    .map(categoryById)
+    .filter((c): c is NonNullable<ReturnType<typeof categoryById>> => c !== null)
+    .slice(0, 4);
+  const ringWidth = Math.max(1.5, Math.round(iconSize * 0.05));
+  const ringBg = ringCategories.length === 1
+    ? `color-mix(in oklch, ${ringCategories[0]!.color} 70%, transparent)`
+    : `conic-gradient(from -90deg, ${ringCategories.map((c, i) => {
+        const a = (i / ringCategories.length) * 100;
+        const b = ((i + 1) / ringCategories.length) * 100;
+        return `color-mix(in oklch, ${c.color} 70%, transparent) ${a}% ${b}%`;
+      }).join(', ')})`;
 
   // Cuando se activa showTip, calculamos la posición fija desde el ref del
   // wrapper. Se actualiza si el dock se desplaza o el viewport cambia tamaño.
@@ -563,6 +580,24 @@ function DockIcon({
             boxShadow: `0 0 ${Math.max(3, dotSize - 1)}px ${sColor}`,
             animation: 'eco-shimmer 1.1s ease-in-out infinite',
           }}/>
+        )}
+        {ringCategories.length > 0 && (
+          <span
+            aria-hidden
+            title={ringCategories.map((c) => c.name).join(' · ')}
+            style={{
+              // Anillo en el borde del icono: un span que cubre todo el botón
+              // pintado con el color (o conic-gradient de arcos) y enmascarado
+              // para que solo quede visible el grosor del borde.
+              position: 'absolute', inset: 0,
+              borderRadius: Math.round(iconSize * 0.28),
+              padding: ringWidth,
+              background: ringBg,
+              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+              WebkitMaskComposite: 'xor',
+              maskComposite: 'exclude',
+              pointerEvents: 'none',
+            }}/>
         )}
       </motion.button>
 

@@ -58,7 +58,7 @@ function copyTranscriptToClipboard(bubble: Bubble) {
 
 function HeaderMenu({
   workspaces, currentWorkspace, onClose, onRename, onChangeWorkspace,
-  onCopyTranscript, onCloseBubble, onOpenInNewWindow, currentCategoryId, onSetCategory,
+  onCopyTranscript, onCloseBubble, onOpenInNewWindow, currentCategoryIds, onToggleCategory,
 }: {
   workspaces: string[];
   currentWorkspace: string;
@@ -68,8 +68,8 @@ function HeaderMenu({
   onCopyTranscript: () => void;
   onCloseBubble: () => void;
   onOpenInNewWindow?: () => void;
-  currentCategoryId?: string;
-  onSetCategory: (categoryId: string | undefined) => void;
+  currentCategoryIds?: string[];
+  onToggleCategory: (categoryId: string | undefined) => void;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -104,12 +104,13 @@ function HeaderMenu({
             padding: '6px 10px 3px',
           }}>{tr('dash.category.label')}</div>
           {categories.map((c) => {
-            const active = c.id === currentCategoryId;
+            const active = currentCategoryIds?.includes(c.id) ?? false;
             return (
               <button
                 key={c.id}
                 type="button"
-                onClick={() => { onSetCategory(active ? undefined : c.id); onClose(); }}
+                // Toggle multi-selección: el menú queda abierto para marcar varias.
+                onClick={() => onToggleCategory(c.id)}
                 style={{ ...menuItemStyleAt(t), color: active ? t.text0 : t.text1 }}>
                 <span style={{
                   width: 10, height: 10, borderRadius: '50%',
@@ -121,12 +122,12 @@ function HeaderMenu({
               </button>
             );
           })}
-          {currentCategoryId && (
+          {(currentCategoryIds?.length ?? 0) > 0 && (
             <button
               type="button"
-              onClick={() => { onSetCategory(undefined); onClose(); }}
+              onClick={() => { onToggleCategory(undefined); onClose(); }}
               style={{ ...menuItemStyleAt(t), color: t.text3 }}>
-              <IconX size={11}/> Sin categoría
+              <IconX size={11}/> {tr('dash.category.none')}
             </button>
           )}
           <div style={{ height: 1, background: t.glassBorder, margin: '4px 8px' }}/>
@@ -198,7 +199,7 @@ type Props = {
   onRename: (title: string) => void;
   onClose: () => void;
   onChangeWorkspace: (workspace: string) => void;
-  onSetCategory: (categoryId: string | undefined) => void;
+  onToggleCategory: (categoryId: string | undefined) => void;
   onMicToggle: () => void;
   listening: boolean;
   voiceInterim: string;
@@ -248,12 +249,14 @@ const TAB_DEFS: Record<Tab, { labelKey: string; icon: (p: IconProps) => JSX.Elem
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
-  onSetCategory, onMicToggle, listening, voiceInterim, onOpenInNewWindow, solo = false,
+  onToggleCategory, onMicToggle, listening, voiceInterim, onOpenInNewWindow, solo = false,
 }: Props) {
   const t = useTokens();
   const tr = useT();
   const { byId: categoryById } = useCategories();
-  const category = categoryById(bubble.categoryId);
+  const bubbleCategories = (bubble.categoryIds ?? [])
+    .map(categoryById)
+    .filter((c): c is NonNullable<ReturnType<typeof categoryById>> => c !== null);
   const STATE_LABELS_I18N: Record<AgentState, string> = {
     idle: tr('state.idle'),
     pending: tr('state.pending'),
@@ -368,7 +371,7 @@ export function AgentDetail({
         <IconBtn icon={IconArrowL} size={32} onClick={onBack}/>
         <AgentGlyph size={40} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {renaming ? (
               <input
                 autoFocus
@@ -397,10 +400,11 @@ export function AgentDetail({
                 }}>{bubble.title}</h2>
             )}
             <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>
-            {/* Chip de categoría — clickeable: abre el menú para cambiarla.
+            {/* Chips de categorías — clickeables: abren el menú para cambiarlas.
                 "arriba donde está el nombre", como pidió el user. */}
-            {category && (
+            {bubbleCategories.map((category) => (
               <button
+                key={category.id}
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
                 title={tr('dash.category.change_tooltip')}
@@ -416,7 +420,7 @@ export function AgentDetail({
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: category.color }}/>
                 {category.name}
               </button>
-            )}
+            ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('detail.header.bubble')}</span>
@@ -454,8 +458,8 @@ export function AgentDetail({
               onCopyTranscript={() => { setMenuOpen(false); copyTranscriptToClipboard(bubble); }}
               onCloseBubble={() => { setMenuOpen(false); onClose(); }}
               onOpenInNewWindow={onOpenInNewWindow ? () => { setMenuOpen(false); onOpenInNewWindow(); } : undefined}
-              currentCategoryId={bubble.categoryId}
-              onSetCategory={onSetCategory}
+              currentCategoryIds={bubble.categoryIds}
+              onToggleCategory={onToggleCategory}
             />
           )}
         </div>

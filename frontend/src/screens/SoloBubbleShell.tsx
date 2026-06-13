@@ -96,7 +96,7 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
             onRename={(title) => bubbles.renameBubble(bubble.id, title)}
             onClose={() => { bubbles.archiveBubble(bubble.id); closeThisWindow(bubbleId); }}
             onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(bubble.id, ws)}
-            onSetCategory={(catId) => bubbles.setBubbleCategory(bubble.id, catId)}
+            onToggleCategory={(catId) => bubbles.toggleBubbleCategory(bubble.id, catId)}
             onMicToggle={() => { /* sin voz en ventana solo */ }}
             listening={false}
             voiceInterim=""

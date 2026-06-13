@@ -48,10 +48,11 @@ export type Bubble = {
   // si el workspace es repo git. Sin valor → el worktree salió del HEAD del
   // repo padre al momento de crear la burbuja (comportamiento legacy).
   baseBranch?: string;
-  // Categoría asignada (id de una categoría configurable en Settings). Se
-  // usa para colorear el nodo en la vista de grafo y agrupar visualmente.
-  // Sin valor → el nodo usa el color del estado del agente (legacy).
-  categoryId?: string;
+  // Categorías asignadas (ids de categorías configurables en Settings). Una
+  // burbuja puede tener varias — se muestran como chips y la primera colorea
+  // el nodo en la vista de grafo. Vacío/sin valor → color por estado (legacy).
+  // El formato viejo single `categoryId` se migra en useBubbles.loadStored.
+  categoryIds?: string[];
   // Soft delete: cuando es true, la burbuja desaparece del Dashboard y
   // aparece en la pantalla "Archivados". El worktree git se mantiene
   // intacto en disco para permitir des-archivar con todo el state.

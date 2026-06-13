@@ -904,7 +904,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                           requestCloseBubble(b.id, { afterClose: handleBackFromDetail });
                         }}
                         onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(b.id, ws)}
-                        onSetCategory={(catId) => bubbles.setBubbleCategory(b.id, catId)}
+                        onToggleCategory={(catId) => bubbles.toggleBubbleCategory(b.id, catId)}
                         onMicToggle={handleMicToggle}
                         listening={voice.state === 'listening'}
                         voiceInterim={voice.interimText}
@@ -943,7 +943,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                     onRename={(id, title) => bubbles.renameBubble(id, title)}
                     onRemove={(id) => requestCloseBubble(id)}
                     onChangeWorkspace={(id, ws) => bubbles.setBubbleWorkspace(id, ws)}
-                    onSetCategory={(id, catId) => bubbles.setBubbleCategory(id, catId)}
+                    onToggleCategory={(id, catId) => bubbles.toggleBubbleCategory(id, catId)}
                     availableWorkspaces={workspacesHook.list.workspaces}
                   />
                 ) : null}

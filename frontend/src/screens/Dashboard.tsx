@@ -37,7 +37,7 @@ type Props = {
   onRename: (id: string, title: string) => void;
   onRemove: (id: string) => void;
   onChangeWorkspace: (id: string, workspace: string) => void;
-  onSetCategory: (id: string, categoryId: string | undefined) => void;
+  onToggleCategory: (id: string, categoryId: string | undefined) => void;
   availableWorkspaces: string[];
   voiceError?: string | null;
 };
@@ -45,7 +45,7 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles: rawBubbles, activeBubbleId, voiceState, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onSetCategory, availableWorkspaces, wakeActive } = props;
+  const { bubbles: rawBubbles, activeBubbleId, voiceState, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive } = props;
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
@@ -160,7 +160,7 @@ export function Dashboard(props: Props) {
             onRename={onRename}
             onRemove={onRemove}
             onChangeWorkspace={onChangeWorkspace}
-            onSetCategory={onSetCategory}
+            onToggleCategory={onToggleCategory}
             onCreateAgent={onCreateAgent}
           />
         ) : view === 'kanban' ? (
@@ -606,7 +606,7 @@ function VoiceOrb({ state, onClick }: { state: VoiceState; onClick: () => void }
 }
 
 function AgentBubble({
-  bubble, workspaces, onClick, onRename, onRemove, onChangeWorkspace, onSetCategory,
+  bubble, workspaces, onClick, onRename, onRemove, onChangeWorkspace, onToggleCategory,
 }: {
   bubble: Bubble;
   workspaces: string[];
@@ -614,7 +614,7 @@ function AgentBubble({
   onRename: (title: string) => void;
   onRemove: () => void;
   onChangeWorkspace: (ws: string) => void;
-  onSetCategory: (categoryId: string | undefined) => void;
+  onToggleCategory: (categoryId: string | undefined) => void;
 }) {
   const t = useTokens();
   const [hover, setHover] = useState(false);
@@ -627,7 +627,9 @@ function AgentBubble({
   const sColor = stateColor(state, t);
   const busy = useBubbleBusy(bubble.id);
   const { byId: categoryById } = useCategories();
-  const category = categoryById(bubble.categoryId);
+  const bubbleCategories = (bubble.categoryIds ?? [])
+    .map(categoryById)
+    .filter((c): c is NonNullable<ReturnType<typeof categoryById>> => c !== null);
   const STATE_LABELS_I18N: Record<AgentState, string> = {
     idle: tr('state.idle'),
     pending: tr('state.pending'),
@@ -730,8 +732,10 @@ function AgentBubble({
               onClose={() => setMenuOpen(false)}
               onRename={startRename}
               onRemove={(e) => { e.stopPropagation(); onRemove(); setMenuOpen(false); }}
-              currentCategoryId={bubble.categoryId}
-              onSetCategory={(catId) => { onSetCategory(catId); setMenuOpen(false); }}
+              currentCategoryIds={bubble.categoryIds}
+              // Toggle de categoría deja el menú abierto (multi-selección);
+              // "Sin categoría" (undefined) limpia todo y cierra.
+              onToggleCategory={(catId) => { onToggleCategory(catId); if (!catId) setMenuOpen(false); }}
             />
           )}
         </div>
@@ -742,20 +746,27 @@ function AgentBubble({
         <span style={{ fontSize: 11.5, color: busy ? t.ok : sColor, fontWeight: 500 }}>
           {busy ? tr('state.executing') : (STATE_LABELS_I18N[state] || tr('state.idle'))}
         </span>
-        {/* Chip de categoría — solo si la burbuja tiene una asignada. */}
-        {category && (
+        {/* Chips de categorías — solo si la burbuja tiene asignadas. */}
+        {bubbleCategories.length > 0 && (
           <span style={{
+            marginLeft: 'auto', minWidth: 0,
             display: 'inline-flex', alignItems: 'center', gap: 4,
-            marginLeft: 'auto',
-            padding: '1px 7px', borderRadius: 999,
-            background: `color-mix(in oklch, ${category.color} 16%, transparent)`,
-            border: `1px solid color-mix(in oklch, ${category.color} 45%, transparent)`,
-            fontSize: 10, fontWeight: 500, color: category.color,
-            whiteSpace: 'nowrap', maxWidth: 110,
-            overflow: 'hidden', textOverflow: 'ellipsis',
+            flexWrap: 'wrap', justifyContent: 'flex-end',
           }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: category.color, flexShrink: 0 }}/>
-            {category.name}
+            {bubbleCategories.map((category) => (
+              <span key={category.id} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '1px 7px', borderRadius: 999,
+                background: `color-mix(in oklch, ${category.color} 16%, transparent)`,
+                border: `1px solid color-mix(in oklch, ${category.color} 45%, transparent)`,
+                fontSize: 10, fontWeight: 500, color: category.color,
+                whiteSpace: 'nowrap', maxWidth: 110,
+                overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: category.color, flexShrink: 0 }}/>
+                {category.name}
+              </span>
+            ))}
           </span>
         )}
       </div>
@@ -1474,14 +1485,14 @@ function WorkspaceChip({
 }
 
 function BubbleMenu({
-  anchorRef, onClose, onRename, onRemove, currentCategoryId, onSetCategory,
+  anchorRef, onClose, onRename, onRemove, currentCategoryIds, onToggleCategory,
 }: {
   anchorRef: React.RefObject<HTMLDivElement | null>;
   onClose: () => void;
   onRename: (e: React.MouseEvent) => void;
   onRemove: (e: React.MouseEvent) => void;
-  currentCategoryId?: string;
-  onSetCategory: (categoryId: string | undefined) => void;
+  currentCategoryIds?: string[];
+  onToggleCategory: (categoryId: string | undefined) => void;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -1522,12 +1533,12 @@ function BubbleMenu({
             padding: '6px 10px 3px',
           }}>{tr('dash.category.label')}</div>
           {categories.map((c) => {
-            const active = c.id === currentCategoryId;
+            const active = currentCategoryIds?.includes(c.id) ?? false;
             return (
               <button
                 key={c.id}
                 type="button"
-                onClick={() => onSetCategory(active ? undefined : c.id)}
+                onClick={() => onToggleCategory(c.id)}
                 style={{ ...menuItemStyle(t), color: active ? t.text0 : t.text1 }}>
                 <span style={{
                   width: 10, height: 10, borderRadius: '50%',
@@ -1539,12 +1550,12 @@ function BubbleMenu({
               </button>
             );
           })}
-          {currentCategoryId && (
+          {(currentCategoryIds?.length ?? 0) > 0 && (
             <button
               type="button"
-              onClick={() => onSetCategory(undefined)}
+              onClick={() => onToggleCategory(undefined)}
               style={{ ...menuItemStyle(t), color: t.text3 }}>
-              <IconX size={11}/> Sin categoría
+              <IconX size={11}/> {tr('dash.category.none')}
             </button>
           )}
           <div style={{ height: 1, background: t.glassBorder, margin: '4px 6px' }}/>
@@ -1573,7 +1584,7 @@ function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
 // sería ruido).
 function GridView({
   bubbles, workspaces, onOpenAgent, onRename, onRemove,
-  onChangeWorkspace, onSetCategory, onCreateAgent,
+  onChangeWorkspace, onToggleCategory, onCreateAgent,
 }: {
   bubbles: Bubble[];
   workspaces: string[];
@@ -1581,7 +1592,7 @@ function GridView({
   onRename: (id: string, title: string) => void;
   onRemove: (id: string) => void;
   onChangeWorkspace: (id: string, workspace: string) => void;
-  onSetCategory: (id: string, categoryId: string | undefined) => void;
+  onToggleCategory: (id: string, categoryId: string | undefined) => void;
   onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
 }) {
   const t = useTokens();
@@ -1632,7 +1643,7 @@ function GridView({
         onRename={(title) => onRename(b.id, title)}
         onRemove={() => onRemove(b.id)}
         onChangeWorkspace={(ws) => onChangeWorkspace(b.id, ws)}
-        onSetCategory={(catId) => onSetCategory(b.id, catId)}
+        onToggleCategory={(catId) => onToggleCategory(b.id, catId)}
       />
     </motion.div>
   );
@@ -2927,7 +2938,13 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           // Si la burbuja tiene categoría, su color tiñe el electrón —
           // así agrupás visualmente los agentes por categoría. Sin
           // categoría, cae al color del estado (legacy).
-          const nodeCategory = getCategoryById(n.categoryId);
+          // Con multi-categoría, la primera asignada manda el color del nodo;
+          // todas se muestran como dots debajo del label (cap 4).
+          const nodeCategories = (n.categoryIds ?? [])
+            .map(getCategoryById)
+            .filter((c): c is NonNullable<ReturnType<typeof getCategoryById>> => c !== null)
+            .slice(0, 4);
+          const nodeCategory = nodeCategories[0] ?? null;
           const sColor = nodeCategory ? nodeCategory.color : stateColor(n.state, t);
           // Wobble local de 2-3 px alrededor de la posición fija — apenas
           // perceptible, da sensación de que el electrón "vibra" en su
@@ -3008,14 +3025,33 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
                 style={{ textTransform: 'uppercase', pointerEvents: 'none' }}>
                 {bubbleLetter(n.title)}
               </text>
-              <circle cx={n.size * 0.72} cy={-n.size * 0.72} r="4" fill={sColor}
-                style={{ filter: isActive ? `drop-shadow(0 0 4px ${sColor})` : 'none' }}/>
               <text x={0} y={n.size + 16} textAnchor="middle"
                 fill={isHover ? t.text0 : t.text1}
                 fontFamily={t.fontSans} fontSize="11.5" fontWeight="500"
                 style={{ pointerEvents: 'none' }}>
                 {n.title.length > 14 ? n.title.slice(0, 14) + '…' : n.title}
               </text>
+              {/* Dots de categorías — sobre el borde del círculo, arrancando
+                  a -45° (top-right, donde vivía el viejo dot de estado que
+                  se quitó por redundante) y siguiendo en sentido horario. */}
+              {nodeCategories.map((c, ci) => {
+                const ang = ((-45 + ci * 32) * Math.PI) / 180;
+                // 1.02 ≈ la distancia del status dot (0.72·√2) — misma órbita.
+                const d = n.size * 1.02;
+                return (
+                  <circle
+                    key={c.id}
+                    cx={d * Math.cos(ang)}
+                    cy={d * Math.sin(ang)}
+                    r={3.5}
+                    fill={c.color}
+                    stroke={t.bg1}
+                    strokeWidth={1}
+                    style={{ pointerEvents: 'none' }}>
+                    <title>{c.name}</title>
+                  </circle>
+                );
+              })}
               {/* Satélites del electrón — al clickearlos abre el agente
                   en la tab correspondiente (conversación, terminal, etc.). */}
               <SatellitesLocal n={n} t={t} onItemClick={(sub) => {
