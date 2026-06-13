@@ -156,18 +156,30 @@ VITE_ECO_TOKEN=<optional, copy of ~/.eco/token>
 | `ECO_PTY_AUTOCLAUDE` | `1` | Auto-launch `claude` in each new PTY. |
 | `CLAUDE_CLI_PATH` | `~/.local/bin/claude` | Claude binary path. |
 | `ECO_DEVTOOLS` | (empty) | `1` to auto-open Electron DevTools. |
-| `ECO_FRONTEND_DIST` | (empty) | Path to `frontend/dist` — when set and existing, the backend serves the static frontend + SPA fallback (packaged .app and server mode). |
-| `ECO_EXTRA_HOSTS` | (empty) | CSV of extra hostnames accepted by the host check (HTTP + both WS). Server mode sets the `.ts.net` name here. |
+| `ECO_FRONTEND_DIST` | (empty) | Path to `frontend/dist` — when set and existing, the backend serves the static frontend (`index.html` = `Cache-Control: no-cache`, hashed assets = immutable) + SPA fallback. Packaged .app and server mode. |
+| `ECO_EXTRA_HOSTS` | (empty) | CSV of extra hostnames accepted by the host check (`config.hostAllowed`, HTTP + both WS). Server mode sets the `.ts.net` name here. |
+| `ECO_PUBLIC_HOST` | (empty) | Public tailnet hostname (`<machine>.ts.net`). When set, dev-server URLs become `https://<host>:<port>` and each port is exposed via `tailscale serve`. |
+| `ECO_TAILSCALE_BIN` | auto | Tailscale CLI path override. macOS bundles it at `/Applications/Tailscale.app/Contents/MacOS/Tailscale` (not in PATH); the backend auto-detects. |
 
 ### Server mode (remote web via Tailscale)
 
 `npm run serve:web` (script `scripts/eco-server.mjs`) runs Eco as a web server for the fase-0 thin-client experiment: backend on `127.0.0.1:7200` serving the built frontend, exposed to the tailnet as `https://<machine>.ts.net` via `tailscale serve` (HTTPS = secure context → mic/Web Speech work in remote Chrome). The script derives the hostname from `tailscale status --json`, builds missing dists (`--rebuild` to force), sets `ECO_ALLOWED_ORIGINS`/`ECO_EXTRA_HOSTS`, and prints the share URL. The backend keeps binding 127.0.0.1 — Tailscale Serve is the only ingress.
 
-Remote auth: the browser shows **ConnectView** ("Conectar al servidor") and asks for the access token (`~/.eco/token`, share it over a secure channel) → stored in localStorage `eco.token` → reload → normal PIN login.
+Remote auth: the browser shows **ConnectView** ("Conectar al servidor") and asks for the access token (`~/.eco/token`, share it over a secure channel) → stored in localStorage `eco.token` → `useAuth` detects the missing-bearer state (`!window.electronAPI && !ecoToken()`) → reload → normal PIN login. Idle sessions renew silently (`/auth/session` + bearer); the renewal check in `api.ts` reads the error code from `data.error` (not `data.code`).
 
-> Dev-server previews are NOT exposed to the tailnet: their URLs stay `http://127.0.0.1:<port>`, so a remote BrowserPanel can't load them (they point at the client's own localhost). Exposing dev ports via `tailscale serve` was tried and reverted — it tangled with the port-assignment lifecycle. The agent's chat, terminal, git and files all work remotely; only the in-app dev-server preview is local-only.
+#### Dev-server previews over the tailnet
 
-Accepted caveats (fase 0, NOT multi-tenant): single shared identity (token + PIN del dueño); **the token alone already grants API access** (`POST /auth/session` mints a session from the bearer without PIN — the PIN gate is UI-level for remote clients); bubbles live in each browser's localStorage (remote client has its OWN list); `/bubbles/sync` is last-writer-wins across clients; BrowserPanel falls back to iframe (CSP/XFO sites won't load); `tailscale serve reset` clears stale mappings; never use Funnel (tailnet-only).
+The hard part of the whole feature, after many iterations. The final model, in `dev-server.ts` + `backend/src/tailscale.ts`:
+
+- **`urlFor(port)`**: in server mode returns `https://<publicHost>:<port>`, else `http://127.0.0.1:<port>`.
+- **Dev servers bind 127.0.0.1** in server mode (`HOST=127.0.0.1` env; Spring also gets `-Dserver.address=127.0.0.1`). This is the load-bearing detail: if a server binds `0.0.0.0` it grabs `100.x:<port>` (the tailnet IP) and `tailscale serve` can't use that port → `EADDRINUSE`.
+- **`syncServe(s)`** (called from `broadcastStatus`, tracked by `servedPorts`) runs `tailscale serve --bg --https=<port> http://127.0.0.1:<port>` → the dev server is reachable at `https://<host>:<port>` (HTTPS, so the HTTPS BrowserPanel embeds it without mixed-content). Cleaned on stop/forget. The tailscale calls are async/non-blocking with a 12 s timeout.
+- **Spring `-Dserver.forward-headers-strategy=framework`**: without it the app sees the proxied request as HTTP and 302-downgrades its redirects → `ERR_TOO_MANY_REDIRECTS`. With it, Spring honors `X-Forwarded-Proto`.
+- **`SmartBrowserView` mixed-content fallback**: if a dev URL is `http://` and the app is HTTPS (a server that insists on binding `0.0.0.0`, e.g. JHipster's gulp/browser-sync which ignores `HOST`), the iframe is blocked by the browser → it renders an "Abrir en pestaña nueva" overlay instead (top-level nav is not mixed-content).
+
+> **Known limit**: gulp/browser-sync ignores `HOST=127.0.0.1` and binds `0.0.0.0`, so it can't be exposed via `tailscale serve` (port conflict). For JHipster that's fine — the Spring backend serves the built frontend from `src/main/webapp` at `/`, so previewing the **backend** shows the whole app (sans gulp live-reload). Not worth the complexity to make gulp work remotely.
+
+Accepted caveats (fase 0, NOT multi-tenant): single shared identity (token + PIN del dueño); **the token alone already grants API access** (`POST /auth/session` mints a session from the bearer without PIN — the PIN gate is UI-level for remote clients); bubbles live in each browser's localStorage (remote client has its OWN list); `/bubbles/sync` is last-writer-wins across clients; first load of a new dev port is slow (Tailscale provisions the HTTPS cert); `tailscale serve reset` clears stale mappings; never use Funnel (tailnet-only).
 
 > The .app (7100), server mode (7200) and dev (7050) can now run in parallel: the dev-sessions state file is namespaced by backend port (`~/.eco/dev-sessions.<port>.json`), so each backend re-adopts only its own spawned processes and never clobbers the others (this used to leave orphan Spring Boot/gulp processes holding ports). The legacy `dev-sessions.json` is intentionally NOT migrated (a still-running old .app may hold it live); it dies out once every backend runs the namespaced build.
 
@@ -199,11 +211,23 @@ If you're touching X, the key files are:
 - `frontend/src/screens/Settings.tsx:SectionVoice` — voice selector
 
 ### Dev server per agent
-- `backend/src/dev-server.ts` — session manager, spawn/kill, persistence, `scheduleLogFlush`, `forgetSession`
+- `backend/src/dev-server.ts` — session manager, spawn/kill, persistence, `scheduleLogFlush`, `forgetSession`, `urlFor`/`syncServe` (server-mode tailnet exposure). Env injected per spawn: `HOST=127.0.0.1`, `-Dserver.port`/`-Dspring.devtools.restart.enabled=false` (always) + `-Dserver.address=127.0.0.1`/`-Dserver.forward-headers-strategy=framework` + Vite allowed-hosts (server mode only).
+- `backend/src/tailscale.ts` — `serveOn`/`serveOff`/`tailscaleBin` (async, non-blocking `tailscale serve` wrappers). Only used in server mode.
 - `frontend/src/components/ServerPanel.tsx` — UI (single/dual, workspace presets, xterm logs, `eco:dev_log` listener)
 - `frontend/src/hooks/useDevPresets.ts` — global presets
 - `frontend/src/hooks/useWorkspaceServerDefaults.ts` — per-workspace presets
 - `backend/src/index.ts` `/dev/{start,stop,restart,status,logs,active}`, `/bubble/close`, `/pty/kill`
+
+### Server mode (remote web)
+- `scripts/eco-server.mjs` — `npm run serve:web` launcher (derives `.ts.net` host, builds dists, `tailscale serve --https=443`, sets env). See §3.
+- `backend/src/config.ts:hostAllowed` — shared host check (replaces the 3 hardcoded copies in `index.ts`/`ws-server.ts`/`pty-server.ts`); `extraHosts`, `publicHost`.
+- `backend/src/index.ts` — static serving with split cache headers (`index.html` no-cache, hashed assets immutable); `POST /bubble/send`.
+- `frontend/src/screens/AuthScreen.tsx:ConnectView` + `frontend/src/lib/eco-config.ts:readStoredToken/writeStoredToken` (key `eco.token`) + `useAuth` `needs_token` state.
+
+### Categories (multi)
+- `frontend/src/hooks/useCategories.ts` — store + subscribers for `eco.categories` (id, name, color). Read sync via `getCategoryById`.
+- Bubble field is `categoryIds: string[]` (was single `categoryId` — auto-migrated in `useBubbles.loadStored`). Setter: `toggleBubbleCategory(id, catId)` (add/remove; `undefined` clears all).
+- Chips: header in `AgentDetail.tsx`, cards in `Dashboard.tsx`. Dots: ring on the dock icon (`BubbleDock.tsx`, conic-gradient arcs), and on the node border in the graph (`Dashboard.tsx`, first category tints the node).
 
 ### Bubble cleanup
 - `backend/src/index.ts:closeBubbleResources(bubbleId)` — kills PTY + dev servers (all 3 roles) + `forgetSession` + `removeWorktree`
@@ -363,7 +387,7 @@ eco.dev.presets.hidden                   ← built-ins hidden by user
 eco.remote.<bubbleId>                    ← slug if remote control active
 eco.skills.favorites                     ← Skills favorites
 eco.skills.fav_collapsed                 ← '1' if Skills favorites collapsed
-eco.bubbles                              ← global bubble state (id, title, workspace, messages, archived, …)
+eco.bubbles                              ← global bubble state (id, title, workspace, messages, archived, categoryIds[], …)
 eco.categories                           ← configurable categories (id, name, color)
 eco.graph.{spread_nodes,spread_ws,scale,ws_offsets,agent_offsets,fullscreen}  ← graph view tuning
 eco.files.openTabs.<bubbleId>            ← FilesPanel: open file tabs
@@ -608,6 +632,8 @@ GET   /dev/active                              (ALL live sessions)
 ### Port conflict + auto-repair
 
 If the output contains `EADDRINUSE` (`PORT_CONFLICT_RE`), the backend retries up to 2 times (`MAX_RETRIES`), asking Claude (`repairPortHardcode`) to patch the config to use `process.env.PORT`.
+
+> **Spring Boot DevTools false conflict** (`-Dspring.devtools.restart.enabled=false`, always injected): DevTools does an in-process restart (`restartedMain` thread) that re-binds the port before releasing the old one → "Port X is already in use" that is NOT a real conflict. Without the flag, `PORT_CONFLICT_RE` matched it, killed the process (`SIGTERM`, exit 143) and looped into `repairPortHardcode` — which also corrupted the JVM's MySQL/Liquibase connection. Under Eco the DevTools live-reload adds nothing (restart is manual from the panel).
 
 ---
 
@@ -909,6 +935,8 @@ The frontend never sees the raw token after save — `maskedPat` is prefix + las
 ### Workspaces
 
 Configured via `ECO_WORKSPACES` env or Settings → Folders. **The workspace must be a git repo** for worktree creation. Pointing at a parent directory (e.g. `~/Documents/GitHub` containing many repos) means Eco can't create a worktree and the agent's commands will fail.
+
+> `frontend/src/hooks/useWorkspaces.ts` is a **module-level store + subscribers** (like `useCategories`), not per-instance. Adding a folder in Settings refreshes the list everywhere at once — including the "create agent" picker — with no app restart. Before this, each `useWorkspaces()` call fetched once on mount, so a new folder only showed after a relaunch.
 
 ### Worktrees
 
