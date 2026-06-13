@@ -1,8 +1,11 @@
 import { randomBytes } from 'node:crypto';
+import type { Role } from './users-store.js';
 
 type Session = {
   id: string;
+  userId: string;
   username: string;
+  role: Role;
   createdAt: number;
   lastUsed: number;
 };
@@ -10,10 +13,10 @@ type Session = {
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hora desde último uso
 const sessions = new Map<string, Session>();
 
-export function createSession(username: string): string {
+export function createSession(userId: string, role: Role, username: string): string {
   const id = randomBytes(32).toString('base64url');
   const now = Date.now();
-  sessions.set(id, { id, username, createdAt: now, lastUsed: now });
+  sessions.set(id, { id, userId, role, username, createdAt: now, lastUsed: now });
   return id;
 }
 

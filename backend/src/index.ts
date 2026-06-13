@@ -31,9 +31,12 @@ import {
   deleteGithubCredentials, maskedPat as maskedGithubPat, validateGithubPat,
 } from './github-credentials-store.js';
 import {
-  hasUser, statusInfo, registerUser, verifyPin,
-  recoverGetNewPhrase, deleteUser,
-} from './user-store.js';
+  hasAnyUser, statusInfo, registerFirstUser, verifyPin,
+  recover as recoverUser, deleteUser, getUser, getUserByUsername,
+  listUsers, createMember, setRole, setWorkspaceGrants, resetPin,
+  mintRefresh, verifyRefresh, migrateLegacyUserIfNeeded,
+  type Role,
+} from './users-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
 import { isAppError } from './app-error.js';
 import { resolveSafePath } from './fs-paths.js';
@@ -128,23 +131,32 @@ const RegisterSchema = z.object({
   username: z.string().min(1).max(80),
   pin: z.string().regex(/^\d{4,8}$/, 'El PIN debe tener entre 4 y 8 dígitos'),
 });
-const LoginSchema = z.object({ pin: z.string().min(1).max(20) });
+const LoginSchema = z.object({
+  username: z.string().min(1).max(80),
+  pin: z.string().min(1).max(20),
+});
 const RecoverSchema = z.object({
+  username: z.string().min(1).max(80),
   recoveryPhrase: z.string().min(20).max(400),
   newPin: z.string().regex(/^\d{4,8}$/),
 });
+const PinOnlySchema = z.object({ pin: z.string().min(1).max(20) });
+const REFRESH_HEADER = 'x-eco-refresh';
 
 app.get('/auth/status', (_req: Request, res: Response) => {
   res.json(statusInfo());
 });
 
+// Registro PÚBLICO solo para el PRIMER usuario (que queda como admin). Una vez
+// que existe al menos un usuario, los demás los crea el admin (registro cerrado).
 app.post('/auth/register', async (req: Request, res: Response) => {
   const parsed = RegisterSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
   try {
-    const result = await registerUser(parsed.data.username, parsed.data.pin);
-    const session = createSession(result.username);
-    res.json({ ok: true, username: result.username, recoveryPhrase: result.recoveryPhrase, session });
+    const { user, recoveryPhrase } = await registerFirstUser(parsed.data.username, parsed.data.pin);
+    const session = createSession(user.id, user.role, user.username);
+    const refresh = await mintRefresh(user.id);
+    res.json({ ok: true, username: user.username, role: user.role, recoveryPhrase, session, refresh });
   } catch (e) {
     fromException(res, e, 'auth.register_failed', 'Error al registrar');
   }
@@ -152,27 +164,25 @@ app.post('/auth/register', async (req: Request, res: Response) => {
 
 app.post('/auth/login', async (req: Request, res: Response) => {
   const parsed = LoginSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'auth.pin_required', 'PIN requerido');
-  if (!hasUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
-  const ok = await verifyPin(parsed.data.pin);
-  if (!ok) return errResponse(res, 401, 'auth.pin_wrong', 'PIN incorrecto');
-  const info = statusInfo();
-  const session = createSession(info.username ?? 'user');
-  res.json({ ok: true, username: info.username, session });
+  if (!parsed.success) return errResponse(res, 400, 'auth.login_required', 'Usuario y PIN requeridos');
+  if (!hasAnyUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
+  const user = getUserByUsername(parsed.data.username);
+  if (!user) return errResponse(res, 401, 'auth.login_wrong', 'Usuario o PIN incorrectos');
+  const ok = await verifyPin(user.id, parsed.data.pin);
+  if (!ok) return errResponse(res, 401, 'auth.login_wrong', 'Usuario o PIN incorrectos');
+  const session = createSession(user.id, user.role, user.username);
+  const refresh = await mintRefresh(user.id);
+  res.json({ ok: true, username: user.username, role: user.role, session, refresh });
 });
 
 app.post('/auth/recover', async (req: Request, res: Response) => {
   const parsed = RecoverSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
   try {
-    const result = await recoverGetNewPhrase(parsed.data.recoveryPhrase, parsed.data.newPin);
-    const session = createSession(result.username);
-    res.json({
-      ok: true,
-      username: result.username,
-      newRecoveryPhrase: result.newRecoveryPhrase,
-      session,
-    });
+    const { user, newRecoveryPhrase } = await recoverUser(parsed.data.username, parsed.data.recoveryPhrase, parsed.data.newPin);
+    const session = createSession(user.id, user.role, user.username);
+    const refresh = await mintRefresh(user.id);
+    res.json({ ok: true, username: user.username, role: user.role, newRecoveryPhrase, session, refresh });
   } catch (e) {
     fromException(res, e, 'auth.recover_failed', 'No se pudo recuperar');
   }
@@ -184,13 +194,16 @@ app.post('/auth/logout', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+// Borrar la PROPIA cuenta (requiere PIN). El admin borra otras vía /admin/users.
 app.delete('/auth/user', async (req: Request, res: Response) => {
-  // Acción destructiva: requiere PIN para confirmar
-  const parsed = LoginSchema.safeParse(req.body);
+  const parsed = PinOnlySchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'auth.pin_required_delete', 'PIN requerido para borrar usuario');
-  const ok = await verifyPin(parsed.data.pin);
+  const me = req.ecoUser;
+  if (!me) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  const ok = await verifyPin(me.id, parsed.data.pin);
   if (!ok) return errResponse(res, 401, 'auth.pin_wrong', 'PIN incorrecto');
-  deleteUser();
+  deleteUser(me.id);
+  destroySession(req.headers[SESSION_HEADER] as string | undefined);
   res.json({ ok: true });
 });
 
@@ -233,26 +246,114 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Session check: si hay usuario registrado, requiere session válida en TODOS los endpoints
-// excepto los de /auth/* y /health (este último ya pasó arriba).
+// excepto los de /auth/* y /health (este último ya pasó arriba). Adjunta la
+// identidad derivada de la sesión a `req.ecoUser` — NUNCA se confía en un
+// userId que mande el cliente.
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (AUTH_FREE_PATHS.has(req.path)) return next();
   if (isMcpFreePath(req.method, req.path)) return next();
-  if (!hasUser()) return next(); // sin user registrado, no se requiere sesión todavía
+  if (!hasAnyUser()) return next(); // sin user registrado, no se requiere sesión todavía
   const sessionId = req.headers[SESSION_HEADER] as string | undefined;
   const session = getSession(sessionId);
   if (!session) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
+  req.ecoUser = { id: session.userId, role: session.role, username: session.username };
   next();
 });
 
-// Renueva la sesión interactiva a partir del bearer token (ya validado por el
-// middleware de arriba). No pide PIN: el bearer es la credencial permanente de
-// la máquina. El frontend lo invoca de forma transparente cuando una sesión
-// expiró por inactividad, evitando el re-login.
-app.post('/auth/session', (_req: Request, res: Response) => {
-  if (!hasUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
-  const info = statusInfo();
-  const session = createSession(info.username ?? 'user');
-  res.json({ ok: true, username: info.username, session });
+// requireAdmin — guarda para los endpoints /admin/*. Se usa DESPUÉS del
+// middleware de sesión (que ya pobló req.ecoUser).
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.ecoUser?.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
+  next();
+}
+
+// Renueva la sesión interactiva a partir del REFRESH TOKEN por usuario (no del
+// bearer compartido — eso era el agujero del modelo single-tenant). El frontend
+// lo invoca de forma transparente cuando la sesión expiró por inactividad.
+app.post('/auth/session', async (req: Request, res: Response) => {
+  if (!hasAnyUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
+  const raw = req.headers[REFRESH_HEADER] as string | undefined;
+  const userId = await verifyRefresh(raw);
+  if (!userId) return errResponse(res, 401, 'auth.refresh_invalid', 'Refresh inválido — iniciá sesión de nuevo');
+  const user = getUser(userId);
+  if (!user) return errResponse(res, 401, 'auth.refresh_invalid', 'Refresh inválido — iniciá sesión de nuevo');
+  const session = createSession(user.id, user.role, user.username);
+  res.json({ ok: true, username: user.username, role: user.role, session });
+});
+
+// Identidad del usuario de la sesión actual (para que el frontend re-derive
+// username+role al recargar con una sesión válida).
+app.get('/auth/me', (req: Request, res: Response) => {
+  if (!req.ecoUser) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  res.json({ ok: true, id: req.ecoUser.id, username: req.ecoUser.username, role: req.ecoUser.role });
+});
+
+// ─── Admin: gestión de usuarios ──────────────────────────────────────────
+const CreateMemberSchema = z.object({
+  username: z.string().min(1).max(80),
+  pin: z.string().regex(/^\d{4,8}$/),
+  role: z.enum(['admin', 'member']).optional(),
+});
+const RoleSchema = z.object({ role: z.enum(['admin', 'member']) });
+const GrantsSchema = z.object({ workspaces: z.array(z.string()).max(200) });
+const ResetPinSchema = z.object({ pin: z.string().regex(/^\d{4,8}$/) });
+const USER_ID_RE = /^[a-f0-9]{1,32}$/;
+
+app.get('/admin/users', requireAdmin, (_req: Request, res: Response) => {
+  const users = listUsers().map((s) => {
+    const u = getUser(s.id);
+    return { id: s.id, username: s.username, role: s.role, workspaceGrants: u?.workspaceGrants ?? [] };
+  });
+  res.json({ ok: true, users });
+});
+
+app.post('/admin/users', requireAdmin, async (req: Request, res: Response) => {
+  const parsed = CreateMemberSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
+  try {
+    const { user, recoveryPhrase } = await createMember(parsed.data.username, parsed.data.pin, (parsed.data.role ?? 'member') as Role);
+    res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role }, recoveryPhrase });
+  } catch (e) {
+    fromException(res, e, 'admin.create_failed', 'No se pudo crear el usuario');
+  }
+});
+
+app.delete('/admin/users/:id', requireAdmin, (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  if (req.ecoUser?.id === id) return errResponse(res, 400, 'admin.cant_delete_self', 'No podés borrar tu propia cuenta acá');
+  deleteUser(id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/users/:id/role', requireAdmin, (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  const parsed = RoleSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Rol inválido');
+  if (req.ecoUser?.id === id && parsed.data.role !== 'admin') {
+    return errResponse(res, 400, 'admin.cant_demote_self', 'No podés quitarte el rol admin a vos mismo');
+  }
+  try { setRole(id, parsed.data.role); res.json({ ok: true }); }
+  catch (e) { fromException(res, e, 'admin.role_failed', 'No se pudo cambiar el rol'); }
+});
+
+app.post('/admin/users/:id/workspaces', requireAdmin, (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  const parsed = GrantsSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Workspaces inválidos');
+  try { setWorkspaceGrants(id, parsed.data.workspaces); res.json({ ok: true }); }
+  catch (e) { fromException(res, e, 'admin.grants_failed', 'No se pudieron asignar los workspaces'); }
+});
+
+app.post('/admin/users/:id/reset-pin', requireAdmin, async (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  const parsed = ResetPinSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'PIN inválido');
+  try { const { recoveryPhrase } = await resetPin(id, parsed.data.pin); res.json({ ok: true, recoveryPhrase }); }
+  catch (e) { fromException(res, e, 'admin.reset_failed', 'No se pudo resetear el PIN'); }
 });
 
 app.get('/info', async (_req, res) => {
@@ -1733,6 +1834,14 @@ if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.sendFile(pathJoin(frontendDistEarly, 'index.html'));
   });
+}
+
+// Migración one-time del modelo single-user → colección multi-tenant. Idempotente.
+try {
+  const m = migrateLegacyUserIfNeeded();
+  if (m.migrated) console.log(`   Migración multi-tenant: usuario "${m.username}" creado como admin (${m.adminId}).`);
+} catch (e) {
+  console.error('[migrate] error migrando usuario legacy:', e);
 }
 
 const server = createServer(app);

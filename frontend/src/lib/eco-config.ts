@@ -32,3 +32,19 @@ export function writeStoredToken(value: string | null): void {
     else window.localStorage.removeItem(STORED_TOKEN_KEY);
   } catch { /* noop */ }
 }
+
+// Refresh token POR USUARIO (multi-tenant). Se guarda al login/registro y deja
+// que la sesión se renueve sin re-pedir PIN. A diferencia del bearer compartido,
+// identifica al usuario — por eso la renovación ya no usa el bearer solo.
+const REFRESH_KEY = 'eco.refresh';
+
+export function readStoredRefresh(): string | null {
+  try { return window.localStorage.getItem(REFRESH_KEY); } catch { return null; }
+}
+
+export function writeStoredRefresh(value: string | null): void {
+  try {
+    if (value) window.localStorage.setItem(REFRESH_KEY, value);
+    else window.localStorage.removeItem(REFRESH_KEY);
+  } catch { /* noop */ }
+}
