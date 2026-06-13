@@ -53,6 +53,22 @@ function ensureUsersDir() {
 function userDir(id: string): string { return join(USERS_DIR, id); }
 function userPath(id: string): string { return join(userDir(id), 'user.json'); }
 
+/** Path a un archivo de datos dentro de la carpeta del usuario (github.json,
+ *  mcp-token, etc.). Crea la carpeta si hace falta. Valida el id. */
+export function userFilePath(userId: string, name: string): string {
+  if (!/^[a-f0-9]{1,32}$/.test(userId)) throw new AppError('auth.no_user', 'userId inválido', 400);
+  const dir = userDir(userId);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return join(dir, name);
+}
+
+/** Primer admin (el más viejo por createdAt). Fallback de identidad para
+ *  procesos sin sesión todavía (p.ej. spawns de WS antes del tagging de F2). */
+export function firstAdminId(): string | null {
+  const admins = scanUsers().filter((u) => u.role === 'admin').sort((a, b) => a.createdAt - b.createdAt);
+  return admins[0]?.id ?? null;
+}
+
 function newUserId(): string { return randomBytes(8).toString('hex'); }
 
 function readUserAt(path: string): UserRecord | null {

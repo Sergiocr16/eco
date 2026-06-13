@@ -6,7 +6,7 @@ import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync, stat
 import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import { config, isAllowedWorkspace, hostAllowed } from './config.js';
+import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
 import { attachWebSocket, broadcastServerMessage, broadcastClientAction, wsClientCount } from './ws-server.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
 import { setBubblesSnapshot, getBubblesSnapshot, type BubbleSummary } from './bubbles-index.js';
@@ -38,6 +38,7 @@ import {
   type Role,
 } from './users-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
+import { runWithUser } from './request-context.js';
 import { isAppError } from './app-error.js';
 import { resolveSafePath } from './fs-paths.js';
 import { listTree } from './fs-tree.js';
@@ -251,13 +252,26 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // userId que mande el cliente.
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (AUTH_FREE_PATHS.has(req.path)) return next();
-  if (isMcpFreePath(req.method, req.path)) return next();
+  if (isMcpFreePath(req.method, req.path)) {
+    // No requiere sesión interactiva, pero si el cliente manda una válida
+    // (p.ej. el browser pidiendo /workspaces) la usamos para scoping por usuario.
+    const s = getSession(req.headers[SESSION_HEADER] as string | undefined);
+    if (s) req.ecoUser = { id: s.userId, role: s.role, username: s.username };
+    return next();
+  }
   if (!hasAnyUser()) return next(); // sin user registrado, no se requiere sesión todavía
   const sessionId = req.headers[SESSION_HEADER] as string | undefined;
   const session = getSession(sessionId);
   if (!session) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
   req.ecoUser = { id: session.userId, role: session.role, username: session.username };
   next();
+});
+
+// Contexto por-request: corre el resto de la cadena dentro de un store con el
+// userId de la sesión, para que los spawns de git (git-ops) usen la identidad
+// de GitHub del usuario correcto sin threadear el userId por todos lados.
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  runWithUser(req.ecoUser?.id, () => next());
 });
 
 // requireAdmin — guarda para los endpoints /admin/*. Se usa DESPUÉS del
@@ -356,10 +370,10 @@ app.post('/admin/users/:id/reset-pin', requireAdmin, async (req: Request, res: R
   catch (e) { fromException(res, e, 'admin.reset_failed', 'No se pudo resetear el PIN'); }
 });
 
-app.get('/info', async (_req, res) => {
+app.get('/info', async (req: Request, res: Response) => {
   const macSayVoices = isMacSayAvailable() ? await listMacSayVoices() : [];
   res.json({
-    workspaces: config.workspaces,
+    workspaces: workspacesForUser(req.ecoUser?.id),
     model: config.model,
     tts: {
       piperAvailable: isPiperAvailable(),
@@ -384,15 +398,20 @@ app.get('/skills', (req: Request, res: Response) => {
 
 const AddWorkspaceSchema = z.object({ path: z.string().min(1).max(4096) });
 
-app.get('/workspaces', (_req: Request, res: Response) => {
+app.get('/workspaces', (req: Request, res: Response) => {
+  const isAdmin = req.ecoUser?.role === 'admin';
   res.json({
-    workspaces: config.workspaces,
-    fromEnv: (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-    editable: readWorkspaceStore(),
+    // El picker usa `workspaces`: cada usuario ve solo los suyos (admin = todos).
+    workspaces: workspacesForUser(req.ecoUser?.id),
+    // La gestión del universo global (fromEnv/editable) es solo del admin.
+    fromEnv: isAdmin ? (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [],
+    editable: isAdmin ? readWorkspaceStore() : [],
   });
 });
 
+// Agregar/quitar carpetas del universo global es solo del admin.
 app.post('/workspaces', (req: Request, res: Response) => {
+  if (req.ecoUser && req.ecoUser.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
   const parsed = AddWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const result = addWorkspace(parsed.data.path);
@@ -401,6 +420,7 @@ app.post('/workspaces', (req: Request, res: Response) => {
 });
 
 app.delete('/workspaces', (req: Request, res: Response) => {
+  if (req.ecoUser && req.ecoUser.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
   const parsed = AddWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   removeWorkspace(parsed.data.path);
@@ -445,8 +465,9 @@ app.delete('/config/api-key', (_req: Request, res: Response) => {
 // El user puede configurar su PAT en Settings/Onboarding. Si está, Eco lo
 // usa con prioridad sobre `gh auth login` y `git config user.*`.
 
-app.get('/config/github', (_req: Request, res: Response) => {
-  const c = readGithubCredentials();
+app.get('/config/github', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  const c = readGithubCredentials(uid);
   if (!c) {
     return res.json({ hasCredentials: false });
   }
@@ -454,7 +475,7 @@ app.get('/config/github', (_req: Request, res: Response) => {
     hasCredentials: true,
     username: c.username,
     email: c.email,
-    maskedPat: maskedGithubPat(),
+    maskedPat: maskedGithubPat(uid),
     validatedAt: c.validatedAt,
   });
 });
@@ -466,6 +487,8 @@ const GithubConfigSchema = z.object({
   email: z.string().email().max(300).optional(),
 });
 app.post('/config/github', async (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
   const parsed = GithubConfigSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const { pat, email: emailOverride } = parsed.data;
@@ -484,7 +507,7 @@ app.post('/config/github', async (req: Request, res: Response) => {
     });
   }
   try {
-    writeGithubCredentials({
+    writeGithubCredentials(uid, {
       username: v.login,
       email: effectiveEmail,
       pat,
@@ -494,7 +517,7 @@ app.post('/config/github', async (req: Request, res: Response) => {
       ok: true,
       username: v.login,
       email: effectiveEmail,
-      maskedPat: maskedGithubPat(),
+      maskedPat: maskedGithubPat(uid),
       validatedAt: Date.now(),
     });
   } catch (e) {
@@ -502,8 +525,10 @@ app.post('/config/github', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/config/github', (_req: Request, res: Response) => {
-  deleteGithubCredentials();
+app.delete('/config/github', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  deleteGithubCredentials(uid);
   res.json({ ok: true });
 });
 
