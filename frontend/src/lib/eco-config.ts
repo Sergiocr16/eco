@@ -15,3 +15,20 @@ export function setEcoConfig(cfg: { backend: string; token: string; platform?: s
 export function ecoBackend(): string { return backend; }
 export function ecoToken(): string { return token; }
 export function ecoPlatform(): string { return platform; }
+
+// Token persistido para modo web servido por el backend (server mode vía
+// Tailscale): el browser remoto no tiene VITE_ECO_TOKEN ni IPC de Electron,
+// así que el user lo pega una vez en la pantalla "Conectar al servidor" y
+// queda en localStorage. main.tsx lo usa como fallback en el bootstrap.
+const STORED_TOKEN_KEY = 'eco.token';
+
+export function readStoredToken(): string | null {
+  try { return window.localStorage.getItem(STORED_TOKEN_KEY); } catch { return null; }
+}
+
+export function writeStoredToken(value: string | null): void {
+  try {
+    if (value) window.localStorage.setItem(STORED_TOKEN_KEY, value);
+    else window.localStorage.removeItem(STORED_TOKEN_KEY);
+  } catch { /* noop */ }
+}

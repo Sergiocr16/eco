@@ -167,6 +167,16 @@ export async function createBubble(input: CreateBubbleInput): Promise<CreateBubb
   return (await call('/bubble/create', { method: 'POST', body })) as CreateBubbleResult;
 }
 
+export type SendToBubbleResult = {
+  ok: true;
+  bubbleId: string;
+  workspace: string | null;
+};
+
+export async function sendToBubble(bubbleId: string, text: string): Promise<SendToBubbleResult> {
+  return (await call('/bubble/send', { method: 'POST', body: { bubbleId, text } })) as SendToBubbleResult;
+}
+
 export type BubbleSummary = {
   id: string;
   title: string;

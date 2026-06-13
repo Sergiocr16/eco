@@ -1,5 +1,5 @@
 // Definición + handlers de las tools MCP que el server expone a Claude Code.
-// En v1: create_bubble (con initial_prompt opcional) + list_bubbles.
+// create_bubble (con initial_prompt opcional) + list_bubbles + send_to_bubble.
 //
 // Cada handler retorna `{ content: [{ type: 'text', text: ... }] }` que es
 // el formato standard de respuesta de tool MCP. El texto es lo que el modelo
@@ -9,6 +9,7 @@ import { z } from 'zod';
 import {
   createBubble,
   listBubbles,
+  sendToBubble,
   type EcoApiError,
 } from './client.js';
 import { resolveWorkspace, getStartupCwd } from './workspace.js';
@@ -62,6 +63,15 @@ function friendlyError(e: unknown): string {
     if (e.code === 'workspace.not_allowed') {
       return `Workspace no está en la whitelist de Eco. Agregalo desde Ajustes → Carpetas.`;
     }
+    if (e.code === 'bubble.not_found') {
+      return 'No existe una bubble con ese id. Usá list_bubbles para ver las activas.';
+    }
+    if (e.code === 'bubble.archived') {
+      return 'Esa bubble está archivada. Desarchivala en Eco antes de mandarle input.';
+    }
+    if (e.code === 'eco.not_synced') {
+      return 'Eco no sincronizó bubbles todavía. Abrí la app al menos una vez.';
+    }
     return `Error de Eco (${e.code}): ${e.message}`;
   }
   return `Error: ${e instanceof Error ? e.message : String(e)}`;
@@ -105,6 +115,35 @@ export async function handleCreateBubble(args: CreateBubbleArgs) {
         `  workspace: ${r.workspace ?? '(sin workspace)'}${sourceNote}\n` +
         `  worktree: ${r.worktreePath ?? '(sin worktree)'}` +
         promptNote,
+    );
+  } catch (e) {
+    return textResult(friendlyError(e));
+  }
+}
+
+export const SendToBubbleSchema = z.object({
+  bubble_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .describe('Id de la bubble destino — sale de list_bubbles o del resultado de create_bubble.'),
+  text: z
+    .string()
+    .min(1)
+    .max(16_000)
+    .describe('Prompt a enviar al agente Claude de esa bubble. Se tipea en su terminal como si lo escribiera el usuario.'),
+});
+
+export type SendToBubbleArgs = z.infer<typeof SendToBubbleSchema>;
+
+export async function handleSendToBubble(args: SendToBubbleArgs) {
+  try {
+    const r = await sendToBubble(args.bubble_id, args.text);
+    return textResult(
+      `Prompt enviado a la bubble ${r.bubbleId}` +
+        (r.workspace ? ` (workspace: ${r.workspace})` : '') +
+        `.\nEl agente lo procesa en su terminal — el envío es fire-and-forget, ` +
+        `no espera la respuesta del agente.`,
     );
   } catch (e) {
     return textResult(friendlyError(e));

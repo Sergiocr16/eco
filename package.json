@@ -15,6 +15,7 @@
     "dev:electron": "wait-on http://127.0.0.1:5173 && ECO_PORT=7050 npm --workspace electron run start",
     "dev:app": "npm-run-all --parallel dev:backend dev:frontend dev:electron",
     "web": "npm-run-all --parallel dev:backend dev:frontend",
+    "serve:web": "node scripts/eco-server.mjs",
     "dmg": "npm run dist:mac",
     "typecheck": "npm-run-all --parallel typecheck:*",
     "typecheck:backend": "npm --workspace backend run typecheck",

@@ -7,6 +7,8 @@ import {
 import type { AuthState, useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { useT } from '@/hooks/useI18n';
+import { apiFetch } from '@/lib/api';
+import { writeStoredToken } from '@/lib/eco-config';
 
 type AuthHook = ReturnType<typeof useAuth>;
 
@@ -47,7 +49,9 @@ export function AuthScreen({ authState, authActions }: Props) {
         padding: '24px 4px',
       }}>
         <div style={{ position: 'relative' }}>
-          {recoveryToShow ? (
+          {authState.status === 'needs_token' ? (
+            <ConnectView/>
+          ) : recoveryToShow ? (
             <ShowRecoveryView
               phrase={recoveryToShow}
               onConfirm={() => {
@@ -498,6 +502,94 @@ function LoginView({
         }}>
         {tr('auth.forgot_pin')}
       </button>
+    </>
+  );
+}
+
+// ─────────────────────────── Connect (server mode remoto)
+// El browser remoto (servido por el backend vía Tailscale) no tiene el bearer
+// token por ningún canal — esta vista lo pide una vez, lo valida contra
+// /auth/status y lo persiste en localStorage. Reload obligatorio: App.tsx
+// captura el token a nivel módulo durante el bootstrap.
+
+function ConnectView() {
+  const t = useTokens();
+  const tr = useT();
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    const value = token.trim();
+    if (!value) return;
+    setError(null);
+    setBusy(true);
+    try {
+      // POST /auth/session es el único endpoint detrás del bearer que no pide
+      // sesión — valida el token de verdad (/auth/status responde sin auth).
+      // Ignoramos la sesión que devuelve: el PIN sigue siendo el siguiente paso.
+      const r = await apiFetch('/auth/session', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${value}` },
+      });
+      if (r.status === 401) {
+        setError(tr('auth.connect.err.invalid'));
+        setBusy(false);
+        return;
+      }
+      // Cualquier otra respuesta (incluso 400 auth.no_user en un server sin
+      // usuario) significa que el bearer pasó el middleware → token válido.
+      writeStoredToken(value);
+      window.location.reload();
+    } catch {
+      setError(tr('auth.connect.err.network'));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        marginBottom: 30,
+      }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: '50%',
+          background: t.accentFaint, color: t.accent,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          marginBottom: 26,
+          border: `2px solid ${t.accent}`,
+          boxShadow: `0 6px 24px color-mix(in oklch, ${t.accent} 18%, transparent)`,
+        }}>
+          <IconKey size={28}/>
+        </div>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
+          {tr('auth.connect.title')}
+        </h1>
+        <p style={{ margin: '6px 0 0', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
+          {tr('auth.connect.sub')}
+        </p>
+      </div>
+
+      <FieldGroup>
+        <FormInput
+          icon={IconKey}
+          value={token}
+          onChange={setToken}
+          placeholder={tr('auth.connect.placeholder')}
+          type="password"
+          autoFocus
+          onEnter={submit}
+        />
+      </FieldGroup>
+
+      {error && <FormError>{error}</FormError>}
+
+      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !token.trim()} style={{ width: '100%', justifyContent: 'center', marginTop: 14 }}>
+        {busy ? tr('auth.connect.btn_loading') : tr('auth.connect.btn')}
+      </Btn>
+
+      <FooterNote>{tr('auth.connect.note')}</FooterNote>
     </>
   );
 }

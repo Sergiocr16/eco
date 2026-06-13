@@ -17,31 +17,57 @@ export type UseWorkspacesResult = {
   remove: (path: string) => Promise<void>;
 };
 
-export function useWorkspaces(): UseWorkspacesResult {
-  const [list, setList] = useState<WorkspaceList>({ workspaces: [], fromEnv: [], editable: [] });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Store a nivel módulo + subscribers (mismo patrón que useCategories): una
+// sola fuente de verdad para TODA la app. Sin esto cada useWorkspaces() era
+// una instancia aislada que fetcheaba al montar — agregar una carpeta en
+// Settings no se reflejaba en el picker de "crear agente" hasta reiniciar.
+let sharedList: WorkspaceList = { workspaces: [], fromEnv: [], editable: [] };
+let sharedLoading = false;
+let sharedError: string | null = null;
+// True recién después de un fetch EXITOSO. Mientras sea false, cada consumer
+// nuevo que monta reintenta — cubre el caso del primer fetch 401 pre-login
+// (el hook de App.tsx monta antes de autenticar; el retry llega cuando el
+// Dashboard/pickers montan ya logueados).
+let fetchedOk = false;
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await apiFetch('/workspaces');
-      if (!r.ok) throw new Error(await r.text());
-      const data = await r.json();
-      setList({
-        workspaces: Array.isArray(data.workspaces) ? data.workspaces : [],
-        fromEnv: Array.isArray(data.fromEnv) ? data.fromEnv : [],
-        editable: Array.isArray(data.editable) ? data.editable : [],
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error');
-    } finally {
-      setLoading(false);
-    }
+const subs = new Set<() => void>();
+function notify() { for (const fn of subs) { try { fn(); } catch { /* noop */ } } }
+
+async function refreshShared(): Promise<void> {
+  sharedLoading = true;
+  sharedError = null;
+  notify();
+  try {
+    const r = await apiFetch('/workspaces');
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    sharedList = {
+      workspaces: Array.isArray(data.workspaces) ? data.workspaces : [],
+      fromEnv: Array.isArray(data.fromEnv) ? data.fromEnv : [],
+      editable: Array.isArray(data.editable) ? data.editable : [],
+    };
+    fetchedOk = true;
+  } catch (e) {
+    sharedError = e instanceof Error ? e.message : 'Error';
+  } finally {
+    sharedLoading = false;
+    notify();
+  }
+}
+
+export function useWorkspaces(): UseWorkspacesResult {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const fn = () => setTick((n) => n + 1);
+    subs.add(fn);
+    // Refetch al montar solo si todavía no hubo un fetch exitoso y no hay
+    // uno en vuelo — los demás consumers reusan el cache compartido.
+    if (!fetchedOk && !sharedLoading) void refreshShared();
+    return () => { subs.delete(fn); };
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  const refresh = useCallback(() => refreshShared(), []);
 
   const add = useCallback(async (path: string): Promise<{ ok: true } | { ok: false; error: string }> => {
     try {
@@ -52,12 +78,12 @@ export function useWorkspaces(): UseWorkspacesResult {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
-      await refresh();
+      await refreshShared();
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'Error' };
     }
-  }, [refresh]);
+  }, []);
 
   const remove = useCallback(async (path: string) => {
     try {
@@ -66,9 +92,9 @@ export function useWorkspaces(): UseWorkspacesResult {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path }),
       });
-      await refresh();
+      await refreshShared();
     } catch { /* noop */ }
-  }, [refresh]);
+  }, []);
 
-  return { list, loading, error, refresh, add, remove };
+  return { list: sharedList, loading: sharedLoading, error: sharedError, refresh, add, remove };
 }

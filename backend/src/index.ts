@@ -6,7 +6,7 @@ import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync, stat
 import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import { config, isAllowedWorkspace } from './config.js';
+import { config, isAllowedWorkspace, hostAllowed } from './config.js';
 import { attachWebSocket, broadcastServerMessage, broadcastClientAction, wsClientCount } from './ws-server.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
 import { setBubblesSnapshot, getBubblesSnapshot, type BubbleSummary } from './bubbles-index.js';
@@ -91,8 +91,7 @@ app.use(express.json({ limit: '128kb' }));
 app.use((req: Request, res: Response, next: NextFunction) => {
   const host = req.headers.host;
   if (!host) return errResponse(res, 403, 'http.host_required', 'Host header requerido');
-  const hostname = host.split(':')[0]?.toLowerCase();
-  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '[::1]') {
+  if (!hostAllowed(host)) {
     return errResponse(res, 403, 'http.host_forbidden', 'Host no permitido');
   }
   next();
@@ -117,6 +116,7 @@ const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login'
 // compartidos como /workspaces.
 const MCP_FREE: Array<{ method: string; path: string }> = [
   { method: 'POST', path: '/bubble/create' },
+  { method: 'POST', path: '/bubble/send' },
   { method: 'GET', path: '/bubbles' },
   { method: 'GET', path: '/workspaces' },
 ];
@@ -201,7 +201,20 @@ app.delete('/auth/user', async (req: Request, res: Response) => {
 const frontendDistEarly = process.env.ECO_FRONTEND_DIST;
 if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
   console.log(`[static] sirviendo frontend desde ${frontendDistEarly}`);
-  app.use(express.static(frontendDistEarly, { maxAge: '1h', index: 'index.html' }));
+  app.use(express.static(frontendDistEarly, {
+    index: 'index.html',
+    // Assets con hash de contenido (App-XXXX.js, index-XXXX.css) son inmutables
+    // → caché agresiva. Pero `index.html` NO debe cachearse: es quien apunta al
+    // bundle actual, y si el browser lo retiene, un rebuild no llega nunca al
+    // cliente (quedaba pegado en un bundle viejo → bugs ya arreglados persistían).
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
 }
 
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -1455,6 +1468,47 @@ app.post('/bubble/create', (req: Request, res: Response) => {
   });
 });
 
+// Inyecta un prompt al PTY de una bubble EXISTENTE (tool MCP send_to_bubble).
+// Mismo camino server-side que /bubble/create con initialPrompt: si el PTY
+// ya está vivo escribe casi inmediato; si no, lo spawnea y espera el cold
+// start de claude CLI. El workspace sale del snapshot sincronizado por el
+// frontend — el caller no puede inyectar a un workspace arbitrario.
+const BubbleSendSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  text: z.string().min(1).max(16_000),
+});
+app.post('/bubble/send', (req: Request, res: Response) => {
+  const parsed = BubbleSendSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+  }
+  const { bubbleId, text } = parsed.data;
+  if (!isValidBubbleId(bubbleId)) {
+    return errResponse(res, 400, 'bubble.invalid_id', 'bubbleId inválido');
+  }
+  const snap = getBubblesSnapshot();
+  if (snap.lastSync === 0) {
+    return errResponse(res, 409, 'eco.not_synced', 'Eco no sincronizó bubbles todavía — abrí la app al menos una vez');
+  }
+  const bubble = snap.bubbles.find((b) => b.id === bubbleId);
+  if (!bubble) {
+    return errResponse(res, 404, 'bubble.not_found', 'No existe una bubble con ese id');
+  }
+  if (bubble.archived) {
+    return errResponse(res, 409, 'bubble.archived', 'La bubble está archivada — desarchivala antes de mandarle input');
+  }
+  if (bubble.workspace && !isAllowedWorkspace(bubble.workspace)) {
+    return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
+  }
+  try {
+    injectPromptToBubble(bubbleId, bubble.workspace, text);
+  } catch (e) {
+    console.error('[bubble/send] injectPromptToBubble failed:', e);
+    return errResponse(res, 500, 'bubble.send_failed', 'No se pudo inyectar el prompt al PTY');
+  }
+  res.json({ ok: true, bubbleId, workspace: bubble.workspace || null });
+});
+
 // Lista de bubbles activas según el último snapshot que sincronizó el
 // frontend (POST /bubbles/sync). Si el frontend no se conectó nunca desde
 // que arrancó el backend, devuelve lista vacía y lastSync=0 para que el
@@ -1676,6 +1730,7 @@ if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
   app.get('*', (req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith('/ws')) return next();
     // Ya tiene auth pasada acá, así que es safe servir el shell.
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.sendFile(pathJoin(frontendDistEarly, 'index.html'));
   });
 }

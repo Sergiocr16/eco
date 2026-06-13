@@ -5,7 +5,8 @@
 //   claude mcp add eco -- node /path/to/mcp-server/dist/index.js
 //
 // Las tools quedan disponibles en cualquier sesión de Claude Code como
-// `mcp__eco__create_bubble` y `mcp__eco__list_bubbles`.
+// `mcp__eco__create_bubble`, `mcp__eco__list_bubbles` y
+// `mcp__eco__send_to_bubble`.
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -18,8 +19,10 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 import {
   CreateBubbleSchema,
   ListBubblesSchema,
+  SendToBubbleSchema,
   handleCreateBubble,
   handleListBubbles,
+  handleSendToBubble,
 } from './tools.js';
 
 const server = new Server(
@@ -47,6 +50,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'backend arrancó.',
       inputSchema: zodToJsonSchema(ListBubblesSchema),
     },
+    {
+      name: 'send_to_bubble',
+      description:
+        'Envía un prompt al agente Claude de una bubble EXISTENTE en Eco. ' +
+        'El texto se tipea en el terminal de la bubble como si lo escribiera ' +
+        'el usuario; si el terminal no estaba corriendo, se levanta solo. ' +
+        'Fire-and-forget: no devuelve la respuesta del agente. ' +
+        'Usá list_bubbles para conocer el bubble_id.',
+      inputSchema: zodToJsonSchema(SendToBubbleSchema),
+    },
   ],
 }));
 
@@ -69,6 +82,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   if (name === 'list_bubbles') {
     return handleListBubbles();
+  }
+  if (name === 'send_to_bubble') {
+    const parsed = SendToBubbleSchema.safeParse(rawArgs ?? {});
+    if (!parsed.success) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Argumentos inválidos: ${parsed.error.errors.map((e) => e.message).join('; ')}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    return handleSendToBubble(parsed.data);
   }
   return {
     content: [{ type: 'text', text: `Tool desconocida: ${name}` }],

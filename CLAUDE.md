@@ -103,6 +103,7 @@ If you spot any of these in live code, it's residue to clean.
 | `npm run web` | `127.0.0.1:7050` | `127.0.0.1:5173` | `localhost:5173` (real browser) |
 | `npm run dev:app` | `127.0.0.1:7050` | `127.0.0.1:5173` | Electron loadURL → Vite |
 | Packaged `.dmg` | `127.0.0.1:7100` | served by backend | same origin as backend |
+| `npm run serve:web` (server mode) | `127.0.0.1:7200` | served by backend | `https://<machine>.ts.net` via Tailscale Serve (or local `127.0.0.1:7200`) |
 
 > **WHY 7050 in dev**: macOS Control Center owns `:7000` (AirPlay Receiver). To free 7000, *Settings → General → AirDrop & Handoff → AirPlay Receiver = off*.
 > **WHY 7100 in .app**: coexists with `npm run dev` running in parallel without conflict.
@@ -155,6 +156,20 @@ VITE_ECO_TOKEN=<optional, copy of ~/.eco/token>
 | `ECO_PTY_AUTOCLAUDE` | `1` | Auto-launch `claude` in each new PTY. |
 | `CLAUDE_CLI_PATH` | `~/.local/bin/claude` | Claude binary path. |
 | `ECO_DEVTOOLS` | (empty) | `1` to auto-open Electron DevTools. |
+| `ECO_FRONTEND_DIST` | (empty) | Path to `frontend/dist` — when set and existing, the backend serves the static frontend + SPA fallback (packaged .app and server mode). |
+| `ECO_EXTRA_HOSTS` | (empty) | CSV of extra hostnames accepted by the host check (HTTP + both WS). Server mode sets the `.ts.net` name here. |
+
+### Server mode (remote web via Tailscale)
+
+`npm run serve:web` (script `scripts/eco-server.mjs`) runs Eco as a web server for the fase-0 thin-client experiment: backend on `127.0.0.1:7200` serving the built frontend, exposed to the tailnet as `https://<machine>.ts.net` via `tailscale serve` (HTTPS = secure context → mic/Web Speech work in remote Chrome). The script derives the hostname from `tailscale status --json`, builds missing dists (`--rebuild` to force), sets `ECO_ALLOWED_ORIGINS`/`ECO_EXTRA_HOSTS`, and prints the share URL. The backend keeps binding 127.0.0.1 — Tailscale Serve is the only ingress.
+
+Remote auth: the browser shows **ConnectView** ("Conectar al servidor") and asks for the access token (`~/.eco/token`, share it over a secure channel) → stored in localStorage `eco.token` → reload → normal PIN login.
+
+> Dev-server previews are NOT exposed to the tailnet: their URLs stay `http://127.0.0.1:<port>`, so a remote BrowserPanel can't load them (they point at the client's own localhost). Exposing dev ports via `tailscale serve` was tried and reverted — it tangled with the port-assignment lifecycle. The agent's chat, terminal, git and files all work remotely; only the in-app dev-server preview is local-only.
+
+Accepted caveats (fase 0, NOT multi-tenant): single shared identity (token + PIN del dueño); **the token alone already grants API access** (`POST /auth/session` mints a session from the bearer without PIN — the PIN gate is UI-level for remote clients); bubbles live in each browser's localStorage (remote client has its OWN list); `/bubbles/sync` is last-writer-wins across clients; BrowserPanel falls back to iframe (CSP/XFO sites won't load); `tailscale serve reset` clears stale mappings; never use Funnel (tailnet-only).
+
+> The .app (7100), server mode (7200) and dev (7050) can now run in parallel: the dev-sessions state file is namespaced by backend port (`~/.eco/dev-sessions.<port>.json`), so each backend re-adopts only its own spawned processes and never clobbers the others (this used to leave orphan Spring Boot/gulp processes holding ports). The legacy `dev-sessions.json` is intentionally NOT migrated (a still-running old .app may hold it live); it dies out once every backend runs the namespaced build.
 
 ---
 
@@ -313,7 +328,7 @@ Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources
 | `~/.eco/user.json` | `{username, pinHash, recoveryHash, photo?}` argon2id |
 | `~/.eco/api-key` | Optional Anthropic API key |
 | `~/.eco/github.json` | GitHub PAT + cached username/email |
-| `~/.eco/dev-sessions.json` | `[{bubbleId, role, pgid, port, command, ...}]` |
+| `~/.eco/dev-sessions.<port>.json` | `[{bubbleId, role, pgid, port, command, ...}]` — namespaced by backend port (7050/7100/7200) so parallel backends don't clobber each other. |
 | `~/.eco/obsidian.json` | `{vaultPath, enabled}` |
 | `~/.eco/backup.json` | `{enabled, folder?, retention, lastBackup?, lastError?}` — config del auto-backup diario |
 | `~/.eco/worktrees/<bubbleId>` | Per-agent git worktree |
@@ -324,6 +339,7 @@ All keys use prefix `eco.`. Maintain this prefix when adding new keys:
 
 ```
 eco.session                              ← session token (X-Eco-Session)
+eco.token                                ← bearer token pasted in ConnectView (server mode remote clients only)
 eco.onboarded                            ← '1' once the wizard finished
 eco.voice.autostart                      ← '0' to disable auto-listen
 eco.tts.enabled / voice / rate / volume
@@ -374,11 +390,10 @@ These were tuned in 2026-05-12/13 after observing renderer growth to 1–2 GB wi
 | `bubble.messages` in localStorage | **100** msgs | `useBubbles.ts:persist` | Quota ~5–10 MB. |
 | `toolCall.output` in localStorage | **10 KB** + marker | `useBubbles.ts:thinMessageForStorage` | A single Read tool can be megabytes. |
 | `serverLogs` (BrowserPanel) | **200 KB** | `BrowserPanel.tsx:SERVER_LOGS_MAX` | Noisy frameworks generate MBs. |
-| `slot.logs` (ServerPanel) | **200 KB** | `ServerPanel.tsx:LOGS_MAX` | Same. |
 | `devLog` (DevTools console) | **200** entries | `BrowserPanel.tsx:DEVLOG_MAX` | Grows infinite otherwise. |
-| xterm `scrollback` (Server) | **3 000** lines | `ServerPanel.tsx` | 10 000 was overkill × N instances. |
+| xterm `scrollback` (Server) | **10 000** lines | `ServerPanel.tsx:TerminalLogs` | xterm is the ONLY log buffer (no React string copy — the old `slot.logs` cap is gone). Raised from 1 500 (2026-06): big stack traces pushed the original error out before the user could read it. Memory only while the Server tab is mounted. |
 | xterm `scrollback` (Shell) | **2 000** lines | `RealTerminal.tsx` | |
-| `s.output` ring buffer | **64 KB** (`BUFFER_MAX`) | `dev-server.ts` | Capped + **freed on stop** (~line 640). |
+| `s.output` ring buffer | **1 MB** (`BUFFER_MAX`) | `dev-server.ts` | Replayed via `GET /dev/logs` on panel remount; **freed on stop**. NOT persisted to disk (`persistSessions` skips `output`). Raised from 64 KB (2026-06) so large errors survive a tab switch. |
 | PTY ring buffer | **128 KB** (`RING_BUFFER_MAX`) | `pty-server.ts` | Replay on reconnect. |
 | `globalPromptTimestamps` | **1000** | `ws-server.ts` | Defensive cap. |
 | `RAW_MAX_SIZE` (file/raw) | **5 MB** | `index.ts` | Inline image preview / raw read. |
@@ -1297,6 +1312,13 @@ cualquier terminal o sesión.
   el cwd con el que arrancó y busca un workspace permitido que lo contenga.
 - `list_bubbles()` — Lista las bubbles activas (id, título, workspace,
   status). Requiere que el frontend haya sincronizado al menos una vez.
+- `send_to_bubble({ bubble_id, text })` — Envía un prompt al agente Claude
+  de una bubble existente: el backend lo tipea en el PTY de la bubble vía
+  `injectPromptToBubble` (mismo camino que `initial_prompt`; si el PTY no
+  estaba corriendo lo spawnea). Fire-and-forget — no devuelve la respuesta
+  del agente. El workspace sale del snapshot sincronizado, no del caller.
+  Rechaza bubbles archivadas (`bubble.archived`) e ids desconocidos
+  (`bubble.not_found`).
 
 ### Setup desde Eco (recomendado)
 
@@ -1347,6 +1369,8 @@ Reiniciá Claude Code. Las tools quedan disponibles como
   WS conectado al `/ws`); devuelve `409 eco.no_clients` si no. Si vino
   `initialPrompt` y `workspace`, llama a `injectPromptToBubble` en lugar de
   broadcastear un `inject_prompt` por WS (el frontend no participa).
+- `POST /bubble/send` — Inyecta un prompt al PTY de una bubble existente
+  (tool `send_to_bubble`). Valida el id contra el snapshot de `/bubbles`.
 - `GET /bubbles` — Lee snapshot que el frontend sincroniza periódicamente.
 - `POST /bubbles/sync` — Solo lo llama el frontend (debounce 800ms) para
   mantener el snapshot actualizado.

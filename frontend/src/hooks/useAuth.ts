@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { ecoToken, writeStoredToken } from '@/lib/eco-config';
 import { translateBackendError } from '@/lib/backend-errors';
 import { writeProfileUsername } from './useProfile';
 
 const SESSION_KEY = 'eco.session';
 
-export type AuthStatus = 'loading' | 'no_user' | 'needs_login' | 'authenticated';
+export type AuthStatus = 'loading' | 'needs_token' | 'no_user' | 'needs_login' | 'authenticated';
 
 export type AuthState = {
   status: AuthStatus;
@@ -39,6 +40,15 @@ export function useAuth() {
   const [state, setState] = useState<AuthState>({ status: 'loading', username: null, error: null });
 
   const refresh = useCallback(async () => {
+    // Web sin bearer token: NADA puede autenticar (todo HTTP y ambos WS lo
+    // exigen) — server mode remoto donde el user todavía no pegó el token, o
+    // dev web sin VITE_ECO_TOKEN. Pedimos el token antes de tocar la red.
+    // (/auth/status no sirve para detectarlo: está registrado antes del
+    // middleware de bearer y responde igual.)
+    if (!window.electronAPI && !ecoToken()) {
+      setState({ status: 'needs_token', username: null, error: null });
+      return;
+    }
     try {
       const r = await apiFetch('/auth/status');
       const data = await r.json();
@@ -54,6 +64,14 @@ export function useAuth() {
       // Verificá la session pidiendo /info que sí requiere session
       const r2 = await apiFetch('/info');
       if (r2.status === 401) {
+        // Bearer inválido (token del server regenerado, p.ej.) ≠ sesión
+        // expirada. En web, descartamos el token guardado y re-pedimos.
+        const d2 = await r2.json().catch(() => null);
+        if (d2?.error === 'http.unauthorized' && !window.electronAPI) {
+          writeStoredToken(null);
+          setState({ status: 'needs_token', username: null, error: null });
+          return;
+        }
         writeSession(null);
         setState({ status: 'needs_login', username: data.username, error: null });
         return;

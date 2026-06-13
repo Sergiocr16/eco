@@ -1249,7 +1249,7 @@ function LogsPane({
 //
 // xterm es el ÚNICO dueño del buffer de logs: los chunks del stream WS se
 // escriben directo a la terminal, sin pasar por React state. Su scrollback
-// (1500 líneas) es el único cap. Antes el buffer vivía en un string de
+// (10k líneas) es el único cap. Antes el buffer vivía en un string de
 // React capado a 60 KB y cada chunk (~12/seg) disparaba un re-render +
 // alocaba 60 KB; peor: al llegar al cap, el delta calculado por longitud
 // quedaba en 0 y la terminal se congelaba.
@@ -1298,7 +1298,10 @@ function TerminalLogs({
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 11.5,
       lineHeight: 1.3,
-      scrollback: 1500,
+      // 10k líneas: suficiente para scrollear el origen de un error aunque el
+      // framework haya seguido logueando encima. Cuesta memoria solo mientras
+      // el tab Server está montado.
+      scrollback: 10_000,
       allowTransparency: false,
       theme: {
         background: TERMINAL_BG,
@@ -1366,7 +1369,7 @@ function TerminalLogs({
       resetSize();
     };
 
-    // Snapshot inicial: GET al ring buffer del backend (64 KB) al montar.
+    // Snapshot inicial: GET al ring buffer del backend (1 MB) al montar.
     let cancelled = false;
     (async () => {
       try {

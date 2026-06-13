@@ -42,7 +42,8 @@ function renewSession(): Promise<string | null> {
 async function isSessionExpired(res: Response): Promise<boolean> {
   try {
     const data = await res.clone().json();
-    return data?.code === 'auth.session_invalid';
+    // errResponse serializa el código en `error` (no `code`).
+    return data?.error === 'auth.session_invalid' || data?.code === 'auth.session_invalid';
   } catch {
     return false;
   }

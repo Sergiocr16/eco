@@ -25,6 +25,7 @@ import { homedir } from 'node:os';
 import { config } from './config.js';
 import { buildSafeEnv } from './security.js';
 import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
+import { serveOn, serveOff } from './tailscale.js';
 
 export type DevStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 
@@ -63,8 +64,36 @@ type Session = {
   skill?: string;
 };
 
-const BUFFER_MAX = 64 * 1024;  // 64KB por server
+// 1 MB por server — historial que se repone al remontar el panel (GET
+// /dev/logs). 64 KB se quedaba corto: un stack trace grande empujaba el error
+// original fuera del buffer antes de leerlo. No se persiste a disco.
+const BUFFER_MAX = 1024 * 1024;
 const sessions = new Map<string, Session>();
+
+// URL con la que el CLIENTE alcanza el dev server. Local: http://127.0.0.1.
+// En modo server (ECO_PUBLIC_HOST): https://<host>:<port> — `tailscale serve`
+// proxea ese puerto a 127.0.0.1:<port> dando HTTPS, así el BrowserPanel (que
+// corre en HTTPS) lo embebe sin mixed-content. Función PURA.
+function urlFor(port: number): string {
+  return config.publicHost
+    ? `https://${config.publicHost}:${port}`
+    : `http://127.0.0.1:${port}`;
+}
+
+// Mantiene el `tailscale serve` alineado con el puerto del server. ADITIVO:
+// lee s.port y lo expone. Solo modo server. Sin conflicto PORQUE el dev server
+// bindea 127.0.0.1 (ver HOST/server.address) y tailscale escucha en 100.x.
+// Async/no bloqueante (tailscale.ts).
+const servedPorts = new Map<string, number>();
+function syncServe(s: Session): void {
+  if (!config.publicHost) return;
+  const key = sessionKey(s.bubbleId, s.role);
+  const want = (s.status === 'starting' || s.status === 'running') && s.port > 0 ? s.port : null;
+  const current = servedPorts.get(key) ?? null;
+  if (current === want) return;
+  if (current !== null) { serveOff(current); servedPorts.delete(key); }
+  if (want !== null) { serveOn(want); servedPorts.set(key, want); }
+}
 
 function sessionKey(bubbleId: string, role: ServerRole = 'main'): string {
   return `${bubbleId}|${role}`;
@@ -133,7 +162,8 @@ function restoreSessions(): void {
       const s: Session = {
         bubbleId: p.bubbleId, role: p.role,
         workspace: p.workspace, command: p.command,
-        port: p.port, url: p.url,
+        // URL re-derivada según el modo actual (con o sin publicHost).
+        port: p.port, url: p.port > 0 ? urlFor(p.port) : p.url,
         injectedPort: p.port,  // re-adoptado: ya está corriendo, no re-verificamos
         proc: null,            // no podemos re-attachar stdout
         pgid: p.pgid,
@@ -145,6 +175,7 @@ function restoreSessions(): void {
         retries: 0,
       };
       sessions.set(sessionKey(s.bubbleId, s.role), s);
+      syncServe(s);
     }
   } catch { /* noop */ }
 }
@@ -153,6 +184,7 @@ function restoreSessions(): void {
 restoreSessions();
 
 function broadcastStatus(s: Session) {
+  syncServe(s);
   try {
     broadcastServerMessage({
       type: 'dev_status',
@@ -371,7 +403,7 @@ function maybeUpdatePortFromLog(s: Session, text: string): { realPort: number; c
     // El proyecto bindeó un puerto distinto al actual de la session.
     // Sincronizamos s.port para que el BrowserPanel apunte bien.
     s.port = realPort;
-    s.url = `http://127.0.0.1:${realPort}`;
+    s.url = urlFor(realPort);
     markAssigned(realPort);
     return { realPort, changed: true };
   }
@@ -529,7 +561,7 @@ async function retryWithNewPort(s: Session) {
     const newPort = await findFreePort();
     s.port = newPort;
     s.injectedPort = newPort;
-    s.url = `http://127.0.0.1:${newPort}`;
+    s.url = urlFor(newPort);
     appendOutput(s, `[eco] Reintentando con puerto ${newPort}: ${s.command}\n`);
   } catch {
     appendOutput(s, '[eco] No se pudo asignar nuevo puerto.\n');
@@ -628,9 +660,24 @@ function spawnSession(s: Session) {
     GULP_PORT: String(s.port),
     WEBPACK_DEV_SERVER_PORT: String(s.port),
     BROWSER: 'none',                    // CRA: que NO abra Chrome
+    // Siempre 127.0.0.1: el dev server bindea localhost y `tailscale serve`
+    // lo expone a la tailnet (100.x) sin chocar. Si bindeara 0.0.0.0 tomaría
+    // 100.x:port y tailscale no podría usar ese puerto.
     HOST: '127.0.0.1',
-    // Java/Spring (también respeta -Dserver.port en CLI):
-    JAVA_TOOL_OPTIONS: `-Dserver.port=${s.port}`,
+    // Java/Spring (también respeta -Dserver.port en CLI).
+    // `spring.devtools.restart.enabled=false`: DevTools hace un restart
+    // in-process (`restartedMain`) que re-bindea el puerto antes de soltar el
+    // viejo → "Port X is already in use" FALSO, que nuestro PORT_CONFLICT_RE
+    // confundía con un conflicto real, mataba el proc (SIGTERM, exit 143) y
+    // reintentaba en loop (rompiendo además la conexión MySQL/Liquibase). Bajo
+    // Eco el live-reload de DevTools no aporta (el restart es manual desde el
+    // panel). NO es asignación de puertos — es prevenir el conflicto falso.
+    // En modo server: `server.address=127.0.0.1` (bindea localhost, tailscale
+    // serve lo expone sin chocar) + `forward-headers-strategy=framework` (Spring
+    // honra X-Forwarded-Proto del proxy → no hace downgrade https→http en sus
+    // redirects, que causaba ERR_TOO_MANY_REDIRECTS).
+    JAVA_TOOL_OPTIONS: `-Dserver.port=${s.port} -Dspring.devtools.restart.enabled=false`
+      + (config.publicHost ? ' -Dserver.address=127.0.0.1 -Dserver.forward-headers-strategy=framework' : ''),
     // Si soy frontend en dual: dónde está el backend.
     ...(linkedPort > 0 ? {
       API_PORT: String(linkedPort),
@@ -638,6 +685,13 @@ function spawnSession(s: Session) {
       BACKEND_URL: `http://127.0.0.1:${linkedPort}`,
       VITE_API_PORT: String(linkedPort),
       NEXT_PUBLIC_API_PORT: String(linkedPort),
+    } : {}),
+    // Modo server: el preview llega con Host: <publicHost> y Vite 6+/CRA lo
+    // rechazan por default. Best-effort — otros frameworks pueden necesitar
+    // allowedHosts en su config.
+    ...(config.publicHost ? {
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: config.publicHost,
+      DANGEROUSLY_DISABLE_HOST_CHECK: 'true',
     } : {}),
     // Forzar colores ANSI aunque stdout no sea TTY — el viewer del frontend
     // los renderiza con xterm.js para que se vean como en la terminal real.
@@ -771,7 +825,7 @@ export async function startDevServer(
 
   const s: Session = existing ?? {
     bubbleId, role, workspace, command: cmd, port,
-    url: `http://127.0.0.1:${port}`,
+    url: urlFor(port),
     injectedPort: port,
     proc: null, pgid: null, status: 'idle', output: '',
     startedAt: null, exitCode: null, exitedAt: null,
@@ -781,7 +835,7 @@ export async function startDevServer(
   s.command = cmd;
   s.port = port;
   s.injectedPort = port;  // el puerto que vamos a inyectar por env
-  s.url = `http://127.0.0.1:${port}`;
+  s.url = urlFor(port);
   // Reseteamos el contador de retries en cada start manual del usuario.
   s.retries = 0;
   sessions.set(key, s);
@@ -887,6 +941,8 @@ export function forgetSession(bubbleId: string): number {
     // Liberar también el batch buffer pendiente (si quedó algún timer en flight,
     // su callback será no-op porque la session ya no existe).
     logBuffers.delete(key);
+    const served = servedPorts.get(key);
+    if (served !== undefined) { serveOff(served); servedPorts.delete(key); }
   }
   if (removed > 0) persistSessions();
   return removed;
@@ -1118,7 +1174,8 @@ export async function runSkillAction(
       if (action === 'up' || action === 'restart') {
         if (picked.url) {
           s!.status = 'running';
-          s!.url = picked.url;
+          // El output del skill reporta localhost; al cliente le sirve la URL pública.
+          s!.url = picked.port ? urlFor(picked.port) : picked.url;
           s!.port = picked.port;
           s!.startedAt = Date.now();
         } else {
@@ -1132,7 +1189,7 @@ export async function runSkillAction(
       } else if (action === 'status') {
         if (picked.url) {
           s!.status = 'running';
-          s!.url = picked.url;
+          s!.url = picked.port ? urlFor(picked.port) : picked.url;
           s!.port = picked.port;
         }
       }

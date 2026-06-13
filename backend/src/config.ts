@@ -53,6 +53,12 @@ function safeRealpath(target: string): string | null {
   }
 }
 
+function parseExtraHosts(): string[] {
+  const raw = process.env.ECO_EXTRA_HOSTS;
+  if (!raw) return [];
+  return raw.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+}
+
 function parseSkillSources(): Array<'user' | 'project' | 'local'> {
   const raw = process.env.ECO_SKILL_SOURCES ?? 'user,project';
   const allowed = new Set(['user', 'project', 'local']);
@@ -74,6 +80,15 @@ export const config = {
     return readApiKey() ?? undefined;
   },
   allowedOrigins: parseAllowedOrigins(),
+  // Hostnames extra aceptados en el host check (HTTP + WS), además de
+  // localhost. Para el modo server detrás de Tailscale Serve, que reenvía
+  // el Host original (<maquina>.ts.net).
+  extraHosts: parseExtraHosts(),
+  // Hostname público con el que los clientes remotos alcanzan esta máquina
+  // (ej. mimaquina.ts.net). Cuando está seteado, las URLs de dev servers se
+  // arman con él y los puertos se exponen vía `tailscale serve`. Solo afecta
+  // la URL/exposición — NUNCA la asignación de puertos.
+  publicHost: process.env.ECO_PUBLIC_HOST?.trim().toLowerCase() || undefined,
   maxPromptsPerMinute: Number(process.env.ECO_RATE_LIMIT ?? 10),
   maxPromptBytes: Number(process.env.ECO_MAX_PROMPT_BYTES ?? 50_000),
   maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 12),
@@ -81,6 +96,16 @@ export const config = {
   wsBackpressureBytes: Number(process.env.ECO_WS_BACKPRESSURE ?? 8 * 1024 * 1024),
   skillSources: parseSkillSources(),
 };
+
+// Host check único para HTTP y ambos WS. Localhost siempre; hostnames extra
+// (modo server vía Tailscale) solo si se configuraron por ECO_EXTRA_HOSTS.
+export function hostAllowed(host: string | undefined): boolean {
+  if (!host) return false;
+  const hostname = host.split(':')[0]?.toLowerCase();
+  if (!hostname) return false;
+  if (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]') return true;
+  return config.extraHosts.includes(hostname);
+}
 
 export function isAllowedWorkspace(target: string | undefined): boolean {
   if (!target || !isAbsolute(target)) return false;

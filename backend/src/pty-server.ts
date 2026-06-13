@@ -3,17 +3,11 @@ import type { Server } from 'node:http';
 import { spawn as ptySpawn, type IPty } from 'node-pty';
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
-import { config, isAllowedWorkspace } from './config.js';
+import { config, isAllowedWorkspace, hostAllowed } from './config.js';
 import { extractBearer, tokensMatch } from './auth.js';
 import { buildSafeEnv } from './security.js';
 import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
 import { ensureWorktree } from './worktree-manager.js';
-
-function hostAllowed(host: string | undefined): boolean {
-  if (!host) return false;
-  const hostname = host.split(':')[0]?.toLowerCase();
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
-}
 
 function defaultShell(): string {
   return process.env.SHELL || (existsSync('/bin/zsh') ? '/bin/zsh' : '/bin/bash');

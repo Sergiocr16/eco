@@ -4,6 +4,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, type CSSProperties } from 'react';
 import { canEmbedArbitrarySites } from '@/lib/platform';
+import { useT } from '@/hooks/useI18n';
 
 // Log que va al stdout del main process via IPC (visible si abrís la .app
 // desde terminal). Útil para diagnosticar fallos de carga del webview.
@@ -65,6 +66,7 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
     { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess, partition, visible = true },
     handleRef,
   ) {
+    const tr = useT();
     const useWebview = canEmbedArbitrarySites();
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -233,6 +235,46 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
             display: visible ? (style?.display ?? 'block') : 'none',
           }}
         />
+      );
+    }
+
+    // Mixed content: si la app está en HTTPS (modo server vía Tailscale) y el
+    // dev server es HTTP, el navegador bloquea el iframe. No hay forma de
+    // embeberlo — ofrecemos abrirlo en pestaña nueva (top-level no es mixed).
+    const isMixed = typeof window !== 'undefined'
+      && window.location.protocol === 'https:'
+      && /^http:\/\//i.test(src);
+    if (isMixed) {
+      return (
+        <div
+          style={{
+            width: '100%', height: '100%',
+            ...style,
+            display: visible ? (style?.display ?? 'flex') : 'none',
+            flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 16, padding: 24, textAlign: 'center',
+            background: '#0c0e14', color: '#e5e7eb',
+            fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+          }}
+        >
+          <div style={{ fontSize: 13.5, lineHeight: 1.55, maxWidth: 380, color: '#9aa3b2' }}>
+            {tr('browser.mixed.msg')}
+          </div>
+          <button
+            type="button"
+            onClick={() => { try { window.open(src, '_blank', 'noopener'); } catch { /* noop */ } }}
+            style={{
+              padding: '9px 18px', borderRadius: 10, border: '1px solid #2b3140',
+              background: '#1a1d28', color: '#e5e7eb', fontSize: 13, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {tr('browser.mixed.btn')}
+          </button>
+          <div style={{ fontSize: 11.5, color: '#6b7280', fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all', maxWidth: 380 }}>
+            {src}
+          </div>
+        </div>
       );
     }
 

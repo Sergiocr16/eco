@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { setEcoConfig } from './lib/eco-config';
+import { setEcoConfig, readStoredToken } from './lib/eco-config';
 import './index.css';
 
 async function bootstrap() {
@@ -16,7 +16,9 @@ async function bootstrap() {
   } else {
     setEcoConfig({
       backend: (import.meta.env.VITE_ECO_BACKEND as string) ?? '',
-      token: (import.meta.env.VITE_ECO_TOKEN as string) ?? '',
+      // Fallback al token pegado por el user (server mode remoto) cuando no
+      // hay env de Vite — ver ConnectView en AuthScreen.
+      token: (import.meta.env.VITE_ECO_TOKEN as string) || readStoredToken() || '',
     });
   }
 

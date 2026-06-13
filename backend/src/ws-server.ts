@@ -3,18 +3,12 @@ import type { IncomingMessage, Server } from 'node:http';
 import { runAgent } from './agent.js';
 import { ClientMessageSchema, type ServerMessage } from './protocol.js';
 import type { ClientAction } from './agent-tools.js';
-import { config } from './config.js';
+import { config, hostAllowed } from './config.js';
 import { extractBearer, tokensMatch } from './auth.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import { ensureWorktree } from './worktree-manager.js';
 
 const globalPromptTimestamps: number[] = [];
-
-function hostAllowed(host: string | undefined): boolean {
-  if (!host) return false;
-  const hostname = host.split(':')[0]?.toLowerCase();
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
-}
 
 let broadcastFn: ((msg: ServerMessage) => void) | null = null;
 let wssRef: WebSocketServer | null = null;
