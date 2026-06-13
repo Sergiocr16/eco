@@ -20,7 +20,7 @@ export type MetaAction =
   | { kind: 'toggle_voice'; on: boolean }
   | { kind: 'set_theme'; mode: 'dark' | 'light' | 'system' }
   | { kind: 'scroll'; dir: 'up' | 'down' | 'top' | 'bottom' }
-  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files' | 'notes' }
+  | { kind: 'switch_tab'; tab: 'chat' | 'terminal' | 'git' | 'browser' | 'server' | 'files' | 'notes' }
   | { kind: 'switch_git_subtab'; sub: 'history' | 'changes' | 'prs' }
   | { kind: 'confirm'; answer: 'yes' | 'no' }
   | { kind: 'repeat_last' }
@@ -137,8 +137,6 @@ const ALIASES: Record<string, string> = {
   // Tabs en detail (requieren ver "ver"/"abrí" o palabra directa cuando se está en detail)
   'terminal': 'tab_terminal', 'terminales': 'tab_terminal',
   'consola': 'tab_terminal', 'shell': 'tab_terminal',
-  'plan': 'tab_plan', 'planes': 'tab_plan',
-  'tarea': 'tab_plan', 'tareas': 'tab_plan', 'pasos': 'tab_plan',
   'chat': 'tab_chat', 'chats': 'tab_chat',
   'conversacion': 'tab_chat', 'conversaciones': 'tab_chat',
   'mensajes': 'tab_chat',
@@ -368,7 +366,6 @@ export function parseMetaCommand(
     const aliased = ALIASES[firstArg];
     if (aliased === 'tab_terminal') return { kind: 'switch_tab', tab: 'terminal' };
     if (aliased === 'tab_browser')  return { kind: 'switch_tab', tab: 'browser' };
-    if (aliased === 'tab_plan')     return { kind: 'switch_tab', tab: 'plan' };
     if (aliased === 'tab_chat')     return { kind: 'switch_tab', tab: 'chat' };
     if (aliased === 'tab_git')      return { kind: 'switch_tab', tab: 'git' };
     if (aliased === 'archivos_ctx') return { kind: 'switch_tab', tab: 'files' };
@@ -437,7 +434,6 @@ export function parseMetaCommand(
     case 'scroll_up':   return { kind: 'scroll', dir: argClean === 'todo' ? 'top'    : 'up'   };
     case 'tab_terminal': return { kind: 'switch_tab', tab: 'terminal' };
     case 'tab_git':      return { kind: 'switch_tab', tab: 'git' };
-    case 'tab_plan':     return { kind: 'switch_tab', tab: 'plan' };
     case 'tab_chat':     return { kind: 'switch_tab', tab: 'chat' };
     case 'tab_browser':  return { kind: 'switch_tab', tab: 'browser' };
     case 'tab_files':    return { kind: 'switch_tab', tab: 'files' };

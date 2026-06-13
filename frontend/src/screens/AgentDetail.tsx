@@ -27,7 +27,7 @@ import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore, IconResume,
   IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
-  IconCheck, IconX, IconBolt, IconGithub, IconEdit,
+  IconCheck, IconX, IconBolt, IconGithub, IconEdit, IconTrash,
   IconAgent, IconFolder, IconCopy, IconArchive, IconNewWindow,
   type IconProps,
 } from '@/design/icons';
@@ -203,6 +203,15 @@ type Props = {
   onMicToggle: () => void;
   listening: boolean;
   voiceInterim: string;
+  // Dictado a la terminal: el botón de la cabecera enciende el mic en modo
+  // dictado; lo dictado se acumula en `dictationText` y se muestra como burbuja
+  // arriba. "Enviar a terminal" lo escribe en el PTY principal sin Enter.
+  dictationActive?: boolean;
+  dictationText?: string;
+  onStartDictation?: () => void;
+  onSendDictation?: () => void;
+  onCancelDictation?: () => void;
+  onClearDictation?: () => void;
   // Presente solo en Electron: abre este bubble en una ventana aparte.
   onOpenInNewWindow?: () => void;
   // True cuando este AgentDetail ES la ventana aparte: oculta el mic y el
@@ -210,9 +219,9 @@ type Props = {
   solo?: boolean;
 };
 
-type Tab = 'chat' | 'terminal' | 'git' | 'plan' | 'browser' | 'server' | 'files' | 'notes';
+type Tab = 'chat' | 'terminal' | 'git' | 'browser' | 'server' | 'files' | 'notes';
 
-const ALL_TABS: ReadonlyArray<Tab> = ['chat', 'terminal', 'files', 'notes', 'browser', 'server', 'git', 'plan'];
+const ALL_TABS: ReadonlyArray<Tab> = ['chat', 'terminal', 'files', 'notes', 'browser', 'server', 'git'];
 const TAB_ORDER_KEY = 'eco.detail.tab.order';
 
 function loadTabOrder(): Tab[] {
@@ -244,12 +253,71 @@ const TAB_DEFS: Record<Tab, { labelKey: string; icon: (p: IconProps) => JSX.Elem
   browser:  { labelKey: 'detail.tab.browser',  icon: IconGlobe },
   server:   { labelKey: 'detail.tab.server',   icon: IconCpu },
   git:      { labelKey: 'Git',                 icon: IconGithub },
-  plan:     { labelKey: 'detail.tab.plan',     icon: IconLayers },
 };
+
+// Burbuja de dictado a la terminal. Aparece arriba (encima del contenido de
+// pestañas, visible en cualquier tab) mientras el dictado está activo. Muestra
+// lo dictado en vivo y permite enviarlo al PTY principal sin Enter.
+function DictationBar({
+  text, onSend, onClear, onCancel,
+}: {
+  text: string;
+  onSend: () => void;
+  onClear: () => void;
+  onCancel: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const hasText = text.trim().length > 0;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 12,
+      padding: '12px 24px',
+      borderBottom: `1px solid ${t.glassBorder}`,
+      background: `color-mix(in oklch, ${t.accent} 8%, transparent)`,
+    }}>
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        flexShrink: 0, marginTop: 4,
+        color: t.accent, fontSize: 11.5, fontWeight: 600,
+        fontFamily: t.fontSans, whiteSpace: 'nowrap',
+      }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%', background: t.accent,
+          animation: 'eco-pulse 1.2s ease-in-out infinite',
+        }}/>
+        {tr('detail.btn.dictating')}
+      </span>
+      <div style={{
+        flex: 1, minWidth: 0,
+        fontSize: 14, lineHeight: 1.5,
+        color: hasText ? t.text1 : t.text3,
+        fontFamily: t.fontSans,
+        maxHeight: 120, overflowY: 'auto',
+        whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+      }}>
+        {hasText ? text : tr('detail.dictation.placeholder')}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <Btn icon={IconSend} kind="primary" size="sm" onClick={onSend} disabled={!hasText}>
+          {tr('detail.dictation.send')}
+        </Btn>
+        <Btn icon={IconTrash} kind="ghost" size="sm" onClick={onClear} disabled={!hasText}
+          title={tr('detail.dictation.clear')}/>
+        <Btn icon={IconX} kind="secondary" size="sm" onClick={onCancel}>
+          {tr('detail.dictation.cancel')}
+        </Btn>
+      </div>
+    </div>
+  );
+}
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
-  onToggleCategory, onMicToggle, listening, voiceInterim, onOpenInNewWindow, solo = false,
+  onToggleCategory, onMicToggle, listening, voiceInterim,
+  dictationActive = false, dictationText = '',
+  onStartDictation, onSendDictation, onCancelDictation, onClearDictation,
+  onOpenInNewWindow, solo = false,
 }: Props) {
   const t = useTokens();
   const tr = useT();
@@ -278,7 +346,7 @@ export function AgentDetail({
       // 'files' volvió a ser un tab válido (explorador de archivos). Las
       // entradas viejas con ese valor pasan directo al nuevo tab.
       if (saved === 'chat' || saved === 'terminal' || saved === 'git'
-        || saved === 'plan' || saved === 'browser' || saved === 'server'
+        || saved === 'browser' || saved === 'server'
         || saved === 'files' || saved === 'notes') {
         return saved as Tab;
       }
@@ -438,13 +506,13 @@ export function AgentDetail({
         <div style={{ display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
           {!solo && (
             <Btn
-              icon={listening ? IconStop : IconMic}
-              kind={listening ? 'primary' : 'secondary'}
+              icon={dictationActive ? IconStop : IconMic}
+              kind={dictationActive ? 'primary' : 'secondary'}
               size="sm"
-              onClick={onMicToggle}
-              title={listening ? tr('detail.btn.listen_off_title') : tr('detail.btn.listen_on_title')}
+              onClick={() => { if (dictationActive) onCancelDictation?.(); else onStartDictation?.(); }}
+              title={dictationActive ? tr('detail.btn.dictating_title') : tr('detail.btn.dictate_title')}
             >
-              {listening ? tr('detail.btn.listening') : tr('detail.btn.listen')}
+              {dictationActive ? tr('detail.btn.dictating') : tr('detail.btn.dictate')}
             </Btn>
           )}
           <IconBtn icon={IconMore} size={32} onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}/>
@@ -464,6 +532,15 @@ export function AgentDetail({
           )}
         </div>
       </div>
+
+      {!solo && dictationActive && (
+        <DictationBar
+          text={dictationText}
+          onSend={() => onSendDictation?.()}
+          onClear={() => onClearDictation?.()}
+          onCancel={() => onCancelDictation?.()}
+        />
+      )}
 
       <div style={{
         position: 'relative',
@@ -535,7 +612,6 @@ export function AgentDetail({
               onRename={onRename}
             />
           )}
-          {tab === 'plan' && <PlanPanel bubble={bubble}/>}
           <KeepAliveFiles visible={tab === 'files'} bubbleId={bubble.id} workspace={bubble.workspace}/>
           {tab === 'notes' && <NotesPanel bubble={bubble}/>}
           {/* Navegador queda MONTADO siempre una vez abierto, solo se oculta cuando
@@ -1771,93 +1847,6 @@ function SkillsCard({
           {err}
         </div>
       )}
-    </div>
-  );
-}
-
-function PlanPanel({ bubble }: { bubble: Bubble }) {
-  const t = useTokens();
-  const tr = useT();
-  // Plan derivado de toolCalls: cada distinct tool = un paso
-  const steps: { state: 'done' | 'running' | 'pending' | 'error'; text: string; detail?: string }[] = [];
-  for (const m of bubble.messages) {
-    for (const tc of m.toolCalls ?? []) {
-      const stateMap: Record<ToolCall['status'], 'done' | 'running' | 'pending' | 'error'> = {
-        success: 'done',
-        running: 'running',
-        error: 'error',
-        denied: 'error',
-      };
-      steps.push({
-        state: stateMap[tc.status],
-        text: `${tc.name} ${summarizeInput(tc.input)}`,
-        detail: tc.output ? tc.output.slice(0, 80) : undefined,
-      });
-    }
-  }
-  if (steps.length === 0) {
-    return (
-      <div style={{
-        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 32, color: t.text2, fontSize: 13,
-      }}>
-        {tr('detail.plan.empty')}
-      </div>
-    );
-  }
-  return (
-    <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0, letterSpacing: -0.2 }}>
-          {tr('detail.plan.title')}
-        </h3>
-        <p style={{ margin: '4px 0 0', fontSize: 12.5, color: t.text2 }}>
-          {tr('detail.plan.summary', { n: steps.length, done: steps.filter((s) => s.state === 'done').length })}
-        </p>
-      </div>
-      <div style={{ position: 'relative' }}>
-        {steps.map((s, i) => (
-          <div key={i} style={{ display: 'flex', gap: 14, paddingBottom: 18 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: '50%',
-                background: s.state === 'done' ? t.ok
-                  : s.state === 'running' ? t.accent
-                    : s.state === 'error' ? t.err : t.bg3,
-                color: s.state === 'pending' ? t.text2 : t.accentOn,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: s.state === 'pending' ? `1px solid ${t.glassBorder}` : 'none',
-                boxShadow: s.state === 'running' ? `0 0 16px ${t.accentGlow}` : 'none',
-              }}>
-                {s.state === 'done' ? <IconCheck size={12} strokeWidth={3}/> :
-                  s.state === 'error' ? <IconX size={12} strokeWidth={3}/> :
-                    s.state === 'running' ? <span style={{
-                      width: 8, height: 8, borderRadius: '50%', background: t.accentOn,
-                      animation: 'eco-typing 1.4s infinite',
-                    }}/> :
-                      <span style={{ fontSize: 11, fontFamily: t.fontMono, color: t.text2 }}>{i + 1}</span>}
-              </div>
-              {i < steps.length - 1 && (
-                <div style={{
-                  flex: 1, width: 1, minHeight: 24,
-                  background: s.state === 'done' ? t.ok : t.glassBorder,
-                  marginTop: 4,
-                }}/>
-              )}
-            </div>
-            <div style={{ flex: 1, paddingTop: 1, minWidth: 0 }}>
-              <div style={{
-                fontFamily: t.fontMono, fontSize: 12.5, fontWeight: 500,
-                color: s.state === 'pending' ? t.text2 : t.text0,
-                wordBreak: 'break-all',
-              }}>{s.text}</div>
-              {s.detail && (
-                <div style={{ marginTop: 3, fontSize: 11.5, color: t.text2 }}>{s.detail}</div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

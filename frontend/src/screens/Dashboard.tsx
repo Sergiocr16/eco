@@ -45,14 +45,15 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles: rawBubbles, activeBubbleId, voiceState, onMicToggle, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive } = props;
+  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive } = props;
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
   const { username } = useProfile();
-  // onSend / interimText / voiceError siguen llegando por contrato pero ya
-  // no se usan en el Dashboard tras remover la CommandBar — el input vive
-  // dentro de cada conversación.
+  // onSend / interimText / voiceError / voiceState / onMicToggle siguen
+  // llegando por contrato pero ya no se usan en el Dashboard: la CommandBar y
+  // el VoiceOrb ("Eco escuchando") se removieron — el dictado vive dentro de
+  // cada conversación.
   // Vista del Dashboard persistida en localStorage — al volver al dashboard
   // se mantiene la última vista elegida (grid / kanban / graph).
   type DashView = 'grid' | 'graph' | 'kanban';
@@ -109,8 +110,6 @@ export function Dashboard(props: Props) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 280, damping: 28 }}
           style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '12px 8px 32px', flexWrap: 'wrap' }}>
-          <VoiceOrb state={voiceState} onClick={onMicToggle}/>
-
           <div style={{ flex: '1 1 280px', maxWidth: 380, minWidth: 240 }}>
             <div style={{
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
@@ -554,56 +553,6 @@ function SystemStatusCard() {
   );
 }
 
-
-function VoiceOrb({ state, onClick }: { state: VoiceState; onClick: () => void }) {
-  const t = useTokens();
-  const tr = useT();
-  const labels: Record<VoiceState, { label: string; sub: string }> = {
-    idle: { label: tr('voice.idle.label'), sub: tr('voice.idle.sub') },
-    listening: { label: tr('voice.listening.label'), sub: '' },
-    thinking: { label: tr('voice.thinking.label'), sub: '' },
-    executing: { label: tr('voice.executing.label'), sub: '' },
-    speaking: { label: tr('voice.speaking.label'), sub: '' },
-  };
-  const meta = labels[state] ?? labels.idle;
-  const active = state !== 'idle';
-  const bars = [0.35, 0.7, 1, 0.7, 0.35];
-
-  return (
-    <div onClick={onClick} style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22,
-      cursor: 'pointer', userSelect: 'none',
-    }}>
-      <div style={{
-        height: 64, display: 'flex', alignItems: 'center', gap: 6,
-        opacity: active ? 1 : 0.55,
-        transition: 'opacity 300ms ease',
-      }}>
-        {bars.map((h, i) => (
-          <span key={i} style={{
-            width: 3, borderRadius: 2,
-            background: active ? t.accent : t.text2,
-            height: active ? `${h * 100}%` : '20%',
-            animation: state === 'listening'
-              ? `eco-wave-bar ${0.9 + (i % 3) * 0.15}s ease-in-out infinite`
-              : 'none',
-            animationDelay: `${i * 0.08}s`,
-            transition: 'height 300ms ease, background 200ms ease',
-          }}/>
-        ))}
-      </div>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{
-          fontFamily: t.fontSans, fontSize: 15, fontWeight: 500,
-          color: t.text0, letterSpacing: -0.2,
-        }}>{meta.label}</div>
-        {meta.sub && (
-          <div style={{ marginTop: 4, color: t.text2, fontSize: 12.5 }}>{meta.sub}</div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function AgentBubble({
   bubble, workspaces, onClick, onRename, onRemove, onChangeWorkspace, onToggleCategory,

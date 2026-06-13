@@ -72,6 +72,11 @@ if recognizer.supportsOnDeviceRecognition {
     request.requiresOnDeviceRecognition = true
 }
 request.shouldReportPartialResults = false
+// Puntuación y capitalización automáticas — gran salto de calidad para
+// dictado en lenguaje natural (frases para Claude). macOS 13+.
+if #available(macOS 13.0, *) {
+    request.addsPunctuation = true
+}
 
 var transcript = ""
 var errOut: Error? = nil

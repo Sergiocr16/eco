@@ -17,6 +17,7 @@ import { useWorkspaces } from './hooks/useWorkspaces';
 import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
 import { emit as ecoEmit } from './lib/eco-bus';
 import { getVoiceTarget, writeVoiceToPty } from './lib/voice-router';
+import { writeToBubblePty } from './lib/pty-bridge';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
@@ -166,6 +167,16 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const { lang } = useI18n();
   const [wakeActive, setWakeActive] = useState(false);
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Dictado a la terminal: el botón de la cabecera de la burbuja enciende el
+  // mic en modo dictado. Cada frase final se acumula en `dictationBuffer` (en
+  // vez de rutearse a chat/pty/meta) y se muestra como burbuja arriba. Con
+  // "Enviar a terminal" se escribe en el PTY principal sin Enter.
+  const [dictationActive, setDictationActive] = useState(false);
+  const [dictationBuffer, setDictationBuffer] = useState('');
+  const dictationActiveRef = useRef(false);
+  const dictationBubbleIdRef = useRef<string | null>(null);
+  useEffect(() => { dictationActiveRef.current = dictationActive; }, [dictationActive]);
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
   // IDs de bubbles "visitadas" — mantenemos un AgentDetail montado por cada
@@ -268,6 +279,14 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   });
 
   function handleIncomingVoiceText(text: string) {
+    // Modo dictado a la terminal: todo lo dictado se acumula en el buffer y se
+    // muestra como burbuja arriba. No se rutea a chat/pty/meta.
+    if (dictationActiveRef.current) {
+      const clean = text.trim();
+      if (clean) setDictationBuffer((prev) => (prev ? `${prev} ${clean}` : clean));
+      return;
+    }
+
     const { isMeta, rest } = stripWakePrefix(text);
     const inBubble = screen === 'detail' && !!detailBubbleId;
 
@@ -522,6 +541,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     language: 'es-419',
     onPhrase: (text: string) => handleIncomingVoiceText(text),
     onWakeDetected: () => activateWake(),
+    isLongForm: () => dictationActiveRef.current,
   });
 
   // ─── Auto-lock por inactividad ──────────────────────────────────────────
@@ -689,18 +709,30 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     setScreen('dashboard');
   }
 
-  // Abre el bubble en una ventana aparte (otro monitor). El bubble "se mueve":
-  // esta ventana lo desmonta para soltar PTY/webview/dev servers y la ventana
-  // nueva queda como único cliente. Al cerrar esa ventana, se re-adopta acá.
+  // Abre el bubble en una ventana/pestaña aparte mostrando SOLO esa
+  // conversación (?solo=<id> → SoloBubbleShell).
+  //  - Electron: ventana nativa aparte. El bubble "se mueve": esta ventana lo
+  //    desmonta para soltar PTY/webview/dev servers y la nueva queda como único
+  //    cliente. Al cerrarla, se re-adopta acá.
+  //  - Web: abre una pestaña nueva del navegador en el mismo origen con
+  //    ?solo=<id>. No desmontamos el bubble acá — la pestaña nueva es un cliente
+  //    adicional (mismo localStorage + sesión); PTY/WS soportan multi-cliente.
   function handleOpenInNewWindow(id: string) {
     const api = window.electronAPI;
-    if (!api?.openBubbleWindow) return;
-    void api.openBubbleWindow(id).then((r) => {
-      if (!r?.ok) return;
-      setDetachedIds((prev) => new Set(prev).add(id));
-      setVisitedBubbleIds((prev) => prev.filter((x) => x !== id));
-      if (detailBubbleId === id) { setDetailBubbleId(null); setScreen('dashboard'); }
-    }).catch(() => { /* noop */ });
+    if (api?.openBubbleWindow) {
+      void api.openBubbleWindow(id).then((r) => {
+        if (!r?.ok) return;
+        setDetachedIds((prev) => new Set(prev).add(id));
+        setVisitedBubbleIds((prev) => prev.filter((x) => x !== id));
+        if (detailBubbleId === id) { setDetailBubbleId(null); setScreen('dashboard'); }
+      }).catch(() => { /* noop */ });
+      return;
+    }
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('solo', id);
+      window.open(url.toString(), '_blank', 'noopener');
+    } catch { /* noop */ }
   }
 
   function bubbleIsBusy(id: string): boolean {
@@ -753,6 +785,37 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       // dashboard. Hasta que el user vuelva a apretar Play.
       try { window.localStorage.setItem('eco.voice.autostart', '0'); } catch { /* noop */ }
     }
+  }
+
+  function startTerminalDictation(bubbleId: string) {
+    dictationBubbleIdRef.current = bubbleId;
+    setDictationBuffer('');
+    dictationActiveRef.current = true;
+    setDictationActive(true);
+    if (voice.state !== 'listening') voice.start();
+  }
+
+  function cancelTerminalDictation() {
+    dictationActiveRef.current = false;
+    setDictationActive(false);
+    setDictationBuffer('');
+    dictationBubbleIdRef.current = null;
+    // En la burbuja el mic queda apagado por defecto — lo dejamos como estaba.
+    voice.stop();
+  }
+
+  function sendDictationToTerminal() {
+    const bubbleId = dictationBubbleIdRef.current;
+    const text = dictationBuffer.trim();
+    const token = ecoToken();
+    if (bubbleId && text && token) {
+      const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
+      ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId });
+      // Sin '\n': se escribe en el PTY principal (Claude) y el user revisa
+      // antes de ejecutar.
+      void writeToBubblePty({ bubbleId, workspace: bubble?.workspace ?? '', text, token });
+    }
+    cancelTerminalDictation();
   }
 
   function handleDashboardSend(text: string) {
@@ -906,9 +969,15 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                         onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(b.id, ws)}
                         onToggleCategory={(catId) => bubbles.toggleBubbleCategory(b.id, catId)}
                         onMicToggle={handleMicToggle}
-                        listening={voice.state === 'listening'}
-                        voiceInterim={voice.interimText}
-                        onOpenInNewWindow={window.electronAPI?.openBubbleWindow ? () => handleOpenInNewWindow(b.id) : undefined}
+                        listening={dictationActive ? false : voice.state === 'listening'}
+                        voiceInterim={dictationActive ? '' : voice.interimText}
+                        dictationActive={dictationActive && dictationBubbleIdRef.current === b.id}
+                        dictationText={dictationActive && dictationBubbleIdRef.current === b.id ? (dictationBuffer + (voice.interimText ? ` ${voice.interimText}` : '')).trim() : ''}
+                        onStartDictation={() => startTerminalDictation(b.id)}
+                        onSendDictation={sendDictationToTerminal}
+                        onCancelDictation={cancelTerminalDictation}
+                        onClearDictation={() => setDictationBuffer('')}
+                        onOpenInNewWindow={() => handleOpenInNewWindow(b.id)}
                       />
                     </div>
                   );

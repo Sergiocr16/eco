@@ -76,11 +76,13 @@ type Options = {
   onPhrase: (text: string) => void;
   /** Se llama cuando el interim detecta el wake prefix "Eco/Hey Eco/..." — feedback temprano antes del final. */
   onWakeDetected?: () => void;
+  /** Modo dictado: tolera pausas más largas y frases más largas para no cortar a mitad de oración. */
+  isLongForm?: () => boolean;
 };
 
 const MIN_PHRASE_CHARS = 2;
 
-export function useVoice({ language = 'es-419', onPhrase, onWakeDetected }: Options): VoiceHookResult {
+export function useVoice({ language = 'es-419', onPhrase, onWakeDetected, isLongForm }: Options): VoiceHookResult {
   const [state, setState] = useState<VoiceState>('off');
   const [interimText, setInterimText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +93,8 @@ export function useVoice({ language = 'es-419', onPhrase, onWakeDetected }: Opti
   useEffect(() => { onPhraseRef.current = onPhrase; }, [onPhrase]);
   const onWakeDetectedRef = useRef(onWakeDetected);
   useEffect(() => { onWakeDetectedRef.current = onWakeDetected; }, [onWakeDetected]);
+  const isLongFormRef = useRef(isLongForm);
+  useEffect(() => { isLongFormRef.current = isLongForm; }, [isLongForm]);
   // Para no disparar el wake repetido durante el mismo interim
   const wakeFiredRef = useRef(false);
 
@@ -268,9 +272,14 @@ export function useVoice({ language = 'es-419', onPhrase, onWakeDetected }: Opti
     const TARGET_RATE = 16000;
     const FRAME_SAMPLES = 800;                    // 50ms a 16kHz
     const PRE_ROLL_SAMPLES = TARGET_RATE * 0.3;   // 300ms
-    const SILENCE_FRAMES_END = 14;                // 14 * 50ms = 700ms
     const MIN_RECORDING_SAMPLES = TARGET_RATE * 0.4; // descartar <400ms (ruido suelto)
-    const MAX_RECORDING_SAMPLES = TARGET_RATE * 8;   // tope de seguridad 8s
+    // Cierre de frase y tope de duración dependen del modo. En dictado
+    // (long-form) toleramos pausas naturales (~1.1s) y oraciones largas (15s)
+    // para no cortar a mitad. En wake-word mantenemos baja latencia (700ms / 8s).
+    const SILENCE_FRAMES_DEFAULT = 14;            // 14 * 50ms = 700ms
+    const SILENCE_FRAMES_LONG = 22;               // ~1.1s
+    const MAX_SAMPLES_DEFAULT = TARGET_RATE * 8;  // 8s
+    const MAX_SAMPLES_LONG = TARGET_RATE * 15;    // 15s
     const NOISE_FLOOR_INIT = 0.005;
     const ABSOLUTE_MIN_THRESHOLD = 0.01;
     const TRIGGER_MULT = 3;
@@ -333,17 +342,20 @@ export function useVoice({ language = 'es-419', onPhrase, onWakeDetected }: Opti
       }
 
       // recording
+      const longForm = (() => { try { return isLongFormRef.current?.() ?? false; } catch { return false; } })();
+      const silenceEnd = longForm ? SILENCE_FRAMES_LONG : SILENCE_FRAMES_DEFAULT;
+      const maxSamples = longForm ? MAX_SAMPLES_LONG : MAX_SAMPLES_DEFAULT;
       recBuf.push(...frame);
       if (rms < threshold) silenceFrames++;
       else silenceFrames = 0;
 
-      const tooLong = recBuf.length >= MAX_RECORDING_SAMPLES;
-      const endOfPhrase = silenceFrames >= SILENCE_FRAMES_END;
+      const tooLong = recBuf.length >= maxSamples;
+      const endOfPhrase = silenceFrames >= silenceEnd;
 
       if (endOfPhrase || tooLong) {
-        // Cortamos los últimos 700ms de silencio (no aportan al STT).
+        // Cortamos el silencio final (no aporta al STT).
         const trimmed = endOfPhrase
-          ? recBuf.slice(0, Math.max(MIN_RECORDING_SAMPLES, recBuf.length - SILENCE_FRAMES_END * FRAME_SAMPLES))
+          ? recBuf.slice(0, Math.max(MIN_RECORDING_SAMPLES, recBuf.length - silenceEnd * FRAME_SAMPLES))
           : recBuf;
         if (trimmed.length >= MIN_RECORDING_SAMPLES) {
           const chunk = new Float32Array(trimmed);
