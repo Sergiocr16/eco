@@ -18,7 +18,7 @@ import {
   existsSync, readFileSync, writeFileSync, chmodSync,
   mkdirSync, unlinkSync, statSync, readdirSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
@@ -39,7 +39,32 @@ const BACKED_UP_FILES = [
 ] as const;
 
 export type EcoFileName = typeof BACKED_UP_FILES[number];
-export type EcoSnapshot = Partial<Record<EcoFileName, string>>;
+// Multi-tenant: además de los archivos planos, capturamos la colección de
+// usuarios (~/.eco/users/index.json + ~/.eco/users/<id>/*). `users` mapea
+// "ruta relativa a ~/.eco/users" → contenido.
+export type EcoSnapshot = Partial<Record<EcoFileName, string>> & {
+  users?: Record<string, string>;
+};
+
+const USERS_DIR = join(ECO_DIR, 'users');
+
+function snapshotUsers(): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!existsSync(USERS_DIR)) return out;
+  // index.json
+  const idx = join(USERS_DIR, 'index.json');
+  if (existsSync(idx)) { try { out['index.json'] = readFileSync(idx, 'utf-8'); } catch { /* skip */ } }
+  // cada carpeta de usuario → sus archivos (user.json, github.json, mcp-token, …)
+  for (const entry of readdirSync(USERS_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = join(USERS_DIR, entry.name);
+    for (const f of readdirSync(dir, { withFileTypes: true })) {
+      if (!f.isFile()) continue;
+      try { out[`${entry.name}/${f.name}`] = readFileSync(join(dir, f.name), 'utf-8'); } catch { /* skip */ }
+    }
+  }
+  return out;
+}
 
 export function snapshotEcoState(): EcoSnapshot {
   const out: EcoSnapshot = {};
@@ -48,14 +73,22 @@ export function snapshotEcoState(): EcoSnapshot {
     if (!existsSync(p)) continue;
     try { out[name] = readFileSync(p, 'utf-8'); } catch { /* skip */ }
   }
+  const users = snapshotUsers();
+  if (Object.keys(users).length > 0) out.users = users;
   return out;
 }
 
-export type RestoreEcoResult = { restored: EcoFileName[]; errors: string[] };
+export type RestoreEcoResult = { restored: string[]; errors: string[] };
+
+// Solo permitimos rutas relativas seguras dentro de ~/.eco/users (sin .. ni
+// rutas absolutas) — defensa contra un zip malicioso.
+function safeUsersRel(rel: string): boolean {
+  return /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)?$/.test(rel) && !rel.includes('..');
+}
 
 export function restoreEcoState(snap: EcoSnapshot): RestoreEcoResult {
   if (!existsSync(ECO_DIR)) mkdirSync(ECO_DIR, { recursive: true, mode: 0o700 });
-  const restored: EcoFileName[] = [];
+  const restored: string[] = [];
   const errors: string[] = [];
   for (const name of BACKED_UP_FILES) {
     const content = snap[name];
@@ -67,6 +100,21 @@ export function restoreEcoState(snap: EcoSnapshot): RestoreEcoResult {
       restored.push(name);
     } catch (e) {
       errors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  if (snap.users) {
+    if (!existsSync(USERS_DIR)) mkdirSync(USERS_DIR, { recursive: true, mode: 0o700 });
+    for (const [rel, content] of Object.entries(snap.users)) {
+      if (typeof content !== 'string' || !safeUsersRel(rel)) continue;
+      const p = join(USERS_DIR, rel);
+      try {
+        mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
+        writeFileSync(p, content, { mode: 0o600 });
+        try { chmodSync(p, 0o600); } catch { /* noop */ }
+        restored.push(`users/${rel}`);
+      } catch (e) {
+        errors.push(`users/${rel}: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
   return { restored, errors };

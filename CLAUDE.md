@@ -1455,3 +1455,50 @@ y no submitea. Dos writes con gap → primer write = "typing", segundo =
 El formato de `~/.claude.json` es interno de Claude Code y puede cambiar
 entre versiones; además contiene config sensible no relacionada al MCP.
 Delegar a la CLI usa un contrato estable (exit 0 = registrado).
+
+## Appendix D: Multi-tenant (rol admin + per-user)
+
+> **Estado:** branch `feature/multi-tenant` (F0–F4). Convierte Eco de single-user a
+> **multi-tenant sobre un único backend compartido** (una Mac corriendo el server;
+> los usuarios entran por Tailscale). El CLI de Claude es **compartido** (una sola
+> auth/billing). Aislamiento **lógico a nivel app** (equipo de confianza).
+
+### Invariante central
+La identidad SALE SIEMPRE de la sesión, NUNCA del cliente:
+- HTTP: `X-Eco-Client:1` → `Authorization: Bearer <token compartido>` (gate de transporte, NO identidad) → `X-Eco-Session: <id>` → el middleware setea `req.ecoUser = { id, role, username }`.
+- WS (`/ws`, `/ws/pty`): subprotocolos `eco.token.<bearer>` (transporte) + `eco.session.<sessionId>` → el backend resuelve el userId dueño de la conexión.
+- Los handlers/spawns usan `req.ecoUser.id` o `bubble.ownerId`. Un userId/ownerId mandado por el cliente se ignora.
+- `request-context.ts` (AsyncLocalStorage) lleva el userId del request HTTP en curso → `githubEnvOverrides()`/`isAllowedWorkspace()` resuelven el usuario sin threadear userId por todos lados.
+
+### Modelo de datos (por usuario)
+- `~/.eco/users/<userId>/user.json` = `{ id, username, role: admin|member, pinHash, recoveryHash, refreshHash, workspaceGrants[], … }` (argon2id + BIP39). Índice en `~/.eco/users/index.json`. Módulo: `backend/src/users-store.ts`.
+- `~/.eco/users/<userId>/github.json` — PAT por usuario (`github-credentials-store.ts` toma userId; fallback al primer admin para procesos sin sesión).
+- Bubbles: `bubbles-index.ts` por usuario con `ownerId` (server-authoritative; el frontend sincroniza SU porción vía `/bubbles/sync`). El contenido (mensajes) sigue en localStorage del navegador.
+- Sesiones (`sessions.ts`): llevan `userId` + `role`. Renovación vía **refresh token por usuario** (`X-Eco-Refresh`), NO el bearer compartido.
+- API key de Claude: global (`~/.eco/api-key`) — compartida por decisión.
+
+### Auth
+- Primer usuario registrado = **admin** (`/auth/register` solo si no hay usuarios). Los demás los crea el admin (`/admin/users`).
+- Login = **usuario + PIN** (`/auth/login {username, pin}`). `/auth/me` devuelve la identidad de la sesión.
+- Migración one-time al boot: `~/.eco/user.json` viejo → primer admin; `~/.eco/github.json` → su carpeta (`migrateLegacyUserIfNeeded`).
+- Endpoints admin tras `requireAdmin`: `GET /admin/users`, `POST /admin/users`, `DELETE /admin/users/:id`, `POST /admin/users/:id/{role,workspaces,reset-pin}`, `GET /admin/overview`.
+
+### Per-user git identity + workspace ACL (F1)
+- Cada usuario maneja su PAT desde Settings → GitHub (web incluida). Los spawns (PTY/agente) inyectan `githubEnvOverrides(ownerId)` → commits/push con la identidad del dueño de la bubble.
+- `config.ts:isAllowedWorkspace(target, userId?)` + `workspacesForUser(userId?)`: admin = todos; member = `workspaceGrants`; sin userId = legacy global. El universo global (`ECO_WORKSPACES`/`workspaces-store`) lo gestiona solo el admin.
+
+### Consola de admin (F3)
+- `frontend/src/screens/AdminScreen.tsx` (gated en `AppSidebar` por `role==='admin'`): Usuarios (crear/rol/workspaces/reset-pin/borrar) + Actividad (usuario → bubbles con dot de estado + badges PTY/DEV, `GET /admin/overview`). Hook: `useAdmin.ts`.
+
+### Backup
+- `backup.ts` captura `~/.eco/users/**` (index + cada usuario) además de los archivos planos. El objeto `eco` del snapshot es opaco para el frontend.
+
+### Caveat de aislamiento
+Todos los spawns corren como el MISMO usuario del SO y comparten el CLI de Claude. Eco separa por usuario en la capa de la app, pero alguien con acceso al SO puede leer worktrees/credenciales de otros bajo `~/.eco`. Aceptable para equipo de confianza; NO es aislamiento endurecido.
+
+### Hardening pendiente (diferido — defense-in-depth bajo aislamiento lógico)
+- **Filtrado de broadcasts por usuario**: `dev_status`/`pty_status`/`dev_log`/`client_action` se emiten a todos los clientes WS (un usuario ve el estado/logs de dev-servers y PTYs de otros). La respuesta del agente (`sdk_message`) SÍ va por-conexión (no se filtra mal).
+- **Namespacing de localStorage de bubbles por usuario** (`eco.bubbles.v1.<userId>`): hoy es global por navegador. Irrelevante en el modelo una-máquina-por-persona, pero si dos usuarios distintos entran en el MISMO navegador, el `/bubbles/sync` re-asignaría ownership. No hacer login de otro usuario en un navegador con bubbles de otro.
+- **Namespacing de directorios de worktree por usuario**: hoy `~/.eco/worktrees/<bubbleId>` (plano). No causa colisiones (bubbleIds son únicos globalmente) y la ownership la imponen los checks de endpoint; queda como hardening.
+- **Token MCP por usuario**: el MCP server (`/bubble/create|send`, `/bubbles`) atribuye al primer admin cuando no hay sesión. Falta un token MCP por usuario (`X-Eco-Mcp`).
+- **Ownership fino en endpoints FS** (`/fs/tree`, `/file/*`): hoy gateados por `isAllowedWorkspace` (per-usuario vía ALS) + early-return incondicional de worktrees.
