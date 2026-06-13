@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
 import { attachWebSocket, broadcastServerMessage, broadcastClientAction, wsClientCount } from './ws-server.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
-import { setBubblesSnapshot, getBubblesSnapshot, findBubble, type BubbleSummary } from './bubbles-index.js';
-import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble } from './pty-server.js';
+import { setBubblesSnapshot, getBubblesSnapshot, findBubble, getAllSnapshots, type BubbleSummary } from './bubbles-index.js';
+import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble, runningPtyBubbleIds } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
 import * as gitHistory from './git-history.js';
@@ -368,6 +368,35 @@ app.post('/admin/users/:id/reset-pin', requireAdmin, async (req: Request, res: R
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'PIN inválido');
   try { const { recoveryPhrase } = await resetPin(id, parsed.data.pin); res.json({ ok: true, recoveryPhrase }); }
   catch (e) { fromException(res, e, 'admin.reset_failed', 'No se pudo resetear el PIN'); }
+});
+
+// Vista "quién trabaja en qué" — solo admin. Agrega las bubbles de todos los
+// usuarios + estado vivo de recursos (PTY corriendo, dev-server up) por bubble.
+app.get('/admin/overview', requireAdmin, (_req: Request, res: Response) => {
+  const all = getAllSnapshots();
+  const ptyBubbles = new Set(runningPtyBubbleIds());
+  const devByBubble = new Map<string, number>();
+  for (const s of devServer.devListActive()) {
+    devByBubble.set(s.bubbleId, (devByBubble.get(s.bubbleId) ?? 0) + 1);
+  }
+  const usersById = new Map(listUsers().map((u) => [u.id, u]));
+  const users = Object.entries(all.byUser).map(([userId, bubbles]) => ({
+    id: userId,
+    username: usersById.get(userId)?.username ?? '—',
+    role: usersById.get(userId)?.role ?? 'member',
+    lastSync: all.lastSync[userId] ?? 0,
+    bubbles: bubbles.map((b) => ({
+      id: b.id, title: b.title, workspace: b.workspace, status: b.status,
+      archived: b.archived, updatedAt: b.updatedAt,
+      ptyRunning: ptyBubbles.has(b.id),
+      devActive: (devByBubble.get(b.id) ?? 0) > 0,
+    })),
+  }));
+  // Usuarios sin bubbles sincronizadas también aparecen (vacíos).
+  for (const u of listUsers()) {
+    if (!all.byUser[u.id]) users.push({ id: u.id, username: u.username, role: u.role, lastSync: 0, bubbles: [] });
+  }
+  res.json({ ok: true, users });
 });
 
 app.get('/info', async (req: Request, res: Response) => {

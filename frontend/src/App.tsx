@@ -6,6 +6,7 @@ import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
 import { Settings } from './screens/Settings';
+import { AdminScreen } from './screens/AdminScreen';
 import { FileExplorer } from './screens/FileExplorer';
 import { ArchivedScreen } from './screens/ArchivedScreen';
 import { useVoice } from './hooks/useVoice';
@@ -922,6 +923,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           onScreenChange={handleScreenChange}
           agentCount={activeCount}
           username={auth.state.username}
+          role={auth.state.role}
           onLock={auth.lock}
           onDestroyUser={auth.destroyUser}
         />
@@ -986,6 +988,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   <FileExplorer bubbles={bubbles.bubbles}/>
                 ) : screen === 'settings' ? (
                   <Settings/>
+                ) : screen === 'admin' ? (
+                  <AdminScreen currentUserId={auth.state.userId}/>
                 ) : screen === 'history' ? (
                   <HistoryScreen bubbles={bubbles.bubbles} onOpen={handleOpenAgent}/>
                 ) : screen === 'archived' ? (

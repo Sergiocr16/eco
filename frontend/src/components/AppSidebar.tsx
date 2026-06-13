@@ -1,35 +1,38 @@
 import { useTokens } from '@/design/theme';
 import { EcoMarkStacked } from '@/design/EcoMark';
 import {
-  IconCommand, IconFolderOpen, IconHistory, IconArchive, IconSettings, type IconProps,
+  IconCommand, IconFolderOpen, IconHistory, IconArchive, IconSettings, IconShield, type IconProps,
 } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 import { AccountMenu } from './AccountMenu';
 
-export type Screen = 'dashboard' | 'files' | 'history' | 'archived' | 'settings' | 'detail' | 'login' | 'onboarding';
+export type Screen = 'dashboard' | 'files' | 'history' | 'archived' | 'settings' | 'admin' | 'detail' | 'login' | 'onboarding';
 
 type Props = {
   screen: Screen;
   onScreenChange: (s: Screen) => void;
   agentCount: number;
   username: string | null;
+  role: 'admin' | 'member' | null;
   onLock: () => void;
   onDestroyUser: (pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
 
-const ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: string }[] = [
+const BASE_ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: string }[] = [
   { id: 'dashboard', icon: IconCommand, labelKey: 'nav.dashboard' },
   { id: 'files',     icon: IconFolderOpen, labelKey: 'nav.files' },
   { id: 'history',   icon: IconHistory, labelKey: 'nav.history' },
   { id: 'archived',  icon: IconArchive, labelKey: 'nav.archived' },
   { id: 'settings',  icon: IconSettings, labelKey: 'nav.settings' },
 ];
+const ADMIN_ITEM = { id: 'admin' as Screen, icon: IconShield, labelKey: 'nav.admin' };
 
 export function AppSidebar({
-  screen, onScreenChange, agentCount, username, onLock, onDestroyUser,
+  screen, onScreenChange, agentCount, username, role, onLock, onDestroyUser,
 }: Props) {
   const t = useTokens();
   const tr = useT();
+  const ITEMS = role === 'admin' ? [...BASE_ITEMS, ADMIN_ITEM] : BASE_ITEMS;
 
   return (
     <div style={{
