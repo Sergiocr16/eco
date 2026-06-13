@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
 import { attachWebSocket, broadcastServerMessage, broadcastClientAction, wsClientCount } from './ws-server.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
-import { setBubblesSnapshot, getBubblesSnapshot, type BubbleSummary } from './bubbles-index.js';
+import { setBubblesSnapshot, getBubblesSnapshot, findBubble, type BubbleSummary } from './bubbles-index.js';
 import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
@@ -34,7 +34,7 @@ import {
   hasAnyUser, statusInfo, registerFirstUser, verifyPin,
   recover as recoverUser, deleteUser, getUser, getUserByUsername,
   listUsers, createMember, setRole, setWorkspaceGrants, resetPin,
-  mintRefresh, verifyRefresh, migrateLegacyUserIfNeeded,
+  mintRefresh, verifyRefresh, migrateLegacyUserIfNeeded, firstAdminId,
   type Role,
 } from './users-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
@@ -1545,8 +1545,11 @@ app.post('/bubble/create', (req: Request, res: Response) => {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
   }
   const { title, workspace, baseBranch, initialPrompt } = parsed.data;
+  // Dueño: el usuario de la sesión, o el primer admin para callers MCP sin
+  // sesión (F4 agrega token MCP por usuario).
+  const creatorId = req.ecoUser?.id ?? firstAdminId() ?? undefined;
 
-  if (workspace && !isAllowedWorkspace(workspace)) {
+  if (workspace && !isAllowedWorkspace(workspace, creatorId)) {
     return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
   }
   if (wsClientCount() === 0) {
@@ -1580,7 +1583,7 @@ app.post('/bubble/create', (req: Request, res: Response) => {
   // arriba) o cae al primer workspace permitido. Fire-and-forget.
   if (initialPrompt && workspace) {
     try {
-      injectPromptToBubble(bubbleId, workspace, initialPrompt);
+      injectPromptToBubble(bubbleId, creatorId, workspace, initialPrompt);
     } catch (e) {
       console.error('[bubble/create] injectPromptToBubble failed:', e);
     }
@@ -1612,22 +1615,24 @@ app.post('/bubble/send', (req: Request, res: Response) => {
   if (!isValidBubbleId(bubbleId)) {
     return errResponse(res, 400, 'bubble.invalid_id', 'bubbleId inválido');
   }
-  const snap = getBubblesSnapshot();
-  if (snap.lastSync === 0) {
-    return errResponse(res, 409, 'eco.not_synced', 'Eco no sincronizó bubbles todavía — abrí la app al menos una vez');
-  }
-  const bubble = snap.bubbles.find((b) => b.id === bubbleId);
+  // Buscamos la bubble entre TODOS los usuarios (la identidad/workspace salen de
+  // su dueño). Un caller con sesión solo puede mandar a SUS bubbles (admin a todas).
+  const bubble = findBubble(bubbleId);
   if (!bubble) {
     return errResponse(res, 404, 'bubble.not_found', 'No existe una bubble con ese id');
+  }
+  const caller = req.ecoUser;
+  if (caller && caller.role !== 'admin' && bubble.ownerId !== caller.id) {
+    return errResponse(res, 403, 'bubble.not_owner', 'Esa bubble no es tuya');
   }
   if (bubble.archived) {
     return errResponse(res, 409, 'bubble.archived', 'La bubble está archivada — desarchivala antes de mandarle input');
   }
-  if (bubble.workspace && !isAllowedWorkspace(bubble.workspace)) {
+  if (bubble.workspace && !isAllowedWorkspace(bubble.workspace, bubble.ownerId)) {
     return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
   }
   try {
-    injectPromptToBubble(bubbleId, bubble.workspace, text);
+    injectPromptToBubble(bubbleId, bubble.ownerId, bubble.workspace, text);
   } catch (e) {
     console.error('[bubble/send] injectPromptToBubble failed:', e);
     return errResponse(res, 500, 'bubble.send_failed', 'No se pudo inyectar el prompt al PTY');
@@ -1639,8 +1644,11 @@ app.post('/bubble/send', (req: Request, res: Response) => {
 // frontend (POST /bubbles/sync). Si el frontend no se conectó nunca desde
 // que arrancó el backend, devuelve lista vacía y lastSync=0 para que el
 // caller MCP pueda mostrar un mensaje útil ("Eco aún no sincronizó").
-app.get('/bubbles', (_req: Request, res: Response) => {
-  const snap = getBubblesSnapshot();
+app.get('/bubbles', (req: Request, res: Response) => {
+  // Browser con sesión → sus bubbles (admin: las suyas). MCP sin sesión todavía
+  // → cae al primer admin (F4 agrega token MCP por usuario).
+  const uid = req.ecoUser?.id ?? firstAdminId() ?? undefined;
+  const snap = uid ? getBubblesSnapshot(uid) : { bubbles: [], lastSync: 0 };
   res.json({ ok: true, bubbles: snap.bubbles, lastSync: snap.lastSync });
 });
 
@@ -1659,11 +1667,13 @@ const BubblesSyncSchema = z.object({
   })).max(500),
 });
 app.post('/bubbles/sync', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
   const parsed = BubblesSyncSchema.safeParse(req.body);
   if (!parsed.success) {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
   }
-  const sanitized: BubbleSummary[] = parsed.data.bubbles
+  const sanitized: Omit<BubbleSummary, 'ownerId'>[] = parsed.data.bubbles
     .filter((b) => isValidBubbleId(b.id))
     .map((b) => ({
       id: b.id,
@@ -1673,7 +1683,7 @@ app.post('/bubbles/sync', (req: Request, res: Response) => {
       archived: !!b.archived,
       updatedAt: b.updatedAt,
     }));
-  setBubblesSnapshot(sanitized);
+  setBubblesSnapshot(uid, sanitized);
   res.json({ ok: true, count: sanitized.length });
 });
 

@@ -6,6 +6,8 @@
 // en el backend, así que el texto llega al Claude CLI ya corriendo dentro.
 // Cerramos el WS después de mandar (no nos quedamos escuchando output).
 
+import { readStoredSession } from './eco-config';
+
 export type WriteToBubblePtyOpts = {
   bubbleId: string;
   workspace: string;
@@ -35,7 +37,10 @@ export async function writeToBubblePty(
     url.searchParams.set('cols', '120');
     url.searchParams.set('rows', '30');
 
-    const protocols = opts.token ? [`eco.token.${opts.token}`] : undefined;
+    const sess = readStoredSession();
+    const protocols = opts.token
+      ? [`eco.token.${opts.token}`, ...(sess ? [`eco.session.${sess}`] : [])]
+      : undefined;
     let ws: WebSocket;
     try {
       ws = new WebSocket(url.toString(), protocols);

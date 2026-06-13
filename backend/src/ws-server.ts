@@ -7,8 +7,21 @@ import { config, hostAllowed } from './config.js';
 import { extractBearer, tokensMatch } from './auth.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import { ensureWorktree } from './worktree-manager.js';
+import { getSession } from './sessions.js';
 
-const globalPromptTimestamps: number[] = [];
+// Rate limit POR USUARIO (multi-tenant) — reemplaza el contador global.
+// Map userId → timestamps de prompts en el último minuto. Las conexiones sin
+// userId (legacy / sin sesión) comparten el bucket '_anon'.
+const promptTimestampsByUser = new Map<string, number[]>();
+
+function extractSessionUserId(req: IncomingMessage): string | undefined {
+  const proto = req.headers['sec-websocket-protocol'];
+  if (!proto) return undefined;
+  const parts = Array.isArray(proto) ? proto : proto.split(',').map((p) => p.trim());
+  const entry = parts.find((p) => p.startsWith('eco.session.'));
+  if (!entry) return undefined;
+  return getSession(entry.slice('eco.session.'.length))?.userId;
+}
 
 let broadcastFn: ((msg: ServerMessage) => void) | null = null;
 let wssRef: WebSocketServer | null = null;
@@ -92,7 +105,8 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
   };
   wssRef = wss;
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req: IncomingMessage) => {
+    const connUserId = extractSessionUserId(req);
     let activeAbort: AbortController | null = null;
     let activeTimeout: NodeJS.Timeout | null = null;
     let activeQuery: Query | null = null;
@@ -143,19 +157,16 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       }
 
       const now = Date.now();
-      while (globalPromptTimestamps.length > 0 && now - globalPromptTimestamps[0]! > 60_000) {
-        globalPromptTimestamps.shift();
+      const bucketKey = connUserId ?? '_anon';
+      const bucket = promptTimestampsByUser.get(bucketKey) ?? [];
+      while (bucket.length > 0 && now - bucket[0]! > 60_000) bucket.shift();
+      if (bucket.length > 1000) bucket.splice(0, bucket.length - 1000);
+      if (bucket.length >= config.maxPromptsPerMinute) {
+        promptTimestampsByUser.set(bucketKey, bucket);
+        return error('rate_limit', `Rate limit: ${config.maxPromptsPerMinute} prompts/min`);
       }
-      // Defensa contra crecimiento patológico: si por alguna razón el shift por
-      // tiempo no alcanzó, capamos el array a 1000 entries (basta para todo el
-      // rate-limiting). Defensa pura — no debería dispararse en uso normal.
-      if (globalPromptTimestamps.length > 1000) {
-        globalPromptTimestamps.splice(0, globalPromptTimestamps.length - 1000);
-      }
-      if (globalPromptTimestamps.length >= config.maxPromptsPerMinute) {
-        return error('rate_limit', `Rate limit: ${config.maxPromptsPerMinute} prompts/min (global)`);
-      }
-      globalPromptTimestamps.push(now);
+      bucket.push(now);
+      promptTimestampsByUser.set(bucketKey, bucket);
 
       const ac = new AbortController();
       activeAbort = ac;
@@ -173,6 +184,7 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
           workspace: effectiveWorkspace,
           abortController: ac,
           resumeSessionId: msg.resumeSessionId,
+          ownerId: connUserId,
           onClientAction: (action) => send({ type: 'client_action', action }),
         });
         activeQuery = q;

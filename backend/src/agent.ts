@@ -8,6 +8,7 @@ import {
 import { config, defaultWorkspace, isAllowedWorkspace, isInsideWorkspace } from './config.js';
 import { buildEcoMcpServer, ECO_MCP_TOOL_NAMES, type ClientAction } from './agent-tools.js';
 import { buildSafeEnv } from './security.js';
+import { githubEnvOverrides } from './github-runtime.js';
 import { loadProjectContext as loadObsidianContext } from './obsidian.js';
 
 function buildAppendedSystemPrompt(cwd: string): string {
@@ -49,6 +50,9 @@ export type AgentRunOptions = {
   workspace?: string;
   abortController?: AbortController;
   resumeSessionId?: string;
+  // Dueño de la bubble (userId): determina la identidad de git que usan los
+  // comandos `git` que corra el agente dentro del worktree, y el ACL del workspace.
+  ownerId?: string;
   onClientAction?: (action: ClientAction) => void;
 };
 
@@ -120,7 +124,7 @@ function makeCanUseTool(workspace: string): CanUseTool {
 
 export function runAgent(opts: AgentRunOptions): Query {
   const requested = opts.workspace;
-  if (requested && !isAllowedWorkspace(requested)) {
+  if (requested && !isAllowedWorkspace(requested, opts.ownerId)) {
     throw new Error('Workspace no permitido.');
   }
   const cwd = requested ?? defaultWorkspace();
@@ -152,7 +156,11 @@ export function runAgent(opts: AgentRunOptions): Query {
     disallowedTools: ['WebFetch', 'WebSearch', 'Task'],
     settingSources: config.skillSources,
     includePartialMessages: true,
-    env: buildSafeEnv(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}) as Record<string, string>,
+    env: buildSafeEnv({
+      ...(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}),
+      // Identidad de git del dueño → los `git` del agente commitean con su PAT/nombre.
+      ...githubEnvOverrides(opts.ownerId),
+    }) as Record<string, string>,
     resume: opts.resumeSessionId,
   };
 

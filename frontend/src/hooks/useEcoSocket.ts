@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SocketStatus, ToolCall } from '@/lib/types';
 import { translateBackendError } from '@/lib/backend-errors';
 import { translate, loadLang } from '@/lib/i18n';
+import { readStoredSession } from '@/lib/eco-config';
 
 const RECONNECT_BACKOFF_MS = [500, 1500, 3000, 5000, 10_000];
 
@@ -241,7 +242,9 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
 
     const wsUrl = url || (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
     const finalUrl = wsUrl.startsWith('ws') ? wsUrl : wsUrl.replace(/^http/, 'ws') + (wsUrl.endsWith('/ws') ? '' : '/ws');
-    const ws = new WebSocket(finalUrl, [`eco.token.${token}`]);
+    const sess = readStoredSession();
+    const protocols = [`eco.token.${token}`, ...(sess ? [`eco.session.${sess}`] : [])];
+    const ws = new WebSocket(finalUrl, protocols);
     wsRef.current = ws;
 
     ws.onopen = () => {
