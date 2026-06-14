@@ -79,6 +79,7 @@ export function AuthScreen({ authState, authActions }: Props) {
             <RecoverView
               authActions={authActions}
               onBack={() => setView('login')}
+              onClaim={() => setView('claim')}
               onSuccess={(phrase) => { setRecoveryToShow(phrase); }}
             />
           )}
@@ -729,10 +730,11 @@ function ConnectView() {
 // ─────────────────────────── Recover
 
 function RecoverView({
-  authActions, onBack, onSuccess,
+  authActions, onBack, onClaim, onSuccess,
 }: {
   authActions: AuthHook;
   onBack: () => void;
+  onClaim: () => void;
   onSuccess: (newPhrase: string) => void;
 }) {
   const t = useTokens();
@@ -815,6 +817,17 @@ function RecoverView({
       <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
         {busy ? tr('auth.btn.recover_loading') : tr('auth.btn.recover')}
       </Btn>
+
+      <button
+        type="button"
+        onClick={onClaim}
+        style={{
+          marginTop: 16, background: 'transparent', border: 0, color: t.accent,
+          fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+          display: 'block', marginInline: 'auto', lineHeight: 1.5,
+        }}>
+        {tr('auth.recover.no_phrase')}
+      </button>
     </>
   );
 }
