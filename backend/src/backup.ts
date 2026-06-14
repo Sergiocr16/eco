@@ -55,12 +55,22 @@ function snapshotUsers(): Record<string, string> {
   const idx = join(USERS_DIR, 'index.json');
   if (existsSync(idx)) { try { out['index.json'] = readFileSync(idx, 'utf-8'); } catch { /* skip */ } }
   // cada carpeta de usuario → sus archivos (user.json, github.json, mcp-token, …)
+  // Y un nivel de subcarpeta (docs/) — ahí viven bubbles, categorías, notas y
+  // review en el modelo cross-device. Sin esto el backup capturaba los usuarios
+  // pero NO su contenido (el bug que dejaba los backups vacíos de bubbles).
   for (const entry of readdirSync(USERS_DIR, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const dir = join(USERS_DIR, entry.name);
     for (const f of readdirSync(dir, { withFileTypes: true })) {
-      if (!f.isFile()) continue;
-      try { out[`${entry.name}/${f.name}`] = readFileSync(join(dir, f.name), 'utf-8'); } catch { /* skip */ }
+      if (f.isFile()) {
+        try { out[`${entry.name}/${f.name}`] = readFileSync(join(dir, f.name), 'utf-8'); } catch { /* skip */ }
+      } else if (f.isDirectory()) {
+        const sub = join(dir, f.name);
+        for (const g of readdirSync(sub, { withFileTypes: true })) {
+          if (!g.isFile()) continue;
+          try { out[`${entry.name}/${f.name}/${g.name}`] = readFileSync(join(sub, g.name), 'utf-8'); } catch { /* skip */ }
+        }
+      }
     }
   }
   return out;
@@ -81,9 +91,10 @@ export function snapshotEcoState(): EcoSnapshot {
 export type RestoreEcoResult = { restored: string[]; errors: string[] };
 
 // Solo permitimos rutas relativas seguras dentro de ~/.eco/users (sin .. ni
-// rutas absolutas) — defensa contra un zip malicioso.
+// rutas absolutas) — defensa contra un zip malicioso. Hasta 3 segmentos para
+// soportar <id>/docs/<key>.json (la subcarpeta de docs por usuario).
 function safeUsersRel(rel: string): boolean {
-  return /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)?$/.test(rel) && !rel.includes('..');
+  return /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+){0,2}$/.test(rel) && !rel.includes('..');
 }
 
 export function restoreEcoState(snap: EcoSnapshot): RestoreEcoResult {
