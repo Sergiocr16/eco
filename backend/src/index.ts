@@ -1892,7 +1892,11 @@ const WorktreeStateSchema = z.object({
   missing: z.boolean().optional(),
 });
 const BackupRestoreSchema = z.object({
-  eco: z.record(z.string()).optional(),
+  // `eco` es Record<string,string> para los archivos planos (user.json, etc.)
+  // MÁS la clave `users` que es un Record<string,string> anidado (colección
+  // multi-tenant: index.json + <id>/user.json + <id>/docs/<key>.json). Sin el
+  // union, Zod rechazaba el objeto `users` con http.invalid_body.
+  eco: z.record(z.union([z.string(), z.record(z.string())])).optional(),
   worktrees: z.array(WorktreeStateSchema).max(500).optional(),
 });
 app.post('/backup/restore', requireAdmin, (req: Request, res: Response) => {
