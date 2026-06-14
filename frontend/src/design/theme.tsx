@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { buildTokens, isLightTheme, defaultHueForTheme, THEME_VARIANTS, type ThemeMode, type EffectiveThemeMode, type Tokens } from './tokens';
+import { updatePrefs, subscribePrefs } from '@/lib/prefs-sync';
 
 type ThemeContextValue = {
   mode: ThemeMode;
@@ -93,16 +94,31 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setAccentHue = (h: number) => {
     setAccentHueState(h);
     try { window.localStorage.setItem(STORAGE_HUE, String(h)); } catch { /* noop */ }
+    updatePrefs({ accentHue: h });
   };
   const setMode = (m: ThemeMode) => {
     setModeState(m);
     try { window.localStorage.setItem(STORAGE_MODE, m); } catch { /* noop */ }
+    updatePrefs({ themeMode: m });
     // Coupling: al elegir un tema se aplica su acento de firma coordinado, así
     // el tema "se ve" de su color. El usuario lo puede sobrescribir después y
     // queda hasta el próximo cambio de tema. 'system' resuelve por systemMode.
     const resolved = m === 'system' ? systemMode : m;
     setAccentHue(defaultHueForTheme(resolved));
   };
+
+  // Aplica las preferencias que llegan del servidor (login / otro dispositivo)
+  // sin re-subirlas (no llamamos a setMode/setAccentHue, que sí suben).
+  useEffect(() => subscribePrefs((p) => {
+    if (typeof p.themeMode === 'string' && VALID_MODES.has(p.themeMode)) {
+      setModeState(p.themeMode as ThemeMode);
+      try { window.localStorage.setItem(STORAGE_MODE, p.themeMode); } catch { /* noop */ }
+    }
+    if (typeof p.accentHue === 'number' && Number.isFinite(p.accentHue)) {
+      setAccentHueState(p.accentHue);
+      try { window.localStorage.setItem(STORAGE_HUE, String(p.accentHue)); } catch { /* noop */ }
+    }
+  }), []);
 
   useEffect(() => {
     // CSS color-scheme solo acepta 'dark' o 'light'; consultamos al tema.

@@ -4,6 +4,8 @@ import { resolve, sep, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { readStore as readWorkspaceStore } from './workspaces-store.js';
 import { readApiKey } from './api-key-store.js';
+import { getUser, workspaceGrantsFor } from './users-store.js';
+import { currentUserId } from './request-context.js';
 
 function parseEnvWorkspaces(): string[] {
   // Default: el home del user (existe siempre). Antes era ~/projects/eco-test
@@ -107,17 +109,45 @@ export function hostAllowed(host: string | undefined): boolean {
   return config.extraHosts.includes(hostname);
 }
 
-export function isAllowedWorkspace(target: string | undefined): boolean {
+// ACL de workspaces. `userId` opcional:
+//  - sin userId → comportamiento global legacy (llamadas internas/ownerless).
+//  - admin → todos los workspaces del universo.
+//  - member → solo los concedidos por el admin (workspaceGrants).
+// Los worktrees de Eco (~/.eco/worktrees/...) se aceptan siempre: son derivados
+// de un workspace ya autorizado (la ownership fina por usuario se endurece en F2/F4).
+export function isAllowedWorkspace(target: string | undefined, userId?: string): boolean {
   if (!target || !isAbsolute(target)) return false;
   const real = safeRealpath(target);
   if (!real) return false;
-  // Aceptamos worktrees creados por Eco mismo (~/.eco/worktrees/<bubbleId>)
-  // como permitidos automáticamente — son derivados de workspaces ya autorizados.
   const ecoWorktreesRoot = `${homedir()}/.eco/worktrees`;
   if (real === ecoWorktreesRoot || real.startsWith(ecoWorktreesRoot + sep)) return true;
-  return config.workspaces.some(
+  const inUniverse = config.workspaces.some(
     (allowed) => real === allowed || real.startsWith(allowed + sep),
   );
+  if (!inUniverse) return false;
+  // userId explícito, o el del request HTTP en curso (ALS). Sin ninguno (WS sin
+  // tagging, startup, MCP) → legacy global allow hasta que F2 lo taggee.
+  const uid = userId ?? currentUserId();
+  if (!uid) return true;
+  const user = getUser(uid);
+  if (!user || user.role === 'admin') return true; // admin = todos (user inexistente cae a legacy)
+  for (const g of workspaceGrantsFor(uid)) {
+    const realGrant = safeRealpath(g) ?? g;
+    if (real === realGrant || real.startsWith(realGrant + sep)) return true;
+  }
+  return false;
+}
+
+// Workspaces visibles para un usuario: admin ve todos; member solo los
+// concedidos (intersectados con el universo global, normalizados a realpath).
+export function workspacesForUser(userId?: string): string[] {
+  const universe = config.workspaces;
+  const uid = userId ?? currentUserId();
+  if (!uid) return universe;
+  const user = getUser(uid);
+  if (!user || user.role === 'admin') return universe;
+  const grantsReal = workspaceGrantsFor(uid).map((g) => safeRealpath(g) ?? g);
+  return universe.filter((w) => grantsReal.some((g) => w === g || w.startsWith(g + sep)));
 }
 
 export function isInsideWorkspace(filePath: string | undefined, workspace: string): boolean {

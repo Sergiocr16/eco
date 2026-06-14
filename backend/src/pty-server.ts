@@ -8,6 +8,8 @@ import { extractBearer, tokensMatch } from './auth.js';
 import { buildSafeEnv } from './security.js';
 import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
 import { ensureWorktree } from './worktree-manager.js';
+import { githubEnvOverrides } from './github-runtime.js';
+import { getSession } from './sessions.js';
 
 function defaultShell(): string {
   return process.env.SHELL || (existsSync('/bin/zsh') ? '/bin/zsh' : '/bin/bash');
@@ -27,6 +29,9 @@ type PtySession = {
   // por defecto donde auto-arranca Claude CLI. Cualquier otro id = terminales
   // extra abiertos por el user (shells planos sin auto-claude).
   ptyId: string;
+  // Dueño de la bubble (userId). Determina la identidad de git inyectada al
+  // PTY y a quién se le emiten los pty_status (filtrado por usuario en F2).
+  ownerId?: string;
   cwd: string;
   buffer: string;
   exited: boolean;
@@ -142,26 +147,28 @@ export function killBubbleTerminal(bubbleId: string, ptyId: string): boolean {
 // el PTY listo en background y dejar que el user descubra la conversación
 // ya en marcha al clickear la bubble. broadcastPtyStatus avisa al frontend
 // para que el dot de "PTY activo" se prenda en dock/dashboard.
-export function ensureBubblePty(bubbleId: string, workspace: string): PtySession {
+export function ensureBubblePty(bubbleId: string, workspace: string, ownerId?: string): PtySession {
   const ptyId = 'main';
   const key = sessionKey(bubbleId, ptyId);
   const existing = sessions.get(key);
   if (existing && !existing.exited) return existing;
 
-  const isolated = (bubbleId && workspace && isAllowedWorkspace(workspace))
+  const isolated = (bubbleId && workspace && isAllowedWorkspace(workspace, ownerId))
     ? ensureWorktree(bubbleId, workspace)
     : '';
   const candidateCwd = isolated
-    || (workspace && isAllowedWorkspace(workspace) ? workspace : (config.workspaces[0] ?? homedir()));
+    || (workspace && isAllowedWorkspace(workspace, ownerId) ? workspace : (config.workspaces[0] ?? homedir()));
   const cwd = existsSync(candidateCwd) ? candidateCwd : homedir();
 
   const pty = ptySpawn(defaultShell(), [], {
     name: 'xterm-256color', cols: 120, rows: 30, cwd,
-    env: buildSafeEnv({ TERM: 'xterm-256color' }) as Record<string, string>,
+    // Inyectamos la identidad de git del DUEÑO de la bubble → commits/push
+    // desde el terminal usan su PAT/nombre/email (no el del admin).
+    env: buildSafeEnv({ TERM: 'xterm-256color', ...githubEnvOverrides(ownerId) }) as Record<string, string>,
   });
 
   const session: PtySession = {
-    pty, bubbleId, ptyId, cwd, buffer: '', exited: false,
+    pty, bubbleId, ptyId, ownerId, cwd, buffer: '', exited: false,
     activeWs: null, clients: new Set(),
     lastOutputAt: Date.now(), busy: false,
   };
@@ -203,10 +210,10 @@ export function ensureBubblePty(bubbleId: string, workspace: string): PtySession
 // CLI. Si la sesión es fresca, espera `coldStartMs` para que zsh termine de
 // exec'ear claude y claude imprima su prompt; sino, escribe casi inmediato.
 // Fire-and-forget — para el flujo de /bubble/create con initialPrompt.
-export function injectPromptToBubble(bubbleId: string, workspace: string, text: string): void {
+export function injectPromptToBubble(bubbleId: string, ownerId: string | undefined, workspace: string, text: string): void {
   const beforeKey = sessionKey(bubbleId, 'main');
   const wasExisting = !!sessions.get(beforeKey) && !sessions.get(beforeKey)!.exited;
-  const session = ensureBubblePty(bubbleId, workspace);
+  const session = ensureBubblePty(bubbleId, workspace, ownerId);
   // claude CLI cold start ~3-4 s desde el spawn (zsh exec + claude init).
   // Si la sesión ya existía, asumimos que claude está listo y vamos rápido.
   const delay = wasExisting ? 200 : 5000;
@@ -308,14 +315,16 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     const ptyId = sanitizePtyId(rawPtyId) || 'main';
     const noClaude = url.searchParams.get('noClaude') === '1';
     const requestedWs = url.searchParams.get('workspace') ?? '';
+    // userId dueño de esta conexión (del subprotocolo eco.session.<id>).
+    const ownerId = extractSessionUserId(req.headers['sec-websocket-protocol']);
     // Si la burbuja tiene workspace git, su shell vive dentro del worktree.
-    const isolated = (bubbleId && requestedWs && isAllowedWorkspace(requestedWs))
+    const isolated = (bubbleId && requestedWs && isAllowedWorkspace(requestedWs, ownerId))
       ? ensureWorktree(bubbleId, requestedWs)
       : '';
     const candidateCwd =
       isolated
         ? isolated
-        : (requestedWs && isAllowedWorkspace(requestedWs))
+        : (requestedWs && isAllowedWorkspace(requestedWs, ownerId))
           ? requestedWs
           : (config.workspaces[0] ?? homedir());
     // Garantía: si el cwd no existe en disco, caemos a $HOME. Sin esto, el
@@ -358,7 +367,7 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
         cols,
         rows,
         cwd,
-        env: buildSafeEnv({ TERM: 'xterm-256color' }) as Record<string, string>,
+        env: buildSafeEnv({ TERM: 'xterm-256color', ...githubEnvOverrides(ownerId) }) as Record<string, string>,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'pty spawn failed';
@@ -371,6 +380,7 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
       pty,
       bubbleId,
       ptyId,
+      ownerId,
       cwd,
       buffer: '',
       exited: false,
@@ -479,6 +489,21 @@ function extractTokenFromProtocols(header: string | string[] | undefined): strin
   const raw = Array.isArray(header) ? header.join(',') : header;
   for (const p of raw.split(',').map((s) => s.trim())) {
     if (p.startsWith('eco.token.')) return p.slice('eco.token.'.length);
+  }
+  return undefined;
+}
+
+// El frontend manda además `eco.session.<sessionId>` para que el backend
+// resuelva el userId dueño de la conexión (identidad de git del PTY +
+// filtrado de pty_status por usuario en F2).
+function extractSessionUserId(header: string | string[] | undefined): string | undefined {
+  if (!header) return undefined;
+  const raw = Array.isArray(header) ? header.join(',') : header;
+  for (const p of raw.split(',').map((s) => s.trim())) {
+    if (p.startsWith('eco.session.')) {
+      const s = getSession(p.slice('eco.session.'.length));
+      return s?.userId;
+    }
   }
   return undefined;
 }

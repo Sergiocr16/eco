@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { ecoToken } from '@/lib/eco-config';
+import { ecoToken, readStoredSession } from '@/lib/eco-config';
 import { useTokens } from '@/design/theme';
 import { registerPtyWriter } from '@/lib/voice-router';
 
@@ -75,7 +75,10 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     };
 
     const token = ecoToken();
-    const protocols = token ? [`eco.token.${token}`] : undefined;
+    const sess = readStoredSession();
+    const protocols = token
+      ? [`eco.token.${token}`, ...(sess ? [`eco.session.${sess}`] : [])]
+      : undefined;
 
     let ws: WebSocket | null = null;
     let pingTimer: number | null = null;

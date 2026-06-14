@@ -62,6 +62,11 @@ export default defineConfig({
       '/proxy': { target: HTTP_TARGET, changeOrigin: false },
       '/worktree': { target: HTTP_TARGET, changeOrigin: false },
       '/backup': { target: HTTP_TARGET, changeOrigin: false },
+      '/admin': { target: HTTP_TARGET, changeOrigin: false },
+      // Sync cross-device (doc store por usuario): /user/docs, /user/doc.
+      '/user': { target: HTTP_TARGET, changeOrigin: false },
+      // Cubre /bubble/* y /bubbles (sync + list) por match de prefijo.
+      '/bubble': { target: HTTP_TARGET, changeOrigin: false },
     },
   },
 });

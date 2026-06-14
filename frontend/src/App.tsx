@@ -6,6 +6,7 @@ import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
 import { Settings } from './screens/Settings';
+import { AdminScreen } from './screens/AdminScreen';
 import { FileExplorer } from './screens/FileExplorer';
 import { ArchivedScreen } from './screens/ArchivedScreen';
 import { useVoice } from './hooks/useVoice';
@@ -18,6 +19,11 @@ import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } fr
 import { emit as ecoEmit } from './lib/eco-bus';
 import { getVoiceTarget, writeVoiceToPty } from './lib/voice-router';
 import { writeToBubblePty } from './lib/pty-bridge';
+import { hydrateDocs } from './lib/user-sync';
+import { hydrateCategories } from './hooks/useCategories';
+import { hydratePrefs } from './lib/prefs-sync';
+import { hydrateReviewAll } from './hooks/useReviewState';
+import { hydrateNotesAll } from './components/NotesPanel/types';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
@@ -200,14 +206,34 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
 
   const workspacesHook = useWorkspaces();
   const defaultWs = workspacesHook.list.workspaces[0] ?? '';
-  const bubbles = useBubbles(defaultWs);
+  const bubbles = useBubbles(defaultWs, auth.state.userId);
   // Mantiene un store global del estado busy/idle del PTY de cada bubble.
   // Dispara desktop notifications al transitar busy → idle (opt-in via
   // setting `eco.notify.on_finish`).
   usePtyBusyTracker(bubbles.bubbles, detailBubbleId);
-  // Scheduler de auto-backup diario — chequea cada hora si pasaron 24h
+  // Scheduler de auto-backup (solo admin) — chequea cada 30min si pasaron 2h
   // desde el último backup y dispara export silencioso al folder configurado.
-  useBackupScheduler();
+  useBackupScheduler(auth.state.role);
+
+  // Hidratación cross-device de prefs personales (categorías + tema/idioma) al
+  // loguear. Las bubbles las hidrata useBubbles; notas/review por-bubble se
+  // cargan al montar su panel.
+  useEffect(() => {
+    if (!auth.state.userId) return;
+    let cancelled = false;
+    void hydrateDocs().then((docs) => {
+      if (cancelled) return;
+      // Categorías: SIEMPRE reflejan el servidor (si no hay doc, se limpian las
+      // locales viejas — el servidor anfitrión es la única fuente de verdad).
+      const cat = docs['categories'];
+      hydrateCategories(cat?.value ?? [], cat?.updatedAt ?? Date.now());
+      const prefs = docs['prefs'];
+      if (prefs) hydratePrefs(prefs.value, prefs.updatedAt);
+      hydrateReviewAll(docs);
+      hydrateNotesAll(docs);
+    });
+    return () => { cancelled = true; };
+  }, [auth.state.userId]);
 
   // Click en una notificación nativa del .dmg → abrir el agente que terminó.
   useEffect(() => {
@@ -922,8 +948,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           onScreenChange={handleScreenChange}
           agentCount={activeCount}
           username={auth.state.username}
+          role={auth.state.role}
           onLock={auth.lock}
-          onDestroyUser={auth.destroyUser}
+          onSignOut={auth.signOut}
         />
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           <ScreenError error={socket.error}/>
@@ -985,7 +1012,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                 {screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles}/>
                 ) : screen === 'settings' ? (
-                  <Settings/>
+                  <Settings role={auth.state.role}/>
+                ) : screen === 'admin' ? (
+                  <AdminScreen currentUserId={auth.state.userId}/>
                 ) : screen === 'history' ? (
                   <HistoryScreen bubbles={bubbles.bubbles} onOpen={handleOpenAgent}/>
                 ) : screen === 'archived' ? (
@@ -999,6 +1028,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   <Dashboard
                     bubbles={bubbles.bubbles}
                     activeBubbleId={bubbles.activeBubbleId}
+                    role={auth.state.role}
+                    userId={auth.state.userId}
                     voiceState={voiceStateForOrb}
                     listening={voice.state === 'listening'}
                     wakeActive={wakeActive}
@@ -1042,6 +1073,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         }}
         onSkip={() => setWsPickerForBubble(null)}
         onClose={() => setWsPickerForBubble(null)}
+        canAddFolders={auth.state.role === 'admin'}
       />
       <FloatingBubbleDock
         bubbles={bubbles.bubbles}

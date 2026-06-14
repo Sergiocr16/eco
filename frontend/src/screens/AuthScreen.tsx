@@ -5,7 +5,7 @@ import {
   IconUser, IconShield, IconKey, IconCheck, IconArrowL,
 } from '@/design/icons';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
-import { useProfile } from '@/hooks/useProfile';
+import { readLockedUser, clearLockedUser } from '@/hooks/useAuth';
 import { useT } from '@/hooks/useI18n';
 import { apiFetch } from '@/lib/api';
 import { writeStoredToken } from '@/lib/eco-config';
@@ -21,7 +21,6 @@ type View = 'register' | 'login' | 'recover' | 'show_recovery';
 
 export function AuthScreen({ authState, authActions }: Props) {
   const t = useTokens();
-  const tr = useT();
   const [view, setView] = useState<View>(authState.status === 'no_user' ? 'register' : 'login');
   const [recoveryToShow, setRecoveryToShow] = useState<string | null>(null);
 
@@ -67,7 +66,6 @@ export function AuthScreen({ authState, authActions }: Props) {
             />
           ) : view === 'login' ? (
             <LoginView
-              username={authState.username ?? tr('auth.your_account')}
               authActions={authActions}
               onRecover={() => setView('recover')}
             />
@@ -421,23 +419,28 @@ function RegisterView({
 // ─────────────────────────── Login
 
 function LoginView({
-  username, authActions, onRecover,
+  authActions, onRecover,
 }: {
-  username: string;
   authActions: AuthHook;
   onRecover: () => void;
 }) {
   const t = useTokens();
   const tr = useT();
+  // Si hay un usuario "bloqueado" (lock screen), pedimos solo el PIN de ESE
+  // usuario; si no, login completo (usuario + PIN).
+  const [lockedUser, setLockedUser] = useState<string | null>(() => readLockedUser());
+  const [username, setUsername] = useState(() => readLockedUser() ?? '');
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const effectiveUser = (lockedUser ?? username).trim();
+
   async function submit() {
     setError(null);
-    if (!pin) return;
+    if (!effectiveUser || !pin) return;
     setBusy(true);
-    const r = await authActions.login({ pin });
+    const r = await authActions.login({ username: effectiveUser, pin });
     setBusy(false);
     if (!r.ok) {
       setError(r.error);
@@ -445,63 +448,91 @@ function LoginView({
     }
   }
 
-  // Avatar: foto de perfil del usuario si existe, sino inicial.
-  const { photo } = useProfile();
-  const initial = (username || 'E').trim().charAt(0).toUpperCase();
+  function switchUser() {
+    clearLockedUser();
+    setLockedUser(null);
+    setUsername('');
+    setPin('');
+    setError(null);
+  }
 
   return (
     <>
-      <div style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        marginBottom: 30,
-      }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: '50%',
-          background: photo ? t.bg2 : t.accentFaint,
-          color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 28, fontWeight: 600, fontFamily: t.fontSans,
-          marginBottom: 26,
-          border: `2px solid ${t.accent}`,
-          overflow: 'hidden',
-          boxShadow: `0 6px 24px color-mix(in oklch, ${t.accent} 18%, transparent)`,
-        }}>
-          {photo
-            ? <img src={photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-            : initial}
+      {lockedUser ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: '50%', background: t.accentFaint, color: t.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 26, fontWeight: 600, marginBottom: 16, border: `2px solid ${t.accent}`,
+          }}>{lockedUser.charAt(0).toUpperCase()}</div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
+            {tr('auth.greeting', { name: lockedUser })}
+          </h1>
+          <p style={{ margin: '6px 0 0', color: t.text2, fontSize: 12.5, textAlign: 'center' }}>
+            {tr('auth.lock.sub')}
+          </p>
         </div>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
-          {tr('auth.greeting', { name: username })}
-        </h1>
-        <p style={{ margin: '6px 0 0', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
-          {tr('auth.login.sub')}
-        </p>
-      </div>
+      ) : (
+        <>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
+            {tr('auth.login.title')}
+          </h1>
+          <p style={{ margin: '6px 0 22px', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
+            {tr('auth.login.sub')}
+          </p>
+        </>
+      )}
 
-      <PinSegmented
-        value={pin}
-        onChange={setPin}
-        length={8}
-        autoFocus
-        onEnter={submit}
-      />
+      <FieldGroup>
+        {!lockedUser && (
+          <FormInput
+            icon={IconUser}
+            value={username}
+            onChange={setUsername}
+            placeholder={tr('auth.field.username')}
+            autoFocus
+          />
+        )}
+        <PinSegmented
+          label={tr('auth.field.pin')}
+          value={pin}
+          onChange={setPin}
+          length={8}
+          autoFocus={!!lockedUser}
+          onEnter={submit}
+        />
+      </FieldGroup>
 
       {error && <FormError>{error}</FormError>}
 
-      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || pin.length < 4} style={{ width: '100%', justifyContent: 'center', marginTop: 14 }}>
+      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !effectiveUser || pin.length < 4} style={{ width: '100%', justifyContent: 'center', marginTop: 14 }}>
         {busy ? tr('auth.btn.enter_loading') : tr('auth.btn.enter')}
       </Btn>
 
-      <button
-        type="button"
-        onClick={onRecover}
-        style={{
-          marginTop: 16, background: 'transparent', border: 0, color: t.text2,
-          fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-          display: 'block', marginInline: 'auto',
-        }}>
-        {tr('auth.forgot_pin')}
-      </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 16 }}>
+        <button
+          type="button"
+          onClick={onRecover}
+          style={{
+            background: 'transparent', border: 0, color: t.text2,
+            fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+            display: 'block', marginInline: 'auto',
+          }}>
+          {tr('auth.forgot_pin')}
+        </button>
+        {lockedUser && (
+          <button
+            type="button"
+            onClick={switchUser}
+            style={{
+              background: 'transparent', border: 0, color: t.text3,
+              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+              display: 'block', marginInline: 'auto',
+            }}>
+            {tr('auth.switch_user')}
+          </button>
+        )}
+      </div>
     </>
   );
 }
@@ -605,6 +636,7 @@ function RecoverView({
 }) {
   const t = useTokens();
   const tr = useT();
+  const [username, setUsername] = useState('');
   const [phrase, setPhrase] = useState('');
   const [newPin, setNewPin] = useState('');
   const [busy, setBusy] = useState(false);
@@ -612,10 +644,11 @@ function RecoverView({
 
   async function submit() {
     setError(null);
+    if (!username.trim()) return setError(tr('auth.err.name_empty'));
     if (phrase.trim().split(/\s+/).length !== 12) return setError(tr('auth.err.phrase_length'));
     if (!/^\d{4,8}$/.test(newPin)) return setError(tr('auth.err.pin_format'));
     setBusy(true);
-    const r = await authActions.recover({ recoveryPhrase: phrase, newPin });
+    const r = await authActions.recover({ username: username.trim(), recoveryPhrase: phrase, newPin });
     setBusy(false);
     if (r.ok) onSuccess(r.newRecoveryPhrase);
     else setError(r.error);
@@ -645,6 +678,13 @@ function RecoverView({
       </p>
 
       <FieldGroup>
+        <FormInput
+          icon={IconUser}
+          value={username}
+          onChange={setUsername}
+          placeholder={tr('auth.field.username')}
+          autoFocus
+        />
         <Glass radius={14} style={{ padding: 0 }}>
           <textarea
             value={phrase}

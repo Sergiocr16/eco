@@ -10,8 +10,11 @@
 // ven el mismo estado y se re-renderizan cuando cambia.
 
 import { useEffect, useState } from 'react';
+import { saveDoc, shouldApplyRemote, type SyncDoc } from '@/lib/user-sync';
+import { on as ecoOn } from '@/lib/eco-bus';
 
 const STORAGE_KEY = (bubbleId: string) => `eco.review.accepted.${bubbleId}`;
+const DOC_KEY = (bubbleId: string) => `review:${bubbleId}`;
 
 // Guardamos timestamp del accept (en lugar de `true` boolean) para que el
 // FilesPanel pueda detectar si una nueva edición del agente sucedió DESPUÉS
@@ -60,11 +63,43 @@ function load(bubbleId: string): AcceptedMap {
 }
 
 function persist(bubbleId: string) {
+  const map = store.get(bubbleId) ?? {};
   try {
-    const map = store.get(bubbleId) ?? {};
     window.localStorage.setItem(STORAGE_KEY(bubbleId), JSON.stringify(map));
   } catch { /* noop */ }
+  saveDoc(DOC_KEY(bubbleId), map); // sync cross-device
 }
+
+/** Hidratación al loguear: siembra el store desde los docs `review:*`. */
+export function hydrateReviewAll(docs: Record<string, SyncDoc>): void {
+  for (const [key, doc] of Object.entries(docs)) {
+    if (!key.startsWith('review:')) continue;
+    const bubbleId = key.slice('review:'.length);
+    if (doc.value && typeof doc.value === 'object' && !Array.isArray(doc.value)) {
+      const map: AcceptedMap = {};
+      for (const [k, v] of Object.entries(doc.value as Record<string, unknown>)) {
+        if (typeof v === 'number') map[k] = v;
+      }
+      store.set(bubbleId, map);
+    }
+  }
+  notify();
+}
+
+// Push en vivo de otros dispositivos del usuario.
+ecoOn('eco:doc_updated', ({ key, value, updatedAt }) => {
+  if (!key.startsWith('review:')) return;
+  if (!shouldApplyRemote(key, updatedAt)) return;
+  const bubbleId = key.slice('review:'.length);
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const map: AcceptedMap = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof v === 'number') map[k] = v;
+    }
+    store.set(bubbleId, map);
+    notify();
+  }
+});
 
 export type ReviewState = {
   /** ¿El archivo está marcado como aceptado por el user? */

@@ -7,6 +7,10 @@
 // sin importar quién hizo el cambio (Settings, menú de la burbuja, etc.).
 
 import { useEffect, useState } from 'react';
+import { saveDoc, shouldApplyRemote, markSeen } from '@/lib/user-sync';
+import { on as ecoOn } from '@/lib/eco-bus';
+
+const DOC_KEY = 'categories';
 
 export type Category = {
   id: string;
@@ -79,11 +83,42 @@ let categories: Category[] = load();
 const subs = new Set<() => void>();
 function notify() { for (const fn of subs) { try { fn(); } catch { /* noop */ } } }
 
+// Cambio local del usuario → persiste a localStorage (cache) + sube al server.
 function setCategories(next: Category[]): void {
   categories = next;
   persist(next);
+  saveDoc(DOC_KEY, next);
   notify();
 }
+
+// Aplica un valor que vino del servidor (hidratación o push de otro dispositivo)
+// — sin re-subirlo.
+function applyCategoriesFromServer(value: unknown): void {
+  if (!Array.isArray(value)) return;
+  const clean = value
+    .filter((c): c is Category =>
+      !!c && typeof c === 'object'
+      && typeof (c as Category).id === 'string'
+      && typeof (c as Category).name === 'string'
+      && typeof (c as Category).color === 'string')
+    .map((c) => ({ id: c.id, name: c.name, color: c.color }));
+  categories = clean;
+  persist(clean);
+  notify();
+}
+
+/** Hidratación al loguear: aplica el doc `categories` del servidor si existe. */
+export function hydrateCategories(value: unknown, updatedAt: number): void {
+  markSeen(DOC_KEY, updatedAt);
+  applyCategoriesFromServer(value);
+}
+
+// Push en vivo de otros dispositivos del mismo usuario.
+ecoOn('eco:doc_updated', ({ key, value, updatedAt }) => {
+  if (key !== DOC_KEY) return;
+  if (!shouldApplyRemote(key, updatedAt)) return;
+  applyCategoriesFromServer(value);
+});
 
 function newId(): string {
   return `cat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;

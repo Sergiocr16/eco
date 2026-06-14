@@ -21,6 +21,7 @@ import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 import { useCategories, getCategoryById } from '@/hooks/useCategories';
 import { useBubbleHasFilesMap } from '@/hooks/useGitChanges';
+import { useTeamBubbles } from '@/components/AdminGraph';
 
 type Props = {
   bubbles: Bubble[];
@@ -40,16 +41,22 @@ type Props = {
   onToggleCategory: (id: string, categoryId: string | undefined) => void;
   availableWorkspaces: string[];
   voiceError?: string | null;
+  role?: 'admin' | 'member' | null;
+  userId?: string | null;
 };
 
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive } = props;
+  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive, role, userId } = props;
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
   const { username } = useProfile();
+  const isAdmin = role === 'admin';
+  // Grafo de equipo del admin: bubbles propias (reales) + las de otros usuarios
+  // (sintetizadas desde /admin/overview). Para members el hook no hace nada.
+  const { teamBubbles, ownerNames } = useTeamBubbles(bubbles, userId ?? null, isAdmin);
   // onSend / interimText / voiceError / voiceState / onMicToggle siguen
   // llegando por contrato pero ya no se usan en el Dashboard: la CommandBar y
   // el VoiceOrb ("Eco escuchando") se removieron — el dictado vive dentro de
@@ -168,6 +175,15 @@ export function Dashboard(props: Props) {
             onOpenAgent={onOpenAgent}
             onCreateAgent={onCreateAgent}
             workspaces={availableWorkspaces}
+          />
+        ) : isAdmin ? (
+          // Admin: el MISMO GraphView pero agrupado por usuario (Eco → usuario →
+          // sus bubbles), con todas las animaciones/controles. Solo abre las propias.
+          <GraphView
+            bubbles={teamBubbles}
+            groupMode="owner"
+            ownerNames={ownerNames}
+            onOpenAgent={(id) => { if (bubbles.some((b) => b.id === id)) onOpenAgent(id); }}
           />
         ) : (
           <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
@@ -907,6 +923,32 @@ function NameAgentDialog({
             </div>
           </div>
         </div>
+        {workspaces.length === 0 ? (
+          <>
+            <div style={{
+              padding: '14px 4px 6px', textAlign: 'center',
+              display: 'flex', flexDirection: 'column', gap: 6,
+            }}>
+              <div style={{ fontSize: 13, color: t.text0, fontWeight: 500 }}>
+                {tr('wsp.no_workspaces')}
+              </div>
+              <div style={{ fontSize: 12, color: t.text2 }}>
+                {tr('wsp.ask_admin')}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                height: 36, borderRadius: 999, border: `1px solid ${t.glassBorder}`,
+                background: 'transparent', color: t.text1,
+                fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+              }}>
+              {tr('common.close')}
+            </button>
+          </>
+        ) : (
+        <>
         <input
           ref={inputRef}
           value={draft}
@@ -1060,6 +1102,8 @@ function NameAgentDialog({
             {tr('common.create')}
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
@@ -2090,7 +2134,14 @@ function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) 
   );
 }
 
-function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (id: string) => void }) {
+function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }: {
+  bubbles: Bubble[];
+  onOpenAgent: (id: string) => void;
+  // 'workspace' (default): clusters por carpeta. 'owner': clusters por usuario
+  // (grafo de equipo del admin) — usa b.ownerId + ownerNames para el label.
+  groupMode?: 'workspace' | 'owner';
+  ownerNames?: Record<string, string>;
+}) {
   const t = useTokens();
   const tr = useT();
   const [hover, setHover] = useState<string | null>(null);
@@ -2257,23 +2308,35 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   // por carpeta/workspace, y de cada nodo de carpeta salen sus agentes.
   // Excepción: si solo hay UN workspace, los agentes salen directo del hub
   // Eco (sin nodo intermedio) — no aporta nada con un solo proyecto.
-  const wsGroups: Array<{ key: string; label: string; items: Bubble[] }> = (() => {
+  // En modo owner agrupamos por (usuario, workspace) — clave compuesta — para
+  // que cada workspace de cada usuario sea su propio cluster (Eco → usuario →
+  // workspace → bubbles). En modo normal, por workspace.
+  const wsGroups: Array<{ key: string; label: string; items: Bubble[]; ownerId?: string; workspace?: string }> = (() => {
+    const SEP = '';
     const map = new Map<string, Bubble[]>();
     for (const b of bubbles) {
-      const key = b.workspace || '__none__';
+      const ws = b.workspace || '__none__';
+      const key = groupMode === 'owner' ? `${b.ownerId || '__none__'}${SEP}${ws}` : ws;
       const arr = map.get(key);
       if (arr) arr.push(b);
       else map.set(key, [b]);
     }
-    return [...map.entries()].map(([key, items]) => ({
-      key,
-      label: key === '__none__'
-        ? tr('dash.no_folder')
-        : (key.split('/').filter(Boolean).pop() || key),
-      items,
-    }));
+    return [...map.entries()].map(([key, items]) => {
+      const ws = groupMode === 'owner' ? (key.split(SEP)[1] ?? '__none__') : key;
+      const ownerId = groupMode === 'owner' ? (key.split(SEP)[0] ?? '__none__') : undefined;
+      return {
+        key,
+        label: ws === '__none__' ? tr('dash.no_folder') : (ws.split('/').filter(Boolean).pop() || ws),
+        items,
+        ownerId,
+        workspace: ws,
+      };
+    });
   })();
-  const hierarchical = wsGroups.length > 1;
+  // En modo owner SIEMPRE jerárquico: cada usuario debe tener su nodo y sus
+  // bubbles colgando de él — aunque haya un solo usuario con agentes (sino
+  // colgarían de Eco directamente y parecería que son de "eco").
+  const hierarchical = groupMode === 'owner' || wsGroups.length > 1;
 
   // Nodos de workspace (solo en modo jerárquico). Por defecto se reparten en
   // un arco HORIZONTAL debajo del hub Eco — un anillo completo dejaba (con 2
@@ -2362,30 +2425,87 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   // más carpetas → anillo más grande para que el arco horizontal no se
   // amontone. Tope al 46% del lado menor del canvas. `spreadWs` multiplica
   // esta separación (carpetas ↔ Eco).
+  const OWNER_NODE_R = 30;
+  const ownerMode = groupMode === 'owner';
+  // En el grafo de admin el núcleo "eco" es más grande para diferenciarse de
+  // los nodos de usuario (que también son círculos con acento).
+  const ECO_HUB_R = ownerMode ? 46 : 34;
+
+  // Tier de USUARIO (solo owner mode): un nodo por dueño, en arco horizontal
+  // alrededor de Eco. Los workspaces de cada usuario orbitan SU nodo.
+  const ownerGroupsArr: Array<[string, Bubble[]]> = ownerMode
+    ? (() => {
+        const m = new Map<string, Bubble[]>();
+        for (const b of bubbles) {
+          const k = b.ownerId || '__none__';
+          const a = m.get(k);
+          if (a) a.push(b); else m.set(k, [b]);
+        }
+        return [...m.entries()];
+      })()
+    : [];
+  const ownerOrbitR = Math.min(
+    Math.min(W, H) * 0.46,
+    Math.max(180, 120 + ownerGroupsArr.length * 46),
+  ) * spreadWs;
+  const ownerNodes = ownerGroupsArr.map(([id, items], i) => {
+    const N = ownerGroupsArr.length;
+    const aStart = Math.PI * (175 / 180);
+    const aEnd = Math.PI * (5 / 180);
+    const angle = N === 1 ? Math.PI / 2 : aStart + (i / (N - 1)) * (aEnd - aStart);
+    // Offset manual si el admin arrastró este nodo de usuario (reusa wsOffsets
+    // con clave 'owner:<id>'). Sus workspaces y bubbles cuelgan de o.x/o.y, así
+    // que se mueven con él automáticamente.
+    const off = wsOffsets['owner:' + id] ?? { dx: 0, dy: 0 };
+    return {
+      id, key: 'owner:' + id,
+      label: ownerNames?.[id] ?? '—',
+      items, angle, angleDeg: (angle * 180) / Math.PI,
+      x: cx + Math.cos(angle) * ownerOrbitR + off.dx,
+      y: cy + Math.sin(angle) * ownerOrbitR * tilt + off.dy,
+      active: items.some((b) => nodeFlags(b).isActive),
+    };
+  });
+
   const wsOrbitR = Math.min(
     Math.min(W, H) * 0.46,
     Math.max(170, 110 + wsGroups.length * 42),
   ) * spreadWs;
-  const wsNodes = hierarchical
-    ? wsGroups.map((g, i) => {
-        const N = wsGroups.length;
-        const aStart = Math.PI * (175 / 180);
-        const aEnd = Math.PI * (5 / 180);
-        const angle = N === 1
-          ? Math.PI / 2
-          : aStart + (i / (N - 1)) * (aEnd - aStart);
-        // Offset manual del user (si arrastró este nodo de carpeta).
-        const off = wsOffsets[g.key] ?? { dx: 0, dy: 0 };
-        return {
-          ...g,
-          angle,
-          angleDeg: (angle * 180) / Math.PI,
-          x: cx + Math.cos(angle) * wsOrbitR + off.dx,
-          y: cy + Math.sin(angle) * wsOrbitR * tilt + off.dy,
-          active: g.items.some((b) => nodeFlags(b).isActive),
-        };
-      })
-    : [];
+  const wsAroundOwnerR = 110 * spreadNodes;
+  const wsNodes = !hierarchical
+    ? []
+    : ownerMode
+      ? ownerNodes.flatMap((o) => {
+          const owWs = wsGroups.filter((g) => g.ownerId === o.id);
+          const k = owWs.length;
+          const span = Math.min(280, 60 + k * 40);
+          return owWs.map((g, j) => {
+            const phaseDeg = k === 1 ? o.angleDeg : o.angleDeg - span / 2 + (j / (k - 1)) * span;
+            const ph = (phaseDeg * Math.PI) / 180;
+            const off = wsOffsets[g.key] ?? { dx: 0, dy: 0 };
+            return {
+              ...g, angle: ph, angleDeg: phaseDeg,
+              x: o.x + Math.cos(ph) * wsAroundOwnerR + off.dx,
+              y: o.y + Math.sin(ph) * wsAroundOwnerR * tilt + off.dy,
+              parentX: o.x, parentY: o.y, parentR: OWNER_NODE_R,
+              active: g.items.some((b) => nodeFlags(b).isActive),
+            };
+          });
+        })
+      : wsGroups.map((g, i) => {
+          const N = wsGroups.length;
+          const aStart = Math.PI * (175 / 180);
+          const aEnd = Math.PI * (5 / 180);
+          const angle = N === 1 ? Math.PI / 2 : aStart + (i / (N - 1)) * (aEnd - aStart);
+          const off = wsOffsets[g.key] ?? { dx: 0, dy: 0 };
+          return {
+            ...g, angle, angleDeg: (angle * 180) / Math.PI,
+            x: cx + Math.cos(angle) * wsOrbitR + off.dx,
+            y: cy + Math.sin(angle) * wsOrbitR * tilt + off.dy,
+            parentX: cx, parentY: cy, parentR: 34,
+            active: g.items.some((b) => nodeFlags(b).isActive),
+          };
+        });
 
   const nodes: GraphNode[] = [];
   if (!hierarchical) {
@@ -2697,21 +2817,21 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           style={{ transformOrigin: `${cx}px ${cy}px` }}
           animate={{ scale: [1, 1.05, 1] }}
           transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
-          <circle cx={cx} cy={cy} r="34" fill={t.bg1}
+          <circle cx={cx} cy={cy} r={ECO_HUB_R} fill={t.bg1}
             stroke={t.accent} strokeWidth="1" strokeOpacity="0.6"/>
         </motion.g>
         {/* Anillo expansivo 1 */}
         <motion.circle
-          cx={cx} cy={cy} r="28" fill="none"
+          cx={cx} cy={cy} r={ECO_HUB_R - 6} fill="none"
           stroke={t.accent} strokeWidth="0.5"
-          animate={{ r: [28, 44, 28], opacity: [0.5, 0, 0.5] }}
+          animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.5, 0, 0.5] }}
           transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity }}
         />
         {/* Anillo expansivo 2, desfasado */}
         <motion.circle
-          cx={cx} cy={cy} r="28" fill="none"
+          cx={cx} cy={cy} r={ECO_HUB_R - 6} fill="none"
           stroke={t.accent} strokeWidth="0.5"
-          animate={{ r: [28, 44, 28], opacity: [0.3, 0, 0.3] }}
+          animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.3, 0, 0.3] }}
           transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity, delay: 1.2 }}
         />
         {/* Wordmark "eco" dentro del hub — replica /assets/eco-wordmark.svg.
@@ -2722,23 +2842,45 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
           textAnchor="middle" dominantBaseline="middle"
           fill={t.text0}
           fontFamily='-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif'
-          fontSize="24" fontWeight="300" letterSpacing="0.6"
+          fontSize={ownerMode ? 30 : 24} fontWeight="300" letterSpacing="0.6"
           animate={{ opacity: [0.85, 1, 0.85] }}
           transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
           eco
         </motion.text>
 
+        {/* Enlaces hub Eco → nodo de usuario (solo modo owner / admin). */}
+        {ownerMode && ownerNodes.map((o) => {
+          const dx = o.x - cx, dy = o.y - cy;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          const ux = dx / dist, uy = dy / dist;
+          const gap = 2;
+          const x1 = cx + ux * (ECO_HUB_R + gap);
+          const y1 = cy + uy * (ECO_HUB_R + gap);
+          const x2 = o.x - ux * (OWNER_NODE_R + gap);
+          const y2 = o.y - uy * (OWNER_NODE_R + gap);
+          const stroke = o.active ? t.accent : t.text2;
+          const opacity = o.active ? 0.6 : 0.28;
+          return (
+            <line key={'owner-bond-' + o.id}
+              x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={stroke} strokeOpacity={opacity}
+              strokeWidth={o.active ? 1.6 : 1.2}
+              strokeLinecap="round"/>
+          );
+        })}
+
         {/* Enlaces hub Eco → nodo de workspace (solo modo jerárquico). */}
         {hierarchical && wsNodes.map((ws) => {
-          const dx = ws.x - cx;
-          const dy = ws.y - cy;
+          // El padre es Eco (modo normal) o el nodo de usuario (modo owner).
+          const px = ws.parentX, py = ws.parentY, pr = ws.parentR;
+          const dx = ws.x - px;
+          const dy = ws.y - py;
           const dist = Math.max(1, Math.hypot(dx, dy));
           const ux = dx / dist;
           const uy = dy / dist;
-          const ECO_R = 34;
           const gap = 2;
-          const x1 = cx + ux * (ECO_R + gap);
-          const y1 = cy + uy * (ECO_R + gap);
+          const x1 = px + ux * (pr + gap);
+          const y1 = py + uy * (pr + gap);
           const x2 = ws.x - ux * (WS_NODE_R + gap);
           const y2 = ws.y - uy * (WS_NODE_R + gap);
           const stroke = ws.active ? t.accent : t.text2;
@@ -2839,6 +2981,33 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
             </g>
           );
         })}
+
+        {/* Nodos de usuario (modo owner / admin) — inicial + nombre. */}
+        {ownerMode && ownerNodes.map((o) => (
+          <g key={'owner-node-' + o.id} transform={`translate(${o.x},${o.y})`}
+            onMouseDown={(e) => startWsDrag(o.key, e)}
+            style={{ cursor: wsDragging === o.key ? 'grabbing' : 'grab' }}>
+            {o.active && (
+              <motion.circle cx={0} cy={0} r={OWNER_NODE_R}
+                fill="none" stroke={t.accent} strokeWidth={1.4}
+                animate={{ r: [OWNER_NODE_R, OWNER_NODE_R + 16], opacity: [0.45, 0] }}
+                transition={{ duration: 2.2, ease: 'easeOut', repeat: Infinity }}/>
+            )}
+            <circle cx={0} cy={0} r={OWNER_NODE_R}
+              fill={t.accentFaint} stroke={t.accent}
+              strokeWidth={o.active ? 2 : 1.4} strokeOpacity={0.85}/>
+            <text x={0} y={5} textAnchor="middle" fill={t.accent}
+              fontFamily={t.fontSans} fontSize="16" fontWeight="700"
+              style={{ pointerEvents: 'none' }}>
+              {o.label.charAt(0).toUpperCase()}
+            </text>
+            <text x={0} y={OWNER_NODE_R + 16} textAnchor="middle" fill={t.text0}
+              fontFamily={t.fontSans} fontSize="12.5" fontWeight="600"
+              style={{ pointerEvents: 'none' }}>
+              {o.label.length > 16 ? o.label.slice(0, 16) + '…' : o.label}
+            </text>
+          </g>
+        ))}
 
         {/* Nodos de workspace — un círculo por carpeta, con glifo de folder
             y el nombre de la carpeta. Solo en modo jerárquico (2+ proyectos). */}

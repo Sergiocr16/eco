@@ -4,11 +4,8 @@
 //
 // Storage: ~/.eco/github.json con chmod 600 (mismo patrón que api-key-store).
 
-import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync, unlinkSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { homedir } from 'node:os';
-
-const FILE_PATH = `${homedir()}/.eco/github.json`;
+import { existsSync, readFileSync, writeFileSync, chmodSync, unlinkSync } from 'node:fs';
+import { userFilePath, firstAdminId } from './users-store.js';
 
 export type GithubCredentials = {
   username: string;
@@ -17,15 +14,28 @@ export type GithubCredentials = {
   validatedAt: number;
 };
 
-export function hasGithubCredentials(): boolean {
-  return existsSync(FILE_PATH);
+// Multi-tenant: las credenciales viven en ~/.eco/users/<userId>/github.json.
+// `userId` undefined → cae al primer admin (back-compat para procesos sin
+// sesión todavía, p.ej. spawns de WS antes del tagging por usuario).
+function resolveUserId(userId?: string): string | null {
+  return userId ?? firstAdminId();
+}
+function filePathFor(userId?: string): string | null {
+  const id = resolveUserId(userId);
+  if (!id) return null;
+  try { return userFilePath(id, 'github.json'); } catch { return null; }
 }
 
-export function readGithubCredentials(): GithubCredentials | null {
+export function hasGithubCredentials(userId?: string): boolean {
+  const p = filePathFor(userId);
+  return !!p && existsSync(p);
+}
+
+export function readGithubCredentials(userId?: string): GithubCredentials | null {
   try {
-    if (!existsSync(FILE_PATH)) return null;
-    const raw = readFileSync(FILE_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as Partial<GithubCredentials>;
+    const p = filePathFor(userId);
+    if (!p || !existsSync(p)) return null;
+    const parsed = JSON.parse(readFileSync(p, 'utf-8')) as Partial<GithubCredentials>;
     if (typeof parsed.username !== 'string' || !parsed.username) return null;
     if (typeof parsed.email !== 'string' || !parsed.email) return null;
     if (typeof parsed.pat !== 'string' || !parsed.pat) return null;
@@ -34,21 +44,21 @@ export function readGithubCredentials(): GithubCredentials | null {
   } catch { return null; }
 }
 
-export function writeGithubCredentials(c: GithubCredentials): void {
+export function writeGithubCredentials(userId: string, c: GithubCredentials): void {
   if (!c.username || !c.email || !c.pat) throw new Error('Credenciales incompletas');
-  const dir = dirname(FILE_PATH);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeFileSync(FILE_PATH, JSON.stringify(c, null, 2), { mode: 0o600 });
-  try { chmodSync(FILE_PATH, 0o600); } catch { /* noop */ }
+  const p = userFilePath(userId, 'github.json');
+  writeFileSync(p, JSON.stringify(c, null, 2), { mode: 0o600 });
+  try { chmodSync(p, 0o600); } catch { /* noop */ }
 }
 
-export function deleteGithubCredentials(): void {
-  try { unlinkSync(FILE_PATH); } catch { /* noop */ }
+export function deleteGithubCredentials(userId: string): void {
+  const p = filePathFor(userId);
+  if (p) { try { unlinkSync(p); } catch { /* noop */ } }
 }
 
 /** Devuelve el PAT enmascarado para mostrar en UI. */
-export function maskedPat(): string | null {
-  const c = readGithubCredentials();
+export function maskedPat(userId?: string): string | null {
+  const c = readGithubCredentials(userId);
   if (!c) return null;
   const tail = c.pat.slice(-4);
   // PATs modernos pueden empezar con ghp_, github_pat_, gho_, ghu_, ghs_, ghr_.

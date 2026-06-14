@@ -6,11 +6,12 @@ import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync, stat
 import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import { config, isAllowedWorkspace, hostAllowed } from './config.js';
-import { attachWebSocket, broadcastServerMessage, broadcastClientAction, wsClientCount } from './ws-server.js';
+import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
+import { attachWebSocket, broadcastServerMessage, broadcastClientAction, broadcastToUser, wsClientCount } from './ws-server.js';
+import { listDocs, writeDoc, deleteDoc } from './user-docs.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
-import { setBubblesSnapshot, getBubblesSnapshot, type BubbleSummary } from './bubbles-index.js';
-import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble } from './pty-server.js';
+import { setBubblesSnapshot, getBubblesSnapshot, findBubble, getAllSnapshots, type BubbleSummary } from './bubbles-index.js';
+import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble, runningPtyBubbleIds } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
 import * as gitHistory from './git-history.js';
@@ -31,10 +32,14 @@ import {
   deleteGithubCredentials, maskedPat as maskedGithubPat, validateGithubPat,
 } from './github-credentials-store.js';
 import {
-  hasUser, statusInfo, registerUser, verifyPin,
-  recoverGetNewPhrase, deleteUser,
-} from './user-store.js';
+  hasAnyUser, statusInfo, registerFirstUser, verifyPin,
+  recover as recoverUser, deleteUser, getUser, getUserByUsername,
+  listUsers, createMember, setRole, setWorkspaceGrants, resetPin,
+  mintRefresh, verifyRefresh, migrateLegacyUserIfNeeded, firstAdminId,
+  type Role,
+} from './users-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
+import { runWithUser } from './request-context.js';
 import { isAppError } from './app-error.js';
 import { resolveSafePath } from './fs-paths.js';
 import { listTree } from './fs-tree.js';
@@ -86,7 +91,10 @@ app.use(
     maxAge: 600,
   }),
 );
-app.use(express.json({ limit: '128kb' }));
+// 5mb: el sync cross-device (PUT /user/doc) manda la bubble completa con sus
+// mensajes (ya vienen "thinned"); 128kb se quedaba corto. El resto de endpoints
+// usa cuerpos chicos igual.
+app.use(express.json({ limit: '5mb' }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const host = req.headers.host;
@@ -128,23 +136,32 @@ const RegisterSchema = z.object({
   username: z.string().min(1).max(80),
   pin: z.string().regex(/^\d{4,8}$/, 'El PIN debe tener entre 4 y 8 dígitos'),
 });
-const LoginSchema = z.object({ pin: z.string().min(1).max(20) });
+const LoginSchema = z.object({
+  username: z.string().min(1).max(80),
+  pin: z.string().min(1).max(20),
+});
 const RecoverSchema = z.object({
+  username: z.string().min(1).max(80),
   recoveryPhrase: z.string().min(20).max(400),
   newPin: z.string().regex(/^\d{4,8}$/),
 });
+const PinOnlySchema = z.object({ pin: z.string().min(1).max(20) });
+const REFRESH_HEADER = 'x-eco-refresh';
 
 app.get('/auth/status', (_req: Request, res: Response) => {
   res.json(statusInfo());
 });
 
+// Registro PÚBLICO solo para el PRIMER usuario (que queda como admin). Una vez
+// que existe al menos un usuario, los demás los crea el admin (registro cerrado).
 app.post('/auth/register', async (req: Request, res: Response) => {
   const parsed = RegisterSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
   try {
-    const result = await registerUser(parsed.data.username, parsed.data.pin);
-    const session = createSession(result.username);
-    res.json({ ok: true, username: result.username, recoveryPhrase: result.recoveryPhrase, session });
+    const { user, recoveryPhrase } = await registerFirstUser(parsed.data.username, parsed.data.pin);
+    const session = createSession(user.id, user.role, user.username);
+    const refresh = await mintRefresh(user.id);
+    res.json({ ok: true, username: user.username, role: user.role, recoveryPhrase, session, refresh });
   } catch (e) {
     fromException(res, e, 'auth.register_failed', 'Error al registrar');
   }
@@ -152,27 +169,25 @@ app.post('/auth/register', async (req: Request, res: Response) => {
 
 app.post('/auth/login', async (req: Request, res: Response) => {
   const parsed = LoginSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'auth.pin_required', 'PIN requerido');
-  if (!hasUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
-  const ok = await verifyPin(parsed.data.pin);
-  if (!ok) return errResponse(res, 401, 'auth.pin_wrong', 'PIN incorrecto');
-  const info = statusInfo();
-  const session = createSession(info.username ?? 'user');
-  res.json({ ok: true, username: info.username, session });
+  if (!parsed.success) return errResponse(res, 400, 'auth.login_required', 'Usuario y PIN requeridos');
+  if (!hasAnyUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
+  const user = getUserByUsername(parsed.data.username);
+  if (!user) return errResponse(res, 401, 'auth.login_wrong', 'Usuario o PIN incorrectos');
+  const ok = await verifyPin(user.id, parsed.data.pin);
+  if (!ok) return errResponse(res, 401, 'auth.login_wrong', 'Usuario o PIN incorrectos');
+  const session = createSession(user.id, user.role, user.username);
+  const refresh = await mintRefresh(user.id);
+  res.json({ ok: true, username: user.username, role: user.role, session, refresh });
 });
 
 app.post('/auth/recover', async (req: Request, res: Response) => {
   const parsed = RecoverSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
   try {
-    const result = await recoverGetNewPhrase(parsed.data.recoveryPhrase, parsed.data.newPin);
-    const session = createSession(result.username);
-    res.json({
-      ok: true,
-      username: result.username,
-      newRecoveryPhrase: result.newRecoveryPhrase,
-      session,
-    });
+    const { user, newRecoveryPhrase } = await recoverUser(parsed.data.username, parsed.data.recoveryPhrase, parsed.data.newPin);
+    const session = createSession(user.id, user.role, user.username);
+    const refresh = await mintRefresh(user.id);
+    res.json({ ok: true, username: user.username, role: user.role, newRecoveryPhrase, session, refresh });
   } catch (e) {
     fromException(res, e, 'auth.recover_failed', 'No se pudo recuperar');
   }
@@ -184,13 +199,16 @@ app.post('/auth/logout', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+// Borrar la PROPIA cuenta (requiere PIN). El admin borra otras vía /admin/users.
 app.delete('/auth/user', async (req: Request, res: Response) => {
-  // Acción destructiva: requiere PIN para confirmar
-  const parsed = LoginSchema.safeParse(req.body);
+  const parsed = PinOnlySchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'auth.pin_required_delete', 'PIN requerido para borrar usuario');
-  const ok = await verifyPin(parsed.data.pin);
+  const me = req.ecoUser;
+  if (!me) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  const ok = await verifyPin(me.id, parsed.data.pin);
   if (!ok) return errResponse(res, 401, 'auth.pin_wrong', 'PIN incorrecto');
-  deleteUser();
+  deleteUser(me.id);
+  destroySession(req.headers[SESSION_HEADER] as string | undefined);
   res.json({ ok: true });
 });
 
@@ -233,32 +251,202 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Session check: si hay usuario registrado, requiere session válida en TODOS los endpoints
-// excepto los de /auth/* y /health (este último ya pasó arriba).
+// excepto los de /auth/* y /health (este último ya pasó arriba). Adjunta la
+// identidad derivada de la sesión a `req.ecoUser` — NUNCA se confía en un
+// userId que mande el cliente.
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (AUTH_FREE_PATHS.has(req.path)) return next();
-  if (isMcpFreePath(req.method, req.path)) return next();
-  if (!hasUser()) return next(); // sin user registrado, no se requiere sesión todavía
+  if (isMcpFreePath(req.method, req.path)) {
+    // No requiere sesión interactiva, pero si el cliente manda una válida
+    // (p.ej. el browser pidiendo /workspaces) la usamos para scoping por usuario.
+    const s = getSession(req.headers[SESSION_HEADER] as string | undefined);
+    if (s) req.ecoUser = { id: s.userId, role: s.role, username: s.username };
+    return next();
+  }
+  if (!hasAnyUser()) return next(); // sin user registrado, no se requiere sesión todavía
   const sessionId = req.headers[SESSION_HEADER] as string | undefined;
   const session = getSession(sessionId);
   if (!session) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
+  req.ecoUser = { id: session.userId, role: session.role, username: session.username };
   next();
 });
 
-// Renueva la sesión interactiva a partir del bearer token (ya validado por el
-// middleware de arriba). No pide PIN: el bearer es la credencial permanente de
-// la máquina. El frontend lo invoca de forma transparente cuando una sesión
-// expiró por inactividad, evitando el re-login.
-app.post('/auth/session', (_req: Request, res: Response) => {
-  if (!hasUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
-  const info = statusInfo();
-  const session = createSession(info.username ?? 'user');
-  res.json({ ok: true, username: info.username, session });
+// Contexto por-request: corre el resto de la cadena dentro de un store con el
+// userId de la sesión, para que los spawns de git (git-ops) usen la identidad
+// de GitHub del usuario correcto sin threadear el userId por todos lados.
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  runWithUser(req.ecoUser?.id, () => next());
 });
 
-app.get('/info', async (_req, res) => {
+// requireAdmin — guarda para los endpoints /admin/*. Se usa DESPUÉS del
+// middleware de sesión (que ya pobló req.ecoUser).
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.ecoUser?.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
+  next();
+}
+
+// Renueva la sesión interactiva a partir del REFRESH TOKEN por usuario (no del
+// bearer compartido — eso era el agujero del modelo single-tenant). El frontend
+// lo invoca de forma transparente cuando la sesión expiró por inactividad.
+app.post('/auth/session', async (req: Request, res: Response) => {
+  if (!hasAnyUser()) return errResponse(res, 400, 'auth.no_user', 'No hay usuario registrado');
+  const raw = req.headers[REFRESH_HEADER] as string | undefined;
+  const userId = await verifyRefresh(raw);
+  if (!userId) return errResponse(res, 401, 'auth.refresh_invalid', 'Refresh inválido — iniciá sesión de nuevo');
+  const user = getUser(userId);
+  if (!user) return errResponse(res, 401, 'auth.refresh_invalid', 'Refresh inválido — iniciá sesión de nuevo');
+  const session = createSession(user.id, user.role, user.username);
+  res.json({ ok: true, username: user.username, role: user.role, session });
+});
+
+// Identidad del usuario de la sesión actual (para que el frontend re-derive
+// username+role al recargar con una sesión válida).
+app.get('/auth/me', (req: Request, res: Response) => {
+  if (!req.ecoUser) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  res.json({ ok: true, id: req.ecoUser.id, username: req.ecoUser.username, role: req.ecoUser.role });
+});
+
+// ─── Admin: gestión de usuarios ──────────────────────────────────────────
+const CreateMemberSchema = z.object({
+  username: z.string().min(1).max(80),
+  pin: z.string().regex(/^\d{4,8}$/),
+  role: z.enum(['admin', 'member']).optional(),
+});
+const RoleSchema = z.object({ role: z.enum(['admin', 'member']) });
+const GrantsSchema = z.object({ workspaces: z.array(z.string()).max(200) });
+const ResetPinSchema = z.object({ pin: z.string().regex(/^\d{4,8}$/) });
+const USER_ID_RE = /^[a-f0-9]{1,32}$/;
+
+app.get('/admin/users', requireAdmin, (_req: Request, res: Response) => {
+  const users = listUsers().map((s) => {
+    const u = getUser(s.id);
+    return { id: s.id, username: s.username, role: s.role, workspaceGrants: u?.workspaceGrants ?? [] };
+  });
+  res.json({ ok: true, users });
+});
+
+app.post('/admin/users', requireAdmin, async (req: Request, res: Response) => {
+  const parsed = CreateMemberSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
+  try {
+    const { user, recoveryPhrase } = await createMember(parsed.data.username, parsed.data.pin, (parsed.data.role ?? 'member') as Role);
+    res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role }, recoveryPhrase });
+  } catch (e) {
+    fromException(res, e, 'admin.create_failed', 'No se pudo crear el usuario');
+  }
+});
+
+app.delete('/admin/users/:id', requireAdmin, (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  if (req.ecoUser?.id === id) return errResponse(res, 400, 'admin.cant_delete_self', 'No podés borrar tu propia cuenta acá');
+  deleteUser(id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/users/:id/role', requireAdmin, (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  const parsed = RoleSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Rol inválido');
+  if (req.ecoUser?.id === id && parsed.data.role !== 'admin') {
+    return errResponse(res, 400, 'admin.cant_demote_self', 'No podés quitarte el rol admin a vos mismo');
+  }
+  try { setRole(id, parsed.data.role); res.json({ ok: true }); }
+  catch (e) { fromException(res, e, 'admin.role_failed', 'No se pudo cambiar el rol'); }
+});
+
+app.post('/admin/users/:id/workspaces', requireAdmin, (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  const parsed = GrantsSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Workspaces inválidos');
+  try { setWorkspaceGrants(id, parsed.data.workspaces); res.json({ ok: true }); }
+  catch (e) { fromException(res, e, 'admin.grants_failed', 'No se pudieron asignar los workspaces'); }
+});
+
+app.post('/admin/users/:id/reset-pin', requireAdmin, async (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  const parsed = ResetPinSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'PIN inválido');
+  try { const { recoveryPhrase } = await resetPin(id, parsed.data.pin); res.json({ ok: true, recoveryPhrase }); }
+  catch (e) { fromException(res, e, 'admin.reset_failed', 'No se pudo resetear el PIN'); }
+});
+
+// Vista "quién trabaja en qué" — solo admin. Agrega las bubbles de todos los
+// usuarios + estado vivo de recursos (PTY corriendo, dev-server up) por bubble.
+app.get('/admin/overview', requireAdmin, (_req: Request, res: Response) => {
+  const all = getAllSnapshots();
+  const ptyBubbles = new Set(runningPtyBubbleIds());
+  const devByBubble = new Map<string, number>();
+  for (const s of devServer.devListActive()) {
+    devByBubble.set(s.bubbleId, (devByBubble.get(s.bubbleId) ?? 0) + 1);
+  }
+  const usersById = new Map(listUsers().map((u) => [u.id, u]));
+  const users = Object.entries(all.byUser).map(([userId, bubbles]) => ({
+    id: userId,
+    username: usersById.get(userId)?.username ?? '—',
+    role: usersById.get(userId)?.role ?? 'member',
+    lastSync: all.lastSync[userId] ?? 0,
+    bubbles: bubbles.map((b) => ({
+      id: b.id, title: b.title, workspace: b.workspace, status: b.status,
+      archived: b.archived, updatedAt: b.updatedAt,
+      ptyRunning: ptyBubbles.has(b.id),
+      devActive: (devByBubble.get(b.id) ?? 0) > 0,
+    })),
+  }));
+  // Usuarios sin bubbles sincronizadas también aparecen (vacíos).
+  for (const u of listUsers()) {
+    if (!all.byUser[u.id]) users.push({ id: u.id, username: u.username, role: u.role, lastSync: 0, bubbles: [] });
+  }
+  res.json({ ok: true, users });
+});
+
+// ─── Sync cross-device: doc store por usuario ────────────────────────────
+// El frontend hidrata todo su estado al loguear (GET) y guarda cada cambio
+// (PUT, debounced). El push WS a los otros dispositivos lo hace el PUT. La
+// identidad SIEMPRE sale de la sesión (req.ecoUser.id), nunca del cliente.
+const DocPutSchema = z.object({
+  key: z.string().min(1).max(200),
+  value: z.unknown(),
+  updatedAt: z.number(),
+});
+const DocDeleteSchema = z.object({ key: z.string().min(1).max(200) });
+
+app.get('/user/docs', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  res.json({ ok: true, docs: listDocs(uid) });
+});
+
+app.put('/user/doc', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  const parsed = DocPutSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const { key, value, updatedAt } = parsed.data;
+  const r = writeDoc(uid, key, value, updatedAt);
+  // Push a los OTROS dispositivos del mismo usuario (sync en vivo). El que
+  // originó la escritura ignora el eco por updatedAt.
+  if (r.applied) broadcastToUser(uid, { type: 'doc_updated', key, value, updatedAt });
+  res.json({ ok: true, applied: r.applied, updatedAt: r.updatedAt });
+});
+
+app.delete('/user/doc', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  const parsed = DocDeleteSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  deleteDoc(uid, parsed.data.key);
+  broadcastToUser(uid, { type: 'doc_deleted', key: parsed.data.key });
+  res.json({ ok: true });
+});
+
+app.get('/info', async (req: Request, res: Response) => {
   const macSayVoices = isMacSayAvailable() ? await listMacSayVoices() : [];
   res.json({
-    workspaces: config.workspaces,
+    workspaces: workspacesForUser(req.ecoUser?.id),
     model: config.model,
     tts: {
       piperAvailable: isPiperAvailable(),
@@ -283,15 +471,20 @@ app.get('/skills', (req: Request, res: Response) => {
 
 const AddWorkspaceSchema = z.object({ path: z.string().min(1).max(4096) });
 
-app.get('/workspaces', (_req: Request, res: Response) => {
+app.get('/workspaces', (req: Request, res: Response) => {
+  const isAdmin = req.ecoUser?.role === 'admin';
   res.json({
-    workspaces: config.workspaces,
-    fromEnv: (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-    editable: readWorkspaceStore(),
+    // El picker usa `workspaces`: cada usuario ve solo los suyos (admin = todos).
+    workspaces: workspacesForUser(req.ecoUser?.id),
+    // La gestión del universo global (fromEnv/editable) es solo del admin.
+    fromEnv: isAdmin ? (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [],
+    editable: isAdmin ? readWorkspaceStore() : [],
   });
 });
 
+// Agregar/quitar carpetas del universo global es solo del admin.
 app.post('/workspaces', (req: Request, res: Response) => {
+  if (req.ecoUser && req.ecoUser.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
   const parsed = AddWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const result = addWorkspace(parsed.data.path);
@@ -300,6 +493,7 @@ app.post('/workspaces', (req: Request, res: Response) => {
 });
 
 app.delete('/workspaces', (req: Request, res: Response) => {
+  if (req.ecoUser && req.ecoUser.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
   const parsed = AddWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   removeWorkspace(parsed.data.path);
@@ -344,8 +538,9 @@ app.delete('/config/api-key', (_req: Request, res: Response) => {
 // El user puede configurar su PAT en Settings/Onboarding. Si está, Eco lo
 // usa con prioridad sobre `gh auth login` y `git config user.*`.
 
-app.get('/config/github', (_req: Request, res: Response) => {
-  const c = readGithubCredentials();
+app.get('/config/github', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  const c = readGithubCredentials(uid);
   if (!c) {
     return res.json({ hasCredentials: false });
   }
@@ -353,7 +548,7 @@ app.get('/config/github', (_req: Request, res: Response) => {
     hasCredentials: true,
     username: c.username,
     email: c.email,
-    maskedPat: maskedGithubPat(),
+    maskedPat: maskedGithubPat(uid),
     validatedAt: c.validatedAt,
   });
 });
@@ -365,6 +560,8 @@ const GithubConfigSchema = z.object({
   email: z.string().email().max(300).optional(),
 });
 app.post('/config/github', async (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
   const parsed = GithubConfigSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const { pat, email: emailOverride } = parsed.data;
@@ -383,7 +580,7 @@ app.post('/config/github', async (req: Request, res: Response) => {
     });
   }
   try {
-    writeGithubCredentials({
+    writeGithubCredentials(uid, {
       username: v.login,
       email: effectiveEmail,
       pat,
@@ -393,7 +590,7 @@ app.post('/config/github', async (req: Request, res: Response) => {
       ok: true,
       username: v.login,
       email: effectiveEmail,
-      maskedPat: maskedGithubPat(),
+      maskedPat: maskedGithubPat(uid),
       validatedAt: Date.now(),
     });
   } catch (e) {
@@ -401,8 +598,10 @@ app.post('/config/github', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/config/github', (_req: Request, res: Response) => {
-  deleteGithubCredentials();
+app.delete('/config/github', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  deleteGithubCredentials(uid);
   res.json({ ok: true });
 });
 
@@ -1419,8 +1618,11 @@ app.post('/bubble/create', (req: Request, res: Response) => {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
   }
   const { title, workspace, baseBranch, initialPrompt } = parsed.data;
+  // Dueño: el usuario de la sesión, o el primer admin para callers MCP sin
+  // sesión (F4 agrega token MCP por usuario).
+  const creatorId = req.ecoUser?.id ?? firstAdminId() ?? undefined;
 
-  if (workspace && !isAllowedWorkspace(workspace)) {
+  if (workspace && !isAllowedWorkspace(workspace, creatorId)) {
     return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
   }
   if (wsClientCount() === 0) {
@@ -1454,7 +1656,7 @@ app.post('/bubble/create', (req: Request, res: Response) => {
   // arriba) o cae al primer workspace permitido. Fire-and-forget.
   if (initialPrompt && workspace) {
     try {
-      injectPromptToBubble(bubbleId, workspace, initialPrompt);
+      injectPromptToBubble(bubbleId, creatorId, workspace, initialPrompt);
     } catch (e) {
       console.error('[bubble/create] injectPromptToBubble failed:', e);
     }
@@ -1486,22 +1688,24 @@ app.post('/bubble/send', (req: Request, res: Response) => {
   if (!isValidBubbleId(bubbleId)) {
     return errResponse(res, 400, 'bubble.invalid_id', 'bubbleId inválido');
   }
-  const snap = getBubblesSnapshot();
-  if (snap.lastSync === 0) {
-    return errResponse(res, 409, 'eco.not_synced', 'Eco no sincronizó bubbles todavía — abrí la app al menos una vez');
-  }
-  const bubble = snap.bubbles.find((b) => b.id === bubbleId);
+  // Buscamos la bubble entre TODOS los usuarios (la identidad/workspace salen de
+  // su dueño). Un caller con sesión solo puede mandar a SUS bubbles (admin a todas).
+  const bubble = findBubble(bubbleId);
   if (!bubble) {
     return errResponse(res, 404, 'bubble.not_found', 'No existe una bubble con ese id');
+  }
+  const caller = req.ecoUser;
+  if (caller && caller.role !== 'admin' && bubble.ownerId !== caller.id) {
+    return errResponse(res, 403, 'bubble.not_owner', 'Esa bubble no es tuya');
   }
   if (bubble.archived) {
     return errResponse(res, 409, 'bubble.archived', 'La bubble está archivada — desarchivala antes de mandarle input');
   }
-  if (bubble.workspace && !isAllowedWorkspace(bubble.workspace)) {
+  if (bubble.workspace && !isAllowedWorkspace(bubble.workspace, bubble.ownerId)) {
     return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
   }
   try {
-    injectPromptToBubble(bubbleId, bubble.workspace, text);
+    injectPromptToBubble(bubbleId, bubble.ownerId, bubble.workspace, text);
   } catch (e) {
     console.error('[bubble/send] injectPromptToBubble failed:', e);
     return errResponse(res, 500, 'bubble.send_failed', 'No se pudo inyectar el prompt al PTY');
@@ -1513,8 +1717,11 @@ app.post('/bubble/send', (req: Request, res: Response) => {
 // frontend (POST /bubbles/sync). Si el frontend no se conectó nunca desde
 // que arrancó el backend, devuelve lista vacía y lastSync=0 para que el
 // caller MCP pueda mostrar un mensaje útil ("Eco aún no sincronizó").
-app.get('/bubbles', (_req: Request, res: Response) => {
-  const snap = getBubblesSnapshot();
+app.get('/bubbles', (req: Request, res: Response) => {
+  // Browser con sesión → sus bubbles (admin: las suyas). MCP sin sesión todavía
+  // → cae al primer admin (F4 agrega token MCP por usuario).
+  const uid = req.ecoUser?.id ?? firstAdminId() ?? undefined;
+  const snap = uid ? getBubblesSnapshot(uid) : { bubbles: [], lastSync: 0 };
   res.json({ ok: true, bubbles: snap.bubbles, lastSync: snap.lastSync });
 });
 
@@ -1533,11 +1740,13 @@ const BubblesSyncSchema = z.object({
   })).max(500),
 });
 app.post('/bubbles/sync', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
   const parsed = BubblesSyncSchema.safeParse(req.body);
   if (!parsed.success) {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
   }
-  const sanitized: BubbleSummary[] = parsed.data.bubbles
+  const sanitized: Omit<BubbleSummary, 'ownerId'>[] = parsed.data.bubbles
     .filter((b) => isValidBubbleId(b.id))
     .map((b) => ({
       id: b.id,
@@ -1547,7 +1756,7 @@ app.post('/bubbles/sync', (req: Request, res: Response) => {
       archived: !!b.archived,
       updatedAt: b.updatedAt,
     }));
-  setBubblesSnapshot(sanitized);
+  setBubblesSnapshot(uid, sanitized);
   res.json({ ok: true, count: sanitized.length });
 });
 
@@ -1658,7 +1867,7 @@ app.post('/tts', async (req: Request, res: Response) => {
 const BackupSnapshotSchema = z.object({
   bubbleIds: z.array(z.string().min(1).max(128)).max(500).optional(),
 });
-app.post('/backup/snapshot', (req: Request, res: Response) => {
+app.post('/backup/snapshot', requireAdmin, (req: Request, res: Response) => {
   const parsed = BackupSnapshotSchema.safeParse(req.body ?? {});
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const ids = parsed.data.bubbleIds ?? backupMod.listKnownBubbleIds();
@@ -1686,7 +1895,7 @@ const BackupRestoreSchema = z.object({
   eco: z.record(z.string()).optional(),
   worktrees: z.array(WorktreeStateSchema).max(500).optional(),
 });
-app.post('/backup/restore', (req: Request, res: Response) => {
+app.post('/backup/restore', requireAdmin, (req: Request, res: Response) => {
   const parsed = BackupRestoreSchema.safeParse(req.body ?? {});
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const ecoResult = parsed.data.eco
@@ -1696,7 +1905,7 @@ app.post('/backup/restore', (req: Request, res: Response) => {
   res.json({ ok: true, eco: ecoResult, worktrees: wtResult });
 });
 
-app.get('/backup/config', (_req: Request, res: Response) => {
+app.get('/backup/config', requireAdmin, (_req: Request, res: Response) => {
   res.json(backupMod.readBackupConfig());
 });
 
@@ -1707,19 +1916,19 @@ const BackupConfigSchema = z.object({
   lastBackup: z.number().int().optional(),
   lastError: z.string().max(500).optional(),
 });
-app.post('/backup/config', (req: Request, res: Response) => {
+app.post('/backup/config', requireAdmin, (req: Request, res: Response) => {
   const parsed = BackupConfigSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const current = backupMod.readBackupConfig();
   backupMod.writeBackupConfig({
     ...current,
     ...parsed.data,
-    retention: parsed.data.retention ?? current.retention ?? 7,
+    retention: parsed.data.retention ?? current.retention ?? 30,
   });
   res.json({ ok: true, config: backupMod.readBackupConfig() });
 });
 
-app.delete('/backup/config', (_req: Request, res: Response) => {
+app.delete('/backup/config', requireAdmin, (_req: Request, res: Response) => {
   backupMod.resetBackupConfig();
   res.json({ ok: true });
 });
@@ -1733,6 +1942,14 @@ if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.sendFile(pathJoin(frontendDistEarly, 'index.html'));
   });
+}
+
+// Migración one-time del modelo single-user → colección multi-tenant. Idempotente.
+try {
+  const m = migrateLegacyUserIfNeeded();
+  if (m.migrated) console.log(`   Migración multi-tenant: usuario "${m.username}" creado como admin (${m.adminId}).`);
+} catch (e) {
+  console.error('[migrate] error migrando usuario legacy:', e);
 }
 
 const server = createServer(app);

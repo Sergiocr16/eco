@@ -11,9 +11,12 @@ type Props = {
   onPick: (workspace: string) => void;
   onSkip: () => void;
   onClose: () => void;
+  // Agregar carpetas al universo global es solo del admin. Los members solo
+  // eligen entre las carpetas que el admin les concedió.
+  canAddFolders?: boolean;
 };
 
-export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: Props) {
+export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, canAddFolders = true }: Props) {
   const t = useTokens();
   const tr = useT();
   const ws = useWorkspaces();
@@ -130,6 +133,11 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
               padding: '20px 4px', fontSize: 13, color: t.text2, textAlign: 'center',
             }}>
               {tr('wsp.no_workspaces')}
+              {!canAddFolders && (
+                <div style={{ marginTop: 6, fontSize: 12, color: t.text3 }}>
+                  {tr('wsp.ask_admin')}
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
@@ -167,7 +175,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose }: 
             </div>
           )}
 
-          {adding ? (
+          {!canAddFolders ? null : adding ? (
             <Glass radius={12} style={{ padding: 10, marginTop: 8 }}>
               <div style={{ fontSize: 11.5, color: t.text2, marginBottom: 8 }}>
                 {tr('wsp.add_hint')}

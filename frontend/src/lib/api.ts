@@ -1,4 +1,4 @@
-import { ecoToken, ecoBackend } from './eco-config';
+import { ecoToken, ecoBackend, readStoredRefresh } from './eco-config';
 
 const SESSION_KEY = 'eco.session';
 
@@ -17,10 +17,14 @@ function renewSession(): Promise<string | null> {
   if (renewInFlight) return renewInFlight;
   renewInFlight = (async () => {
     try {
+      const refresh = readStoredRefresh();
+      // Sin refresh token no se puede renovar (multi-tenant): caemos a re-login.
+      if (!refresh) return null;
       const headers = new Headers();
       const token = ecoToken();
       if (token) headers.set('Authorization', `Bearer ${token}`);
       headers.set('X-Eco-Client', '1');
+      headers.set('X-Eco-Refresh', refresh);
       const r = await fetch(`${ecoBackend()}/auth/session`, { method: 'POST', headers });
       if (!r.ok) return null;
       const data = await r.json();

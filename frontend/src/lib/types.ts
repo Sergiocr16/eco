@@ -53,6 +53,10 @@ export type Bubble = {
   // el nodo en la vista de grafo. Vacío/sin valor → color por estado (legacy).
   // El formato viejo single `categoryId` se migra en useBubbles.loadStored.
   categoryIds?: string[];
+  // Dueño de la bubble (userId). Solo se setea para el grafo de equipo del
+  // admin (bubbles de otros usuarios sintetizadas desde /admin/overview); en
+  // el flujo normal las bubbles son del usuario logueado y va undefined.
+  ownerId?: string;
   // Soft delete: cuando es true, la burbuja desaparece del Dashboard y
   // aparece en la pantalla "Archivados". El worktree git se mantiene
   // intacto en disco para permitir des-archivar con todo el state.
