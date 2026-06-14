@@ -201,7 +201,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
 
   const workspacesHook = useWorkspaces();
   const defaultWs = workspacesHook.list.workspaces[0] ?? '';
-  const bubbles = useBubbles(defaultWs);
+  const bubbles = useBubbles(defaultWs, auth.state.userId);
   // Mantiene un store global del estado busy/idle del PTY de cada bubble.
   // Dispara desktop notifications al transitar busy → idle (opt-in via
   // setting `eco.notify.on_finish`).

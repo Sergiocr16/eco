@@ -3,6 +3,7 @@ import type { SocketStatus, ToolCall } from '@/lib/types';
 import { translateBackendError } from '@/lib/backend-errors';
 import { translate, loadLang } from '@/lib/i18n';
 import { readStoredSession } from '@/lib/eco-config';
+import { emit as ecoEmit } from '@/lib/eco-bus';
 
 const RECONNECT_BACKOFF_MS = [500, 1500, 3000, 5000, 10_000];
 
@@ -17,7 +18,9 @@ type ServerMsg =
   | { type: 'pty_busy_change'; bubbleId: string; busy: boolean }
   | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string }
   | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string }
-  | { type: 'inject_prompt'; bubbleId: string; text: string; workspace?: string };
+  | { type: 'inject_prompt'; bubbleId: string; text: string; workspace?: string }
+  | { type: 'doc_updated'; key: string; value: unknown; updatedAt: number }
+  | { type: 'doc_deleted'; key: string };
 
 export type ClientAction =
   | { kind: 'open_bubble'; id: string; title: string; focus: boolean; workspace?: string; baseBranch?: string }
@@ -287,6 +290,12 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         }
         else if (msg.type === 'dev_log') {
           handlersRef.current.onDevLog?.(msg.bubbleId, msg.role, msg.chunk);
+        }
+        else if (msg.type === 'doc_updated') {
+          ecoEmit('eco:doc_updated', { key: msg.key, value: msg.value, updatedAt: msg.updatedAt });
+        }
+        else if (msg.type === 'doc_deleted') {
+          ecoEmit('eco:doc_deleted', { key: msg.key });
         }
         else if (msg.type === 'session_started') {
           // already handled in system init

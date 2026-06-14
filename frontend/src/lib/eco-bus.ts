@@ -18,6 +18,11 @@ export type EcoBusEvents = {
   };
   'eco:confirm': { answer: 'yes' | 'no' };
   'eco:wake_detected': { ts: number };
+  // Sync cross-device: el backend empujó un cambio de doc del usuario a este
+  // dispositivo (otro dispositivo suyo lo modificó). Lo reemite useEcoSocket
+  // desde el WS; lo escuchan los stores (useBubbles, useCategories, etc.).
+  'eco:doc_updated': { key: string; value: unknown; updatedAt: number };
+  'eco:doc_deleted': { key: string };
   'eco:dev_status': {
     bubbleId: string;
     role?: 'main' | 'frontend' | 'backend';

@@ -2,9 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Bubble, Message } from '@/lib/types';
 import { translate, loadLang } from '@/lib/i18n';
 import { apiFetch } from '@/lib/api';
+import { hydrateDocs, saveDoc, deleteDoc, shouldApplyRemote } from '@/lib/user-sync';
+import { on as ecoOn } from '@/lib/eco-bus';
 
 const STORAGE_KEY = 'eco.bubbles.v1';
 const ACTIVE_KEY = 'eco.bubbles.active';
+// El estado cross-device guarda cada bubble como un doc por separado en el
+// servidor: clave `bubble:<id>` (LWW por bubble + escrituras incrementales).
+const BUBBLE_DOC_PREFIX = 'bubble:';
 
 // Cap de mensajes que mantenemos EN MEMORIA por bubble. Los más viejos se
 // drop silenciosamente — los muy largos tienden a quedar fuera de pantalla
@@ -86,6 +91,36 @@ function thinMessageForStorage(m: Message): Message {
   return { ...m, toolCalls: thinnedToolCalls };
 }
 
+// Normaliza un bubble que viene del doc del servidor (o de otra ventana) —
+// misma migración categoryId→categoryIds + reset de status runtime.
+function normalizeBubble(raw: unknown): Bubble | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const b = raw as Record<string, unknown>;
+  if (typeof b.id !== 'string') return null;
+  const legacySingle = typeof b.categoryId === 'string' ? b.categoryId : undefined;
+  const categoryIds: string[] | undefined = Array.isArray(b.categoryIds)
+    ? (b.categoryIds as unknown[]).filter((x): x is string => typeof x === 'string')
+    : legacySingle ? [legacySingle] : undefined;
+  const { categoryId: _legacy, ...rest } = b;
+  return {
+    ...(rest as unknown as Bubble),
+    categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : undefined,
+    messages: Array.isArray(b.messages) ? (b.messages as Message[]) : [],
+    status: 'idle',
+    unread: 0,
+  };
+}
+
+// Valor que se manda al servidor por bubble (mismo thinning que localStorage).
+function bubbleDocValue(b: Bubble): Bubble {
+  return {
+    ...b,
+    status: 'idle',
+    unread: 0,
+    messages: b.messages.slice(-MAX_MESSAGES_IN_STORAGE).map(thinMessageForStorage),
+  };
+}
+
 function serializeBubbles(bubbles: Bubble[]): string {
   const serializable = bubbles.map((b) => ({
     ...b,
@@ -137,11 +172,18 @@ export type UseBubblesResult = {
   setBubblePtyOpen: (id: string, open: boolean) => void;
 };
 
-export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
+export function useBubbles(defaultWorkspace = '', userId: string | null = null): UseBubblesResult {
   const [bubbles, setBubbles] = useState<Bubble[]>(() => loadStored().bubbles);
   const [activeBubbleId, setActiveBubbleId] = useState<string | null>(() => loadStored().activeId);
 
   const initializedRef = useRef(false);
+  // Sync cross-device: el servidor es la autoridad. `syncedRef` guarda el último
+  // JSON enviado por bubble para diff (no re-subir sin cambios). `syncTick` fuerza
+  // una pasada del effect de guardado justo después de hidratar (sube las bubbles
+  // locales que el servidor no tenía — migración del localStorage).
+  const syncedRef = useRef<Map<string, string>>(new Map());
+  const hydratedRef = useRef(false);
+  const [syncTick, setSyncTick] = useState(0);
 
   // No crear "Conversación principal" automática. Si hay burbujas guardadas,
   // restauramos activeBubbleId si es necesario. Sin burbujas → dashboard vacío.
@@ -214,6 +256,84 @@ export function useBubbles(defaultWorkspace = ''): UseBubblesResult {
     }, 800);
     return () => clearTimeout(handle);
   }, [bubbles]);
+
+  // ─── Sync cross-device (servidor autoritativo) ──────────────────────────
+  // Hidratación al loguear: trae los docs `bubble:*` del servidor y MERGEA con
+  // lo local (no pierde bubbles creadas offline). Siembra syncedRef para no
+  // re-subir lo que ya está, y dispara una pasada para subir lo que falte.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    hydratedRef.current = false;
+    (async () => {
+      const docs = await hydrateDocs();
+      if (cancelled) return;
+      const serverBubbles = Object.entries(docs)
+        .filter(([k]) => k.startsWith(BUBBLE_DOC_PREFIX))
+        .map(([, d]) => normalizeBubble(d.value))
+        .filter((b): b is Bubble => !!b);
+      const seeded = new Map<string, string>();
+      for (const b of serverBubbles) seeded.set(b.id, JSON.stringify(bubbleDocValue(b)));
+      syncedRef.current = seeded;
+      const serverIds = new Set(serverBubbles.map((b) => b.id));
+      setBubbles((local) => {
+        const extra = local.filter((b) => !serverIds.has(b.id));
+        return [...serverBubbles, ...extra];
+      });
+      hydratedRef.current = true;
+      setSyncTick((t) => t + 1); // sube las bubbles locales que el server no tenía
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // Guardado por-bubble (debounced): diff contra syncedRef → solo sube las que
+  // cambiaron; borra del server las que ya no están localmente (delete real).
+  useEffect(() => {
+    if (!userId || !hydratedRef.current) return;
+    const handle = setTimeout(() => {
+      const seen = syncedRef.current;
+      const currentIds = new Set<string>();
+      for (const b of bubbles) {
+        currentIds.add(b.id);
+        const val = bubbleDocValue(b);
+        const json = JSON.stringify(val);
+        if (seen.get(b.id) !== json) {
+          seen.set(b.id, json);
+          saveDoc(BUBBLE_DOC_PREFIX + b.id, val);
+        }
+      }
+      for (const id of [...seen.keys()]) {
+        if (!currentIds.has(id)) { seen.delete(id); deleteDoc(BUBBLE_DOC_PREFIX + id); }
+      }
+    }, 700);
+    return () => clearTimeout(handle);
+  }, [bubbles, userId, syncTick]);
+
+  // Push en vivo desde otros dispositivos del mismo usuario (WS → eco-bus).
+  useEffect(() => {
+    if (!userId) return;
+    const offUpdated = ecoOn('eco:doc_updated', ({ key, value, updatedAt }) => {
+      if (!key.startsWith(BUBBLE_DOC_PREFIX)) return;
+      if (!shouldApplyRemote(key, updatedAt)) return;
+      const b = normalizeBubble(value);
+      if (!b) return;
+      syncedRef.current.set(b.id, JSON.stringify(bubbleDocValue(b)));
+      setBubbles((prev) => {
+        const idx = prev.findIndex((x) => x.id === b.id);
+        if (idx === -1) return [...prev, b];
+        // No pisamos una bubble que ESTE dispositivo está streameando ahora.
+        if (prev[idx]!.status !== 'idle') return prev;
+        const copy = [...prev]; copy[idx] = b; return copy;
+      });
+    });
+    const offDeleted = ecoOn('eco:doc_deleted', ({ key }) => {
+      if (!key.startsWith(BUBBLE_DOC_PREFIX)) return;
+      const id = key.slice(BUBBLE_DOC_PREFIX.length);
+      syncedRef.current.delete(id);
+      setBubbles((prev) => prev.filter((x) => x.id !== id));
+    });
+    return () => { offUpdated(); offDeleted(); };
+  }, [userId]);
 
   const createBubble = useCallback((opts?: { id?: string; title?: string; workspace?: string; focus?: boolean; baseBranch?: string }): Bubble => {
     const accent = nextAccent(bubbles);
