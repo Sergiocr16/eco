@@ -389,6 +389,24 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     setScreen('detail');
   }
 
+  // Deep-link desde la pantalla Archivos: abre la burbuja dueña del cambio y
+  // navega al diff (Git → Cambios) o al archivo en el editor (Files). El
+  // doble rAF espera a que el AgentDetail monte sus listeners de tab antes de
+  // emitir los eventos del bus.
+  function openBubbleChange(bubbleId: string, path: string, mode: 'diff' | 'files') {
+    handleOpenAgent(bubbleId);
+    if (detachedIds.has(bubbleId)) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (mode === 'diff') {
+        ecoEmit('eco:switch_tab', { tab: 'git', bubbleId });
+        ecoEmit('eco:switch_git_subtab', { sub: 'changes', bubbleId });
+      } else {
+        ecoEmit('eco:switch_tab', { tab: 'files', bubbleId });
+        ecoEmit('eco:files:open_path', { bubbleId, path });
+      }
+    }));
+  }
+
   function handleBackFromDetail() {
     // Volvemos al dashboard pero dejamos detailBubbleId apuntando a la
     // burbuja para que la AgentDetail sobreviva oculta y conserve su PTY,
@@ -654,7 +672,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   );
                 })}
                 {screen === 'files' ? (
-                  <FileExplorer bubbles={bubbles.bubbles}/>
+                  <FileExplorer bubbles={bubbles.bubbles} onOpenChange={openBubbleChange}/>
                 ) : screen === 'settings' ? (
                   <Settings role={auth.state.role}/>
                 ) : screen === 'admin' ? (

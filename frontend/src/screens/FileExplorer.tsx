@@ -10,6 +10,9 @@ import { workspaceName } from '@/lib/workspace-name';
 
 type Props = {
   bubbles: Bubble[];
+  // Abre la burbuja dueña del cambio y navega al diff (Git → Cambios) o al
+  // archivo en el editor (Files).
+  onOpenChange: (bubbleId: string, path: string, mode: 'diff' | 'files') => void;
 };
 
 type ChangeOp = 'created' | 'modified' | 'pending' | 'deleted';
@@ -20,30 +23,35 @@ function opFromChange(change: string): ChangeOp {
   return 'modified'; // modified / renamed
 }
 
-export function FileExplorer({ bubbles }: Props) {
+export function FileExplorer({ bubbles, onOpenChange }: Props) {
   const t = useTokens();
   const tr = useT();
   const [selected, setSelected] = useState<string | null>(null);
 
+  // Las burbujas archivadas no cuentan: ni en el conteo por carpeta ni en los
+  // cambios. Viven en su propia pantalla.
+  const activeBubbles = useMemo(() => bubbles.filter((b) => !b.archived), [bubbles]);
+
   const folders = useMemo(
-    () => Array.from(new Set(bubbles.map((b) => b.workspace).filter(Boolean))),
-    [bubbles],
+    () => Array.from(new Set(activeBubbles.map((b) => b.workspace).filter(Boolean))),
+    [activeBubbles],
   );
 
   // Cambios git REALES (git status de cada worktree), no la heurística de
   // tool-calls. Cada archivo viene etiquetado con su burbuja.
   const gitChanges = useAllBubbleChanges(
-    useMemo(() => bubbles.map((b) => ({ id: b.id, workspace: b.workspace })), [bubbles]),
+    useMemo(() => activeBubbles.map((b) => ({ id: b.id, workspace: b.workspace })), [activeBubbles]),
   );
   const bubbleMeta = useMemo(
-    () => new Map(bubbles.map((b) => [b.id, { title: b.title, workspace: b.workspace }])),
-    [bubbles],
+    () => new Map(activeBubbles.map((b) => [b.id, { title: b.title, workspace: b.workspace }])),
+    [activeBubbles],
   );
 
   const changes = useMemo(() => {
     return gitChanges
       .filter((c) => !selected || c.workspace === selected)
       .map((c) => ({
+        bubbleId: c.bubbleId,
         agent: bubbleMeta.get(c.bubbleId)?.title ?? '',
         file: c.file,
         op: opFromChange(c.change),
@@ -74,7 +82,7 @@ export function FileExplorer({ bubbles }: Props) {
                   key={f}
                   label={workspaceName(f)}
                   title={f}
-                  count={bubbles.filter((b) => b.workspace === f).length}
+                  count={activeBubbles.filter((b) => b.workspace === f).length}
                   changes={gitChanges.filter((c) => c.workspace === f).length}
                   active={selected === f}
                   onClick={() => setSelected(f)}
@@ -100,7 +108,14 @@ export function FileExplorer({ bubbles }: Props) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {changes.map((c, i) => <ChangeRow key={`${c.file}-${i}`} change={c}/>)}
+            {changes.map((c, i) => (
+              <ChangeRow
+                key={`${c.bubbleId}-${c.file}-${i}`}
+                change={c}
+                onDiff={() => onOpenChange(c.bubbleId, c.file, 'diff')}
+                onOpen={() => onOpenChange(c.bubbleId, c.file, 'files')}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -159,7 +174,11 @@ function FolderListRow({ label, title, count, changes, active, onClick }: {
   );
 }
 
-function ChangeRow({ change }: { change: { agent: string; file: string; op: ChangeOp } }) {
+function ChangeRow({ change, onDiff, onOpen }: {
+  change: { bubbleId: string; agent: string; file: string; op: ChangeOp };
+  onDiff: () => void;
+  onOpen: () => void;
+}) {
   const t = useTokens();
   const tr = useT();
   const opMeta = {
@@ -170,14 +189,16 @@ function ChangeRow({ change }: { change: { agent: string; file: string; op: Chan
   }[change.op];
   const Icon = opMeta.icon;
   return (
-    <Glass radius={12} hover style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+    <Glass radius={12} hover style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
       <div style={{
         width: 32, height: 32, borderRadius: 9,
         background: `color-mix(in oklch, ${opMeta.color} 12%, transparent)`,
         color: opMeta.color, border: `1px solid color-mix(in oklch, ${opMeta.color} 30%, transparent)`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}><Icon size={14}/></div>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div
+        onClick={onDiff}
+        style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
         <div style={{
           fontFamily: t.fontMono, fontSize: 13, color: t.text0,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -189,8 +210,8 @@ function ChangeRow({ change }: { change: { agent: string; file: string; op: Chan
           </span>
         </div>
       </div>
-      <Btn kind="ghost" size="sm" icon={IconDiff}>{tr('files.diff_btn')}</Btn>
-      <IconBtn icon={IconExt} size={28} title={tr('detail.files.open_editor')}/>
+      <Btn kind="ghost" size="sm" icon={IconDiff} onClick={onDiff}>{tr('files.diff_btn')}</Btn>
+      <IconBtn icon={IconExt} size={28} title={tr('detail.files.open_editor')} onClick={onOpen}/>
     </Glass>
   );
 }
