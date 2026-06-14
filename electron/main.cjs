@@ -2,9 +2,6 @@
 // Estrategia: spawneamos el backend Node compilado como child process y le
 // dejamos su puerto fijo (127.0.0.1:7000). El renderer (frontend bundleado)
 // se carga desde file:// y se comunica con el backend igual que en dev.
-//
-// El sidecar listener Python NO se empaqueta — sigue corriéndose aparte.
-// En esta versión Eco funciona sin él (Web Speech API en dev).
 
 const { app, BrowserWindow, Menu, Notification, shell, ipcMain, dialog } = require('electron');
 const { spawn } = require('node:child_process');

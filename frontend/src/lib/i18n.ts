@@ -13,8 +13,6 @@ const DICT = {
     es: 'Eco orquesta múltiples agentes de Claude Code en paralelo, con voz, navegador y terminal. Todo corre en tu Mac.',
     en: 'Eco orchestrates multiple Claude Code agents in parallel, with voice, browser and terminal. It all runs on your Mac.',
   },
-  'auth.brand.feat.voice.t':   { es: 'Manejado por voz', en: 'Voice-first' },
-  'auth.brand.feat.voice.b':   { es: 'Decí "Hey Eco" y pedile lo que sea. STT con Whisper local.', en: 'Say "Hey Eco" and ask anything. Local Whisper STT.' },
   'auth.brand.feat.term.t':    { es: 'Terminal real', en: 'Real terminal' },
   'auth.brand.feat.term.b':    { es: 'PTY zsh por agente, persistente entre sesiones.', en: 'PTY zsh per agent, persistent across sessions.' },
   'auth.brand.feat.agents.t':  { es: 'Agentes en paralelo', en: 'Parallel agents' },
@@ -230,28 +228,19 @@ const DICT = {
   'dash.card.sys.title':      { es: 'Estado del sistema', en: 'System status' },
   'dash.card.sys.backend':    { es: 'Backend Eco', en: 'Eco backend' },
   'dash.card.sys.apikey':     { es: 'API key Claude', en: 'Claude API key' },
-  'dash.card.sys.listener':   { es: 'Listener de voz', en: 'Voice listener' },
   'dash.card.sys.obsidian':   { es: 'Obsidian', en: 'Obsidian' },
 
   'dash.section.agents': { es: 'Agentes', en: 'Agents' },
   'dash.new_bubble': { es: 'Nuevo agente', en: 'New agent' },
   'dash.new_bubble_hint': {
-    es: 'Click para nombrarla o decí "Eco abrir [nombre]"',
-    en: 'Click to name it or say "Eco open [name]"',
+    es: 'Click para nombrar el agente',
+    en: 'Click to name the agent',
   },
   'dash.no_agents': { es: 'Sin agentes', en: 'No agents' },
   'dash.rail.recent': { es: 'Agentes recientes', en: 'Recent agents' },
   'dash.rail.no_activity': { es: 'Sin actividad reciente.', en: 'No recent activity.' },
   'dash.rail.active_folders': { es: 'Carpetas activas', en: 'Active folders' },
   'dash.rail.no_folders': { es: 'Sin carpetas seleccionadas.', en: 'No folders selected.' },
-  'dash.cmd_placeholder': {
-    es: 'Eco, decile al agente que…',
-    en: 'Eco, tell the agent to…',
-  },
-  'dash.cmd_placeholder_listening': {
-    es: 'Escuchando · decí "Eco" seguido del comando…',
-    en: 'Listening · say "Eco" followed by the command…',
-  },
   'dash.bubble.agent': { es: 'Agente', en: 'Agent' },
   'dash.bubble.new': { es: 'Nuevo agente', en: 'New agent' },
   'dash.bubble.no_msg': { es: 'Sin mensajes aún', en: 'No messages yet' },
@@ -272,10 +261,6 @@ const DICT = {
   'dash.bubble.resume': { es: 'Reanudar', en: 'Resume' },
   'dash.bubble.retry': { es: 'Reintentar', en: 'Retry' },
   'dash.bubble.open_detail': { es: 'Abrir detalle', en: 'Open detail' },
-  'dash.cmd.placeholder_active': {
-    es: 'Eco, dile al agente que…',
-    en: 'Eco, tell the agent to…',
-  },
   'rail.folders.tooltip_empty': { es: '{{p}} · sin agentes', en: '{{p}} · no agents' },
   'rail.folders.tooltip_open': {
     es: '{{p}} · abrir agente más reciente',
@@ -345,14 +330,9 @@ const DICT = {
   'berr.wsp.not_allowed': { es: 'Workspace no permitido', en: 'Workspace not allowed' },
   'berr.apikey.invalid': { es: 'API key inválida', en: 'Invalid API key' },
   'berr.apikey.save_failed': { es: 'No se pudo guardar la API key', en: 'Failed to save API key' },
-  'berr.voice.empty_text': { es: 'Texto vacío', en: 'Empty text' },
   'berr.shell.too_concurrent': { es: 'Demasiados comandos concurrentes', en: 'Too many concurrent commands' },
   'berr.shell.failed': { es: 'Error de shell', en: 'Shell error' },
   'berr.file.diff_failed': { es: 'No se pudo generar el diff', en: 'Failed to generate diff' },
-  'berr.tts.piper_unavailable': { es: 'Piper no instalado', en: 'Piper not installed' },
-  'berr.tts.too_concurrent': { es: 'Demasiadas síntesis concurrentes', en: 'Too many concurrent syntheses' },
-  'berr.tts.timeout': { es: 'TTS timeout', en: 'TTS timeout' },
-  'berr.tts.synth_failed': { es: 'Error de síntesis', en: 'Synthesis error' },
   // WS errors
   'berr.invalid_json': { es: 'JSON inválido', en: 'Invalid JSON' },
   'berr.invalid_message': { es: 'Mensaje no cumple el esquema', en: 'Message does not match schema' },
@@ -391,8 +371,6 @@ const DICT = {
   'common.warning': { es: 'Advertencia', en: 'Warning' },
 
   // ─────────────────────────── Agent detail
-  'detail.btn.listen': { es: 'Hablar', en: 'Speak' },
-  'detail.btn.listening': { es: 'Escuchando', en: 'Listening' },
   'detail.btn.dictate': { es: 'Hablar a la terminal', en: 'Talk to terminal' },
   'detail.btn.dictating': { es: 'Escuchando…', en: 'Listening…' },
   'detail.btn.dictate_title': { es: 'Dictar a la terminal', en: 'Dictate to terminal' },
@@ -443,16 +421,12 @@ const DICT = {
     es: 'Escríbele a {{name}}…',
     en: 'Write to {{name}}…',
   },
-  'detail.chat.placeholder_listening': {
-    es: 'Escuchando · habla normal o decí "Eco" para comandos',
-    en: 'Listening · speak normally or say "Eco" for commands',
-  },
   'detail.chat.thinking': { es: 'Pensando…', en: 'Thinking…' },
   'detail.chat.executing': { es: 'Ejecutando…', en: 'Executing…' },
   'detail.chat.empty_title': { es: 'Iniciá conversación con {{name}}', en: 'Start chatting with {{name}}' },
   'detail.chat.empty_sub': {
-    es: 'Escribí algo abajo o decí "Eco" seguido del comando.',
-    en: 'Type something below or say "Eco" followed by the command.',
+    es: 'Escribí algo abajo para empezar.',
+    en: 'Type something below to get started.',
   },
   'detail.term.command_placeholder': {
     es: 'escribí un comando',
@@ -492,15 +466,8 @@ const DICT = {
   },
   'detail.header.bubble': { es: 'Agente', en: 'Agent' },
   'detail.header.id': { es: 'ID', en: 'ID' },
-  'detail.btn.listen_off_title': { es: 'Detener escucha', en: 'Stop listening' },
-  'detail.btn.listen_on_title': { es: 'Activar escucha', en: 'Start listening' },
   'detail.btn.interrupt': { es: 'Detener al agente', en: 'Stop the agent' },
   'detail.chat.write_to': { es: 'Escríbele a {{name}}…', en: 'Write to {{name}}…' },
-  'detail.chat.listening_hint': {
-    es: 'Escuchando · hablá normal o decí "Eco" para comandos',
-    en: 'Listening · speak normally or say "Eco" for commands',
-  },
-  'detail.chat.eco_listening': { es: 'escuchando comando…', en: 'listening for command…' },
   'detail.menu.workspace_empty_picker': {
     es: 'Sin workspaces. Agregalos en Ajustes.',
     en: 'No workspaces. Add them in Settings.',
@@ -767,7 +734,6 @@ const DICT = {
   'settings.title': { es: 'Ajustes', en: 'Settings' },
   'settings.section.general': { es: 'General', en: 'General' },
   'settings.section.claude': { es: 'Claude & API', en: 'Claude & API' },
-  'settings.section.voice': { es: 'Voz', en: 'Voice' },
   'settings.section.folders': { es: 'Carpetas', en: 'Folders' },
   'settings.section.security': { es: 'Seguridad', en: 'Security' },
   'settings.section.appearance': { es: 'Apariencia', en: 'Appearance' },
@@ -922,15 +888,6 @@ const DICT = {
   },
   'settings.general.title': { es: 'General', en: 'General' },
   'settings.general.sub': { es: 'Comportamiento global de Eco.', en: 'Global behavior of Eco.' },
-  'settings.general.listen_on_boot': { es: 'Escuchar al abrir Eco', en: 'Listen on startup' },
-  'settings.general.listen_on_conversation': {
-    es: 'Escuchar al entrar a una conversación',
-    en: 'Listen when entering a conversation',
-  },
-  'settings.general.listen_on_conversation_desc': {
-    es: 'Si está ON, prende el micrófono al entrar a una conversación. Si está OFF, lo apaga al entrar (anula el "Escuchar al abrir Eco" para conversaciones).',
-    en: 'If ON, turns the mic on when entering a conversation. If OFF, turns it off on entry (overrides "Listen on startup" for conversations).',
-  },
   'settings.general.review_mode': {
     es: 'Revisar cambios estilo Cursor',
     en: 'Review changes (Cursor-style)',
@@ -1159,45 +1116,6 @@ const DICT = {
   'skill.label_agent': { es: 'agent', en: 'agent' },
   'skill.yours': { es: 'tuyo', en: 'yours' },
 
-  // ─────────────────────────── Settings — Voice
-  'settings.voice.title': { es: 'Voz', en: 'Voice' },
-  'settings.voice.sub': {
-    es: 'Eco usa una voz masculina natural en español. Pensada para confirmaciones cortas — no para leer respuestas largas.',
-    en: 'Eco uses a natural male Spanish voice. Designed for short confirmations — not for reading long replies.',
-  },
-  'settings.voice.voice_label': { es: 'Voz de Eco', en: 'Eco\'s voice' },
-  'settings.voice.test_btn': { es: 'Probar', en: 'Test' },
-  'settings.voice.loading': { es: 'Cargando voces…', en: 'Loading voices…' },
-  'settings.voice.intent_hint': {
-    es: 'Se elige automáticamente la mejor voz local (Piper) instalada. Si no hay Piper, cae a la voz del sistema.',
-    en: 'Automatically picks the best local Piper voice installed. Falls back to system voice if none.',
-  },
-  'settings.voice.rate': { es: 'Velocidad', en: 'Rate' },
-  'settings.voice.rate_desc': { es: '1× = normal · más bajo = más lento', en: '1× = normal · lower = slower' },
-  'settings.voice.volume': { es: 'Volumen', en: 'Volume' },
-  'settings.voice.volume_desc': { es: 'Solo afecta la voz, no el audio del sistema', en: 'Only affects voice, not system audio' },
-  'settings.voice.wake_word': { es: 'Palabra de activación', en: 'Wake word' },
-  'settings.voice.wake_word_desc': {
-    es: 'Eco se activa cuando la escucha.',
-    en: 'Eco activates when it hears this word.',
-  },
-  'settings.voice.always_on': { es: 'Escucha siempre activa', en: 'Always listening' },
-  'settings.voice.always_on_desc': {
-    es: 'Necesario para reconocer la palabra de activación.',
-    en: 'Required to recognize the wake word.',
-  },
-  'settings.voice.lang': { es: 'Idioma de reconocimiento', en: 'Recognition language' },
-  'settings.voice.speak_replies': { es: 'Respuestas habladas', en: 'Spoken replies' },
-  'settings.voice.speak_replies_desc': {
-    es: 'Eco te lee en voz alta las respuestas de los agentes.',
-    en: 'Eco reads agent responses out loud.',
-  },
-  'settings.voice.voice_selected': { es: 'Voz seleccionada', en: 'Selected voice' },
-  'settings.voice.group_neural': { es: 'Neural local', en: 'Local neural' },
-  'settings.voice.group_system': { es: 'Sistema', en: 'System' },
-  'settings.voice.no_voices': { es: 'Sin voces en español detectadas.', en: 'No Spanish voices detected.' },
-  'settings.voice.try_voice': { es: '▸ Probar', en: '▸ Test' },
-
   // ─────────────────────────── Settings — Claude
   'settings.claude.title': { es: 'Claude & API', en: 'Claude & API' },
   'settings.claude.sub': {
@@ -1381,8 +1299,8 @@ const DICT = {
   // What Eco does
   'settings.about.what.title': { es: '¿Qué hace Eco?', en: 'What does Eco do?' },
   'settings.about.what.body': {
-    es: 'Eco orquesta múltiples agentes de Claude trabajando en paralelo, cada uno con su propio worktree git aislado (desde la rama base que elijas), dev server con puerto único, terminal real y navegador con sesión propia (cookies/localStorage no se cruzan). Te permite chatear, dar comandos por voz o texto, revisar diffs estilo Cursor antes de commitear, commitear con IA, hacer push, y guardar sesiones en Obsidian. 35 temas + 26 accents para personalizar. Todo corre 100% local en tu Mac.',
-    en: 'Eco orchestrates multiple Claude agents working in parallel, each with its own isolated git worktree (from a base branch you pick), unique dev server port, real terminal and browser with its own session (cookies/localStorage don\'t cross). Chat, voice or text commands, Cursor-style diff review before committing, AI commits, push, and Obsidian session saving. 35 themes + 26 accents for personalization. Everything runs 100% local on your Mac.',
+    es: 'Eco orquesta múltiples agentes de Claude trabajando en paralelo, cada uno con su propio worktree git aislado (desde la rama base que elijas), dev server con puerto único, terminal real y navegador con sesión propia (cookies/localStorage no se cruzan). Te permite chatear, revisar diffs estilo Cursor antes de commitear, commitear con IA, hacer push, y guardar sesiones en Obsidian. 35 temas + 26 accents para personalizar. Todo corre 100% local en tu Mac.',
+    en: 'Eco orchestrates multiple Claude agents working in parallel, each with its own isolated git worktree (from a base branch you pick), unique dev server port, real terminal and browser with its own session (cookies/localStorage don\'t cross). Chat, Cursor-style diff review before committing, AI commits, push, and Obsidian session saving. 35 themes + 26 accents for personalization. Everything runs 100% local on your Mac.',
   },
 
   // Features
@@ -1401,8 +1319,6 @@ const DICT = {
   'settings.about.feat.prs.body':       { es: 'Lista de PRs abiertos del repo via gh CLI. Detalle master/detail con descripción + comentarios renderizados como Markdown real (decodifica HTML embebido de integraciones como Notion/Linear), reviews con estado (APPROVED / CHANGES_REQUESTED / COMMENTED), comentarios inline sobre archivos. Línea estilo GitHub "quiere mergear N commits en BASE desde HEAD". Botones Hacer merge (modal con método: merge / squash / rebase) y Cerrar PR (con comentario opcional). Mensajes de commit AI generados siempre en inglés.', en: 'Open PRs list from the repo via gh CLI. Master/detail view with description + comments rendered as real Markdown (decodes embedded HTML from integrations like Notion/Linear), reviews with state (APPROVED / CHANGES_REQUESTED / COMMENTED), inline comments on files. GitHub-style line "wants to merge N commits into BASE from HEAD". Buttons for Merge (modal with method: merge / squash / rebase) and Close PR (with optional comment). AI-generated commit messages always in English.' },
   'settings.about.feat.review.title':   { es: 'Review estilo Cursor', en: 'Cursor-style review' },
   'settings.about.feat.review.body':    { es: 'El agente edita libremente; vos revisás los diffs después, aceptás/rechazás por hunk o por archivo. Banner persistente con pendientes.', en: 'Agent edits freely; you review diffs after, accept/reject per hunk or file. Persistent banner with pending changes.' },
-  'settings.about.feat.voice.title':    { es: 'Voz local', en: 'Local voice' },
-  'settings.about.feat.voice.body':     { es: 'Wake word + STT con Apple Speech (.app) o Whisper (web). TTS con Piper o macOS say. Sin la nube.', en: 'Wake word + STT with Apple Speech (.app) or Whisper (web). TTS with Piper or macOS say. Cloud-free.' },
   'settings.about.feat.obsidian.title': { es: 'Obsidian', en: 'Obsidian' },
   'settings.about.feat.obsidian.body':  { es: 'Lee MOC + última sesión + ADR del proyecto. Guarda sesiones automáticamente — built-in PARA-lite o comando custom (ej. tu skill /kb).', en: 'Reads project MOC + last session + ADR. Saves sessions automatically — built-in PARA-lite or custom command (e.g. your /kb skill).' },
   'settings.about.feat.skills.title':   { es: 'Skills', en: 'Skills' },
@@ -1427,9 +1343,6 @@ const DICT = {
   'settings.about.tut.commit.s1':         { es: 'Sidebar del agente → sección Git → "Generar mensaje".', en: 'Agent sidebar → Git section → "Generate message".' },
   'settings.about.tut.commit.s2':         { es: 'Claude analiza el diff y propone un mensaje. Editalo si querés.', en: 'Claude analyzes the diff and proposes a message. Edit if needed.' },
   'settings.about.tut.commit.s3':         { es: '"Hacer commit" lo aplica. NUNCA hace push — eso es manual.', en: '"Commit" applies it. NEVER pushes — that\'s manual.' },
-  'settings.about.tut.voice.title':       { es: 'Hablarle a Eco', en: 'Talk to Eco' },
-  'settings.about.tut.voice.s1':          { es: 'Decí "Eco" + tu comando. Ej: "Eco abrí Aditum" o "Eco al final".', en: 'Say "Eco" + your command. E.g., "Eco open Aditum" or "Eco scroll to end".' },
-  'settings.about.tut.voice.s2':          { es: 'Dentro de un agente, sin "Eco" adelante, el texto se manda al chat.', en: 'Inside an agent, without "Eco" prefix, text goes to the chat.' },
 
   // Shortcuts
   'settings.about.shortcuts.title': { es: 'Atajos de teclado', en: 'Keyboard shortcuts' },
@@ -1437,16 +1350,13 @@ const DICT = {
   'settings.about.sc.devtools':       { es: 'Abrir DevTools (debug)', en: 'Open DevTools (debug)' },
   'settings.about.sc.settings':       { es: 'Abrir Ajustes', en: 'Open Settings' },
   'settings.about.sc.close_modal':    { es: 'Cerrar modal/dialog', en: 'Close modal/dialog' },
-  'settings.about.sc.voice_command':  { es: 'Ejecutar comando de voz', en: 'Run voice command' },
 
   // Privacy
   'settings.about.privacy.title': { es: 'Privacidad y datos', en: 'Privacy & data' },
   'settings.about.priv.local': { es: 'Local', en: 'Local' },
   'settings.about.priv.cloud': { es: 'A la nube', en: 'To cloud' },
   'settings.about.priv.audio.label':     { es: 'Audio del micrófono', en: 'Microphone audio' },
-  'settings.about.priv.audio.desc':      { es: 'STT con Whisper corre 100% en tu Mac. El audio NUNCA sale.', en: 'Whisper STT runs 100% on your Mac. Audio NEVER leaves.' },
-  'settings.about.priv.tts.label':       { es: 'Voz sintetizada (TTS)', en: 'Synthesized voice (TTS)' },
-  'settings.about.priv.tts.desc':        { es: 'Piper genera el audio offline. Sin servicios externos.', en: 'Piper generates audio offline. No external services.' },
+  'settings.about.priv.audio.desc':      { es: 'El dictado a la terminal transcribe on-device (Apple Speech / Web Speech). El audio NUNCA sale.', en: 'Terminal dictation transcribes on-device (Apple Speech / Web Speech). Audio NEVER leaves.' },
   'settings.about.priv.auth.label':      { es: 'Tu cuenta (PIN + frase)', en: 'Your account (PIN + phrase)' },
   'settings.about.priv.auth.desc':       { es: '~/.eco/user.json con argon2id, chmod 600. Sin servidor externo.', en: '~/.eco/user.json with argon2id, chmod 600. No external server.' },
   'settings.about.priv.workspace.label': { es: 'Workspaces y archivos', en: 'Workspaces and files' },
@@ -1468,8 +1378,8 @@ const DICT = {
   'settings.about.credits.lang':      { es: 'Lenguaje', en: 'Language' },
   'settings.about.credits.thanks_to': { es: 'Hecho posible por', en: 'Made possible by' },
   'settings.about.credits.thanks_body': {
-    es: 'Claude Code SDK · Anthropic · Electron · Vite · React · xterm.js · node-pty · openWakeWord · faster-whisper · Piper TTS · Obsidian Local REST API. Gracias a los autores y mantenedores de cada uno de estos proyectos.',
-    en: 'Claude Code SDK · Anthropic · Electron · Vite · React · xterm.js · node-pty · openWakeWord · faster-whisper · Piper TTS · Obsidian Local REST API. Thanks to the authors and maintainers of each one of these projects.',
+    es: 'Claude Code SDK · Anthropic · Electron · Vite · React · xterm.js · node-pty · Obsidian Local REST API. Gracias a los autores y mantenedores de cada uno de estos proyectos.',
+    en: 'Claude Code SDK · Anthropic · Electron · Vite · React · xterm.js · node-pty · Obsidian Local REST API. Thanks to the authors and maintainers of each one of these projects.',
   },
   'settings.about.credits.made_with': { es: 'Hecho con cuidado en Florida, USA', en: 'Crafted with care in Florida, USA' },
 
@@ -1497,38 +1407,9 @@ const DICT = {
   },
   'settings.about.qs.s3.t': { es: 'Conversá', en: 'Chat' },
   'settings.about.qs.s3.b': {
-    es: 'Escribí o decí "Eco …". Cada agente vive en un git worktree aislado bajo ~/.eco/worktrees/.',
-    en: 'Type or say "Eco …". Each agent lives in an isolated git worktree under ~/.eco/worktrees/.',
+    es: 'Escribile al agente. Cada agente vive en un git worktree aislado bajo ~/.eco/worktrees/.',
+    en: 'Write to the agent. Each agent lives in an isolated git worktree under ~/.eco/worktrees/.',
   },
-  'settings.about.qs.s4.t': { es: 'Probá la voz', en: 'Try voice' },
-  'settings.about.qs.s4.b': {
-    es: 'Activá el listener en Ajustes → Voz. Decí "Hey Eco" y luego un comando. Mirá la pestaña Voz para la lista completa.',
-    en: 'Turn on the listener in Settings → Voice. Say "Hey Eco" then a command. See the Voice tab for the full list.',
-  },
-
-  // Voice commands
-  'settings.about.voice.title':         { es: 'Comandos de voz', en: 'Voice commands' },
-  'settings.about.voice.nav':           { es: 'Navegación global', en: 'Global navigation' },
-  'settings.about.voice.nav.home':      { es: 'Volver al dashboard', en: 'Back to dashboard' },
-  'settings.about.voice.nav.settings':  { es: 'Abre la pantalla de Ajustes', en: 'Open Settings' },
-  'settings.about.voice.nav.tabs':      { es: 'Abre la pestaña correspondiente del navbar', en: 'Open the matching navbar tab' },
-  'settings.about.voice.nav.status':    { es: 'Lee voz alta el estado actual de Eco', en: 'Reads aloud current Eco status' },
-  'settings.about.voice.nav.help':      { es: 'Muestra los comandos disponibles', en: 'Shows available commands' },
-  'settings.about.voice.agents':        { es: 'Agentes', en: 'Agents' },
-  'settings.about.voice.agents.open':   { es: 'Crea o abre un agente por nombre', en: 'Creates or opens an agent by name' },
-  'settings.about.voice.agents.rename': { es: 'Renombra el agente activo', en: 'Renames the active agent' },
-  'settings.about.voice.agents.close':  { es: 'Cierra el agente activo', en: 'Closes the active agent' },
-  'settings.about.voice.agents.nav':    { es: 'Navega entre los agentes abiertos', en: 'Cycles through open agents' },
-  'settings.about.voice.agents.pause':  { es: 'Pausa o continúa la respuesta en curso', en: 'Pauses or resumes the current reply' },
-  'settings.about.voice.inside':        { es: 'Dentro de un agente', en: 'Inside an agent' },
-  'settings.about.voice.inside.tabs':   { es: 'Cambia entre las pestañas internas', en: 'Switches between inner tabs' },
-  'settings.about.voice.inside.scroll': { es: 'Mueve el scroll del chat', en: 'Scrolls the chat' },
-  'settings.about.voice.inside.repeat': { es: 'Eco vuelve a leer la última respuesta', en: 'Eco reads the last reply again' },
-  'settings.about.voice.inside.confirm':{ es: 'Confirma o cancela una pregunta de Eco', en: 'Confirms or cancels an Eco prompt' },
-  'settings.about.voice.appearance':    { es: 'Voz y apariencia', en: 'Voice & appearance' },
-  'settings.about.voice.appearance.tts':{ es: 'Mutea o reactiva la voz de Eco', en: 'Mutes or unmutes Eco voice' },
-  'settings.about.voice.appearance.rate':{ es: 'Cambia la velocidad de habla', en: 'Changes speaking rate' },
-  'settings.about.voice.appearance.theme':{ es: 'Cambia el tema visual', en: 'Switches visual theme' },
 
   // Slash commands
   'settings.about.slash.title':  { es: 'Slash commands', en: 'Slash commands' },
@@ -1555,8 +1436,8 @@ const DICT = {
   },
   'settings.about.faq.offline.q':   { es: '¿Funciona offline?', en: 'Does it work offline?' },
   'settings.about.faq.offline.a':   {
-    es: 'La voz (STT/TTS) y el listener corren 100% local. El chat con Claude necesita internet para hablar con Anthropic.',
-    en: 'Voice (STT/TTS) and the listener run 100% locally. Chat with Claude needs internet to talk to Anthropic.',
+    es: 'El dictado a la terminal transcribe on-device. El chat con Claude necesita internet para hablar con Anthropic.',
+    en: 'Terminal dictation transcribes on-device. Chat with Claude needs internet to talk to Anthropic.',
   },
   'settings.about.faq.windows.q':   { es: '¿Hay versión para Windows o Linux?', en: 'Is there a Windows or Linux build?' },
   'settings.about.faq.windows.a':   {
@@ -1577,11 +1458,6 @@ const DICT = {
   'settings.about.faq.data.a':      {
     es: 'Todo local: ~/.eco/ para configuración y worktrees, localStorage para historial y preferencias del UI. Nada en la nube.',
     en: 'All local: ~/.eco/ for config and worktrees, localStorage for history and UI prefs. Nothing in the cloud.',
-  },
-  'settings.about.faq.voice.q':     { es: '¿Eco escucha siempre el micrófono?', en: 'Does Eco always listen to the mic?' },
-  'settings.about.faq.voice.a':     {
-    es: 'Solo si activás el listener. Antes de la wake word "Hey Eco" no se procesa nada — openwakeword corre local y descarta audio que no matchee.',
-    en: 'Only if you enable the listener. Before the "Hey Eco" wake word nothing is processed — openwakeword runs locally and discards non-matching audio.',
   },
 
   // Troubleshooting
@@ -1616,11 +1492,6 @@ const DICT = {
     es: 'Eco usa el puerto 7100 cuando está empaquetado. Si otro proceso lo tiene, matalo con `lsof -ti :7100 | xargs kill -9`.',
     en: 'Eco uses port 7100 when packaged. If another process holds it, kill it with `lsof -ti :7100 | xargs kill -9`.',
   },
-  'settings.about.tr.voice.p':       { es: 'La voz no me escucha', en: 'Voice cannot hear me' },
-  'settings.about.tr.voice.s':       {
-    es: 'Revisá permisos de micrófono en Preferencias del Sistema → Privacidad → Micrófono → Eco. En la app, mirá la onda en el dock — si no se mueve, el listener no está corriendo.',
-    en: 'Check microphone permission in System Preferences → Privacy → Microphone → Eco. In the app, look at the dock waveform — if it does not move, the listener is not running.',
-  },
 
   // Network
   'settings.about.network.title':    { es: 'Conexiones de red', en: 'Network connections' },
@@ -1628,8 +1499,6 @@ const DICT = {
   'settings.about.net.backend':      { es: 'Backend Node interno (loopback).', en: 'Internal Node backend (loopback).' },
   'settings.about.net.frontend':     { es: 'UI sirve desde el backend en la app empaquetada.', en: 'UI is served by the backend in the packaged app.' },
   'settings.about.net.webview':      { es: 'Navega como Chrome 131. Vos controlás dónde va.', en: 'Browses as Chrome 131. You control where it goes.' },
-  'settings.about.net.whisper':      { es: 'STT en tu Mac. Sin red.', en: 'STT on your Mac. No network.' },
-  'settings.about.net.piper':        { es: 'TTS en tu Mac. Sin red.', en: 'TTS on your Mac. No network.' },
   'settings.about.net.obsidian':     { es: 'Lectura/escritura del vault. Sin red.', en: 'Vault read/write. No network.' },
 
   // Files
@@ -1655,7 +1524,6 @@ const DICT = {
   'settings.about.dev.scripts.devapp':   { es: 'Backend + Vite + Electron en paralelo.', en: 'Backend + Vite + Electron in parallel.' },
   'settings.about.dev.scripts.distmac':  { es: 'Construye el .dmg para distribución.', en: 'Builds the .dmg for distribution.' },
   'settings.about.dev.scripts.typecheck':{ es: 'Verifica tipos TypeScript del frontend.', en: 'Runs TypeScript typecheck on the frontend.' },
-  'settings.about.dev.scripts.listener': { es: 'Corre solo el wake-word listener.', en: 'Runs only the wake-word listener.' },
 
   // Support
   'settings.about.support.title':    { es: 'Soporte', en: 'Support' },
@@ -1694,7 +1562,6 @@ const DICT = {
   },
   'onboarding.welcome.tag.fast':    { es: 'Rápido', en: 'Fast' },
   'onboarding.welcome.tag.private': { es: '100% local', en: '100% local' },
-  'onboarding.welcome.tag.voice':   { es: 'Manejado por voz', en: 'Voice-first' },
 
   'onboarding.language.title': { es: 'Idioma', en: 'Language' },
   'onboarding.language.sub':   { es: 'Elegí el idioma de la interfaz. Lo cambiás cuando quieras.', en: 'Pick the UI language. You can change it any time.' },
@@ -1748,53 +1615,11 @@ const DICT = {
   'onboarding.obsidian.error':         { es: 'No se pudo guardar la configuración. Revisá que la carpeta exista.', en: 'Could not save the configuration. Make sure the folder exists.' },
   'onboarding.obsidian.note':          { es: 'Eco usa la API local de Obsidian para leer notas y guardar sesiones bajo "Sessions/". Nunca se sube nada.', en: 'Eco uses the Obsidian local API to read notes and save sessions under "Sessions/". Nothing is uploaded.' },
 
-  'onboarding.voice.title':              { es: 'Voz', en: 'Voice' },
-  'onboarding.voice.sub':                { es: 'Eco puede escucharte y responderte. Todo corre local.', en: 'Eco can listen and reply. It all runs locally.' },
-  'onboarding.voice.autostart.title':    { es: 'Escuchar al arrancar', en: 'Listen on launch' },
-  'onboarding.voice.autostart.body':     { es: 'Activa el wake word "Hey Eco" cuando abrís la app.', en: 'Turns on the "Hey Eco" wake word when the app opens.' },
-  'onboarding.voice.note':               { es: 'Vas a necesitar permitir el micrófono la primera vez. El audio nunca sale de tu Mac.', en: 'You will need to grant mic permission the first time. Audio never leaves your Mac.' },
 
   'onboarding.done.title':       { es: '¡Listo!', en: 'All set!' },
   'onboarding.done.body':        { es: 'Eco está configurado. Acá tenés algunos tips para arrancar.', en: 'Eco is configured. Here are a few tips to get going.' },
   'onboarding.done.tip.dashboard': { es: 'En el Dashboard tocá "Nuevo agente" y elegí la carpeta del proyecto.', en: 'On the Dashboard tap "New agent" and pick the project folder.' },
-  'onboarding.done.tip.voice':     { es: 'Decí "Hey Eco" + comando. Probá "Eco abrir Aditum" o "Eco ayuda".', en: 'Say "Hey Eco" + a command. Try "Eco open Aditum" or "Eco help".' },
   'onboarding.done.tip.support':   { es: 'Si te trabás, mirá Ajustes → Acerca para FAQ, comandos y solución de problemas.', en: 'If you get stuck, check Settings → About for FAQ, commands and troubleshooting.' },
-
-  // ─────────────────────────── Eco commands feedback
-  'cmdhelp.open.example': { es: 'Eco abrir <nombre>', en: 'Eco open <name>' },
-  'cmdhelp.open.desc': { es: 'Crea un nuevo agente con ese nombre', en: 'Creates a new agent with that name' },
-  'cmdhelp.rename.example': { es: 'Eco renombrar <nombre>', en: 'Eco rename <name>' },
-  'cmdhelp.rename.desc': { es: 'Cambia el título de el agente activo', en: 'Changes the active agent title' },
-  'cmdhelp.close.example': { es: 'Eco cerrar', en: 'Eco close' },
-  'cmdhelp.close.desc': { es: 'Cierra el agente activo', en: 'Closes the active agent' },
-  'cmdhelp.goto.example': { es: 'Eco ir <nombre>', en: 'Eco go <name>' },
-  'cmdhelp.goto.desc': { es: 'Va a el agente con ese nombre (fuzzy)', en: 'Goes to the agent with that name (fuzzy)' },
-  'cmdhelp.nav.example': { es: 'Eco siguiente · Eco anterior', en: 'Eco next · Eco previous' },
-  'cmdhelp.nav.desc': { es: 'Navega entre agentes', en: 'Navigate between agents' },
-  'cmdhelp.dash.example': { es: 'Eco dashboard · inicio', en: 'Eco dashboard · home' },
-  'cmdhelp.dash.desc': { es: 'Vuelve al dashboard', en: 'Back to dashboard' },
-  'cmdhelp.sections.example': { es: 'Eco ajustes · archivos · historial', en: 'Eco settings · files · history' },
-  'cmdhelp.sections.desc': { es: 'Navega a esas secciones', en: 'Navigate to those sections' },
-  'cmdhelp.status.example': { es: 'Eco estado', en: 'Eco status' },
-  'cmdhelp.status.desc': { es: 'Lista todas las agentes con su actividad', en: 'List all agents with their activity' },
-  'cmdhelp.pause.example': { es: 'Eco pausar · continuar', en: 'Eco pause · continue' },
-  'cmdhelp.pause.desc': { es: 'Pausa o reanuda el agente activo', en: 'Pause or resume the active agent' },
-  'cmdhelp.voice.example': { es: 'Eco silencio · hablar', en: 'Eco silence · speak' },
-  'cmdhelp.voice.desc': { es: 'Apaga o prende la voz', en: 'Turn voice off or on' },
-  'cmdhelp.theme.example': { es: 'Eco claro · oscuro · sistema', en: 'Eco light · dark · system' },
-  'cmdhelp.theme.desc': { es: 'Cambia el tema', en: 'Change theme' },
-  'cmdhelp.help.example': { es: 'Eco ayuda', en: 'Eco help' },
-  'cmdhelp.help.desc': { es: 'Muestra este panel', en: 'Shows this panel' },
-  'cmdhelp.scroll.example': { es: 'Eco abajo · arriba · al final · al inicio', en: 'Eco down · up · to end · to start' },
-  'cmdhelp.scroll.desc': { es: 'Hace scroll del panel activo', en: 'Scrolls the active panel' },
-  'cmdhelp.tab.example': { es: 'Eco terminal · archivos · chat', en: 'Eco terminal · files · chat' },
-  'cmdhelp.tab.desc': { es: 'Cambia de pestaña dentro de el agente', en: 'Switches tab inside the agent' },
-  'cmdhelp.confirm.example': { es: 'Eco sí · no · acepta · cancela', en: 'Eco yes · no · accept · cancel' },
-  'cmdhelp.confirm.desc': { es: 'Responde al diálogo de confirmación activo', en: 'Answers the active confirmation dialog' },
-  'cmdhelp.repeat.example': { es: 'Eco repetir · leeme', en: 'Eco repeat · read it' },
-  'cmdhelp.repeat.desc': { es: 'Re-lee el último mensaje del agente', en: 'Re-reads the last agent message' },
-  'cmdhelp.tts.example': { es: 'Eco rápido · lento · normal · fuerte · bajo', en: 'Eco faster · slower · normal · louder · quieter' },
-  'cmdhelp.tts.desc': { es: 'Ajusta velocidad o volumen de la voz', en: 'Adjusts voice rate or volume' },
 
   // Feedback de nuevos comandos
   'cmd.scroll': { es: 'Scroll', en: 'Scroll' },
@@ -1811,21 +1636,12 @@ const DICT = {
   'cmd.tab.browser': { es: 'Navegador', en: 'Browser' },
   'cmd.confirm_yes': { es: 'Sí, confirmado', en: 'Yes, confirmed' },
   'cmd.confirm_no': { es: 'Cancelado', en: 'Cancelled' },
-  'cmd.repeat': { es: 'Releyendo último mensaje', en: 'Repeating last message' },
-  'cmd.tts.faster': { es: 'Voz más rápida', en: 'Voice faster' },
-  'cmd.tts.slower': { es: 'Voz más lenta', en: 'Voice slower' },
-  'cmd.tts.normal': { es: 'Voz normal', en: 'Voice normal' },
-  'cmd.tts.louder': { es: 'Voz más fuerte', en: 'Voice louder' },
-  'cmd.tts.quieter': { es: 'Voz más baja', en: 'Voice quieter' },
   'cmd.server.start': { es: 'Iniciando servidor', en: 'Starting server' },
   'cmd.server.stop': { es: 'Deteniendo servidor', en: 'Stopping server' },
   'cmd.server.restart': { es: 'Reiniciando servidor', en: 'Restarting server' },
   'cmd.remote.on': { es: 'Activando remote control', en: 'Enabling remote control' },
   'cmd.remote.off': { es: 'Desactivando remote control', en: 'Disabling remote control' },
   'cmd.obsidian.save': { es: 'Guardando en Obsidian', en: 'Saving to Obsidian' },
-
-  // Wake indicator
-  'wake.listening': { es: 'Eco · escuchando comando…', en: 'Eco · listening for command…' },
 
   'cmd.unknown.title': { es: 'No entendí', en: 'I didn\'t understand' },
   'cmd.unknown.detail': { es: 'Decí "Eco ayuda"', en: 'Say "Eco help"' },
@@ -1845,8 +1661,6 @@ const DICT = {
   'cmd.status': { es: 'Estado', en: 'Status' },
   'cmd.paused': { es: 'Pausada', en: 'Paused' },
   'cmd.resumed': { es: 'Reanudada', en: 'Resumed' },
-  'cmd.voice_on': { es: 'Voz prendida', en: 'Voice on' },
-  'cmd.voice_off': { es: 'Silencio', en: 'Silence' },
   'cmd.theme': { es: 'Tema {{mode}}', en: 'Theme {{mode}}' },
 
   // ─────────────────────────── Common (reusable) — extiende los keys
@@ -2354,7 +2168,6 @@ const DICT = {
   'settings.srv.dual': { es: 'Frontend + backend en paralelo', en: 'Frontend + backend in parallel' },
   'settings.srv.hint': { es: 'Lo definís acá y todas las burbujas de este workspace lo usan. El usuario solo inicia/detiene. Usá $PORT, no puertos fijos.', en: 'Defined here and used by every bubble in this workspace. Users only start/stop. Use $PORT, never hardcoded ports.' },
   'settings.obsidian.label': { es: 'Obsidian', en: 'Obsidian' },
-  'settings.voice.optgroup_browser': { es: 'Sistema / navegador', en: 'System / browser' },
   'settings.obsidian.refresh_tooltip': { es: 'Volver a detectar vaults', en: 'Re-detect vaults' },
   'settings.obsidian.refresh_btn': { es: '↻ Refrescar', en: '↻ Refresh' },
   'settings.obsidian.mode_label': { es: 'Modo de guardado', en: 'Save mode' },

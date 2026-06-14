@@ -1,7 +1,5 @@
 export type EcoStatus = 'idle' | 'listening' | 'thinking' | 'executing' | 'speaking' | 'error';
 
-export type VoiceState = 'idle' | 'listening' | 'thinking' | 'executing' | 'speaking';
-
 export type ChatRole = 'user' | 'assistant';
 
 export type ToolCall = {

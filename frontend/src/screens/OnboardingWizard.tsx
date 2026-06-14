@@ -13,11 +13,10 @@ import { apiFetch } from '@/lib/api';
 import { EcoMark } from '@/design/EcoMark';
 import {
   IconBolt, IconCheck, IconFolder, IconGithub, IconGlobe, IconKey, IconLayers,
-  IconMic, IconShield, type IconProps,
+  IconShield, type IconProps,
 } from '@/design/icons';
 
 const ONBOARDED_KEY = 'eco.onboarded';
-const VOICE_AUTOSTART_KEY = 'eco.voice.autostart';
 
 export function hasOnboarded(): boolean {
   try { return window.localStorage.getItem(ONBOARDED_KEY) === '1'; } catch { return false; }
@@ -34,14 +33,14 @@ type ClaudeAuth = {
   effectiveMethod: 'cli' | 'apikey' | 'none';
 } | null;
 
-type StepId = 'welcome' | 'language' | 'appearance' | 'claude' | 'github' | 'folder' | 'obsidian' | 'voice' | 'done';
+type StepId = 'welcome' | 'language' | 'appearance' | 'claude' | 'github' | 'folder' | 'obsidian' | 'done';
 
 export function OnboardingWizard({ username, onClose }: { username: string | null; onClose: () => void }) {
   const t = useTokens();
   const tr = useT();
   const [step, setStep] = useState<StepId>('welcome');
 
-  const order: StepId[] = ['welcome', 'language', 'appearance', 'claude', 'github', 'folder', 'obsidian', 'voice', 'done'];
+  const order: StepId[] = ['welcome', 'language', 'appearance', 'claude', 'github', 'folder', 'obsidian', 'done'];
   const idx = order.indexOf(step);
 
   function next() {
@@ -101,7 +100,6 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
           {step === 'github'     && <StepGithub onContinue={next}/>}
           {step === 'folder'     && <StepFolder/>}
           {step === 'obsidian'   && <StepObsidian/>}
-          {step === 'voice'      && <StepVoice/>}
           {step === 'done'       && <StepDone/>}
         </div>
 
@@ -164,7 +162,6 @@ function StepWelcome({ username }: { username: string | null }) {
         {[
           { icon: IconBolt,   label: tr('onboarding.welcome.tag.fast') },
           { icon: IconShield, label: tr('onboarding.welcome.tag.private') },
-          { icon: IconMic,    label: tr('onboarding.welcome.tag.voice') },
         ].map((tag, i) => (
           <span key={i} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -806,74 +803,11 @@ function StepObsidian() {
   );
 }
 
-function StepVoice() {
-  const t = useTokens();
-  const tr = useT();
-  const [autostart, setAutostartState] = useState<boolean>(() => {
-    try { return window.localStorage.getItem(VOICE_AUTOSTART_KEY) !== '0'; } catch { return true; }
-  });
-  function toggle(v: boolean) {
-    setAutostartState(v);
-    try { window.localStorage.setItem(VOICE_AUTOSTART_KEY, v ? '1' : '0'); } catch { /* noop */ }
-  }
-  return (
-    <StepShell
-      icon={IconMic}
-      title={tr('onboarding.voice.title')}
-      sub={tr('onboarding.voice.sub')}
-    >
-      <div style={{
-        padding: 16, borderRadius: 12,
-        background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        display: 'flex', alignItems: 'center', gap: 14,
-      }}>
-        <span style={{
-          width: 38, height: 38, borderRadius: 10,
-          background: autostart ? t.accentFaint : t.bg3,
-          color: autostart ? t.accent : t.text3,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <IconMic size={18}/>
-        </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: t.text0 }}>
-            {tr('onboarding.voice.autostart.title')}
-          </div>
-          <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
-            {tr('onboarding.voice.autostart.body')}
-          </div>
-        </div>
-        <button type="button" onClick={() => toggle(!autostart)}
-          style={{
-            width: 44, height: 26, borderRadius: 999, border: 0,
-            background: autostart ? t.accent : t.bg3,
-            position: 'relative', cursor: 'pointer',
-            transition: 'background 140ms ease',
-          }}>
-          <span style={{
-            position: 'absolute', top: 3, left: autostart ? 21 : 3,
-            width: 20, height: 20, borderRadius: '50%',
-            background: '#fff',
-            transition: 'left 140ms ease',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-          }}/>
-        </button>
-      </div>
-      <div style={{
-        marginTop: 12, fontSize: 11, color: t.text3, lineHeight: 1.5,
-      }}>
-        {tr('onboarding.voice.note')}
-      </div>
-    </StepShell>
-  );
-}
-
 function StepDone() {
   const t = useTokens();
   const tr = useT();
   const tips = useMemo(() => [
     tr('onboarding.done.tip.dashboard'),
-    tr('onboarding.done.tip.voice'),
     tr('onboarding.done.tip.support'),
   ], [tr]);
   return (

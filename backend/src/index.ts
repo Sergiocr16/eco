@@ -7,7 +7,7 @@ import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
-import { attachWebSocket, broadcastServerMessage, broadcastClientAction, broadcastToUser, wsClientCount } from './ws-server.js';
+import { attachWebSocket, broadcastClientAction, broadcastToUser, wsClientCount } from './ws-server.js';
 import { listDocs, writeDoc, deleteDoc } from './user-docs.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
 import { setBubblesSnapshot, getBubblesSnapshot, findBubble, getAllSnapshots, type BubbleSummary } from './bubbles-index.js';
@@ -20,8 +20,6 @@ import * as devServer from './dev-server.js';
 import * as obsidian from './obsidian.js';
 import { getClaudeAuthStatus } from './claude-auth.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
-import { isPiperAvailable, listVoices, synthesize, TTSRequestSchema } from './tts.js';
-import { isMacSayAvailable, listMacSayVoices, synthesizeMacSay } from './tts-macsay.js';
 import { listSkills } from './skills.js';
 import { addWorkspace, readStore as readWorkspaceStore, removeWorkspace } from './workspaces-store.js';
 import { runShell, ShellRequestSchema } from './shell.js';
@@ -509,25 +507,11 @@ app.delete('/user/doc', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-app.get('/info', async (req: Request, res: Response) => {
-  const macSayVoices = isMacSayAvailable() ? await listMacSayVoices() : [];
+app.get('/info', (req: Request, res: Response) => {
   res.json({
     workspaces: workspacesForUser(req.ecoUser?.id),
     model: config.model,
-    tts: {
-      piperAvailable: isPiperAvailable(),
-      voices: isPiperAvailable() ? listVoices() : [],
-      macSayAvailable: isMacSayAvailable(),
-      macSayVoices,
-    },
   });
-});
-
-app.get('/tts/voices', async (_req, res) => {
-  const piper = isPiperAvailable() ? listVoices() : [];
-  const macsay = isMacSayAvailable() ? await listMacSayVoices() : [];
-  // Mantenemos `voices` por compat con clientes viejos (era el array de Piper).
-  res.json({ voices: piper, piper, macsay });
 });
 
 app.get('/skills', (req: Request, res: Response) => {
@@ -715,19 +699,6 @@ app.delete('/config/mcp', async (_req: Request, res: Response) => {
 // Silenciar warning de "import no usado" para hasGithubCredentials —
 // se exporta del store para uso futuro (verificación inline en endpoints).
 void hasGithubCredentials;
-
-const VoiceTranscribedSchema = z.object({
-  text: z.string().min(1).max(4000),
-});
-
-app.post('/voice/transcribed', (req: Request, res: Response) => {
-  const parsed = VoiceTranscribedSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
-  const text = parsed.data.text.trim();
-  if (!text) return errResponse(res, 400, 'voice.empty_text', 'Texto vacío');
-  broadcastServerMessage({ type: 'voice_transcribed', text, ts: Date.now() });
-  res.json({ ok: true });
-});
 
 // Transcripción on-device para Electron empaquetado en macOS. El renderer
 // captura audio con MediaRecorder, lo postea como blob binario acá, y el
@@ -1881,45 +1852,6 @@ app.post('/shell', async (req: Request, res: Response) => {
     res.status(status).json({ error: 'shell.failed', message });
   } finally {
     shellConcurrency.active -= 1;
-  }
-});
-
-const ttsConcurrency = { active: 0, max: 2 };
-
-app.post('/tts', async (req: Request, res: Response) => {
-  const parsed = TTSRequestSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
-  const backend = parsed.data.backend ?? 'piper';
-  if (backend === 'piper' && !isPiperAvailable()) {
-    return errResponse(res, 503, 'tts.piper_unavailable', 'Piper no instalado');
-  }
-  if (backend === 'macsay' && !isMacSayAvailable()) {
-    return errResponse(res, 503, 'tts.macsay_unavailable', 'macOS say no disponible');
-  }
-  if (ttsConcurrency.active >= ttsConcurrency.max) {
-    return errResponse(res, 429, 'tts.too_concurrent', 'Demasiadas síntesis concurrentes');
-  }
-  ttsConcurrency.active += 1;
-  const controller = new AbortController();
-  res.on('close', () => {
-    if (!res.writableEnded) controller.abort();
-  });
-  try {
-    const wav = backend === 'macsay'
-      ? await synthesizeMacSay(parsed.data.text, parsed.data.voice ?? '', controller.signal)
-      : await synthesize(parsed.data, controller.signal);
-    res.setHeader('Content-Type', 'audio/wav');
-    res.setHeader('Content-Length', wav.length.toString());
-    res.setHeader('Cache-Control', 'no-store');
-    res.end(wav);
-  } catch (err) {
-    const isTimeout = err instanceof Error && /timeout/i.test(err.message);
-    const code = isTimeout ? 'tts.timeout' : 'tts.synth_failed';
-    const message = isTimeout ? 'TTS timeout' : 'Error de síntesis';
-    console.error('[tts] error:', err instanceof Error ? err.message : err);
-    if (!res.headersSent) res.status(500).json({ error: code, message });
-  } finally {
-    ttsConcurrency.active -= 1;
   }
 });
 

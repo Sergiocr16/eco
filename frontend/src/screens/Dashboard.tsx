@@ -1,18 +1,18 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '@/lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
 import {
-  Glass, glassEffect, IconBtn, StatusDot, Pill, Kbd, AgentGlyph, SectionLabel, bubbleLetter,
+  Glass, glassEffect, IconBtn, StatusDot, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import {
-  IconWave, IconMic, IconSend, IconGrid, IconGraph, IconExt, IconColumns,
+  IconGrid, IconGraph, IconExt, IconColumns,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck, IconAgent,
   IconClock, IconAlert, IconZap, IconCpu, IconTrash, IconX,
   IconGlobe, IconLayers, IconShield, IconGithub, IconCommand, type IconProps,
 } from '@/design/icons';
-import type { Bubble, VoiceState } from '@/lib/types';
+import type { Bubble } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
@@ -27,12 +27,7 @@ import { useTeamBubbles } from '@/components/AdminGraph';
 type Props = {
   bubbles: Bubble[];
   activeBubbleId: string | null;
-  voiceState: VoiceState;
-  listening: boolean;
-  wakeActive: boolean;
-  interimText: string;
   onSend: (text: string) => void;
-  onMicToggle: () => void;
   onOpenAgent: (id: string) => void;
   onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
   onFocus: (id: string) => void;
@@ -41,7 +36,6 @@ type Props = {
   onChangeWorkspace: (id: string, workspace: string) => void;
   onToggleCategory: (id: string, categoryId: string | undefined) => void;
   availableWorkspaces: string[];
-  voiceError?: string | null;
   role?: 'admin' | 'member' | null;
   userId?: string | null;
 };
@@ -49,7 +43,7 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive, role, userId } = props;
+  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, role, userId } = props;
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
@@ -58,10 +52,6 @@ export function Dashboard(props: Props) {
   // Grafo de equipo del admin: bubbles propias (reales) + las de otros usuarios
   // (sintetizadas desde /admin/overview). Para members el hook no hace nada.
   const { teamBubbles, ownerNames } = useTeamBubbles(bubbles, userId ?? null, isAdmin);
-  // onSend / interimText / voiceError / voiceState / onMicToggle siguen
-  // llegando por contrato pero ya no se usan en el Dashboard: la CommandBar y
-  // el VoiceOrb ("Eco escuchando") se removieron — el dictado vive dentro de
-  // cada conversación.
   // Vista del Dashboard persistida en localStorage — al volver al dashboard
   // se mantiene la última vista elegida (grid / kanban / graph).
   type DashView = 'grid' | 'graph' | 'kanban';
@@ -106,7 +96,6 @@ export function Dashboard(props: Props) {
         availableWorkspaces={availableWorkspaces}
         onFocus={onFocus}
         onOpenAgent={onOpenAgent}
-        wakeActive={wakeActive}
       />
 
       <div ref={mainScrollRef} style={{
@@ -191,9 +180,8 @@ export function Dashboard(props: Props) {
         )}
       </div>
 
-      {/* CommandBar global removida del Dashboard — el input/mic vive ahora
-          dentro de cada conversación (AgentDetail). Para crear un agente
-          nuevo, usar el botón "+" del grid o el comando de voz «Eco crea ...». */}
+      {/* El input global se removió del Dashboard. Para crear un agente
+          nuevo, usar el botón "+" del grid. */}
     </div>
   );
 }
@@ -512,7 +500,6 @@ function SystemStatusCard() {
   const tr = useT();
   // Estados básicos — backend siempre OK (si estás viendo esto, está vivo).
   const [apiKey, setApiKey] = useState<'ok' | 'missing' | 'invalid'>('missing');
-  const [listenerUp, setListenerUp] = useState<boolean>(false);
   const [obsidianActive, setObsidianActive] = useState<boolean>(false);
   useEffect(() => {
     let cancel = false;
@@ -522,13 +509,6 @@ function SystemStatusCard() {
         const data = await r.json().catch(() => ({}));
         setApiKey(data?.configured ? 'ok' : 'missing');
       }
-    }).catch(() => { /* noop */ });
-    // El listener Python expone /voice/ping a través del backend. Si no
-    // está corriendo, /voice/status retorna { running: false }.
-    apiFetch('/info').then(async (r) => {
-      if (cancel || !r.ok) return;
-      const data = await r.json().catch(() => ({}));
-      setListenerUp(!!data?.listener?.running);
     }).catch(() => { /* noop */ });
     // Obsidian: activo = configurado + habilitado.
     apiFetch('/integrations/obsidian/status').then(async (r) => {
@@ -542,7 +522,6 @@ function SystemStatusCard() {
   const rows = [
     { label: tr('dash.card.sys.backend'),  color: t.ok },
     { label: tr('dash.card.sys.apikey'),   color: apiKey === 'ok' ? t.ok : (apiKey === 'invalid' ? t.err : t.warn) },
-    { label: tr('dash.card.sys.listener'), color: listenerUp ? t.ok : t.text3 },
     // Obsidian solo aparece cuando está activo.
     ...(obsidianActive ? [{ label: tr('dash.card.sys.obsidian'), color: t.ok }] : []),
   ];
@@ -3364,113 +3343,14 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   return isFull ? createPortal(graph, document.body) : graph;
 }
 
-// CommandBar — actualmente no se monta en el Dashboard (la input/mic vive
-// dentro de cada conversación). La dejamos definida por si se reusa.
-// @ts-expect-error componente preservado intencionalmente sin uso
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function CommandBar({
-  voiceState, onVoiceToggle, onSubmit, interimText, voiceError,
-}: {
-  voiceState: VoiceState;
-  onVoiceToggle: () => void;
-  onSubmit: (text: string) => void;
-  interimText: string;
-  voiceError?: string | null;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [value, setValue] = useState('');
-  const [focused, setFocused] = useState(false);
-
-  const submit = (e?: FormEvent) => {
-    e?.preventDefault();
-    if (!value.trim()) return;
-    onSubmit(value);
-    setValue('');
-  };
-
-  const display = interimText || value;
-  const placeholder = voiceError
-    ? voiceError
-    : voiceState === 'listening'
-      ? tr('dash.cmd_placeholder_listening')
-      : tr('dash.cmd.placeholder_active');
-
-  const listenStyle: CSSProperties = voiceState === 'listening'
-    ? { background: t.accent, color: t.accentOn, border: `1px solid ${t.accent}`, boxShadow: `0 0 24px ${t.accentGlow}` }
-    : { background: t.bg3, color: t.text0, border: `1px solid ${t.glassBorder}` };
-
-  return (
-    <div style={{
-      position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-      width: 'min(720px, calc(100% - 320px))', zIndex: 20,
-    }}>
-      <Glass radius={999} style={{
-        padding: 6, display: 'flex', alignItems: 'center', gap: 6,
-        boxShadow: focused ? `${t.shadowLg}, 0 0 0 1px ${t.accentDim}` : t.shadowLg,
-        transition: 'box-shadow 200ms',
-      }}>
-        <button
-          type="button"
-          onClick={onVoiceToggle}
-          style={{
-            width: 40, height: 40, borderRadius: 20,
-            cursor: 'pointer', flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'all 200ms',
-            ...listenStyle,
-          }}>
-          {voiceState === 'listening' ? <IconWave size={18}/> : <IconMic size={18}/>}
-        </button>
-
-        <form onSubmit={submit} style={{ flex: 1, display: 'flex' }}>
-          <input
-            value={display}
-            onChange={(e) => setValue(e.target.value)}
-            readOnly={!!interimText}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            placeholder={placeholder}
-            style={{
-              flex: 1, height: 40, background: 'transparent', border: 0, outline: 'none',
-              fontFamily: t.fontSans, fontSize: 14, color: t.text0,
-              padding: '0 4px',
-            }}/>
-        </form>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 4 }}>
-          <Kbd>⌘</Kbd><Kbd>K</Kbd>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => submit()}
-          disabled={!value.trim()}
-          style={{
-            width: 40, height: 40, borderRadius: 20,
-            background: value.trim() ? t.accent : t.bg3,
-            color: value.trim() ? t.accentOn : t.text3,
-            border: `1px solid ${value.trim() ? t.accent : t.glassBorder}`,
-            cursor: value.trim() ? 'pointer' : 'not-allowed', flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'all 160ms',
-          }}>
-          <IconSend size={16}/>
-        </button>
-      </Glass>
-    </div>
-  );
-}
-
 function DashboardRail({
-  bubbles, activeBubbleId, availableWorkspaces, onOpenAgent, wakeActive,
+  bubbles, activeBubbleId, availableWorkspaces, onOpenAgent,
 }: {
   bubbles: Bubble[];
   activeBubbleId: string | null;
   availableWorkspaces: string[];
   onFocus: (id: string) => void;
   onOpenAgent: (id: string) => void;
-  wakeActive: boolean;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -3524,57 +3404,6 @@ function DashboardRail({
       </div>
 
       <div style={{ flex: 1 }}/>
-
-      <ListeningWave active={wakeActive} label={tr('wake.listening')}/>
-    </div>
-  );
-}
-
-function ListeningWave({ active, label }: { active: boolean; label: string }) {
-  const t = useTokens();
-  const BARS = 7;
-  return (
-    <div
-      aria-hidden={!active}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '10px 12px',
-        borderRadius: 12,
-        background: active
-          ? `color-mix(in oklch, ${t.accent} 12%, transparent)`
-          : 'transparent',
-        border: `1px solid ${active ? `color-mix(in oklch, ${t.accent} 35%, transparent)` : 'transparent'}`,
-        opacity: active ? 1 : 0,
-        maxHeight: active ? 60 : 0,
-        marginBottom: active ? 4 : 0,
-        overflow: 'hidden',
-        transition: 'opacity 200ms ease, max-height 240ms cubic-bezier(0.16, 1, 0.3, 1), margin-bottom 240ms',
-      }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 2,
-        height: 22, flexShrink: 0,
-      }}>
-        {Array.from({ length: BARS }).map((_, i) => (
-          <span
-            key={i}
-            style={{
-              width: 3, height: '100%', borderRadius: 2,
-              background: t.accent,
-              transformOrigin: 'center',
-              animation: active
-                ? `eco-wave-bar 1s ease-in-out ${i * 0.08}s infinite`
-                : 'none',
-              opacity: active ? 1 : 0.4,
-              boxShadow: active ? `0 0 6px color-mix(in oklch, ${t.accent} 60%, transparent)` : 'none',
-            }}
-          />
-        ))}
-      </div>
-      <span style={{
-        fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
-        color: t.text0, letterSpacing: -0.1,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}>{label}</span>
     </div>
   );
 }

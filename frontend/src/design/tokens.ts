@@ -526,8 +526,6 @@ export function stateColor(state: AgentState, t: Tokens): string {
   }
 }
 
-export type VoiceState = 'idle' | 'listening' | 'thinking' | 'executing' | 'speaking';
-
 // 24 acentos ordenados por hue (rueda de color completa).
 // Marcamos «Mint (Eco)» (165) como el accent oficial del producto.
 // Lista curada de acentos para el override — 10 colores bien distintos,

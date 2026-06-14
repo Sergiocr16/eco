@@ -5,7 +5,6 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { ecoToken, readStoredSession } from '@/lib/eco-config';
 import { useTokens } from '@/design/theme';
-import { registerPtyWriter } from '@/lib/voice-router';
 
 type Props = {
   workspace: string;
@@ -88,7 +87,6 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     let disposed = false;
 
     const disposeInputRef: { current: { dispose: () => void } | null } = { current: null };
-    const unregisterVoiceRef: { current: (() => void) | null } = { current: null };
 
     function connect() {
       if (disposed) return;
@@ -171,8 +169,6 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
         }
       };
       disposeInputRef.current = term.onData(sendInput);
-      unregisterVoiceRef.current?.();
-      unregisterVoiceRef.current = registerPtyWriter((text) => sendInput(text));
     }
 
     const doResize = () => {
@@ -189,7 +185,6 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
 
     return () => {
       disposed = true;
-      unregisterVoiceRef.current?.();
       disposeInputRef.current?.dispose();
       if (pingTimer) window.clearInterval(pingTimer);
       if (reconnectTimer) window.clearTimeout(reconnectTimer);

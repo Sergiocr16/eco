@@ -37,7 +37,6 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
       onError: () => { /* manejado en socket.error */ },
       onClientAction: () => { /* la ventana solo no crea/cierra otros bubbles */ },
       onInjectPrompt: () => { /* server-side, no aplica */ },
-      onVoiceTranscribed: () => { /* sin voz en la ventana solo */ },
     },
   });
 
@@ -97,9 +96,6 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
             onClose={() => { bubbles.archiveBubble(bubble.id); closeThisWindow(bubbleId); }}
             onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(bubble.id, ws)}
             onToggleCategory={(catId) => bubbles.toggleBubbleCategory(bubble.id, catId)}
-            onMicToggle={() => { /* sin voz en ventana solo */ }}
-            listening={false}
-            voiceInterim=""
           />
         ) : (
           <div style={{

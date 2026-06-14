@@ -5,12 +5,11 @@ import {
   Glass, Btn, StatusDot, SectionLabel, Toggle, fieldStyle,
 } from '@/design/primitives';
 import {
-  IconSettings, IconKey, IconMic, IconFolder, IconShield, IconLayers,
-  IconInfo, IconCheck, IconCpu, IconTerminal, IconWave, IconGlobe, IconAlert,
+  IconSettings, IconKey, IconFolder, IconShield, IconLayers,
+  IconInfo, IconCheck, IconCpu, IconTerminal, IconGlobe, IconAlert,
   IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
-import { useTTS, type UnifiedVoice } from '@/hooks/useTTS';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
@@ -32,7 +31,7 @@ import {
   type BackupBundle, type BackupMetadata, type WorktreeState,
 } from '@/lib/backup';
 
-type Section = 'general' | 'claude' | 'github' | 'voice' | 'folders' | 'security' | 'appearance' | 'integrations' | 'backup' | 'about';
+type Section = 'general' | 'claude' | 'github' | 'folders' | 'security' | 'appearance' | 'integrations' | 'backup' | 'about';
 
 export function Settings({ role = null }: { role?: 'admin' | 'member' | null }) {
   const t = useTokens();
@@ -47,7 +46,6 @@ export function Settings({ role = null }: { role?: 'admin' | 'member' | null }) 
     { id: 'general', label: tr('settings.section.general'), icon: IconSettings },
     ...(isAdmin ? [{ id: 'claude' as Section, label: tr('settings.section.claude'), icon: IconKey }] : []),
     { id: 'github', label: tr('settings.section.github'), icon: IconGithub },
-    ...(isAdmin ? [{ id: 'voice' as Section, label: tr('settings.section.voice'), icon: IconMic }] : []),
     ...(isAdmin ? [{ id: 'folders' as Section, label: tr('settings.section.folders'), icon: IconFolder }] : []),
     { id: 'security', label: tr('settings.section.security'), icon: IconShield },
     { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
@@ -88,7 +86,6 @@ export function Settings({ role = null }: { role?: 'admin' | 'member' | null }) 
         {sec === 'general' && <SectionGeneral/>}
         {sec === 'claude' && isAdmin && <SectionClaude/>}
         {sec === 'github' && <SectionGithub/>}
-        {sec === 'voice' && isAdmin && <SectionVoice/>}
         {sec === 'folders' && isAdmin && <SectionFolders/>}
         {sec === 'security' && <SectionSecurity/>}
         {sec === 'appearance' && <SectionAppearance/>}
@@ -141,21 +138,12 @@ function SectionGeneral() {
   const tr = useT();
   const def = useDefaultWorkspace();
   const ws = useWorkspaces();
-  // Voz al iniciar, menubar y limpieza de worktrees son cosas de host/dispositivo
-  // → solo admin. El member ve las prefs por-usuario (review, notify, dock, etc.).
+  // Menubar y limpieza de worktrees son cosas de host/dispositivo → solo admin.
+  // El member ve las prefs por-usuario (review, notify, dock, etc.).
   const isAdmin = useIsAdmin();
   return (
     <div style={{ maxWidth: 720 }}>
       <Header title={tr('settings.general.title')} sub={tr('settings.general.sub')}/>
-      {isAdmin && <GeneralToggleRow icon={IconBolt} title={tr('settings.general.listen_on_boot')} storageKey="eco.voice.autostart" defaultOn/>}
-      {isAdmin && (
-        <GeneralToggleRow
-          icon={IconMic}
-          title={tr('settings.general.listen_on_conversation')}
-          desc={tr('settings.general.listen_on_conversation_desc')}
-          storageKey="eco.voice.autostart_per_conversation"
-        />
-      )}
       <GeneralToggleRow
         icon={IconShield}
         title={tr('settings.general.review_mode')}
@@ -945,193 +933,6 @@ function SectionGithub() {
     </div>
   );
 }
-
-function SectionVoice() {
-  const t = useTokens();
-  const tr = useT();
-  const tts = useTTS();
-
-  // Auto-seleccionar la mejor voz española al cargar si no hay una elegida.
-  // Orden de preferencia: macsay Premium (Apple neural, suena casi humano) >
-  // macsay normal > Piper claude (MX alta) > Piper davefx (ES) > cualquier
-  // Piper español > cualquier voz en español del sistema.
-  useEffect(() => {
-    if (tts.selectedVoiceURI) return;
-    if (tts.voices.length === 0) return;
-    const isEs = (id: string, lang: string) => /^es/i.test(lang) || /^es/i.test(id.split(':')[1] ?? '');
-    const candidates = [
-      tts.voices.find((v) => v.kind === 'macsay' && v.premium && isEs(v.id, v.language)),
-      tts.voices.find((v) => v.kind === 'macsay' && isEs(v.id, v.language)),
-      tts.voices.find((v) => /es_MX-claude/i.test(v.id) && v.kind === 'piper'),
-      tts.voices.find((v) => /es_ES-davefx/i.test(v.id) && v.kind === 'piper'),
-      tts.voices.find((v) => v.kind === 'piper' && /^es/i.test(v.language)),
-      tts.voices.find((v) => /^es/i.test(v.language)),
-    ];
-    const pick = candidates.find(Boolean);
-    if (pick) tts.selectVoice(pick.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tts.voices]);
-
-  const currentVoice = tts.voices.find((v) => v.id === tts.selectedVoiceURI);
-
-  function testVoice() {
-    const wasEnabled = tts.enabled;
-    if (!wasEnabled) tts.setEnabled(true);
-    setTimeout(() => tts.speak('Hola, soy Eco. Estoy listo para ayudarte.'), 30);
-    setTimeout(() => { if (!wasEnabled) tts.setEnabled(false); }, 4500);
-  }
-
-  return (
-    <div style={{ maxWidth: 640 }}>
-      <Header title={tr('settings.voice.title')} sub={tr('settings.voice.sub')}/>
-
-      {/* Toggle principal: activar respuestas habladas */}
-      <Row icon={IconCommand} title={tr('settings.voice.speak_replies')}
-        desc={tr('settings.voice.speak_replies_desc')}
-        control={<Toggle on={tts.enabled} onChange={tts.setEnabled}/>}/>
-
-      {/* Selector de voz */}
-      <Glass radius={12} style={{ padding: 14, marginTop: 14, marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-            background: t.accentFaint, color: t.accent,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconWave size={18}/>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, color: t.text0, fontWeight: 500 }}>
-              {tr('settings.voice.voice_label')}
-            </div>
-            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>
-              {currentVoice
-                ? voiceMetaLine(currentVoice)
-                : tr('settings.voice.loading')}
-            </div>
-          </div>
-          <Btn kind="secondary" size="sm" onClick={testVoice} disabled={!currentVoice}>
-            {tr('settings.voice.test_btn')}
-          </Btn>
-        </div>
-
-        {tts.voices.length > 0 && (
-          <VoiceSelect
-            voices={tts.voices}
-            selected={tts.selectedVoiceURI}
-            onSelect={tts.selectVoice}
-          />
-        )}
-
-        <div style={{ marginTop: 10, padding: 8, borderRadius: 6, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
-          {tr('settings.voice.intent_hint')}
-        </div>
-      </Glass>
-
-      {/* Velocidad */}
-      <Row icon={IconBolt} title={tr('settings.voice.rate')}
-        desc={tr('settings.voice.rate_desc')}
-        control={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 200 }}>
-            <input type="range" min="0.7" max="1.5" step="0.05"
-              value={tts.rate} onChange={(e) => tts.setRate(Number(e.target.value))}
-              style={{ flex: 1, accentColor: t.accent }}
-            />
-            <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text1, width: 40, textAlign: 'right' }}>
-              {tts.rate.toFixed(2)}×
-            </code>
-          </div>
-        }/>
-
-      {/* Volumen */}
-      <Row icon={IconWave} title={tr('settings.voice.volume')}
-        desc={tr('settings.voice.volume_desc')}
-        control={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 200 }}>
-            <input type="range" min="0" max="1" step="0.05"
-              value={tts.volume} onChange={(e) => tts.setVolume(Number(e.target.value))}
-              style={{ flex: 1, accentColor: t.accent }}
-            />
-            <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text1, width: 40, textAlign: 'right' }}>
-              {Math.round(tts.volume * 100)}%
-            </code>
-          </div>
-        }/>
-    </div>
-  );
-}
-
-// Etiqueta de meta para mostrar bajo el nombre de la voz: idioma + tipo +
-// flag Premium si aplica.
-function voiceMetaLine(v: UnifiedVoice): string {
-  const parts: string[] = [v.language];
-  if (v.kind === 'macsay') parts.push(v.premium ? 'Apple · Premium' : 'Apple');
-  else if (v.kind === 'piper') parts.push('neural local');
-  else parts.push('sistema');
-  return parts.filter(Boolean).join(' · ');
-}
-
-// Selector de voz. Agrupamos por backend para que el usuario entienda qué
-// está eligiendo. macsay arriba (es lo que recomendamos), luego Piper, luego
-// las del navegador como fallback.
-function VoiceSelect({
-  voices, selected, onSelect,
-}: {
-  voices: UnifiedVoice[];
-  selected: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const macsay = voices.filter((v) => v.kind === 'macsay');
-  const piper = voices.filter((v) => v.kind === 'piper');
-  const browser = voices.filter((v) => v.kind === 'browser');
-
-  const labelStyle = { color: t.text2, fontWeight: 600 } as const;
-
-  return (
-    <select
-      value={selected ?? ''}
-      onChange={(e) => onSelect(e.target.value)}
-      style={{
-        marginTop: 12, width: '100%',
-        padding: '8px 32px 8px 12px',
-        borderRadius: 8,
-        border: `1px solid ${t.glassBorder}`,
-        background: t.bg2,
-        color: t.text0,
-        fontSize: 13,
-        fontFamily: t.fontSans,
-        cursor: 'pointer',
-      }}
-    >
-      {macsay.length > 0 && (
-        <optgroup label="Apple (macOS) — recomendado" style={labelStyle}>
-          {macsay.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name} · {v.language}{v.premium ? ' ✦' : ''}
-            </option>
-          ))}
-        </optgroup>
-      )}
-      {piper.length > 0 && (
-        <optgroup label="Piper (neural local)" style={labelStyle}>
-          {piper.map((v) => (
-            <option key={v.id} value={v.id}>{v.name} · {v.language}</option>
-          ))}
-        </optgroup>
-      )}
-      {browser.length > 0 && (
-        <optgroup label={tr('settings.voice.optgroup_browser')} style={labelStyle}>
-          {browser.map((v) => (
-            <option key={v.id} value={v.id}>{v.name} · {v.language}</option>
-          ))}
-        </optgroup>
-      )}
-    </select>
-  );
-}
-
 
 function SectionFolders() {
   const t = useTokens();
@@ -2242,9 +2043,6 @@ function SectionAbout() {
     { id: 'features',   group: 'reference', icon: IconLayers,   title: tr('settings.about.features.title'),
       keywords: 'características features qué incluye agentes terminal navegador obsidian',
       render: () => <FeatureGrid/> },
-    { id: 'voice',      group: 'reference', icon: IconMic,      title: tr('settings.about.voice.title'),
-      keywords: 'voz comandos hey eco wake word listener micrófono whisper piper',
-      render: () => <VoiceCommandsList/> },
     { id: 'shortcuts',  group: 'reference', icon: IconKey,      title: tr('settings.about.shortcuts.title'),
       keywords: 'atajos keyboard shortcuts teclado cmd shift ctrl',
       render: () => <ShortcutsList/> },
@@ -2490,7 +2288,6 @@ function FeatureGrid() {
     { icon: IconGithub,   title: tr('settings.about.feat.git.title'),      body: tr('settings.about.feat.git.body') },
     { icon: IconBranch,   title: tr('settings.about.feat.prs.title'),      body: tr('settings.about.feat.prs.body') },
     { icon: IconCheck,    title: tr('settings.about.feat.review.title'),   body: tr('settings.about.feat.review.body') },
-    { icon: IconMic,      title: tr('settings.about.feat.voice.title'),    body: tr('settings.about.feat.voice.body') },
     { icon: IconLayers,   title: tr('settings.about.feat.obsidian.title'), body: tr('settings.about.feat.obsidian.body') },
     { icon: IconBolt,     title: tr('settings.about.feat.skills.title'),   body: tr('settings.about.feat.skills.body') },
     { icon: IconSettings, title: tr('settings.about.feat.themes.title'),   body: tr('settings.about.feat.themes.body') },
@@ -2549,13 +2346,6 @@ function TutorialsList() {
         tr('settings.about.tut.commit.s3'),
       ],
     },
-    {
-      title: tr('settings.about.tut.voice.title'),
-      steps: [
-        tr('settings.about.tut.voice.s1'),
-        tr('settings.about.tut.voice.s2'),
-      ],
-    },
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
@@ -2590,7 +2380,6 @@ function ShortcutsList() {
     { keys: ['⌘', '⌥', 'I'], action: tr('settings.about.sc.devtools') },
     { keys: ['⌘', ','],   action: tr('settings.about.sc.settings') },
     { keys: ['Esc'],      action: tr('settings.about.sc.close_modal') },
-    { keys: ['Eco', '+ comando'], action: tr('settings.about.sc.voice_command') },
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
@@ -2618,7 +2407,6 @@ function PrivacyList() {
   const tr = useT();
   const rows = [
     { label: tr('settings.about.priv.audio.label'),    desc: tr('settings.about.priv.audio.desc'),    local: true },
-    { label: tr('settings.about.priv.tts.label'),      desc: tr('settings.about.priv.tts.desc'),      local: true },
     { label: tr('settings.about.priv.auth.label'),     desc: tr('settings.about.priv.auth.desc'),     local: true },
     { label: tr('settings.about.priv.workspace.label'), desc: tr('settings.about.priv.workspace.desc'), local: true },
     { label: tr('settings.about.priv.history.label'),  desc: tr('settings.about.priv.history.desc'),  local: true },
@@ -2653,8 +2441,7 @@ function StackList() {
     { layer: 'Frontend',    tech: 'Vite 6 · React 18 · TS 5 · Tailwind v4 · Motion 11' },
     { layer: 'Navegador',   tech: '<webview> Chromium (UA Chrome 131)' },
     { layer: 'Terminal',    tech: 'xterm.js + node-pty (PTY real)' },
-    { layer: 'Voz STT',     tech: 'openwakeword (ONNX) + faster-whisper' },
-    { layer: 'Voz TTS',     tech: 'Piper TTS (ONNX local)' },
+    { layer: 'Dictado',     tech: 'Apple Speech (.dmg) · Web Speech API (browser)' },
     { layer: 'Backend',     tech: 'Node 20 · Express · ws · Zod · argon2id · Claude Agent SDK' },
     { layer: 'Auth local',  tech: 'PIN argon2id + frase BIP39 (~/.eco/user.json)' },
   ];
@@ -2680,7 +2467,6 @@ function QuickStartList() {
     { num: 1, title: tr('settings.about.qs.s1.t'), body: tr('settings.about.qs.s1.b') },
     { num: 2, title: tr('settings.about.qs.s2.t'), body: tr('settings.about.qs.s2.b') },
     { num: 3, title: tr('settings.about.qs.s3.t'), body: tr('settings.about.qs.s3.b') },
-    { num: 4, title: tr('settings.about.qs.s4.t'), body: tr('settings.about.qs.s4.b') },
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
@@ -2695,71 +2481,6 @@ function QuickStartList() {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{s.title}</div>
             <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55, marginTop: 2 }}>{s.body}</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function VoiceCommandsList() {
-  const t = useTokens();
-  const tr = useT();
-  const groups = [
-    {
-      label: tr('settings.about.voice.nav'),
-      items: [
-        { cmd: 'Eco inicio / dashboard', desc: tr('settings.about.voice.nav.home') },
-        { cmd: 'Eco ajustes', desc: tr('settings.about.voice.nav.settings') },
-        { cmd: 'Eco archivos / historial / navegador', desc: tr('settings.about.voice.nav.tabs') },
-        { cmd: 'Eco estado', desc: tr('settings.about.voice.nav.status') },
-        { cmd: 'Eco ayuda', desc: tr('settings.about.voice.nav.help') },
-      ],
-    },
-    {
-      label: tr('settings.about.voice.agents'),
-      items: [
-        { cmd: 'Eco abrir <nombre>', desc: tr('settings.about.voice.agents.open') },
-        { cmd: 'Eco renombrar <nombre>', desc: tr('settings.about.voice.agents.rename') },
-        { cmd: 'Eco cerrar', desc: tr('settings.about.voice.agents.close') },
-        { cmd: 'Eco siguiente / anterior', desc: tr('settings.about.voice.agents.nav') },
-        { cmd: 'Eco pausar / continuar', desc: tr('settings.about.voice.agents.pause') },
-      ],
-    },
-    {
-      label: tr('settings.about.voice.inside'),
-      items: [
-        { cmd: 'Eco chat / terminal / archivos / plan / servidor', desc: tr('settings.about.voice.inside.tabs') },
-        { cmd: 'Eco arriba / abajo / al final', desc: tr('settings.about.voice.inside.scroll') },
-        { cmd: 'Eco repetir / releer', desc: tr('settings.about.voice.inside.repeat') },
-        { cmd: 'Eco sí / no / acepta / cancela', desc: tr('settings.about.voice.inside.confirm') },
-      ],
-    },
-    {
-      label: tr('settings.about.voice.appearance'),
-      items: [
-        { cmd: 'Eco silencio / hablar', desc: tr('settings.about.voice.appearance.tts') },
-        { cmd: 'Eco rápido / lento / normal', desc: tr('settings.about.voice.appearance.rate') },
-        { cmd: 'Eco oscuro / claro / sistema', desc: tr('settings.about.voice.appearance.theme') },
-      ],
-    },
-  ];
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 6 }}>
-      {groups.map((g) => (
-        <div key={g.label}>
-          <div style={{ fontSize: 10.5, color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>{g.label}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {g.items.map((it) => (
-              <div key={it.cmd} style={{ display: 'flex', gap: 10, padding: '5px 0' }}>
-                <code style={{
-                  flexShrink: 0, fontFamily: t.fontMono, fontSize: 11, color: t.accent,
-                  padding: '2px 8px', borderRadius: 5, background: t.bg3,
-                  alignSelf: 'flex-start', whiteSpace: 'nowrap',
-                }}>{it.cmd}</code>
-                <span style={{ flex: 1, fontSize: 11.5, color: t.text2, lineHeight: 1.45 }}>{it.desc}</span>
-              </div>
-            ))}
           </div>
         </div>
       ))}
@@ -2806,7 +2527,6 @@ function FaqList() {
     { q: tr('settings.about.faq.commit.q'),  a: tr('settings.about.faq.commit.a') },
     { q: tr('settings.about.faq.worktree.q'),a: tr('settings.about.faq.worktree.a') },
     { q: tr('settings.about.faq.data.q'),    a: tr('settings.about.faq.data.a') },
-    { q: tr('settings.about.faq.voice.q'),   a: tr('settings.about.faq.voice.a') },
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
@@ -2830,7 +2550,6 @@ function TroubleshootingList() {
     { p: tr('settings.about.tr.claude.p'),  s: tr('settings.about.tr.claude.s') },
     { p: tr('settings.about.tr.worktree.p'),s: tr('settings.about.tr.worktree.s') },
     { p: tr('settings.about.tr.port.p'),    s: tr('settings.about.tr.port.s') },
-    { p: tr('settings.about.tr.voice.p'),   s: tr('settings.about.tr.voice.s') },
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
@@ -2857,8 +2576,6 @@ function NetworkList() {
     { src: 'Eco backend', dst: '127.0.0.1:7100',    kind: 'local', desc: tr('settings.about.net.backend') },
     { src: 'Frontend',    dst: 'backend (mismo proceso)', kind: 'local', desc: tr('settings.about.net.frontend') },
     { src: 'Webview',     dst: 'cualquier URL que abras', kind: 'cloud', desc: tr('settings.about.net.webview') },
-    { src: 'Whisper STT', dst: 'modelo local (ONNX)', kind: 'local', desc: tr('settings.about.net.whisper') },
-    { src: 'Piper TTS',   dst: 'modelo local (ONNX)', kind: 'local', desc: tr('settings.about.net.piper') },
     { src: 'Obsidian',    dst: 'filesystem local', kind: 'local', desc: tr('settings.about.net.obsidian') },
   ];
   return (
@@ -2930,7 +2647,6 @@ function DevList() {
     { k: 'npm run dev:app',   d: tr('settings.about.dev.scripts.devapp') },
     { k: 'npm run dist:mac',  d: tr('settings.about.dev.scripts.distmac') },
     { k: 'npm run typecheck', d: tr('settings.about.dev.scripts.typecheck') },
-    { k: 'npm run listener',  d: tr('settings.about.dev.scripts.listener') },
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 6 }}>

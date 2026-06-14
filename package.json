@@ -23,8 +23,6 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:i18n:report": "node scripts/check-i18n.mjs --report",
     "test:security": "npm --workspace backend run test:security",
-    "listener": "cd listener && .venv/bin/python main.py",
-    "listener:setup": "cd listener && ./setup.sh",
     "build:backend": "npm --workspace backend run build",
     "build:frontend": "npm --workspace frontend run build",
     "build:backend-deps": "node electron/scripts/prepare-backend.cjs",
