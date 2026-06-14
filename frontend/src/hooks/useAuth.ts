@@ -153,6 +153,24 @@ export function useAuth() {
     }
   }, [refresh]);
 
+  const claim = useCallback(async (payload: { claimToken: string; pin: string }): Promise<LoginResult> => {
+    try {
+      const r = await apiFetch('/auth/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
+      writeSession(data.session);
+      writeStoredRefresh(data.refresh ?? null);
+      void refresh();
+      return { ok: true, username: data.username, role: data.role };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Error' };
+    }
+  }, [refresh]);
+
   const recover = useCallback(async (payload: RecoverPayload): Promise<RecoverResult> => {
     try {
       const r = await apiFetch('/auth/recover', {
@@ -191,5 +209,5 @@ export function useAuth() {
     setState({ status: 'needs_login', username: null, userId: null, role: null, error: null });
   }, []);
 
-  return { state, refresh, register, login, recover, lock, signOut };
+  return { state, refresh, register, login, claim, recover, lock, signOut };
 }

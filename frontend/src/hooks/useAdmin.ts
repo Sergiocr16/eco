@@ -7,10 +7,14 @@ import { translateBackendError } from '@/lib/backend-errors';
 
 export type Role = 'admin' | 'member';
 
+export type UserStatus = 'pending' | 'active' | 'disabled';
+
 export type AdminUser = {
   id: string;
   username: string;
   role: Role;
+  status: UserStatus;
+  disabled: boolean;
   workspaceGrants: string[];
 };
 
@@ -59,8 +63,8 @@ export function useAdmin() {
     if (r.ok && Array.isArray(d?.users)) setOverview(d.users as OverviewUser[]);
   }, []);
 
-  const createMember = useCallback(async (username: string, pin: string, role: Role) => {
-    const r = await post<{ recoveryPhrase: string; user: AdminUser }>('/admin/users', { username, pin, role });
+  const createMember = useCallback(async (username: string, role: Role) => {
+    const r = await post<{ claimToken: string; user: AdminUser }>('/admin/users', { username, role });
     if (r.ok) await refreshUsers();
     return r;
   }, [refreshUsers]);
@@ -77,9 +81,15 @@ export function useAdmin() {
     return r;
   }, [refreshUsers]);
 
-  const resetPin = useCallback(async (id: string, pin: string) => {
-    return post<{ recoveryPhrase: string }>(`/admin/users/${id}/reset-pin`, { pin });
+  const issueClaim = useCallback(async (id: string) => {
+    return post<{ claimToken: string }>(`/admin/users/${id}/issue-claim`);
   }, []);
+
+  const setDisabled = useCallback(async (id: string, disabled: boolean) => {
+    const r = await post(`/admin/users/${id}/disabled`, { disabled });
+    if (r.ok) await refreshUsers();
+    return r;
+  }, [refreshUsers]);
 
   const deleteUser = useCallback(async (id: string) => {
     try {
@@ -93,5 +103,5 @@ export function useAdmin() {
     }
   }, [refreshUsers]);
 
-  return { users, overview, loading, refreshUsers, refreshOverview, createMember, setRole, setWorkspaces, resetPin, deleteUser };
+  return { users, overview, loading, refreshUsers, refreshOverview, createMember, setRole, setWorkspaces, issueClaim, setDisabled, deleteUser };
 }

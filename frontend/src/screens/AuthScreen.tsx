@@ -17,7 +17,7 @@ type Props = {
   authActions: AuthHook;
 };
 
-type View = 'register' | 'login' | 'recover' | 'show_recovery';
+type View = 'register' | 'login' | 'recover' | 'show_recovery' | 'claim';
 
 export function AuthScreen({ authState, authActions }: Props) {
   const t = useTokens();
@@ -68,6 +68,12 @@ export function AuthScreen({ authState, authActions }: Props) {
             <LoginView
               authActions={authActions}
               onRecover={() => setView('recover')}
+              onClaim={() => setView('claim')}
+            />
+          ) : view === 'claim' ? (
+            <ClaimView
+              authActions={authActions}
+              onBack={() => setView('login')}
             />
           ) : (
             <RecoverView
@@ -419,10 +425,11 @@ function RegisterView({
 // ─────────────────────────── Login
 
 function LoginView({
-  authActions, onRecover,
+  authActions, onRecover, onClaim,
 }: {
   authActions: AuthHook;
   onRecover: () => void;
+  onClaim: () => void;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -520,6 +527,18 @@ function LoginView({
           }}>
           {tr('auth.forgot_pin')}
         </button>
+        {!lockedUser && (
+          <button
+            type="button"
+            onClick={onClaim}
+            style={{
+              background: 'transparent', border: 0, color: t.accent,
+              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+              display: 'block', marginInline: 'auto',
+            }}>
+            {tr('auth.have_claim_code')}
+          </button>
+        )}
         {lockedUser && (
           <button
             type="button"
@@ -533,6 +552,88 @@ function LoginView({
           </button>
         )}
       </div>
+    </>
+  );
+}
+
+// ─────────────────────────── Claim (activar cuenta con token)
+
+function ClaimView({
+  authActions, onBack,
+}: {
+  authActions: AuthHook;
+  onBack: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const [code, setCode] = useState('');
+  const [pin, setPin] = useState('');
+  const [pin2, setPin2] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setError(null);
+    if (!code.trim()) return;
+    if (!/^\d{4,8}$/.test(pin)) return setError(tr('auth.err.pin_format'));
+    if (pin !== pin2) return setError(tr('auth.err.pin_mismatch'));
+    setBusy(true);
+    const r = await authActions.claim({ claimToken: code.trim(), pin });
+    setBusy(false);
+    if (!r.ok) { setError(r.error); setPin(''); setPin2(''); }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onBack}
+        style={{
+          position: 'absolute', top: -6, left: -6,
+          width: 32, height: 32, borderRadius: 8, border: 0,
+          background: t.bg3, color: t.text1, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+        title={tr('auth.back')}
+      >
+        <IconArrowL size={14}/>
+      </button>
+
+      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
+        {tr('auth.claim.title')}
+      </h1>
+      <p style={{ margin: '6px 0 22px', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
+        {tr('auth.claim.sub')}
+      </p>
+
+      <FieldGroup>
+        <FormInput
+          icon={IconKey}
+          value={code}
+          onChange={setCode}
+          placeholder={tr('auth.claim.field.code')}
+          autoFocus
+        />
+        <PinSegmented
+          label={tr('auth.field.pin')}
+          value={pin}
+          onChange={setPin}
+          length={8}
+        />
+        <PinSegmented
+          label={tr('auth.field.pin_repeat')}
+          value={pin2}
+          onChange={setPin2}
+          length={8}
+          onEnter={submit}
+        />
+      </FieldGroup>
+
+      {error && <FormError>{error}</FormError>}
+
+      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !code.trim() || pin.length < 4} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
+        {busy ? tr('auth.claim.btn_loading') : tr('auth.claim.btn')}
+      </Btn>
     </>
   );
 }
