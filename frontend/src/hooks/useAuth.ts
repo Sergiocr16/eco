@@ -5,6 +5,16 @@ import { translateBackendError } from '@/lib/backend-errors';
 import { writeProfileUsername } from './useProfile';
 
 const SESSION_KEY = 'eco.session';
+// Usuario recordado por el lock screen — al bloquear se guarda y la pantalla de
+// bloqueo pide solo el PIN de ese usuario (no el nombre otra vez).
+const LOCKED_USER_KEY = 'eco.lockedUser';
+
+export function readLockedUser(): string | null {
+  try { return window.localStorage.getItem(LOCKED_USER_KEY); } catch { return null; }
+}
+export function clearLockedUser(): void {
+  try { window.localStorage.removeItem(LOCKED_USER_KEY); } catch { /* noop */ }
+}
 
 export type AuthStatus = 'loading' | 'needs_token' | 'no_user' | 'needs_login' | 'authenticated';
 export type Role = 'admin' | 'member';
@@ -160,34 +170,26 @@ export function useAuth() {
     }
   }, []);
 
-  const logout = useCallback(async () => {
+  // Bloquea la pantalla: invalida la sesión (local + refresh, para que no se
+  // renueve sola) pero RECUERDA quién estaba logueado (eco.lockedUser) → la
+  // pantalla de bloqueo muestra al usuario y pide solo el PIN.
+  const lock = useCallback(async () => {
     try { await apiFetch('/auth/logout', { method: 'POST' }); } catch { /* noop */ }
     writeSession(null);
     writeStoredRefresh(null);
+    try { if (state.username) window.localStorage.setItem(LOCKED_USER_KEY, state.username); } catch { /* noop */ }
     setState((s) => ({ ...s, status: 'needs_login' }));
+  }, [state.username]);
+
+  // Cerrar sesión de verdad: olvida al usuario recordado → login completo
+  // (usuario + PIN) la próxima vez.
+  const signOut = useCallback(async () => {
+    try { await apiFetch('/auth/logout', { method: 'POST' }); } catch { /* noop */ }
+    writeSession(null);
+    writeStoredRefresh(null);
+    try { window.localStorage.removeItem(LOCKED_USER_KEY); } catch { /* noop */ }
+    setState({ status: 'needs_login', username: null, userId: null, role: null, error: null });
   }, []);
 
-  // Bloquea la pantalla: invalida la sesión local y server pero conserva el
-  // usuario. Al desbloquear se pide usuario+PIN (LoginView).
-  const lock = logout;
-
-  const destroyUser = useCallback(async (pin: string): Promise<{ ok: true } | { ok: false; error: string }> => {
-    try {
-      const r = await apiFetch('/auth/user', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }),
-      });
-      const data = await r.json();
-      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
-      writeSession(null);
-      writeStoredRefresh(null);
-      void refresh();
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Error' };
-    }
-  }, [refresh]);
-
-  return { state, refresh, register, login, recover, logout, lock, destroyUser };
+  return { state, refresh, register, login, recover, lock, signOut };
 }

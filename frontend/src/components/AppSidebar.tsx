@@ -15,7 +15,7 @@ type Props = {
   username: string | null;
   role: 'admin' | 'member' | null;
   onLock: () => void;
-  onDestroyUser: (pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onSignOut: () => void;
 };
 
 const BASE_ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: string }[] = [
@@ -28,7 +28,7 @@ const BASE_ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: s
 const ADMIN_ITEM = { id: 'admin' as Screen, icon: IconShield, labelKey: 'nav.admin' };
 
 export function AppSidebar({
-  screen, onScreenChange, agentCount, username, role, onLock, onDestroyUser,
+  screen, onScreenChange, agentCount, username, role, onLock, onSignOut,
 }: Props) {
   const t = useTokens();
   const tr = useT();
@@ -87,7 +87,7 @@ export function AppSidebar({
       <AccountMenu
         username={username}
         onLock={onLock}
-        onDestroyUser={onDestroyUser}
+        onSignOut={onSignOut}
       />
     </div>
   );

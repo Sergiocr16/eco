@@ -950,7 +950,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           username={auth.state.username}
           role={auth.state.role}
           onLock={auth.lock}
-          onDestroyUser={auth.destroyUser}
+          onSignOut={auth.signOut}
         />
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           <ScreenError error={socket.error}/>

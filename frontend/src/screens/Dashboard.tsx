@@ -923,6 +923,32 @@ function NameAgentDialog({
             </div>
           </div>
         </div>
+        {workspaces.length === 0 ? (
+          <>
+            <div style={{
+              padding: '14px 4px 6px', textAlign: 'center',
+              display: 'flex', flexDirection: 'column', gap: 6,
+            }}>
+              <div style={{ fontSize: 13, color: t.text0, fontWeight: 500 }}>
+                {tr('wsp.no_workspaces')}
+              </div>
+              <div style={{ fontSize: 12, color: t.text2 }}>
+                {tr('wsp.ask_admin')}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                height: 36, borderRadius: 999, border: `1px solid ${t.glassBorder}`,
+                background: 'transparent', color: t.text1,
+                fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+              }}>
+              {tr('common.close')}
+            </button>
+          </>
+        ) : (
+        <>
         <input
           ref={inputRef}
           value={draft}
@@ -1076,6 +1102,8 @@ function NameAgentDialog({
             {tr('common.create')}
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

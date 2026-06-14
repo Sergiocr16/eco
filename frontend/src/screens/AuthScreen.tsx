@@ -5,6 +5,7 @@ import {
   IconUser, IconShield, IconKey, IconCheck, IconArrowL,
 } from '@/design/icons';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
+import { readLockedUser, clearLockedUser } from '@/hooks/useAuth';
 import { useT } from '@/hooks/useI18n';
 import { apiFetch } from '@/lib/api';
 import { writeStoredToken } from '@/lib/eco-config';
@@ -425,16 +426,21 @@ function LoginView({
 }) {
   const t = useTokens();
   const tr = useT();
-  const [username, setUsername] = useState('');
+  // Si hay un usuario "bloqueado" (lock screen), pedimos solo el PIN de ESE
+  // usuario; si no, login completo (usuario + PIN).
+  const [lockedUser, setLockedUser] = useState<string | null>(() => readLockedUser());
+  const [username, setUsername] = useState(() => readLockedUser() ?? '');
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const effectiveUser = (lockedUser ?? username).trim();
+
   async function submit() {
     setError(null);
-    if (!username.trim() || !pin) return;
+    if (!effectiveUser || !pin) return;
     setBusy(true);
-    const r = await authActions.login({ username: username.trim(), pin });
+    const r = await authActions.login({ username: effectiveUser, pin });
     setBusy(false);
     if (!r.ok) {
       setError(r.error);
@@ -442,48 +448,91 @@ function LoginView({
     }
   }
 
+  function switchUser() {
+    clearLockedUser();
+    setLockedUser(null);
+    setUsername('');
+    setPin('');
+    setError(null);
+  }
+
   return (
     <>
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
-        {tr('auth.login.title')}
-      </h1>
-      <p style={{ margin: '6px 0 22px', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
-        {tr('auth.login.sub')}
-      </p>
+      {lockedUser ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: '50%', background: t.accentFaint, color: t.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 26, fontWeight: 600, marginBottom: 16, border: `2px solid ${t.accent}`,
+          }}>{lockedUser.charAt(0).toUpperCase()}</div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
+            {tr('auth.greeting', { name: lockedUser })}
+          </h1>
+          <p style={{ margin: '6px 0 0', color: t.text2, fontSize: 12.5, textAlign: 'center' }}>
+            {tr('auth.lock.sub')}
+          </p>
+        </div>
+      ) : (
+        <>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
+            {tr('auth.login.title')}
+          </h1>
+          <p style={{ margin: '6px 0 22px', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
+            {tr('auth.login.sub')}
+          </p>
+        </>
+      )}
 
       <FieldGroup>
-        <FormInput
-          icon={IconUser}
-          value={username}
-          onChange={setUsername}
-          placeholder={tr('auth.field.username')}
-          autoFocus
-        />
+        {!lockedUser && (
+          <FormInput
+            icon={IconUser}
+            value={username}
+            onChange={setUsername}
+            placeholder={tr('auth.field.username')}
+            autoFocus
+          />
+        )}
         <PinSegmented
           label={tr('auth.field.pin')}
           value={pin}
           onChange={setPin}
           length={8}
+          autoFocus={!!lockedUser}
           onEnter={submit}
         />
       </FieldGroup>
 
       {error && <FormError>{error}</FormError>}
 
-      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !username.trim() || pin.length < 4} style={{ width: '100%', justifyContent: 'center', marginTop: 14 }}>
+      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !effectiveUser || pin.length < 4} style={{ width: '100%', justifyContent: 'center', marginTop: 14 }}>
         {busy ? tr('auth.btn.enter_loading') : tr('auth.btn.enter')}
       </Btn>
 
-      <button
-        type="button"
-        onClick={onRecover}
-        style={{
-          marginTop: 16, background: 'transparent', border: 0, color: t.text2,
-          fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-          display: 'block', marginInline: 'auto',
-        }}>
-        {tr('auth.forgot_pin')}
-      </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 16 }}>
+        <button
+          type="button"
+          onClick={onRecover}
+          style={{
+            background: 'transparent', border: 0, color: t.text2,
+            fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+            display: 'block', marginInline: 'auto',
+          }}>
+          {tr('auth.forgot_pin')}
+        </button>
+        {lockedUser && (
+          <button
+            type="button"
+            onClick={switchUser}
+            style={{
+              background: 'transparent', border: 0, color: t.text3,
+              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+              display: 'block', marginInline: 'auto',
+            }}>
+            {tr('auth.switch_user')}
+          </button>
+        )}
+      </div>
     </>
   );
 }

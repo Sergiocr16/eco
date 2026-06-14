@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn } from '@/design/primitives';
-import { IconLock, IconKey } from '@/design/icons';
+import { IconLock, IconArrowR } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 import { useProfile } from '@/hooks/useProfile';
 
 type Props = {
   username: string | null;
   onLock: () => void;
-  onDestroyUser: (pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onSignOut: () => void;
 };
 
 function initial(username: string | null): string {
@@ -18,12 +17,11 @@ function initial(username: string | null): string {
   return trimmed[0]!.toUpperCase();
 }
 
-export function AccountMenu({ username, onLock, onDestroyUser }: Props) {
+export function AccountMenu({ username, onLock, onSignOut }: Props) {
   const t = useTokens();
   const tr = useT();
   const profile = useProfile();
   const [open, setOpen] = useState(false);
-  const [destroyOpen, setDestroyOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -50,9 +48,9 @@ export function AccountMenu({ username, onLock, onDestroyUser }: Props) {
     onLock();
   }
 
-  function handleDestroyClick() {
+  function handleSignOut() {
     setOpen(false);
-    setDestroyOpen(true);
+    onSignOut();
   }
 
   return (
@@ -124,20 +122,13 @@ export function AccountMenu({ username, onLock, onDestroyUser }: Props) {
             onClick={handleLock}
           />
           <MenuItem
-            icon={IconKey}
-            label={tr('account.destroy')}
-            sub={tr('account.destroy.sub')}
-            danger
-            onClick={handleDestroyClick}
+            icon={IconArrowR}
+            label={tr('account.signout')}
+            sub={tr('account.signout.sub')}
+            onClick={handleSignOut}
           />
         </div>
       )}
-
-      <DestroyDialog
-        open={destroyOpen}
-        onClose={() => setDestroyOpen(false)}
-        onConfirm={onDestroyUser}
-      />
     </>
   );
 }
@@ -184,117 +175,6 @@ function MenuItem({
         )}
       </div>
     </button>
-  );
-}
-
-function DestroyDialog({
-  open, onClose, onConfirm,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: (pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [pin, setPin] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      setPin(''); setError(null); setBusy(false);
-      return;
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  async function submit() {
-    if (!/^\d{4,8}$/.test(pin)) { setError(tr('auth.err.pin_format')); return; }
-    setBusy(true); setError(null);
-    const r = await onConfirm(pin);
-    setBusy(false);
-    if (!r.ok) { setError(r.error); setPin(''); }
-    // Si ok: el cambio de auth state desmonta toda la UI; este modal se va con ella.
-  }
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 220,
-        background: 'rgba(0,0,0,0.55)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(420px, 100%)',
-          background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
-          borderRadius: 18, boxShadow: t.shadowLg,
-          padding: 24,
-        }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 12,
-          background: `color-mix(in oklch, ${t.err} 14%, transparent)`,
-          color: t.err,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          marginBottom: 14,
-        }}>
-          <IconKey size={20}/>
-        </div>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: t.text0, letterSpacing: -0.3 }}>
-          {tr('account.destroy.title')}
-        </h2>
-        <p style={{ margin: '6px 0 18px', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
-          {tr('account.destroy.warning')}
-        </p>
-
-        <input
-          type="password"
-          inputMode="numeric"
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-          placeholder={tr('account.destroy.pin_placeholder')}
-          autoFocus
-          style={{
-            width: '100%', boxSizing: 'border-box',
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            borderRadius: 10, padding: '12px 14px',
-            fontFamily: t.fontMono, fontSize: 14, color: t.text0,
-            outline: 'none',
-            letterSpacing: 4,
-          }}
-        />
-
-        {error && (
-          <div style={{
-            marginTop: 10, padding: '8px 10px', borderRadius: 8,
-            background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-            color: t.err, fontSize: 12.5,
-          }}>{error}</div>
-        )}
-
-        <div style={{ display: 'flex', gap: 8, marginTop: 18, justifyContent: 'flex-end' }}>
-          <Btn kind="ghost" onClick={onClose} disabled={busy}>
-            {tr('account.destroy.cancel')}
-          </Btn>
-          <Btn
-            kind="danger"
-            onClick={submit}
-            disabled={busy || pin.length < 4}>
-            {busy ? tr('account.destroy.loading') : tr('account.destroy.confirm')}
-          </Btn>
-        </div>
-      </div>
-    </div>
   );
 }
 
