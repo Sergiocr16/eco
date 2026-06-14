@@ -2300,7 +2300,10 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
       items,
     }));
   })();
-  const hierarchical = wsGroups.length > 1;
+  // En modo owner SIEMPRE jerárquico: cada usuario debe tener su nodo y sus
+  // bubbles colgando de él — aunque haya un solo usuario con agentes (sino
+  // colgarían de Eco directamente y parecería que son de "eco").
+  const hierarchical = groupMode === 'owner' || wsGroups.length > 1;
 
   // Nodos de workspace (solo en modo jerárquico). Por defecto se reparten en
   // un arco HORIZONTAL debajo del hub Eco — un anillo completo dejaba (con 2
