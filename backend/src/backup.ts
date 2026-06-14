@@ -217,12 +217,12 @@ export function applyWorktreeStates(states: WorktreeState[]): ApplyResult[] {
 export type BackupConfig = {
   enabled: boolean;
   folder?: string;
-  retention: number;     // cuántos backups mantener (rolling). default 7.
+  retention: number;     // cuántos backups mantener (rolling). default 30.
   lastBackup?: number;   // ms timestamp
   lastError?: string;
 };
 
-const DEFAULT_CONFIG: BackupConfig = { enabled: false, retention: 7 };
+const DEFAULT_CONFIG: BackupConfig = { enabled: false, retention: 30 };
 
 export function readBackupConfig(): BackupConfig {
   if (!existsSync(BACKUP_CONFIG_PATH)) return { ...DEFAULT_CONFIG };
@@ -234,7 +234,7 @@ export function readBackupConfig(): BackupConfig {
       enabled: !!parsed.enabled,
       folder: typeof parsed.folder === 'string' ? parsed.folder : undefined,
       retention: typeof parsed.retention === 'number' && parsed.retention > 0 && parsed.retention <= 365
-        ? Math.floor(parsed.retention) : 7,
+        ? Math.floor(parsed.retention) : 30,
       lastBackup: typeof parsed.lastBackup === 'number' ? parsed.lastBackup : undefined,
       lastError: typeof parsed.lastError === 'string' ? parsed.lastError : undefined,
     };

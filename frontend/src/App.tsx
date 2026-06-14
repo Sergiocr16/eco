@@ -208,7 +208,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   usePtyBusyTracker(bubbles.bubbles, detailBubbleId);
   // Scheduler de auto-backup diario — chequea cada hora si pasaron 24h
   // desde el último backup y dispara export silencioso al folder configurado.
-  useBackupScheduler();
+  useBackupScheduler(auth.state.role);
 
   // Click en una notificación nativa del .dmg → abrir el agente que terminó.
   useEffect(() => {
@@ -987,7 +987,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                 {screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles}/>
                 ) : screen === 'settings' ? (
-                  <Settings/>
+                  <Settings role={auth.state.role}/>
                 ) : screen === 'admin' ? (
                   <AdminScreen currentUserId={auth.state.userId}/>
                 ) : screen === 'history' ? (

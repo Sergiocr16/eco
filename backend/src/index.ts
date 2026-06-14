@@ -1867,7 +1867,7 @@ app.post('/tts', async (req: Request, res: Response) => {
 const BackupSnapshotSchema = z.object({
   bubbleIds: z.array(z.string().min(1).max(128)).max(500).optional(),
 });
-app.post('/backup/snapshot', (req: Request, res: Response) => {
+app.post('/backup/snapshot', requireAdmin, (req: Request, res: Response) => {
   const parsed = BackupSnapshotSchema.safeParse(req.body ?? {});
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const ids = parsed.data.bubbleIds ?? backupMod.listKnownBubbleIds();
@@ -1895,7 +1895,7 @@ const BackupRestoreSchema = z.object({
   eco: z.record(z.string()).optional(),
   worktrees: z.array(WorktreeStateSchema).max(500).optional(),
 });
-app.post('/backup/restore', (req: Request, res: Response) => {
+app.post('/backup/restore', requireAdmin, (req: Request, res: Response) => {
   const parsed = BackupRestoreSchema.safeParse(req.body ?? {});
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const ecoResult = parsed.data.eco
@@ -1905,7 +1905,7 @@ app.post('/backup/restore', (req: Request, res: Response) => {
   res.json({ ok: true, eco: ecoResult, worktrees: wtResult });
 });
 
-app.get('/backup/config', (_req: Request, res: Response) => {
+app.get('/backup/config', requireAdmin, (_req: Request, res: Response) => {
   res.json(backupMod.readBackupConfig());
 });
 
@@ -1916,19 +1916,19 @@ const BackupConfigSchema = z.object({
   lastBackup: z.number().int().optional(),
   lastError: z.string().max(500).optional(),
 });
-app.post('/backup/config', (req: Request, res: Response) => {
+app.post('/backup/config', requireAdmin, (req: Request, res: Response) => {
   const parsed = BackupConfigSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const current = backupMod.readBackupConfig();
   backupMod.writeBackupConfig({
     ...current,
     ...parsed.data,
-    retention: parsed.data.retention ?? current.retention ?? 7,
+    retention: parsed.data.retention ?? current.retention ?? 30,
   });
   res.json({ ok: true, config: backupMod.readBackupConfig() });
 });
 
-app.delete('/backup/config', (_req: Request, res: Response) => {
+app.delete('/backup/config', requireAdmin, (_req: Request, res: Response) => {
   backupMod.resetBackupConfig();
   res.json({ ok: true });
 });

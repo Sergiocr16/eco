@@ -1,6 +1,8 @@
-// Auto-backup diario: chequea cada hora si pasaron ≥ 24h desde el último
-// backup. Si sí, snapshot + zip + write al folder configurado. Borra los más
-// viejos según la política de retención (rolling).
+// Auto-backup: chequea periódicamente si pasaron ≥ 2h desde el último backup.
+// Si sí, snapshot + zip + write al folder configurado. Borra los más viejos
+// según la política de retención (rolling, default 30). Solo corre para el
+// admin — el backup vive en la máquina anfitriona y respalda a TODOS los
+// usuarios (~/.eco/users/**).
 //
 // La fuente de verdad de la config es `~/.eco/backup.json` (vía /backup/config).
 // Esta es la única zona donde el renderer hace este tipo de scheduling — la
@@ -25,14 +27,17 @@ type BackupConfig = {
 };
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
-const ONE_DAY_MS = 24 * ONE_HOUR_MS;
+const TWO_HOURS_MS = 2 * ONE_HOUR_MS;
+const CHECK_INTERVAL_MS = 30 * 60 * 1000; // chequea cada 30 min
 // Delay inicial al mount — no queremos disparar el chequeo apenas abre la app.
 const INITIAL_DELAY_MS = 30_000;
 
-export function useBackupScheduler() {
+export function useBackupScheduler(role: 'admin' | 'member' | null = null) {
   const runningRef = useRef(false);
 
   useEffect(() => {
+    // Solo el admin corre el auto-backup (respalda a todos en la anfitriona).
+    if (role !== 'admin') return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -48,7 +53,7 @@ export function useBackupScheduler() {
         const cfg = await r.json() as BackupConfig;
         if (cancelled) return;
         const last = cfg.lastBackup ?? 0;
-        const needsBackup = cfg.enabled && cfg.folder && (Date.now() - last >= ONE_DAY_MS);
+        const needsBackup = cfg.enabled && cfg.folder && (Date.now() - last >= TWO_HOURS_MS);
         if (needsBackup && !runningRef.current) {
           runningRef.current = true;
           try { await runAutoBackup(cfg); }
@@ -60,7 +65,7 @@ export function useBackupScheduler() {
 
     const scheduleNext = () => {
       if (cancelled) return;
-      timer = setTimeout(() => { void tick(); }, ONE_HOUR_MS);
+      timer = setTimeout(() => { void tick(); }, CHECK_INTERVAL_MS);
     };
 
     // Primer chequeo después de INITIAL_DELAY_MS.
@@ -81,7 +86,7 @@ export function useBackupScheduler() {
       if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, []);
+  }, [role]);
 }
 
 async function runAutoBackup(cfg: BackupConfig): Promise<void> {

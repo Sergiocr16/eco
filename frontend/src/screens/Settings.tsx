@@ -32,10 +32,13 @@ import {
 
 type Section = 'general' | 'claude' | 'github' | 'voice' | 'folders' | 'security' | 'appearance' | 'integrations' | 'backup' | 'about';
 
-export function Settings() {
+export function Settings({ role = null }: { role?: 'admin' | 'member' | null }) {
   const t = useTokens();
   const tr = useT();
+  const isAdmin = role === 'admin';
   const [sec, setSec] = useState<Section>('general');
+  // El backup vive en la máquina anfitriona y respalda a TODOS los usuarios →
+  // solo el admin lo ve y lo maneja.
   const sections: { id: Section; label: string; icon: (p: IconProps) => JSX.Element }[] = [
     { id: 'general', label: tr('settings.section.general'), icon: IconSettings },
     { id: 'claude', label: tr('settings.section.claude'), icon: IconKey },
@@ -45,7 +48,7 @@ export function Settings() {
     { id: 'security', label: tr('settings.section.security'), icon: IconShield },
     { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
     { id: 'integrations', label: tr('settings.section.integrations'), icon: IconBolt },
-    { id: 'backup', label: tr('settings.section.backup'), icon: IconShield },
+    ...(isAdmin ? [{ id: 'backup' as Section, label: tr('settings.section.backup'), icon: IconShield }] : []),
     { id: 'about', label: tr('settings.section.about'), icon: IconInfo },
   ];
   return (
@@ -86,7 +89,7 @@ export function Settings() {
         {sec === 'security' && <SectionSecurity/>}
         {sec === 'appearance' && <SectionAppearance/>}
         {sec === 'integrations' && <SectionIntegrations/>}
-        {sec === 'backup' && <SectionBackup/>}
+        {sec === 'backup' && isAdmin && <SectionBackup/>}
         {sec === 'about' && <SectionAbout/>}
       </div>
     </div>
