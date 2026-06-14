@@ -184,13 +184,11 @@ async function refreshOne(workspace: string, bubbleId: string): Promise<void> {
   return promise;
 }
 
-/**
- * Polea `/file/changes` para todas las burbujas con workspace y devuelve un
- * Map<bubbleId, hasFiles>. Comparte cache con `useGitChanges` — si la
- * FilesPanel ya está montada para una burbuja, no se duplica el fetch (el
- * último que termina pisa al otro con el mismo resultado).
- */
-export function useBubbleHasFilesMap(bubbles: BubbleRef[], intervalMs = 12_000): Map<string, boolean> {
+// Hook interno: polea `/file/changes` para todas las burbujas con workspace
+// (compartiendo cache + dedup con `useGitChanges`) y devuelve un `tick` que se
+// incrementa cuando un fetch completa y notifica. Los hooks públicos derivan
+// lo que necesitan del `cache` global usando `tick` como señal de re-cómputo.
+function usePolledBubbleCache(bubbles: BubbleRef[], intervalMs: number): { validBubbles: BubbleRef[]; tick: number } {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const fn = () => setTick((n) => n + 1);
@@ -205,15 +203,15 @@ export function useBubbleHasFilesMap(bubbles: BubbleRef[], intervalMs = 12_000):
 
   useEffect(() => {
     let cancelled = false;
-    const tick = () => {
+    const run = () => {
       for (const b of validBubbles) {
         if (cancelled) return;
         void refreshOne(b.workspace, b.id);
       }
     };
-    tick();
-    const iv = setInterval(tick, intervalMs);
-    const onVis = () => { if (document.visibilityState === 'visible') tick(); };
+    run();
+    const iv = setInterval(run, intervalMs);
+    const onVis = () => { if (document.visibilityState === 'visible') run(); };
     document.addEventListener('visibilitychange', onVis);
     const offBus = ecoOn('eco:git_refresh', (e) => {
       const target = validBubbles.find((b) => b.id === e.bubbleId);
@@ -227,6 +225,17 @@ export function useBubbleHasFilesMap(bubbles: BubbleRef[], intervalMs = 12_000):
     };
   }, [validBubbles, intervalMs]);
 
+  return { validBubbles, tick };
+}
+
+/**
+ * Polea `/file/changes` para todas las burbujas con workspace y devuelve un
+ * Map<bubbleId, hasFiles>. Comparte cache con `useGitChanges` — si la
+ * FilesPanel ya está montada para una burbuja, no se duplica el fetch (el
+ * último que termina pisa al otro con el mismo resultado).
+ */
+export function useBubbleHasFilesMap(bubbles: BubbleRef[], intervalMs = 12_000): Map<string, boolean> {
+  const { validBubbles, tick } = usePolledBubbleCache(bubbles, intervalMs);
   return useMemo(() => {
     const out = new Map<string, boolean>();
     for (const b of validBubbles) {
@@ -241,51 +250,38 @@ export function useBubbleHasFilesMap(bubbles: BubbleRef[], intervalMs = 12_000):
 
 /**
  * Como `useBubbleHasFilesMap` pero devuelve el NÚMERO de archivos cambiados
- * por burbuja (Map<bubbleId, count>). Comparte el mismo cache + polling +
- * dedup, así que montar ambos no duplica requests al backend.
+ * por burbuja (Map<bubbleId, count>).
  */
 export function useBubbleChangeCountMap(bubbles: BubbleRef[], intervalMs = 12_000): Map<string, number> {
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const fn = () => setTick((n) => n + 1);
-    subscribers.add(fn);
-    return () => { subscribers.delete(fn); };
-  }, []);
-
-  const validBubbles = useMemo(
-    () => bubbles.filter((b) => !!b.workspace),
-    [bubbles],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    const tick = () => {
-      for (const b of validBubbles) {
-        if (cancelled) return;
-        void refreshOne(b.workspace, b.id);
-      }
-    };
-    tick();
-    const iv = setInterval(tick, intervalMs);
-    const onVis = () => { if (document.visibilityState === 'visible') tick(); };
-    document.addEventListener('visibilitychange', onVis);
-    const offBus = ecoOn('eco:git_refresh', (e) => {
-      const target = validBubbles.find((b) => b.id === e.bubbleId);
-      if (target) void refreshOne(target.workspace, target.id);
-    });
-    return () => {
-      cancelled = true;
-      clearInterval(iv);
-      document.removeEventListener('visibilitychange', onVis);
-      offBus();
-    };
-  }, [validBubbles, intervalMs]);
-
+  const { validBubbles, tick } = usePolledBubbleCache(bubbles, intervalMs);
   return useMemo(() => {
     const out = new Map<string, number>();
     for (const b of validBubbles) {
       const entry = cache.get(cacheKey(b.workspace, b.id));
       out.set(b.id, entry?.files.length ?? 0);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validBubbles, tick]);
+}
+
+export type BubbleGitChange = { bubbleId: string; workspace: string; file: string; change: string; unstaged: boolean };
+
+/**
+ * Lista plana de TODOS los archivos cambiados (sin commitear) en todas las
+ * burbujas con workspace, cada uno etiquetado con su `bubbleId`. Refleja el
+ * `git status` real de cada worktree (no la heurística de tool-calls).
+ */
+export function useAllBubbleChanges(bubbles: BubbleRef[], intervalMs = 12_000): BubbleGitChange[] {
+  const { validBubbles, tick } = usePolledBubbleCache(bubbles, intervalMs);
+  return useMemo(() => {
+    const out: BubbleGitChange[] = [];
+    for (const b of validBubbles) {
+      const entry = cache.get(cacheKey(b.workspace, b.id));
+      if (!entry) continue;
+      for (const f of entry.files) {
+        out.push({ bubbleId: b.id, workspace: b.workspace, file: f.path, change: f.change, unstaged: f.unstaged });
+      }
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps

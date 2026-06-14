@@ -22,6 +22,7 @@ import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 import { useCategories, getCategoryById } from '@/hooks/useCategories';
 import { getWorkspaceConfig } from '@/lib/workspace-config';
 import { useBubbleHasFilesMap, useBubbleChangeCountMap } from '@/hooks/useGitChanges';
+import { workspaceName } from '@/lib/workspace-name';
 import { useTeamBubbles } from '@/components/AdminGraph';
 
 type Props = {
@@ -3472,7 +3473,7 @@ function FolderRow({ path, count, changes, onClick }: { path: string; count: num
       <span style={{
         flex: 1, fontFamily: t.fontMono, fontSize: 11.5, color: t.text1,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}>{path}</span>
+      }}>{workspaceName(path)}</span>
       {changes > 0 && (
         <span
           title={tr('dash.rail.folder_changes', { n: changes })}

@@ -1052,6 +1052,7 @@ const DICT = {
   'files.active_folders': { es: 'Carpetas activas', en: 'Active folders' },
   'files.no_folders': { es: 'Sin carpetas seleccionadas.', en: 'No folders selected.' },
   'files.no_folder_selected': { es: 'Sin carpeta seleccionada', en: 'No folder selected' },
+  'files.all_folders': { es: 'Todas las carpetas', en: 'All folders' },
   'files.recent_changes': { es: 'Cambios recientes en las agentes', en: 'Recent changes in agents' },
   'files.no_changes': {
     es: 'Aún no hay cambios registrados. Cuando los agentes escriban archivos, aparecerán aquí.',
