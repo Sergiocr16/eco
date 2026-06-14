@@ -21,7 +21,7 @@ import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 import { useCategories, getCategoryById } from '@/hooks/useCategories';
 import { getWorkspaceConfig } from '@/lib/workspace-config';
-import { useBubbleHasFilesMap } from '@/hooks/useGitChanges';
+import { useBubbleHasFilesMap, useBubbleChangeCountMap } from '@/hooks/useGitChanges';
 import { useTeamBubbles } from '@/components/AdminGraph';
 
 type Props = {
@@ -3355,6 +3355,9 @@ function DashboardRail({
   const t = useTokens();
   const tr = useT();
   const recent = [...bubbles].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
+  // Cambios git por burbuja (archivos modificados sin commitear). Lo sumamos
+  // por carpeta para mostrar cuántos cambios pendientes hay en cada workspace.
+  const changeCounts = useBubbleChangeCountMap(bubbles);
   // Combinar carpetas que tienen burbujas con todas las disponibles
   const usedFolders = new Set(bubbles.map((b) => b.workspace).filter(Boolean));
   const folders = Array.from(new Set([
@@ -3388,11 +3391,13 @@ function DashboardRail({
             <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('dash.rail.no_folders')}</div>
           ) : folders.map((f) => {
             const inFolder = bubbles.filter((b) => b.workspace === f);
+            const changes = inFolder.reduce((sum, b) => sum + (changeCounts.get(b.id) ?? 0), 0);
             return (
               <FolderRow
                 key={f}
                 path={f}
                 count={inFolder.length}
+                changes={changes}
                 onClick={() => {
                   const target = inFolder.sort((a, b) => b.updatedAt - a.updatedAt)[0];
                   if (target) onOpenAgent(target.id);
@@ -3444,7 +3449,7 @@ function RecentRow({ bubble, active, onClick }: { bubble: Bubble; active: boolea
   );
 }
 
-function FolderRow({ path, count, onClick }: { path: string; count: number; onClick: () => void }) {
+function FolderRow({ path, count, changes, onClick }: { path: string; count: number; changes: number; onClick: () => void }) {
   const t = useTokens();
   const tr = useT();
   const [h, setH] = useState(false);
@@ -3468,11 +3473,25 @@ function FolderRow({ path, count, onClick }: { path: string; count: number; onCl
         flex: 1, fontFamily: t.fontMono, fontSize: 11.5, color: t.text1,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{path}</span>
+      {changes > 0 && (
+        <span
+          title={tr('dash.rail.folder_changes', { n: changes })}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '1px 6px', background: `color-mix(in oklch, ${t.warn} 16%, transparent)`,
+            color: t.warn, borderRadius: 999, fontSize: 10, fontWeight: 600,
+          }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.warn }}/>
+          {changes}
+        </span>
+      )}
       {count > 0 && (
-        <span style={{
-          padding: '1px 6px', background: t.accentFaint, color: t.accent,
-          borderRadius: 999, fontSize: 10, fontWeight: 500,
-        }}>{count}</span>
+        <span
+          title={tr('dash.rail.folder_bubbles', { n: count })}
+          style={{
+            padding: '1px 6px', background: t.accentFaint, color: t.accent,
+            borderRadius: 999, fontSize: 10, fontWeight: 500,
+          }}>{count}</span>
       )}
     </div>
   );

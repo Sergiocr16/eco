@@ -241,6 +241,8 @@ const DICT = {
   'dash.rail.no_activity': { es: 'Sin actividad reciente.', en: 'No recent activity.' },
   'dash.rail.active_folders': { es: 'Carpetas activas', en: 'Active folders' },
   'dash.rail.no_folders': { es: 'Sin carpetas seleccionadas.', en: 'No folders selected.' },
+  'dash.rail.folder_changes': { es: '{{n}} cambios sin commitear', en: '{{n}} uncommitted changes' },
+  'dash.rail.folder_bubbles': { es: '{{n}} agentes en la carpeta', en: '{{n}} agents in folder' },
   'dash.bubble.agent': { es: 'Agente', en: 'Agent' },
   'dash.bubble.new': { es: 'Nuevo agente', en: 'New agent' },
   'dash.bubble.no_msg': { es: 'Sin mensajes aún', en: 'No messages yet' },
