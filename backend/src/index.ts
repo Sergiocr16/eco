@@ -34,7 +34,8 @@ import {
 import {
   hasAnyUser, statusInfo, registerFirstUser, verifyPin,
   recover as recoverUser, deleteUser, getUser, getUserByUsername,
-  listUsers, createMember, setRole, setWorkspaceGrants, resetPin,
+  listUsers, createMember, setRole, setWorkspaceGrants,
+  issueClaim, claimAccount, setDisabled,
   mintRefresh, verifyRefresh, migrateLegacyUserIfNeeded, firstAdminId,
   type Role,
 } from './users-store.js';
@@ -116,7 +117,7 @@ const SESSION_HEADER = 'x-eco-session';
 // re-mintar una sesión desde el bearer token permanente cuando la suya expiró
 // por inactividad, sin volver a pedir PIN. El lock manual no se ve afectado:
 // el frontend solo dispara la renovación si todavía tenía una sesión guardada.
-const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login', '/auth/recover', '/auth/session']);
+const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login', '/auth/recover', '/auth/session', '/auth/claim']);
 // Endpoints adicionales que NO requieren sesión interactiva — solo Bearer +
 // X-Eco-Client. Consumidos por clientes "bot" como el MCP server stdio (en
 // mcp-server/), que viven en otro proceso y no tienen UI de login. La
@@ -194,6 +195,21 @@ app.post('/auth/recover', async (req: Request, res: Response) => {
   }
 });
 
+// Activación de cuenta con token (claim): el usuario define su PIN. Bearer-exempt
+// como login/recover. Mintea sesión igual que login.
+app.post('/auth/claim', async (req: Request, res: Response) => {
+  const parsed = ClaimSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Código y PIN requeridos');
+  try {
+    const { user } = await claimAccount(parsed.data.claimToken, parsed.data.pin);
+    const session = createSession(user.id, user.role, user.username);
+    const refresh = await mintRefresh(user.id);
+    res.json({ ok: true, username: user.username, role: user.role, session, refresh });
+  } catch (e) {
+    fromException(res, e, 'auth.claim_failed', 'No se pudo activar la cuenta');
+  }
+});
+
 app.post('/auth/logout', (req: Request, res: Response) => {
   const session = req.headers[SESSION_HEADER] as string | undefined;
   destroySession(session);
@@ -268,6 +284,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const sessionId = req.headers[SESSION_HEADER] as string | undefined;
   const session = getSession(sessionId);
   if (!session) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
+  // Un usuario deshabilitado mid-sesión pierde acceso al instante (no espera el
+  // TTL de 1h). Lee user.json — solo en paths con sesión, no en los AUTH_FREE/MCP.
+  if (getUser(session.userId)?.disabled) {
+    destroySession(sessionId);
+    return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
+  }
   req.ecoUser = { id: session.userId, role: session.role, username: session.username };
   next();
 });
@@ -295,7 +317,7 @@ app.post('/auth/session', async (req: Request, res: Response) => {
   const userId = await verifyRefresh(raw);
   if (!userId) return errResponse(res, 401, 'auth.refresh_invalid', 'Refresh inválido — iniciá sesión de nuevo');
   const user = getUser(userId);
-  if (!user) return errResponse(res, 401, 'auth.refresh_invalid', 'Refresh inválido — iniciá sesión de nuevo');
+  if (!user || user.disabled) return errResponse(res, 401, 'auth.refresh_invalid', 'Refresh inválido — iniciá sesión de nuevo');
   const session = createSession(user.id, user.role, user.username);
   res.json({ ok: true, username: user.username, role: user.role, session });
 });
@@ -310,18 +332,18 @@ app.get('/auth/me', (req: Request, res: Response) => {
 // ─── Admin: gestión de usuarios ──────────────────────────────────────────
 const CreateMemberSchema = z.object({
   username: z.string().min(1).max(80),
-  pin: z.string().regex(/^\d{4,8}$/),
   role: z.enum(['admin', 'member']).optional(),
 });
 const RoleSchema = z.object({ role: z.enum(['admin', 'member']) });
 const GrantsSchema = z.object({ workspaces: z.array(z.string()).max(200) });
-const ResetPinSchema = z.object({ pin: z.string().regex(/^\d{4,8}$/) });
+const ClaimSchema = z.object({ claimToken: z.string().min(10).max(200), pin: z.string().regex(/^\d{4,8}$/) });
+const DisabledSchema = z.object({ disabled: z.boolean() });
 const USER_ID_RE = /^[a-f0-9]{1,32}$/;
 
 app.get('/admin/users', requireAdmin, (_req: Request, res: Response) => {
   const users = listUsers().map((s) => {
     const u = getUser(s.id);
-    return { id: s.id, username: s.username, role: s.role, workspaceGrants: u?.workspaceGrants ?? [] };
+    return { id: s.id, username: s.username, role: s.role, status: s.status, disabled: s.disabled, workspaceGrants: u?.workspaceGrants ?? [] };
   });
   res.json({ ok: true, users });
 });
@@ -330,8 +352,8 @@ app.post('/admin/users', requireAdmin, async (req: Request, res: Response) => {
   const parsed = CreateMemberSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
   try {
-    const { user, recoveryPhrase } = await createMember(parsed.data.username, parsed.data.pin, (parsed.data.role ?? 'member') as Role);
-    res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role }, recoveryPhrase });
+    const { user, claimToken } = await createMember(parsed.data.username, (parsed.data.role ?? 'member') as Role);
+    res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role }, claimToken });
   } catch (e) {
     fromException(res, e, 'admin.create_failed', 'No se pudo crear el usuario');
   }
@@ -366,13 +388,24 @@ app.post('/admin/users/:id/workspaces', requireAdmin, (req: Request, res: Respon
   catch (e) { fromException(res, e, 'admin.grants_failed', 'No se pudieron asignar los workspaces'); }
 });
 
-app.post('/admin/users/:id/reset-pin', requireAdmin, async (req: Request, res: Response) => {
+// Reseteo de PIN = emitir un token de activación nuevo (el admin no fija PINs).
+app.post('/admin/users/:id/issue-claim', requireAdmin, async (req: Request, res: Response) => {
   const id = req.params.id;
   if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
-  const parsed = ResetPinSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'PIN inválido');
-  try { const { recoveryPhrase } = await resetPin(id, parsed.data.pin); res.json({ ok: true, recoveryPhrase }); }
-  catch (e) { fromException(res, e, 'admin.reset_failed', 'No se pudo resetear el PIN'); }
+  try { const { claimToken } = await issueClaim(id); res.json({ ok: true, claimToken }); }
+  catch (e) { fromException(res, e, 'admin.reset_failed', 'No se pudo generar el código'); }
+});
+
+app.post('/admin/users/:id/disabled', requireAdmin, (req: Request, res: Response) => {
+  const id = req.params.id;
+  if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
+  const parsed = DisabledSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Valor inválido');
+  if (req.ecoUser?.id === id && parsed.data.disabled) {
+    return errResponse(res, 400, 'admin.cant_disable_self', 'No podés deshabilitar tu propia cuenta');
+  }
+  try { setDisabled(id, parsed.data.disabled); res.json({ ok: true }); }
+  catch (e) { fromException(res, e, 'admin.disable_failed', 'No se pudo cambiar el estado'); }
 });
 
 // Vista "quién trabaja en qué" — solo admin. Agrega las bubbles de todos los

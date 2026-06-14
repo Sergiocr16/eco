@@ -24,15 +24,26 @@ export type UserRecord = {
   id: string;
   username: string;
   role: Role;
-  pinHash: string;
-  recoveryHash: string;
+  pinHash: string;            // '' mientras está pending (sin activar)
+  recoveryHash: string;       // '' para members; solo el admin bootstrap tiene frase
   refreshHash: string | null;
+  claimHash: string | null;   // argon2 del secreto de activación vigente; null una vez activado
+  claimExpiresAt?: number;    // epoch ms — el token de activación expira
+  disabled?: boolean;         // ausencia = false
   workspaceGrants: string[];
   createdAt: number;
   updatedAt: number;
 };
 
-export type UserSummary = { id: string; username: string; role: Role };
+export type UserStatus = 'pending' | 'active' | 'disabled';
+/** Estado derivado (no se persiste). pending = tiene claim y todavía sin PIN. */
+export function userStatus(u: UserRecord): UserStatus {
+  if (u.disabled) return 'disabled';
+  if (u.claimHash && !u.pinHash) return 'pending';
+  return 'active';
+}
+
+export type UserSummary = { id: string; username: string; role: Role; status: UserStatus; disabled: boolean };
 
 const ECO_DIR = join(homedir(), '.eco');
 const USERS_DIR = join(ECO_DIR, 'users');
@@ -45,6 +56,7 @@ const ARGON_OPTS = {
 };
 
 const PIN_RE = /^\d{4,8}$/;
+const CLAIM_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
 
 function ensureUsersDir() {
   if (!existsSync(USERS_DIR)) mkdirSync(USERS_DIR, { recursive: true, mode: 0o700 });
@@ -81,6 +93,10 @@ function readUserAt(path: string): UserRecord | null {
       parsed.role = parsed.role === 'admin' ? 'admin' : (parsed.role === 'member' ? 'member' : 'member');
       parsed.refreshHash = typeof parsed.refreshHash === 'string' ? parsed.refreshHash : null;
       parsed.workspaceGrants = Array.isArray(parsed.workspaceGrants) ? parsed.workspaceGrants : [];
+      // Defaults para registros legacy: sin claim (ya activados) y habilitados.
+      parsed.claimHash = typeof parsed.claimHash === 'string' ? parsed.claimHash : null;
+      parsed.claimExpiresAt = typeof parsed.claimExpiresAt === 'number' ? parsed.claimExpiresAt : undefined;
+      parsed.disabled = parsed.disabled === true;
       return parsed as UserRecord;
     }
     return null;
@@ -109,9 +125,13 @@ function scanUsers(): UserRecord[] {
   return out;
 }
 
+function summaryOf(u: UserRecord): UserSummary {
+  return { id: u.id, username: u.username, role: u.role, status: userStatus(u), disabled: !!u.disabled };
+}
+
 function rebuildIndex() {
   ensureUsersDir();
-  const summaries: UserSummary[] = scanUsers().map((u) => ({ id: u.id, username: u.username, role: u.role }));
+  const summaries: UserSummary[] = scanUsers().map(summaryOf);
   writeFileSync(INDEX_PATH, JSON.stringify(summaries, null, 2), { mode: 0o600 });
 }
 
@@ -119,10 +139,13 @@ export function listUsers(): UserSummary[] {
   if (existsSync(INDEX_PATH)) {
     try {
       const parsed = JSON.parse(readFileSync(INDEX_PATH, 'utf-8'));
-      if (Array.isArray(parsed)) return parsed as UserSummary[];
+      // Reconstruimos si el índice es viejo (sin `status`) — back-compat.
+      if (Array.isArray(parsed) && parsed.every((s) => s && typeof s.status === 'string')) {
+        return parsed as UserSummary[];
+      }
     } catch { /* cae al scan */ }
   }
-  return scanUsers().map((u) => ({ id: u.id, username: u.username, role: u.role }));
+  return scanUsers().map(summaryOf);
 }
 
 export function hasAnyUser(): boolean {
@@ -192,7 +215,12 @@ export async function verifyRefresh(raw: string | null | undefined): Promise<str
 
 // ─── Creación / administración ───────────────────────────────────────────
 
-async function createUser(username: string, pin: string, role: Role): Promise<{ user: UserRecord; recoveryPhrase: string }> {
+// Token de activación (claim): "<userId>.<secret>". Mismo patrón que el refresh
+// — el userId embebido localiza el registro; la identidad es el match del hash.
+function newClaimSecret(): string { return randomBytes(32).toString('base64url'); }
+
+/** Bootstrap del admin dueño: el ÚNICO con PIN+frase BIP39 al crearse. */
+async function createBootstrapAdmin(username: string, pin: string): Promise<{ user: UserRecord; recoveryPhrase: string }> {
   const cleanName = validateUsername(username);
   assertPin(pin);
   assertUsernameFree(cleanName);
@@ -203,23 +231,79 @@ async function createUser(username: string, pin: string, role: Role): Promise<{ 
   ]);
   const now = Date.now();
   const user: UserRecord = {
-    version: 1, id: newUserId(), username: cleanName, role,
-    pinHash, recoveryHash, refreshHash: null, workspaceGrants: [],
+    version: 1, id: newUserId(), username: cleanName, role: 'admin',
+    pinHash, recoveryHash, refreshHash: null, claimHash: null,
+    disabled: false, workspaceGrants: [],
     createdAt: now, updatedAt: now,
   };
   writeUserRecord(user);
   return { user, recoveryPhrase };
 }
 
-/** Primer usuario del sistema = admin. Solo permitido si no hay ninguno. */
+/** Primer usuario del sistema = admin dueño. Solo permitido si no hay ninguno. */
 export async function registerFirstUser(username: string, pin: string): Promise<{ user: UserRecord; recoveryPhrase: string }> {
   if (hasAnyUser()) throw new AppError('auth.registration_closed', 'El registro está cerrado; pedile al admin que cree tu cuenta', 403);
-  return createUser(username, pin, 'admin');
+  return createBootstrapAdmin(username, pin);
 }
 
-/** Admin da de alta un miembro (rol member por defecto). */
-export async function createMember(username: string, pin: string, role: Role = 'member'): Promise<{ user: UserRecord; recoveryPhrase: string }> {
-  return createUser(username, pin, role);
+/** Admin da de alta un usuario SIN PIN: queda pending hasta que active con el
+ *  token. El admin define el nombre; el usuario define su PIN al activar. */
+export async function createMember(username: string, role: Role = 'member'): Promise<{ user: UserRecord; claimToken: string }> {
+  const cleanName = validateUsername(username);
+  assertUsernameFree(cleanName);
+  const secret = newClaimSecret();
+  const claimHash = await argonHash(secret, ARGON_OPTS);
+  const now = Date.now();
+  const user: UserRecord = {
+    version: 1, id: newUserId(), username: cleanName, role,
+    pinHash: '', recoveryHash: '', refreshHash: null,
+    claimHash, claimExpiresAt: now + CLAIM_TTL_MS, disabled: false,
+    workspaceGrants: [], createdAt: now, updatedAt: now,
+  };
+  writeUserRecord(user);
+  return { user, claimToken: `${user.id}.${secret}` };
+}
+
+/** Reseteo: emite un token de activación NUEVO. No borra el PIN viejo (sigue
+ *  válido hasta que se complete la activación → evita lockout). Corta el refresh. */
+export async function issueClaim(id: string): Promise<{ claimToken: string }> {
+  const user = getUser(id);
+  if (!user) throw new AppError('auth.no_user', 'Usuario no encontrado', 404);
+  const secret = newClaimSecret();
+  const claimHash = await argonHash(secret, ARGON_OPTS);
+  writeUserRecord({ ...user, claimHash, claimExpiresAt: Date.now() + CLAIM_TTL_MS, refreshHash: null, updatedAt: Date.now() });
+  return { claimToken: `${id}.${secret}` };
+}
+
+/** El usuario activa su cuenta con el token y define su PIN. */
+export async function claimAccount(claimToken: string, pin: string): Promise<{ user: UserRecord }> {
+  const dot = claimToken.indexOf('.');
+  if (dot <= 0) throw new AppError('auth.claim_invalid', 'Código de activación inválido', 401);
+  const userId = claimToken.slice(0, dot);
+  const secret = claimToken.slice(dot + 1);
+  const user = getUser(userId);
+  if (!user || user.disabled || !user.claimHash || !secret) {
+    throw new AppError('auth.claim_invalid', 'Código de activación inválido', 401);
+  }
+  if (user.claimExpiresAt && Date.now() > user.claimExpiresAt) {
+    throw new AppError('auth.claim_expired', 'El código de activación expiró', 410);
+  }
+  assertPin(pin);
+  const ok = await argonVerify(user.claimHash, secret).catch(() => false);
+  if (!ok) throw new AppError('auth.claim_invalid', 'Código de activación inválido', 401);
+  const pinHash = await argonHash(pin, ARGON_OPTS);
+  const updated: UserRecord = {
+    ...user, pinHash, claimHash: null, claimExpiresAt: undefined, refreshHash: null, updatedAt: Date.now(),
+  };
+  writeUserRecord(updated);
+  return { user: updated };
+}
+
+/** Habilita/deshabilita un usuario. Al deshabilitar corta el refresh. */
+export function setDisabled(id: string, disabled: boolean): void {
+  const user = getUser(id);
+  if (!user) throw new AppError('auth.no_user', 'Usuario no encontrado', 404);
+  writeUserRecord({ ...user, disabled, refreshHash: disabled ? null : user.refreshHash, updatedAt: Date.now() });
 }
 
 export function setRole(id: string, role: Role): void {
@@ -239,20 +323,6 @@ export function workspaceGrantsFor(id: string): string[] {
   return getUser(id)?.workspaceGrants ?? [];
 }
 
-export async function resetPin(id: string, newPin: string): Promise<{ recoveryPhrase: string }> {
-  const user = getUser(id);
-  if (!user) throw new AppError('auth.no_user', 'Usuario no encontrado', 404);
-  assertPin(newPin);
-  const recoveryPhrase = generateMnemonic(128);
-  const [pinHash, recoveryHash] = await Promise.all([
-    argonHash(newPin, ARGON_OPTS),
-    argonHash(recoveryPhrase, ARGON_OPTS),
-  ]);
-  // Invalidamos el refresh al resetear el PIN (fuerza re-login).
-  writeUserRecord({ ...user, pinHash, recoveryHash, refreshHash: null, updatedAt: Date.now() });
-  return { recoveryPhrase };
-}
-
 export function deleteUser(id: string): void {
   const dir = userDir(id);
   try { rmSync(dir, { recursive: true, force: true }); } catch { /* noop */ }
@@ -261,7 +331,8 @@ export function deleteUser(id: string): void {
 
 export async function verifyPin(userId: string, pin: string): Promise<boolean> {
   const user = getUser(userId);
-  if (!user) return false;
+  // Sin user, deshabilitado, o pending (sin pinHash) → nunca autentica.
+  if (!user || user.disabled || !user.pinHash) return false;
   try { return await argonVerify(user.pinHash, pin); } catch { return false; }
 }
 
@@ -303,6 +374,7 @@ export function migrateLegacyUserIfNeeded(): { migrated: boolean; adminId?: stri
     username: (legacy.username || 'admin').trim().slice(0, 80) || 'admin',
     role: 'admin',
     pinHash: legacy.pinHash, recoveryHash: legacy.recoveryHash, refreshHash: null,
+    claimHash: null, disabled: false,
     workspaceGrants: [], createdAt: now, updatedAt: now,
   };
   writeUserRecord(user);
