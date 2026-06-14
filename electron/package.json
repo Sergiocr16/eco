@@ -150,8 +150,8 @@
       "gatekeeperAssess": false,
       "identity": null,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Eco usa el micrófono para tus comandos de voz (transcripción local con el motor de Apple en el dispositivo).",
-        "NSSpeechRecognitionUsageDescription": "Eco transcribe tus comandos de voz usando el reconocimiento on-device de Apple — el audio no sale de tu Mac."
+        "NSMicrophoneUsageDescription": "Eco usa el micrófono para dictar a la terminal (transcripción local con el motor de Apple en el dispositivo).",
+        "NSSpeechRecognitionUsageDescription": "Eco transcribe tu dictado a la terminal usando el reconocimiento on-device de Apple — el audio no sale de tu Mac."
       },
       "electronLanguages": [
         "en",

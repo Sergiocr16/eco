@@ -27,7 +27,6 @@ export type ServerMessage =
   | { type: 'done' }
   | { type: 'error'; code: string; message: string }
   | { type: 'client_action'; action: ClientAction }
-  | { type: 'voice_transcribed'; text: string; ts: number }
   | { type: 'pty_status'; bubbleId: string; running: boolean; active?: boolean }
   // Notifica cambios en si Claude (en el PTY) está procesando output o ya
   // terminó. Basado en inactividad del PTY (1.5 s sin output → idle).

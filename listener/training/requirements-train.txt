@@ -1,7 +1,0 @@
-openwakeword[training]>=0.6.0
-piper-tts>=1.2.0
-torch>=2.0
-numpy>=1.24,<2
-scipy>=1.10
-soundfile>=0.12
-librosa>=0.10

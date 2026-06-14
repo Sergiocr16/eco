@@ -8,7 +8,6 @@ import { useSkills, type SkillInfo } from '@/hooks/useSkills';
 import { useSkillFavorites, skillIdOf } from '@/hooks/useSkillFavorites';
 import { useProfile } from '@/hooks/useProfile';
 import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
-import { setVoiceTarget } from '@/lib/voice-router';
 import { ecoToken } from '@/lib/eco-config';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
@@ -26,7 +25,7 @@ import {
 import { EcoMark } from '@/design/EcoMark';
 import {
   IconArrowL, IconStop, IconMore, IconResume,
-  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconMicOff, IconGlobe, IconCpu,
+  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconGlobe, IconCpu,
   IconCheck, IconX, IconBolt, IconGithub, IconEdit, IconTrash,
   IconAgent, IconFolder, IconCopy, IconArchive, IconNewWindow,
   type IconProps,
@@ -34,7 +33,6 @@ import {
 import type { Bubble, Message, ToolCall } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
-import { stripWakePrefix } from '@/lib/meta-commands';
 import { useT } from '@/hooks/useI18n';
 import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
 import { translateBackendError } from '@/lib/backend-errors';
@@ -200,9 +198,6 @@ type Props = {
   onClose: () => void;
   onChangeWorkspace: (workspace: string) => void;
   onToggleCategory: (categoryId: string | undefined) => void;
-  onMicToggle: () => void;
-  listening: boolean;
-  voiceInterim: string;
   // Dictado a la terminal: el botón de la cabecera enciende el mic en modo
   // dictado; lo dictado se acumula en `dictationText` y se muestra como burbuja
   // arriba. "Enviar a terminal" lo escribe en el PTY principal sin Enter.
@@ -314,7 +309,7 @@ function DictationBar({
 
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
-  onToggleCategory, onMicToggle, listening, voiceInterim,
+  onToggleCategory,
   dictationActive = false, dictationText = '',
   onStartDictation, onSendDictation, onCancelDictation, onClearDictation,
   onOpenInNewWindow, solo = false,
@@ -596,9 +591,6 @@ export function AgentDetail({
               bubble={bubble}
               onSend={onSend}
               onInterrupt={onInterrupt}
-              onMicToggle={onMicToggle}
-              listening={listening}
-              voiceInterim={voiceInterim}
             />
           )}
           {tab === 'terminal' && <TerminalPanel bubble={bubble}/>}
@@ -715,14 +707,11 @@ function TabBtn({
 }
 
 function ChatPanel({
-  bubble, onSend, onInterrupt, onMicToggle, listening, voiceInterim,
+  bubble, onSend, onInterrupt,
 }: {
   bubble: Bubble;
   onSend: (text: string) => void;
   onInterrupt: () => void;
-  onMicToggle: () => void;
-  listening: boolean;
-  voiceInterim: string;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -730,13 +719,6 @@ function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const suggestions = useQuickSuggestions();
-
-  // Si el interim empieza con "Eco", no se mezcla con el draft del chat:
-  // el comando va al sistema, no a la conversación.
-  const interimParsed = stripWakePrefix(voiceInterim);
-  const interimForChat = interimParsed.isMeta ? '' : voiceInterim;
-  const displayValue = interimForChat || draft;
-  const commandInProgress = interimParsed.isMeta ? interimParsed.rest : '';
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -800,36 +782,15 @@ function ChatPanel({
       </div>
 
       <div style={{ padding: '12px 24px 18px', borderTop: `1px solid ${t.glassBorder}` }}>
-        {commandInProgress !== '' && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '6px 12px', marginBottom: 6, borderRadius: 999,
-            background: `color-mix(in oklch, ${t.accent} 10%, transparent)`,
-            border: `1px solid color-mix(in oklch, ${t.accent} 25%, transparent)`,
-            fontSize: 12, color: t.accent,
-          }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%', background: t.accent,
-              animation: 'eco-shimmer 1s ease-in-out infinite',
-            }}/>
-            <span style={{ fontFamily: t.fontMono, fontWeight: 500 }}>Eco</span>
-            <span style={{ color: t.text1 }}>· {commandInProgress || tr('detail.chat.eco_listening')}</span>
-          </div>
-        )}
         <Glass radius={16} style={{ padding: 6, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
           <textarea
             ref={textareaRef}
-            value={displayValue}
+            value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            readOnly={!!interimForChat}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
             }}
-            placeholder={
-              listening
-                ? tr('detail.chat.listening_hint')
-                : tr('detail.chat.write_to', { name: bubble.title })
-            }
+            placeholder={tr('detail.chat.write_to', { name: bubble.title })}
             rows={1}
             style={{
               flex: 1, background: 'transparent', border: 0, outline: 'none', resize: 'none',
@@ -837,13 +798,6 @@ function ChatPanel({
               padding: '10px 12px', minHeight: 22, maxHeight: 120,
               lineHeight: 1.5,
             }}
-          />
-          <IconBtn
-            icon={listening ? IconMicOff : IconMic}
-            size={32}
-            active={listening}
-            title={listening ? tr('detail.btn.listen_off_title') : tr('detail.btn.listen_on_title')}
-            onClick={onMicToggle}
           />
           {bubble.status === 'thinking' || bubble.status === 'executing' || bubble.status === 'running' ? (
             <button
@@ -1114,10 +1068,6 @@ function TerminalPanel({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
   const tr = useT();
   const [subTab, setSubTab] = useState<'shell' | 'agent' | 'cmds'>('shell');
-  useEffect(() => {
-    setVoiceTarget(subTab === 'shell' ? 'pty' : 'chat');
-    return () => { setVoiceTarget('chat'); };
-  }, [subTab]);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{

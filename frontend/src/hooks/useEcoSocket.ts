@@ -13,7 +13,6 @@ type ServerMsg =
   | { type: 'done' }
   | { type: 'error'; code: string; message: string }
   | { type: 'client_action'; action: ClientAction }
-  | { type: 'voice_transcribed'; text: string; ts: number }
   | { type: 'pty_status'; bubbleId: string; running: boolean }
   | { type: 'pty_busy_change'; bubbleId: string; busy: boolean }
   | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string }
@@ -100,7 +99,6 @@ export type SocketHandlers = {
     chunk: string,
   ) => void;
   onClientAction?: (sourceBubbleId: string, action: ClientAction) => void;
-  onVoiceTranscribed?: (text: string) => void;
   // Originado por el MCP server externo via POST /bubble/create (initial_prompt).
   // El App.tsx lo despacha como si el user hubiese tipeado el mensaje en el chat
   // de la bubble recién creada.
@@ -269,9 +267,6 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         }
         else if (msg.type === 'inject_prompt') {
           handlersRef.current.onInjectPrompt?.(msg.bubbleId, msg.text, msg.workspace);
-        }
-        else if (msg.type === 'voice_transcribed') {
-          handlersRef.current.onVoiceTranscribed?.(msg.text);
         }
         else if (msg.type === 'pty_status') {
           handlersRef.current.onPtyStatus?.(msg.bubbleId, msg.running);

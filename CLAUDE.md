@@ -10,7 +10,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 4. [File map by feature](#filemap)
 5. [Processes & storage](#storage)
 6. [WebSocket protocol](#ws)
-7. [Voice pipeline](#voice)
+7. [Voice pipeline (terminal dictation only)](#voice)
 8. [ServerPanel — dev server per agent](#serverpanel)
 9. [BrowserPanel — webview per agent](#browserpanel)
 10. [Git tab — changes, history, PRs, review](#gittab)
@@ -20,7 +20,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 13b. [Backup & Restore](#backup)
 14. [GitHub PAT](#githubpat)
 15. [Auth, workspaces, worktrees, onboarding](#auth)
-16. [Voice/text meta-commands](#metacommands)
+16. [Voice/text meta-commands — REMOVED](#metacommands)
 17. [Conventions](#conventions)
 18. [Pre-flight checklist](#preflight)
 19. [Build & .dmg packaging](#build)
@@ -35,7 +35,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 - **Eco** is a local-first macOS Apple Silicon app that orchestrates Claude conversations. Each conversation ("agent" / "bubble") gets its own git worktree, PTY, files, dev server, browser, notes. 100% local except the Anthropic API.
 - **Packaged** via Electron 33 + electron-builder 25. `.dmg` arm64 only (~112 MB). Windows/Linux targets removed.
 - **User**: Sergio Castro (Florida, USA). Rules in §2 + the global `~/.claude/CLAUDE.md` apply (Obsidian vault, no auto-commits, Spanish UI but English docs).
-- **State**: fully standalone. Voice on-device via Swift + Apple Speech (no Python required). Dev servers persist across reloads. Everything bundled.
+- **State**: fully standalone. The ONLY voice feature is **terminal dictation** (on-device STT via Swift + Apple Speech in the .dmg, Web Speech in the browser). Everything else voice-related was removed (wake word, voice commands, TTS, voice settings — see the Removed table in §2). Dev servers persist across reloads. Everything bundled.
 - **Dev logs flow via WS push** (`dev_log` batched every 80 ms), not polling.
 - **Multi-tenant** (admin/member sobre un backend compartido; los users entran por Tailscale). Identidad SIEMPRE de la sesión. Alta por **token de activación** (el admin no fija PINs), habilitar/deshabilitar, estado **server-authoritative cross-device** (doc store por usuario), config de server por workspace (admin), Settings gateado por rol. **Todo el detalle en Appendix D — leelo antes de tocar auth/usuarios/sync/workspace-config.**
 
@@ -96,6 +96,13 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 | `CommandSlot`/`PresetMenu`/`Toggle` editables + `useDevPresets` en ServerPanel | Resumen read-only + Settings → Folders | El member no edita comandos de server. |
 | Borrar la propia cuenta (`DELETE /auth/user` desde UI, `destroyUser`, DestroyDialog) | Solo lock / cerrar sesión | Decisión: nadie borra datos desde la UI. |
 | "History" en el sidebar (`AppSidebar`) | — | No se usa; pantalla sigue existiendo pero oculta del menú. |
+| Voice commands / meta-commands (`lib/meta-commands.ts`, `handleMetaAction`, wake word `stripWakePrefix`, `CommandFeedback`, `StatusOverlay`) | Nada — solo queda el dictado a la terminal | Liberar recursos; el mic siempre-encendido + parser de comandos ya no se usa. |
+| TTS completo (`useTTS.ts`, `backend/tts.ts`, `backend/tts-macsay.ts`, endpoints `POST /tts` + `GET /tts/voices`, `Settings:SectionVoice`) | Nada | Respuestas habladas removidas. |
+| Mic siempre-encendido + autostart (`eco.voice.autostart*`, `handleMicToggle`, botón mic en chat/Dashboard, `ListeningWave`, `CommandBar`) | Solo el botón "Hablar a la terminal" enciende el mic | El loop de mic/VAD en continuo gastaba CPU. |
+| `lib/voice-router.ts` (target chat/pty live) + `registerPtyWriter` en RealTerminal | Botón "Hablar a la terminal" → buffer → `writeToBubblePty` | El dictado a la terminal es autocontenido vía `pty-bridge`. |
+| `listener/` (sidecar Python: openWakeWord + faster-whisper) + scripts `npm run listener*` | Nada | El dictado usa Apple Speech (.dmg) / Web Speech (browser), sin Python. |
+| `POST /voice/transcribed` + mensaje WS `voice_transcribed` | Nada | Solo lo usaba el listener Python. |
+| Paso "Voice" del OnboardingWizard | Nada | No hay preferencia de voz que configurar. |
 
 If you spot any of these in live code, it's residue to clean.
 
@@ -131,7 +138,6 @@ Override: `ECO_PORT=<n>` for backend/electron; `ECO_BACKEND_PORT=<n>` for Vite p
 | `npm run typecheck` | TS for both workspaces. |
 | `npm run check:i18n` / `check:i18n:report` | i18n enforcement (strict / report-only). |
 | `npm run test:security` | Backend security test suite. |
-| `npm run listener:setup` / `npm run listener` | Python sidecar (wake word + Whisper, optional in dev, not needed in .dmg). |
 
 All dev scripts hardcode `ECO_PORT=7050` / `ECO_BACKEND_PORT=7050` — do not export manually.
 
@@ -147,7 +153,6 @@ VITE_ECO_TOKEN=<optional, copy of ~/.eco/token>
 ### Versions required
 
 - **Node 20** (`nvm use 20.20.2`). Vite 6 doesn't support 16.
-- **Python 3.10+** (only if using the Python listener; optional).
 - **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated.
 - **Swift 5+** (Xcode CLT) if rebuilding the native CLI.
 - **git** (worktrees, branches).
@@ -200,25 +205,17 @@ Accepted caveats (fase 0, NOT multi-tenant): single shared identity (token + PIN
 
 If you're touching X, the key files are:
 
-### Voice STT (.dmg)
-- `electron/native/eco-stt.swift` — Swift CLI using `SFSpeechRecognizer`
+### Terminal dictation (the ONLY voice feature)
+The "Hablar a la terminal" button in the bubble header turns the mic on, accumulates the dictated text in a buffer (shown in `DictationBar`), and "Enviar a terminal" writes it to the main PTY (no Enter — the user reviews before running). Self-contained: no wake word, no chat routing, no meta-commands.
+- `electron/native/eco-stt.swift` — Swift CLI using `SFSpeechRecognizer` (on-device)
 - `electron/native/build.sh` — compiles to universal arm64+x64 binary
 - `electron/build/bin/eco-stt` — build output (bundled in .app)
-- `electron/main.cjs:setPermissionRequestHandler` — grants mic/audioCapture
-- `electron/package.json:mac.extendInfo` — `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription`
-- `frontend/src/hooks/useVoice.ts` — dual pipeline (Web Speech in browser, PCM+WAV+POST in .dmg)
+- `electron/main.cjs:setPermissionRequestHandler` — grants mic/audioCapture (load-bearing — keep)
+- `electron/package.json:mac.extendInfo` — `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription` (keep)
+- `frontend/src/hooks/useVoice.ts` — STT capture engine (Web Speech in browser, PCM+WAV+POST in .dmg). `onPhrase` only; no wake detection.
 - `backend/src/index.ts` `/voice/transcribe-blob` — endpoint that spawns eco-stt
-
-### Voice STT (browser dev, optional)
-- `listener/main.py` — wake → Whisper pipeline
-- `listener/training/` — custom "Hey Eco" training
-- `backend/src/index.ts` `/voice/transcribed` — receives transcriptions
-
-### Voice TTS
-- `backend/src/tts.ts` — Piper (ONNX local)
-- `backend/src/tts-macsay.ts` — macOS `say` with Premium/Enhanced voices
-- `frontend/src/hooks/useTTS.ts` — unifies both + browser fallback
-- `frontend/src/screens/Settings.tsx:SectionVoice` — voice selector
+- `frontend/src/lib/pty-bridge.ts:writeToBubblePty` — writes the dictation buffer to the bubble's PTY
+- `frontend/src/App.tsx` — `startTerminalDictation` / `sendDictationToTerminal` / `cancelTerminalDictation`; `frontend/src/screens/AgentDetail.tsx:DictationBar` + the dictate button
 
 ### Dev server per agent
 - `backend/src/dev-server.ts` — session manager, spawn/kill, persistence, `scheduleLogFlush`, `forgetSession`, `urlFor`/`syncServe` (server-mode tailnet exposure). Env injected per spawn: `HOST=127.0.0.1`, `-Dserver.port`/`-Dspring.devtools.restart.enabled=false` (always) + `-Dserver.address=127.0.0.1`/`-Dserver.forward-headers-strategy=framework` + Vite allowed-hosts (server mode only).
@@ -326,10 +323,6 @@ If you're touching X, the key files are:
 - `backend/src/pty-server.ts` — `/ws/pty`, persistent sessions with 128 KB replay
 - `frontend/src/components/RealTerminal.tsx` — xterm.js wired
 
-### Meta commands ("Eco …")
-- `frontend/src/lib/meta-commands.ts` — tolerant parser with `LEADING_FILLERS` and aliases
-- `frontend/src/App.tsx:handleMetaAction` — dispatches each `MetaAction`
-
 ### Obsidian
 - `backend/src/obsidian.ts` — save-session, vault detection
 - `backend/src/index.ts` `/integrations/obsidian/save-session`
@@ -390,8 +383,6 @@ eco.token                                ← bearer token pasted in ConnectView 
 eco.refresh                              ← per-user refresh token (X-Eco-Refresh)
 eco.lockedUser                           ← username recordado por el lock screen (pide solo PIN)
 eco.onboarded                            ← '1' once the wizard finished
-eco.voice.autostart                      ← '0' to disable auto-listen
-eco.tts.enabled / voice / rate / volume
 eco.detail.tab.<bubbleId>                ← last active tab (chat|terminal|git|plan|browser|server|files|notes). 'files' legacy maps to 'git' on read.
 eco.git.subtab.<bubbleId>                ← Git sub-tab (changes|history|prs); legacy 'branches' auto-migrates to 'changes'.
 eco.git.splitter.{changes,history}.<bubbleId>  ← left column width
@@ -486,7 +477,6 @@ Auth via subprotocol: `eco.token.<bearer>`.
 - `{type:'session_started', sessionId}` — first SDK response
 - `{type:'done'}` — agent finished this turn
 - `{type:'error', code, message}` — typed error
-- `{type:'voice_transcribed', text, ts}` — broadcast when the listener posts
 - `{type:'pty_status', bubbleId, running}` — PTY open/closed
 - `{type:'dev_status', bubbleId, role, status, port, url, command, exitCode, skill?}` — dev server state change
 - `{type:'dev_log', bubbleId, role, chunk}` — dev server stdout/stderr batched every 80 ms
@@ -507,13 +497,14 @@ Auth same. Subprotocol with `bubbleId` + `workspace` query.
 ---
 
 <a id="voice"></a>
-## 7. Voice pipeline
+## 7. Voice pipeline (terminal dictation only)
+
+This is the ONLY voice feature. The mic runs ONLY while dictation is active (the "Hablar a la terminal" button → `startTerminalDictation` → `voice.start()`). There is no wake word, no always-on listening, no chat routing and no voice commands — `useVoice` just calls `onPhrase`, which appends to the dictation buffer.
 
 ### Browser mode (`npm run web` in Chrome/Safari)
 
 - `window.SpeechRecognition` (Web Speech API). Chrome supplies the Google API key.
-- `useVoice` starts a `SpeechRecognition` with `continuous=true, interimResults=true`.
-- Wake word detected in interim text via `stripWakePrefix` (`meta-commands.ts`). The invocation prefix is **mandatory** — `Eco` alone doesn't wake (too common in Spanish "el eco del valle"). Accepted: `hey|oye|oi|hola|ok|okey|okay|che|epa` + `eco|ekko|jarvis|héctor` (regex `h[eé]ctor` matches both accented and unaccented).
+- `useVoice` starts a `SpeechRecognition` with `continuous=true, interimResults=true` for the duration of the dictation.
 
 ### .dmg mode
 
@@ -533,7 +524,7 @@ Web Speech doesn't work (Chromium-Electron has no Google API key → start/end l
 8. Swift CLI: `SFSpeechURLRecognitionRequest`, `requiresOnDeviceRecognition = true`, `recognitionTask` callback that stops `CFRunLoop`.
 9. stdout → backend → `{ok:true, text}` → renderer → `onPhraseRef.current(text)`.
 
-Effective latency: ~700 ms after you stop talking. Pre-roll catches the attack of the wake; adaptive noise floor handles noisy rooms without calibration.
+Effective latency: ~700 ms after you stop talking. Pre-roll catches the attack of the phrase; adaptive noise floor handles noisy rooms without calibration. Dictation uses the long-form VAD tolerance (`isLongForm` always true).
 
 ### Gotchas
 
@@ -757,7 +748,6 @@ State persists per bubble in `eco.review.accepted.<bubbleId>` as `{[path]: times
 - **Image preview**: PNG/JPG/GIF/WEBP/SVG/ICO/BMP rendered inline via `GET /file/raw` (extension whitelist + **`RAW_MAX_SIZE` 5 MB** cap).
 - **Deep-link from Git → Changes**: each row has "Open in Files" → switches tab, expands ancestors, scrolls, opens.
 - **Open in IDE**: button "↗ VSCode/IntelliJ/Cursor/WebStorm" in the tabs toolbar opens the active file in the configured external IDE at the exact line of the cursor, via URI scheme (`vscode://file/<abs>:<line>:<col>`, `cursor://file/...`, `idea://open?file=...&line=...`). Setting at Settings → General → Editor externo (`auto` | `vscode` | `cursor` | `intellij` | `webstorm` | `none`). Helper in `frontend/src/lib/ide-uri.ts`. Bridge: `electronAPI.openExternal(url)` → `ipcMain.handle('eco:open-external')` → `shell.openExternal`. Browser fallback uses `window.open(uri, '_blank')` so the OS protocol handler triggers.
-- **Voice command**: `Eco archivos` opens this tab (aliases `explorador`, `arbol`, `files`).
 
 ### Debugger: por qué NO
 
@@ -993,7 +983,7 @@ List orphan branches: `git -C <repo> branch | grep eco/`
 
 ### OnboardingWizard
 
-`frontend/src/screens/OnboardingWizard.tsx` — modal with 9 linear steps:
+`frontend/src/screens/OnboardingWizard.tsx` — modal with 8 linear steps:
 
 1. Welcome
 2. Language
@@ -1002,59 +992,16 @@ List orphan branches: `git -C <repo> branch | grep eco/`
 5. GitHub (PAT optional)
 6. Workspace folder
 7. Obsidian vault (optional)
-8. Voice (autostart toggle)
-9. Done
+8. Done
 
-Back/Next nav, each step optional. `eco.onboarded=1` flag prevents re-showing. `eco.voice.autostart=0` persists the voice-off choice. Obsidian vault auto-detected when possible.
+Back/Next nav, each step optional. `eco.onboarded=1` flag prevents re-showing. Obsidian vault auto-detected when possible. (The old Voice step was removed along with the rest of the voice features.)
 
 ---
 
 <a id="metacommands"></a>
-## 16. Voice/text meta-commands
+## 16. Voice/text meta-commands — REMOVED
 
-Parser: `frontend/src/lib/meta-commands.ts`. Tolerates discourse filler (`me`, `por favor`, `necesito`, `che`, …), synonyms, conjugations, free word order.
-
-### Wake prefix
-
-A wake word + `Eco` (or `Jarvis`/`Ekko`/`Héctor`). `Eco` alone doesn't wake — too short, false positives in natural Spanish. The regex matches `h[eé]ctor` so both `Hector` and `Héctor` work. Accepted:
-
-- `Hey Eco …` · `Oye Eco …` · `Hola Eco …`
-- `Ok Eco …` · `Okey Eco …` · `Okay Eco …`
-- `Che Eco …` · `Epa Eco …` · `Oi Eco …`
-
-### Navigation
-
-| Command | Action |
-|---|---|
-| `Eco dashboard` / `Eco inicio` / `Eco atras` | Back to home |
-| `Eco ajustes` / `Eco archivos` / `Eco historial` | Switch section |
-| `Eco estado` | Overlay with all agents |
-| `Eco ayuda` | Command list |
-
-### Agents
-
-`Eco abrir <name>`, `Eco renombrar <name>`, `Eco cerrar`, `Eco ir <name>`, `Eco siguiente/anterior`, `Eco pausar/continuar`.
-
-### Inside a conversation
-
-| Command | Action |
-|---|---|
-| `Eco chat/terminal/git/plan/navegador/archivos/notas` | Switch tab |
-| `Eco historial/prs/cambios` | Git sub-tab. `Eco ramas` opens Git (branches live in the top-bar dropdown). |
-| `Eco scroll abajo/arriba/al final` | Scroll active pane |
-| `Eco repetir` | Re-read last message (TTS) |
-| `Eco si/no/acepta/cancela` | Confirmation dialogs |
-| `Eco iniciar/detener/reiniciar servidor` | Server actions (respects dual mode) |
-| `Eco activar/desactivar remote control` | Claude remote control |
-| `Eco guardar en obsidian` | Save the conversation as a .md note |
-
-### Voice routing inside a conversation
-
-- No wake, in **Chat** → prompt to the agent.
-- No wake, in **Terminal → Shell** → typed to the PTY with `\n`.
-- With wake (`Hey Eco …`) → meta command, tab-independent.
-
-Implementation: `App.tsx:handleMetaAction` dispatches each `MetaAction`. To add a command: new `MetaAction` kind + alias in `ALIASES` + case in `handleMetaAction` + i18n keys under `cmd.*`.
+The whole meta-command system (wake word + `Eco …` navigation/agent/tab/server/confirm/obsidian voice commands, `meta-commands.ts`, `handleMetaAction`, `parseMetaCommand`, `CommandFeedback`, the `StatusOverlay` "estado/ayuda" overlay) was **removed**. Do NOT reintroduce it (see the Removed table in §2). There is no wake word and no typed-command parser. The only voice that remains is **terminal dictation** — see §7.
 
 ---
 
@@ -1146,12 +1093,12 @@ If any fails, the PR is not ready.
 2. `cd backend && npx tsc --noEmit` → 0 errors
 3. `npm run check:i18n` → 0 hits
 4. `npm run web` boots; frontend loads; login works
-5. Voice in browser (Web Speech): click → listening animation → say "Eco terminal" → tab switches
+5. Terminal dictation in browser (Web Speech): open a bubble → "Hablar a la terminal" → speak → text appears in the `DictationBar` → "Enviar a terminal" → text lands in the PTY (not executed)
 6. ServerPanel single: `echo hola` → starts → idle (echo exits) → no crash
 7. ServerPanel dual: toggle on, valid commands → backend boots first, frontend follows with correct `API_PORT`
 8. Browser panel: navigate to `localhost:7100/health` → JSON → switch tab → return → no reload
 9. `npm run dmg` produces `.dmg` without errors; bundle contains `Resources/bin/eco-stt` and `Resources/mcp-server/dist/index.js`
-10. Installed .app launches; login works; voice works (with macOS Mic + Speech Recognition prompts first time)
+10. Installed .app launches; login works; terminal dictation works (with macOS Mic + Speech Recognition prompts first time). The mic does NOT start on its own — only when "Hablar a la terminal" is pressed.
 11. Dev server persistence: with a server running, kill backend → `~/.eco/dev-sessions.json` has the entry → relaunch backend → server appears as running
 12. Git tab: in a worktree-bubble, open Git → cycle the 3 sub-tabs (Changes/History/PRs) with no console errors. Cherry-pick a commit → green. Trigger cherry-pick with conflict → `OpInProgressBanner` appears → Abort → state clean. Reset hard requires typing `HARD RESET`. PRs sub-tab requires `gh` installed (`which gh` from terminal); without it, `pr.gh_missing` is the expected error.
 13. Language toggle: Settings → EN; cycle Dashboard / AgentDetail / Git / Server / Browser — no Spanish leftover. Back to ES — no English leftover.
@@ -1357,7 +1304,7 @@ To understand features without flailing:
 - **Persistent PTY**: `backend/src/pty-server.ts` (ring buffer + reattach)
 - **Own MCP tools**: `backend/src/agent-tools.ts` + `agent.ts`
 - **Commit with AI**: `backend/src/git-ops.ts:commitSuggest` (calls `claude -p`)
-- **Voice parser**: `frontend/src/lib/meta-commands.ts` — especially `ALIASES` and `parseMetaCommand`
+- **Terminal dictation**: `frontend/src/hooks/useVoice.ts` (STT capture) + `App.tsx:startTerminalDictation` + `pty-bridge.ts:writeToBubblePty`
 - **WS reconnect**: `frontend/src/hooks/useEcoSocket.ts` — backoff + activeBubbleId tracking
 - **Worktree manager**: `backend/src/worktree-manager.ts` — prune cron + auto-recovery on conflicts
 - **Dashboard graph**: `Dashboard.tsx` ~1190–1500 — SVG animations, particles, satellite pulses
@@ -1546,7 +1493,7 @@ La identidad SALE SIEMPRE de la sesión, NUNCA del cliente:
 - El **admin** define el/los comando(s) de dev server (single/dual) y las base branches favoritas **en Settings → Folders** por workspace. El **ServerPanel de cada burbuja es solo-consumo**: muestra el comando read-only y solo Iniciar/Detener/Reiniciar (el member no edita nada). El diálogo de nuevo agente lee las base branches del server config. Reemplazó el viejo localStorage `eco.dev.workspace_defaults.*` / `eco.worktree.favorites.*`.
 
 ### Gating de Settings por rol
-- Solo admin: secciones **Claude & API**, **Voice**, **Folders**, **Backup**; y en **General** los toggles "Escuchar al iniciar", "Escuchar al iniciar conversación", "Barra de menú" y la acción "Limpiar worktrees" (cosas de host/dispositivo). El member ve General (review/notify/dock/carpeta/atajo/idioma/IDE/sugerencias), GitHub, Seguridad, Apariencia, Integraciones, Acerca de. **History** está oculto del menú lateral para todos.
+- Solo admin: secciones **Claude & API**, **Folders**, **Backup**; y en **General** los toggles "Barra de menú" y la acción "Limpiar worktrees" (cosas de host/dispositivo). (La sección **Voice** y los toggles de "Escuchar al iniciar" se eliminaron junto con la voz.) El member ve General (review/notify/dock/carpeta/atajo/idioma/IDE/sugerencias), GitHub, Seguridad, Apariencia, Integraciones, Acerca de. **History** está oculto del menú lateral para todos.
 
 ### Consola de admin
 - `frontend/src/screens/AdminScreen.tsx` (gated en `AppSidebar` por `role==='admin'`): Usuarios (crear con nombre+rol → diálogo con código copiable; rol; workspaces; generar código de reseteo; habilitar/deshabilitar; borrar; badge pending/disabled) + Actividad (usuario → bubbles con dot de estado + badges PTY/DEV, `GET /admin/overview`). Hook: `useAdmin.ts`. **Sin inputs de PIN** en ningún lado.

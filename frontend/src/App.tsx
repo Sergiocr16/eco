@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider, useTokens } from './design/theme';
-import { apiFetch } from './lib/api';
 import { AppSidebar, type Screen } from './components/AppSidebar';
 import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
@@ -10,14 +9,11 @@ import { AdminScreen } from './screens/AdminScreen';
 import { FileExplorer } from './screens/FileExplorer';
 import { ArchivedScreen } from './screens/ArchivedScreen';
 import { useVoice } from './hooks/useVoice';
-import { useTTS } from './hooks/useTTS';
 import { useBubbles } from './hooks/useBubbles';
 import { usePtyBusyTracker } from './hooks/usePtyBusyNotifier';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
-import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } from './lib/meta-commands';
 import { emit as ecoEmit } from './lib/eco-bus';
-import { getVoiceTarget, writeVoiceToPty } from './lib/voice-router';
 import { writeToBubblePty } from './lib/pty-bridge';
 import { hydrateDocs } from './lib/user-sync';
 import { hydrateCategories } from './hooks/useCategories';
@@ -26,16 +22,13 @@ import { hydrateReviewAll } from './hooks/useReviewState';
 import { hydrateNotesAll } from './components/NotesPanel/types';
 import { hydrateWorkspaceConfig, getWorkspaceConfig } from './lib/workspace-config';
 import { setRole } from './lib/auth-role';
-import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
-import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
 import { AuthScreen, DriftingOrbs } from './screens/AuthScreen';
 import { OnboardingWizard, hasOnboarded } from './screens/OnboardingWizard';
 import { useAuth } from './hooks/useAuth';
 import { useBackupScheduler } from './hooks/useBackupScheduler';
-import { useTheme } from './design/theme';
 import { I18nProvider, useI18n, useT } from './hooks/useI18n';
-import type { Bubble, Message, VoiceState } from './lib/types';
+import type { Bubble, Message } from './lib/types';
 
 import { ecoBackend, ecoToken } from './lib/eco-config';
 import { getTopInset } from './lib/platform';
@@ -171,10 +164,6 @@ function SoloLockedScreen() {
 
 function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const t = useTokens();
-  const { setMode } = useTheme();
-  const { lang } = useI18n();
-  const [wakeActive, setWakeActive] = useState(false);
-  const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Dictado a la terminal: el botón de la cabecera de la burbuja enciende el
   // mic en modo dictado. Cada frase final se acumula en `dictationBuffer` (en
@@ -195,8 +184,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // acá, esta ventana NO renderiza su AgentDetail — su click va a enfocar la
   // ventana. La verdad la tiene el main process (sabe qué ventanas existen).
   const [detachedIds, setDetachedIds] = useState<Set<string>>(() => new Set());
-  const [feedback, setFeedback] = useState<FeedbackPayload | null>(null);
-  const [overlay, setOverlay] = useState<'status' | 'help' | null>(null);
   const [wsPickerForBubble, setWsPickerForBubble] = useState<string | null>(null);
   const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
   // Razón por la cual pedimos confirmación antes de cerrar — afecta el mensaje
@@ -270,19 +257,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     });
     return () => { if (off) off(); };
   }, []);
-  const tts = useTTS();
-  const lastSpokenRef = useRef<string | null>(null);
-
-  function flash(action: MetaAction) {
-    const f = describeAction(action, bubbles.bubbles, lang);
-    setFeedback({
-      id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      title: f.title,
-      detail: f.detail,
-      kind: action.kind === 'unknown' ? 'unknown' : 'ok',
-    });
-  }
-
   const socket = useEcoSocket({
     url: BACKEND,
     token: TOKEN,
@@ -308,274 +282,22 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         }
       },
       onInjectPrompt: () => { /* legacy WS path — backend ahora inyecta server-side vía injectPromptToBubble */ },
-      onVoiceTranscribed: (text) => handleIncomingVoiceText(text),
     },
   });
 
   function handleIncomingVoiceText(text: string) {
-    // Modo dictado a la terminal: todo lo dictado se acumula en el buffer y se
-    // muestra como burbuja arriba. No se rutea a chat/pty/meta.
-    if (dictationActiveRef.current) {
-      const clean = text.trim();
-      if (clean) setDictationBuffer((prev) => (prev ? `${prev} ${clean}` : clean));
-      return;
-    }
-
-    const { isMeta, rest } = stripWakePrefix(text);
-    const inBubble = screen === 'detail' && !!detailBubbleId;
-
-    // Caso 0: el sub-tab Shell del terminal pidió la voz para sí.
-    // Sólo desviamos voz "libre" (sin prefijo Eco) — los comandos meta siguen su flujo.
-    if (inBubble && !isMeta && getVoiceTarget() === 'pty') {
-      if (writeVoiceToPty(text + '\n')) {
-        clearWake();
-        return;
-      }
-    }
-
-    // Caso 1: dentro de una burbuja, sin prefijo Eco → input a la conversación
-    if (inBubble && !isMeta) {
-      sendTo(detailBubbleId!, text);
-      clearWake();
-      return;
-    }
-
-    // Caso 2: dentro de una burbuja con prefijo Eco → comando meta
-    // Caso 3: fuera de burbuja (dashboard/files/settings/history) → TODO es comando meta,
-    //         con o sin prefijo. Lo que digas se interpreta como navegación.
-    const command = isMeta ? rest : text;
-    const action = parseMetaCommand(command, bubbles.bubbles, detailBubbleId || bubbles.activeBubbleId, screen);
-    flash(action);
-    handleMetaAction(action);
-    // Comando resuelto (válido o unknown): apaga el indicador de wake si estaba activo.
-    clearWake();
-  }
-
-  function activateWake() {
-    setWakeActive(true);
-    if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current);
-    wakeTimerRef.current = setTimeout(() => {
-      setWakeActive(false);
-      wakeTimerRef.current = null;
-    }, 3000);
-  }
-
-  function clearWake() {
-    if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current);
-    wakeTimerRef.current = null;
-    setWakeActive(false);
-  }
-
-  useEffect(() => () => { if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current); }, []);
-
-  function handleMetaAction(action: MetaAction): void {
-    switch (action.kind) {
-      case 'goto_dashboard':
-        setScreen('dashboard'); setDetailBubbleId(null); return;
-      case 'goto_settings':
-        setScreen('settings'); setDetailBubbleId(null); return;
-      case 'goto_files':
-        setScreen('files'); setDetailBubbleId(null); return;
-      case 'goto_history':
-        setScreen('history'); setDetailBubbleId(null); return;
-      case 'goto_archived':
-        setScreen('archived'); setDetailBubbleId(null); return;
-      case 'create_bubble':
-      case 'open_or_create': {
-        const title = action.kind === 'open_or_create' ? action.title : action.title;
-        const fresh = bubbles.createBubble({ title, focus: true, baseBranch: defaultBaseBranchForWorkspace() });
-        handleOpenAgent(fresh.id);
-        return;
-      }
-      case 'rename_active': {
-        const target = detailBubbleId || bubbles.activeBubbleId;
-        if (target) bubbles.renameBubble(target, action.title);
-        return;
-      }
-      case 'close_active': {
-        const target = detailBubbleId || bubbles.activeBubbleId;
-        if (target) {
-          bubbles.removeBubble(target);
-          setDetailBubbleId(null);
-          setScreen('dashboard');
-        }
-        return;
-      }
-      case 'focus_bubble':
-        handleOpenAgent(action.bubbleId);
-        return;
-      case 'next_bubble':
-      case 'prev_bubble': {
-        const list = [...bubbles.bubbles].sort((a, b) => b.updatedAt - a.updatedAt);
-        if (list.length === 0) return;
-        const currentId = detailBubbleId || bubbles.activeBubbleId;
-        const idx = list.findIndex((b) => b.id === currentId);
-        const delta = action.kind === 'next_bubble' ? 1 : -1;
-        const next = list[(idx + delta + list.length) % list.length];
-        if (next) handleOpenAgent(next.id);
-        return;
-      }
-      case 'show_status':
-        setOverlay('status'); return;
-      case 'pause_active':
-      case 'resume_active': {
-        const target = detailBubbleId || bubbles.activeBubbleId;
-        if (target) {
-          bubbles.setBubbleStatus(target, action.kind === 'pause_active' ? 'paused' : 'idle');
-        }
-        return;
-      }
-      case 'toggle_voice':
-        tts.setEnabled(action.on); return;
-      case 'set_theme':
-        setMode(action.mode); return;
-      case 'scroll':
-        ecoEmit('eco:scroll', { dir: action.dir }); return;
-      case 'switch_tab':
-        // Comando de voz "Eco terminal/chat/..." → aplica a la burbuja
-        // del detalle activo.
-        ecoEmit('eco:switch_tab', { tab: action.tab, bubbleId: detailBubbleId ?? undefined }); return;
-      case 'switch_git_subtab':
-        // Comandos "Eco historial/ramas/stash/tags/cambios/prs" — navegan al
-        // tab Git y cambian la sub-pestaña. Emitimos ambos eventos para que
-        // tanto el AgentDetail (que ve el tab) como el GitPanel (sub) reaccionen.
-        ecoEmit('eco:switch_tab', { tab: 'git', bubbleId: detailBubbleId ?? undefined });
-        ecoEmit('eco:switch_git_subtab', { sub: action.sub, bubbleId: detailBubbleId ?? undefined });
-        return;
-      case 'confirm':
-        ecoEmit('eco:confirm', { answer: action.answer }); return;
-      case 'repeat_last': {
-        const focus = detailBubble ?? bubbles.activeBubble;
-        const last = focus?.messages.slice().reverse().find((m) => m.role === 'assistant' && m.text);
-        if (last) {
-          if (!tts.enabled) tts.setEnabled(true);
-          // Forzar nueva lectura aunque ya se haya leído
-          lastSpokenRef.current = null;
-          tts.speak(last.text);
-        }
-        return;
-      }
-      case 'tts_rate': {
-        const cur = tts.rate ?? 1;
-        const next = action.dir === 'faster' ? Math.min(2, cur + 0.2)
-                   : action.dir === 'slower' ? Math.max(0.5, cur - 0.2)
-                   : 1;
-        tts.setRate?.(next);
-        return;
-      }
-      case 'tts_volume': {
-        const cur = tts.volume ?? 1;
-        const next = action.dir === 'up' ? Math.min(1, cur + 0.15) : Math.max(0, cur - 0.15);
-        tts.setVolume?.(next);
-        return;
-      }
-      case 'server_action': {
-        const target = detailBubbleId || bubbles.activeBubbleId;
-        if (!target) return;
-        const targetBubble = bubbles.bubbles.find((b) => b.id === target);
-        if (!targetBubble) return;
-        const ws = targetBubble.workspace;
-        const dual = window.localStorage.getItem(`eco.dev.dual.${target}`) === '1';
-        const roles: Array<'main' | 'frontend' | 'backend'> = dual ? ['backend', 'frontend'] : ['main'];
-        const subAction = action.action;
-        const endpoint = subAction === 'start' ? '/dev/start'
-          : subAction === 'stop' ? '/dev/stop'
-          : '/dev/restart';
-        void (async () => {
-          for (const role of roles) {
-            const cmd = window.localStorage.getItem(`eco.dev.cmd.${target}.${role}`) ?? '';
-            try {
-              await apiFetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  workspace: ws, bubbleId: target, role,
-                  ...(subAction === 'start' && cmd ? { command: cmd } : {}),
-                }),
-              });
-            } catch { /* el error visible va al ServerPanel; acá solo disparamos */ }
-          }
-        })();
-        return;
-      }
-      case 'toggle_remote_control': {
-        const target = detailBubbleId || bubbles.activeBubbleId;
-        if (!target) return;
-        const targetBubble = bubbles.bubbles.find((b) => b.id === target);
-        if (!targetBubble) return;
-        // El toggle del remote control vive en localStorage (lo lee/escribe
-        // el botón del navbar). Disparamos el mismo CustomEvent que usa el
-        // botón para que se reconcilie el indicador del nodo en el dashboard.
-        const key = `eco.remote.${target}`;
-        if (action.on) {
-          // Slug por default = primera palabra del título — el botón lo computa
-          // mejor; acá ponemos un valor truthy y dejamos que el botón ajuste.
-          const slug = targetBubble.title.split(/\s+/)[0]?.toLowerCase() || 'agent';
-          window.localStorage.setItem(key, slug);
-          window.dispatchEvent(new CustomEvent('eco:remote-changed', { detail: { bubbleId: target, slug } }));
-        } else {
-          window.localStorage.removeItem(key);
-          window.dispatchEvent(new CustomEvent('eco:remote-changed', { detail: { bubbleId: target, slug: null } }));
-        }
-        return;
-      }
-      case 'save_to_obsidian': {
-        const target = detailBubbleId || bubbles.activeBubbleId;
-        if (!target) return;
-        const targetBubble = bubbles.bubbles.find((b) => b.id === target);
-        if (!targetBubble) return;
-        async function saveSession() {
-          try {
-            await apiFetch('/integrations/obsidian/save-session', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                bubbleId: targetBubble!.id,
-                title: targetBubble!.title,
-                workspace: targetBubble!.workspace,
-                createdAt: targetBubble!.createdAt,
-                updatedAt: targetBubble!.updatedAt,
-                messages: targetBubble!.messages.map((m) => ({
-                  role: m.role,
-                  text: m.text,
-                  createdAt: m.createdAt ?? Date.now(),
-                })),
-              }),
-            });
-          } catch { /* la UI muestra el flash de "guardando"; errores no críticos */ }
-        }
-        void saveSession();
-        return;
-      }
-      case 'browser_new_tab': {
-        // Voz "Eco nueva pestaña" / "Eco pestaña aislada" — switch a Browser
-        // + abre un tab del modo pedido en el agente activo.
-        const target = detailBubbleId ?? bubbles.activeBubbleId;
-        if (!target) return;
-        ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId: target });
-        ecoEmit('eco:browser:new_tab', { bubbleId: target, mode: action.mode });
-        return;
-      }
-      case 'browser_close_tab': {
-        const target = detailBubbleId ?? bubbles.activeBubbleId;
-        if (!target) return;
-        ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId: target });
-        ecoEmit('eco:browser:close_tab', { bubbleId: target });
-        return;
-      }
-      case 'help':
-        setOverlay('help'); return;
-      case 'unknown':
-      default:
-        return;
-    }
+    // El mic solo se enciende en modo dictado a la terminal: todo lo dictado se
+    // acumula en el buffer y se muestra como burbuja arriba para revisar antes
+    // de enviarlo al PTY.
+    if (!dictationActiveRef.current) return;
+    const clean = text.trim();
+    if (clean) setDictationBuffer((prev) => (prev ? `${prev} ${clean}` : clean));
   }
 
   const voice = useVoice({
     language: 'es-419',
     onPhrase: (text: string) => handleIncomingVoiceText(text),
-    onWakeDetected: () => activateWake(),
-    isLongForm: () => dictationActiveRef.current,
+    isLongForm: () => true,
   });
 
   // ─── Auto-lock por inactividad ──────────────────────────────────────────
@@ -630,39 +352,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     };
   }, []);
 
-  // Modo siempre escuchando: arranca automático si el user ya dio permiso
-  const autoStartedRef = useRef(false);
-  useEffect(() => {
-    if (autoStartedRef.current) return;
-    if (voice.state !== 'off') return;
-    if (!voice.isSupported) return;
-    const prefersAutoListen = window.localStorage?.getItem('eco.voice.autostart') !== '0';
-    if (!prefersAutoListen) return;
-    autoStartedRef.current = true;
-    // start() solicitará permiso; si el user lo deniega, queda en 'off'
-    voice.start();
-  }, [voice]);
-
-  // Setting de la voz aplicado al ENTRAR a una conversación (cambio de
-  // bubble o llegada al detail). El setting es BIDIRECCIONAL:
-  //   ON  → si la voz está apagada, la prende.
-  //   OFF → si la voz está escuchando, la apaga (evita que el autostart
-  //         de boot deje el mic prendido al entrar a una conversación).
-  // El effect SOLO depende de `detailBubbleId` para no re-aplicar en cada
-  // toggle manual del mic — una vez dentro de la conversación, el user
-  // mantiene control con el botón de mic.
-  useEffect(() => {
-    if (!detailBubbleId) return;
-    if (!voice.isSupported) return;
-    const prefersPerConversation = window.localStorage?.getItem('eco.voice.autostart_per_conversation') === '1';
-    if (prefersPerConversation) {
-      if (voice.state === 'off') voice.start();
-    } else {
-      if (voice.state === 'listening') voice.stop();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailBubbleId]);
-
   function sendTo(bubbleId: string, text: string) {
     const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
     if (!bubble) return;
@@ -676,35 +365,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       resumeSessionId: bubble.sessionId,
     });
   }
-
-  const detailBubble: Bubble | null = detailBubbleId
-    ? bubbles.bubbles.find((b) => b.id === detailBubbleId) ?? null
-    : null;
-
-  // TTS automático del último mensaje del assistant cuando termina
-  useEffect(() => {
-    if (!tts.enabled) return;
-    const focusBubble = detailBubble ?? bubbles.activeBubble;
-    if (!focusBubble) return;
-    if (focusBubble.status !== 'idle') return;
-    const last = focusBubble.messages[focusBubble.messages.length - 1];
-    if (!last || last.role !== 'assistant' || !last.text) return;
-    const key = `${focusBubble.id}:${last.id}`;
-    if (lastSpokenRef.current === key) return;
-    lastSpokenRef.current = key;
-    tts.speak(last.text);
-  }, [detailBubble, bubbles.activeBubble, tts]);
-
-  // Voice state derivado para el orbe
-  const focusBubble = detailBubble ?? bubbles.activeBubble;
-  const voiceStateForOrb: VoiceState = (() => {
-    if (voice.state === 'listening' && voice.interimText) return 'listening';
-    if (focusBubble?.status === 'executing') return 'executing';
-    if (focusBubble?.status === 'thinking') return 'thinking';
-    if (tts.speaking) return 'speaking';
-    if (voice.state === 'listening') return 'listening';
-    return 'idle';
-  })();
 
   function handleScreenChange(s: Screen) {
     // NO limpiamos detailBubbleId al cambiar de screen — la AgentDetail se
@@ -727,13 +387,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     setVisitedBubbleIds((prev) => prev.includes(id) ? prev : [...prev, id]);
     bubbles.focusBubble(id);
     setScreen('detail');
-    // Solo arrancamos el mic al entrar si el user no lo apagó explícitamente.
-    // El toggle manual del Dashboard persiste su preferencia en localStorage,
-    // así que respetamos esa decisión al cambiar de pantalla.
-    const wantsAutoListen = window.localStorage?.getItem('eco.voice.autostart') !== '0';
-    if (wantsAutoListen && voice.isSupported && voice.state === 'off' && !voice.error) {
-      voice.start();
-    }
   }
 
   function handleBackFromDetail() {
@@ -804,20 +457,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     if (detailBubbleId === id) {
       setDetailBubbleId(null);
       handleBackFromDetail();
-    }
-  }
-
-  function handleMicToggle() {
-    if (voice.state === 'off' || voice.state === 'unsupported') {
-      voice.start();
-      // El user explícitamente quiere escuchar — persistimos la preferencia.
-      try { window.localStorage.setItem('eco.voice.autostart', '1'); } catch { /* noop */ }
-    } else {
-      voice.stop();
-      // El user explícitamente apagó el mic — recordamos la preferencia
-      // para no re-encenderlo automáticamente al abrir burbujas o volver al
-      // dashboard. Hasta que el user vuelva a apretar Play.
-      try { window.localStorage.setItem('eco.voice.autostart', '0'); } catch { /* noop */ }
     }
   }
 
@@ -1003,9 +642,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                         }}
                         onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(b.id, ws)}
                         onToggleCategory={(catId) => bubbles.toggleBubbleCategory(b.id, catId)}
-                        onMicToggle={handleMicToggle}
-                        listening={dictationActive ? false : voice.state === 'listening'}
-                        voiceInterim={dictationActive ? '' : voice.interimText}
                         dictationActive={dictationActive && dictationBubbleIdRef.current === b.id}
                         dictationText={dictationActive && dictationBubbleIdRef.current === b.id ? (dictationBuffer + (voice.interimText ? ` ${voice.interimText}` : '')).trim() : ''}
                         onStartDictation={() => startTerminalDictation(b.id)}
@@ -1038,13 +674,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                     activeBubbleId={bubbles.activeBubbleId}
                     role={auth.state.role}
                     userId={auth.state.userId}
-                    voiceState={voiceStateForOrb}
-                    listening={voice.state === 'listening'}
-                    wakeActive={wakeActive}
-                    interimText={voice.interimText}
-                    voiceError={voice.error}
                     onSend={handleDashboardSend}
-                    onMicToggle={handleMicToggle}
                     onOpenAgent={handleOpenAgent}
                     onCreateAgent={handleCreateAgent}
                     onFocus={(id) => bubbles.focusBubble(id)}
@@ -1063,14 +693,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         reason={confirmCloseReason}
         onCancel={() => setConfirmCloseId(null)}
         onConfirm={confirmCloseNow}
-      />
-      <CommandFeedback payload={feedback}/>
-      <StatusOverlay
-        open={overlay !== null}
-        view={overlay}
-        bubbles={bubbles.bubbles}
-        onClose={() => setOverlay(null)}
-        onSelect={(id) => { setOverlay(null); handleOpenAgent(id); }}
       />
       <WorkspacePicker
         open={wsPickerForBubble !== null}

@@ -1,24 +1,20 @@
 # Eco
 
-Local-first personal assistant for macOS Apple Silicon. Voice, files, code, git, and an embedded browser — 100% local. Distributed as a native `.dmg` (~112 MB) via Electron 33.
+Local-first personal assistant for macOS Apple Silicon. Parallel Claude agents, terminal, files, code, git, and an embedded browser — 100% local. Distributed as a native `.dmg` (~112 MB) via Electron 33.
 
 ```
         ┌───────────────────────────────────────┐
         │                                       │
-        │   Eco is always listening:            │
+        │   Each conversation is a "bubble":    │
         │                                       │
-        │     "Hey Eco abrí Aditum"             │
-        │     "Hey Eco terminal"                │
-        │     "Hey Eco al final"                │
-        │     "Hey Eco repetí"                  │
+        │     · isolated git worktree           │
+        │     · real terminal (PTY)             │
+        │     · file editor + dev server        │
+        │     · embedded browser                │
         │                                       │
-        │   Inside a conversation,              │
-        │   no "Eco" prefix = message to the    │
-        │   Claude agent.                       │
-        │                                       │
-        │   In the Shell tab, what you say      │
-        │   is typed directly into the          │
-        │   terminal.                           │
+        │   Optional: dictate to the terminal   │
+        │   with the "Hablar a la terminal"     │
+        │   button (on-device STT).             │
         │                                       │
         └───────────────────────────────────────┘
 ```
@@ -34,7 +30,7 @@ Local-first personal assistant for macOS Apple Silicon. Voice, files, code, git,
 5. [Build the .dmg](#build)
 6. [Project structure](#structure)
 7. [Feature tour](#tour)
-8. [Voice commands cheatsheet](#voice)
+8. [Terminal dictation](#voice)
 9. [Skills](#skills)
 10. [Privacy & security](#privacy)
 11. [Tech stack](#stack)
@@ -46,7 +42,7 @@ Local-first personal assistant for macOS Apple Silicon. Voice, files, code, git,
 <a id="what-is-eco"></a>
 ## 1. What is Eco
 
-Eco is a Claude Code SDK orchestrator. Each conversation is a self-contained **"bubble"** with its own session, isolated git **worktree**, real terminal (PTY), file editor, dev server with auto-port, embedded Chromium browser with its own partition, and Claude-summarized notes. Voice is always on with a dispatcher by prefix — `Eco <command>` runs a system action; without the prefix the text goes to the active agent (or to the PTY if you're on the Shell tab).
+Eco is a Claude Code SDK orchestrator. Each conversation is a self-contained **"bubble"** with its own session, isolated git **worktree**, real terminal (PTY), file editor, dev server with auto-port, embedded Chromium browser with its own partition, and Claude-summarized notes. The only voice feature is **terminal dictation**: press "Hablar a la terminal" inside a bubble to dictate text into the PTY (on-device STT, you review before running).
 
 When you work on a git repo, each bubble auto-creates a worktree at `~/.eco/worktrees/<bubbleId>` on its own `eco/<short>` branch (base branch chosen at creation, with per-workspace favourites). Two bubbles on the same repo never collide — separate dev server ports (race-free auto-assignment), isolated browser session, separate terminal. Closing the bubble wipes the worktree; the branch survives in the parent repo for review or merge.
 
@@ -58,7 +54,7 @@ Switching between bubbles A → B → A reloads nothing — each open bubble kee
 ## 2. Highlights
 
 - **Bubbles + worktrees** — every conversation gets an isolated git worktree, PTY, and dev server. Branch lives in the parent repo after close.
-- **Voice always on** — wake-prefix dispatcher tolerant to fillers, conjugations, free word order. On-device STT in the packaged .app (Apple Speech), Web Speech in the browser.
+- **Terminal dictation** — optional "Hablar a la terminal" button dictates into the PTY. On-device STT in the packaged .app (Apple Speech), Web Speech in the browser. The mic only runs while you're dictating. (No wake word, no voice commands, no TTS — those were removed.)
 - **Cursor-style review** — agent edits freely; you review diffs after with amber/green dots, accept/revert by hunk or by file. Opt-in toggle.
 - **Diff viewer with merge view** — full file shown side-by-side with diffs highlighted (powered by `@codemirror/merge`), sync scroll, collapse unchanged regions on/off, per-chunk navigation + Accept/Reject in review mode.
 - **FilesPanel** — mini-VS-Code per bubble: lazy gitignore-aware tree, CodeMirror 6 editor, `Cmd+P` Quick Open, `Cmd+Shift+F` global search, save with conflict detection, image preview, **"↗ IDE" button** to open the current file at the exact line in VSCode / IntelliJ / WebStorm / Cursor (configurable). Eco has no built-in debugger — set breakpoints in the external IDE.
@@ -69,7 +65,7 @@ Switching between bubbles A → B → A reloads nothing — each open bubble kee
 - **Browser per agent** — real Chromium `<webview>` with persisted cookies (per-bubble partition), DevTools, persisted zoom and URL.
 - **Git tab** — GitHub Desktop-style layout: top bar with branch dropdown + sync, sub-tabs Changes / History / PRs. Cherry-pick, revert, hard-reset with safety prompt, op-in-progress banner with Continue/Abort.
 - **Obsidian integration** — save the current conversation as a `.md` note in your vault.
-- **Onboarding wizard** — 9-step setup on first run (language, theme, Claude auth, GitHub, workspace, Obsidian, voice).
+- **Onboarding wizard** — 8-step setup on first run (language, theme, Claude auth, GitHub, workspace, Obsidian).
 - **Bilingual** — Spanish ⇄ English UI. Detects system language; switch from Settings. Backend errors come with stable codes; the frontend translates.
 - **Multi-user (admin / member)** — one shared backend, per-user storage. The admin creates users with a **one-time activation code** (no admin-set PINs); the user sets their own PIN. Per-user GitHub identity, per-user workspace grants, enable/disable, PIN reset via a fresh code. argon2id in `~/.eco/users/<id>/user.json` (chmod 600). The owner admin keeps a BIP39 recovery phrase.
 - **Cross-device state** — each user's bubbles, conversations, categories, notes, review state and theme live on the host (server-authoritative doc store) and sync live across their devices over WebSocket. Log in from any machine and find your work.
@@ -87,8 +83,7 @@ Switching between bubbles A → B → A reloads nothing — each open bubble kee
 - **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated (`claude login` or an API key saved from Settings).
 - **git**.
 - **`gh` (GitHub CLI)** — required for the **PRs sub-tab** of the Git panel. Without `gh` installed, the Branches/History sub-tabs work fine but `PRs` shows `pr.gh_missing`. Install with `brew install gh`. The GitHub PAT you save in Settings is injected as `GH_TOKEN` into `gh` calls — it does NOT replace the `gh` binary itself.
-- Optional: **Python 3.10+** if you want the browser-dev wake-word listener. Not needed for the packaged .app.
-- Optional: **Xcode Command Line Tools** if you need to rebuild the Swift voice CLI.
+- Optional: **Xcode Command Line Tools** if you need to rebuild the Swift dictation CLI (`eco-stt`).
 
 ---
 
@@ -114,11 +109,6 @@ npm run dev:app
 
 # 5) First run → register a local account (PIN + recovery phrase + optional photo).
 #    The recovery phrase is shown BEFORE you enter the app; copy it to a safe place.
-
-# 6) (Optional, dev only) Python wake-word listener for browser dev.
-#    Not needed in the .dmg — voice goes through Apple Speech on-device there.
-npm run listener:setup    # first time only
-npm run listener
 ```
 
 > **macOS AirPlay Receiver owns port 7000.** Eco's dev backend uses `:7050`. To free 7000, turn off AirPlay Receiver in *Settings → General → AirDrop & Handoff*. Override at any time with `ECO_PORT=<n>`.
@@ -138,7 +128,7 @@ npm run dmg
 
 The `.dmg` is unsigned (`identity: null`) — fine for personal use. To distribute, add Apple Developer ID code signing + notarization.
 
-If you modified the Swift voice CLI, run `./electron/native/build.sh` first.
+If you modified the Swift dictation CLI (`eco-stt`), run `./electron/native/build.sh` first.
 
 For the full reinstall recipe (kill running app, delete previous install, copy with `ditto`, strip quarantine, optional cache wipe), see [CLAUDE.md Appendix B](./CLAUDE.md#debug).
 
@@ -155,8 +145,7 @@ eco/
 │
 ├── backend/                 ← Node + Express + Claude SDK + node-pty
 ├── frontend/                ← Vite + React + TS + Motion + Tailwind v4
-├── electron/                ← Electron 33 wrapper + Swift voice CLI
-├── listener/                ← Python sidecar (optional, browser-dev wake word)
+├── electron/                ← Electron 33 wrapper + Swift dictation CLI (eco-stt)
 ├── scripts/                 ← check-i18n.mjs and other tooling
 └── release/                 ← electron-builder output (gitignored)
 ```
@@ -174,7 +163,7 @@ Every conversation is a bubble. When you create one in a git workspace, a worktr
 
 ### Terminal (PTY)
 
-Real `zsh` PTY per bubble (via `node-pty`), with `claude` auto-launched on open (configurable). Survives leaving the bubble — reconnect with a 128 KB replay buffer. On the Shell sub-tab, voice without a wake prefix is typed directly into the terminal.
+Real `zsh` PTY per bubble (via `node-pty`), with `claude` auto-launched on open (configurable). Survives leaving the bubble — reconnect with a 128 KB replay buffer. The "Hablar a la terminal" button lets you dictate text into the terminal (you review before running).
 
 ### FilesPanel
 
@@ -204,9 +193,9 @@ The **Server** tab manages gulp / Vite / Spring Boot / etc. inside the worktree.
 
 Real Chromium `<webview>` (Electron) or `<iframe>` (web dev). Per-bubble cookies via partition; persisted URL + zoom. DevTools available via right-click → Inspect. Auto-navigates to the dev server URL when it goes `running`.
 
-### Voice
+### Terminal dictation
 
-Always on. The wake prefix is mandatory (`Eco` alone is too common in natural Spanish), but tolerant: `Hey Eco`, `Oye Eco`, `Hola Eco`, `Ok Eco`, `Che Eco`, etc. Parser accepts fillers, conjugations, and free word order. In the `.dmg`, voice runs **on-device** through Apple Speech via a tiny Swift CLI — audio never leaves the Mac. In browser dev, it uses Web Speech API; the Python listener with wake word + Whisper is also available as an option.
+The only voice feature. Inside a bubble, the "Hablar a la terminal" button turns the mic on; what you say is transcribed and accumulated in a bar above the panels. "Enviar a terminal" writes it into the main PTY **without pressing Enter**, so you review before running. The mic only runs while you're dictating. In the `.dmg`, STT runs **on-device** through Apple Speech via a tiny Swift CLI (`eco-stt`) — audio never leaves the Mac. In browser dev it uses the Web Speech API.
 
 ### Archiving
 
@@ -214,7 +203,7 @@ When a bubble is no longer active but you don't want to lose its state, archive 
 
 ### Dashboard
 
-Three views: **Grid** (Liquid Glass cards), **Kanban** (by state: Active / Waiting / Inactive / Shell open / Done / Error), **Graph** (nodes floating around the Eco hub with data particles when an agent is running/thinking/executing). The right rail shows the listening waveform, the connected Claude CLI, and quick stats.
+Three views: **Grid** (Liquid Glass cards), **Kanban** (by state: Active / Waiting / Inactive / Shell open / Done / Error), **Graph** (nodes floating around the Eco hub with data particles when an agent is running/thinking/executing). The right rail shows recent agents, active folders, and quick stats.
 
 ### Dock (opt-in)
 
@@ -222,7 +211,7 @@ macOS-style dock of bubbles in the left sidebar with single-target hover magnifi
 
 ### Onboarding
 
-First launch shows a 9-step wizard: welcome, language, appearance (theme + accent), Claude auth (CLI or API key), GitHub PAT (optional), workspace folder, Obsidian vault (optional), voice autostart, done. Skippable per step. The `eco.onboarded` flag prevents re-showing.
+First launch shows an 8-step wizard: welcome, language, appearance (theme + accent), Claude auth (CLI or API key), GitHub PAT (optional), workspace folder, Obsidian vault (optional), done. Skippable per step. The `eco.onboarded` flag prevents re-showing.
 
 ### Multi-user & remote team access
 
@@ -233,28 +222,18 @@ Run `npm run serve:web` to expose Eco to your **Tailscale** tailnet over HTTPS. 
 ---
 
 <a id="voice"></a>
-## 8. Voice commands cheatsheet
+## 8. Terminal dictation
 
-Wake prefix is mandatory. Accepted: `Hey | Oye | Hola | Ok | Okey | Okay | Che | Epa | Oi` + `Eco | Jarvis | Ekko | Hector`.
+The only voice feature left in Eco. Voice commands, the wake word, and TTS were removed.
 
-| Domain | Sample commands |
-|---|---|
-| Navigation | `Eco dashboard`, `Eco inicio`, `Eco atras`, `Eco ajustes`, `Eco archivos`, `Eco historial`, `Eco estado`, `Eco ayuda` |
-| Agents | `Eco abrir <name>`, `Eco renombrar <name>`, `Eco cerrar`, `Eco ir <name>`, `Eco siguiente`, `Eco anterior`, `Eco pausar`, `Eco continuar` |
-| Tabs | `Eco chat`, `Eco terminal`, `Eco git`, `Eco plan`, `Eco navegador`, `Eco archivos`, `Eco notas` |
-| Git sub-tabs | `Eco cambios`, `Eco historial`, `Eco prs` |
-| Scrolling | `Eco scroll abajo`, `Eco scroll arriba`, `Eco al final` |
-| Dialogs | `Eco si`, `Eco no`, `Eco acepta`, `Eco cancela` |
-| Server | `Eco iniciar servidor`, `Eco detener servidor`, `Eco reiniciar servidor` |
-| Misc | `Eco repetir`, `Eco silencio`, `Eco hablar`, `Eco rapido`, `Eco lento`, `Eco oscuro`, `Eco claro`, `Eco guardar en obsidian` |
+1. Open a bubble.
+2. Press **"Hablar a la terminal"** in the header. macOS asks for Microphone + Speech Recognition the first time (in the `.dmg`).
+3. Speak. The transcription accumulates in the **DictationBar** above the panels.
+4. **"Enviar a terminal"** writes the text into the main PTY (no Enter — you review before running). **"Limpiar"** clears the buffer, **"Cancelar"** stops dictation.
 
-The full alias table and parser rules live in `frontend/src/lib/meta-commands.ts`.
+In the `.dmg`, STT runs on-device via Apple Speech (`eco-stt`); in browser dev it uses the Web Speech API. The mic is off until you press the button.
 
-### Voice routing inside a bubble
-
-- No wake, in **Chat** → message to the agent.
-- No wake, in **Terminal → Shell** → typed straight to the PTY with `\n`.
-- With wake (`Hey Eco …`) → meta command, tab-independent.
+Implementation: `frontend/src/hooks/useVoice.ts` (capture) → `App.tsx:startTerminalDictation` / `sendDictationToTerminal` → `lib/pty-bridge.ts:writeToBubblePty`.
 
 ---
 
@@ -275,7 +254,7 @@ The **Skills** picker next to the Plan tab shows the count and lets you click a 
 <a id="privacy"></a>
 ## 10. Privacy & security
 
-- **Audio never leaves your machine.** STT is on-device (Apple Speech in the `.dmg`, or `openwakeword` + `faster-whisper` locally in browser dev). TTS is Piper or `macOS say` — both local.
+- **Audio never leaves your machine.** Terminal dictation STT is on-device (Apple Speech in the `.dmg`, Web Speech in browser dev). The mic only runs while you're actively dictating.
 - **All state on disk is `chmod 600`**: `~/.eco/token`, `~/.eco/users/<id>/{user.json,github.json,docs/*}`, `~/.eco/api-key`, `~/.eco/workspace-config.json`, `~/.eco/dev-sessions.<port>.json`.
 - **No telemetry.** The only external calls are the Anthropic API (when the active agent needs it) and a one-shot validation when you save your API key or a GitHub PAT.
 - **Local auth**: PIN (argon2id) per user. Members activate via a one-time code and set their own PIN — the admin never sees PINs. The owner admin keeps a BIP39 recovery phrase. No external auth server.
@@ -297,9 +276,7 @@ Run the security suite with `npm run test:security`.
 | Frontend | Vite 6, React 18, TS 5, Tailwind v4, Motion 11, Radix UI |
 | Embedded browser | Chromium `<webview>` with UA Chrome 131 + persisted partition |
 | Terminal | xterm.js + addon-fit + addon-web-links + node-pty (real PTY) |
-| Voice STT (.dmg) | Swift CLI + Apple `SFSpeechRecognizer` on-device · PCM capture via Web Audio API → WAV PCM16 |
-| Voice STT (dev, optional) | openwakeword (ONNX local) + faster-whisper (CTranslate2, `medium`) — Python sidecar |
-| Voice TTS | Piper (ONNX local) + macOS `say` with Premium/Enhanced voices |
+| Terminal dictation | Swift CLI (`eco-stt`) + Apple `SFSpeechRecognizer` on-device · PCM capture via Web Audio API → WAV PCM16 (.dmg) · Web Speech API (browser) |
 | Editor | CodeMirror 6 with lazy `@codemirror/language-data` packs |
 | Backend | Node 20, Express 4, ws, node-pty, Zod, @node-rs/argon2, bip39, Claude Agent SDK |
 | i18n | Custom TS dictionary, bilingual ES/EN, no external lib |
@@ -323,9 +300,7 @@ Run the security suite with `npm run test:security`.
 - Branch picker (list / checkout / pull / fetch / rename) + Commit with AI (preview editable)
 - Side-by-side diff (GitHub style) + search
 - Cursor-style post-edit review (opt-in setting)
-- Always-on voice with tolerant dispatcher; voice → PTY in Shell tab; TTS with rate/volume
-- Local wake word with openwakeword + Whisper + custom "Hey Eco" training pipeline (browser dev)
-- **Native voice in the `.dmg`** — Swift CLI `eco-stt` + Apple `SFSpeechRecognizer` on-device. Audio never leaves the Mac.
+- **Terminal dictation** — "Hablar a la terminal" button → on-device STT (Swift CLI `eco-stt` + Apple `SFSpeechRecognizer` in the `.dmg`, Web Speech in browser) → review → write to PTY. Audio never leaves the Mac. (Wake word, voice commands and TTS were removed.)
 - Local auth with PIN + BIP39 phrase, lock screen, delete user, profile photo
 - Anthropic API key local storage with validation
 - Bilingual ES/EN end-to-end (UI + backend error codes)
@@ -334,7 +309,6 @@ Run the security suite with `npm run test:security`.
 - macOS-style dock with single-target hover magnification (opt-in)
 - Per-agent browser (`BrowserPanel`) with DevTools, persisted zoom, persistent webview
 - Per-agent dev server (`ServerPanel`) with dual mode, auto-port, workspace presets, on-disk persistence + pgid re-adopt
-- TTS dual backend: Piper (offline) + macOS `say` with Premium/Enhanced voices
 - **Bundle compaction** — `.dmg` 148 → 112 MB; installed app 401 → 296 MB; `backend/node_modules` 165 → 50 MB (multi-arch filters, arm64-only, dead-dep removal)
 - **Live dev logs via WS push** (`dev_log` batched every 80 ms) — no more polling
 - Animations paused when window hidden (`document.visibilityState`); polling pauses too
@@ -346,19 +320,18 @@ Run the security suite with `npm run test:security`.
 - **Archiving** of bubbles (keeps worktree + branch, kills PTY/servers)
 - **GitHub PAT** support with validation + masked storage + env injection (`GH_TOKEN`, `GIT_AUTHOR_*`)
 - **GitBusyToast** + improved file change detection (`gitCapture` helper)
-- **OnboardingWizard** — 9-step setup on first run
+- **OnboardingWizard** — 8-step setup on first run
 - **Multi-tenant** — admin/member roles, per-user storage, per-user GitHub identity + workspace grants, admin console + team graph
 - **User activation by one-time code** — admin creates users without a PIN; the user sets their own PIN via a claim token; enable/disable; PIN reset = new code; admin never handles PINs
 - **Server-authoritative cross-device state** — per-user doc store (bubbles+messages, categories, notes, review, theme) synced live over WebSocket; log in anywhere and find your work
 - **Server mode (remote web via Tailscale)** — `npm run serve:web` serves the built app over HTTPS on the tailnet; dev-server previews exposed per-port; thin clients (browser/iPad) connect with token + PIN
 - **Admin-defined server config + base branches per workspace** — set once by the admin in Settings → Folders; the ServerPanel becomes start/stop-only for everyone
-- **Role-gated Settings** — host/device options (Claude & API, Voice, Folders, Backup, listen-on-boot, menu bar, clean worktrees) are admin-only
+- **Role-gated Settings** — host/device options (Claude & API, Folders, Backup, menu bar, clean worktrees) are admin-only
 
 ### Pending
 
 - Code signing + Apple notarization for distributable `.dmg`
-- Wake-word detection inside the `.dmg` (today Apple Speech transcribes everything and the JS parser detects the prefix — works but isn't the most efficient)
-- Windows / Linux packaging (currently arm64-darwin only; would require porting `eco-stt` Swift to an alternative per OS)
+- Windows / Linux packaging (currently arm64-darwin only; would require porting the `eco-stt` Swift dictation CLI to an alternative per OS)
 - Long-form chat history with pagination / lazy load (today: 100 messages per bubble in localStorage, 300 in memory)
 - Auto-update via `electron-updater` + S3/GitHub Releases
 - License gating with Paddle / LemonSqueezy (when it goes to sale)
@@ -371,4 +344,4 @@ Run the security suite with `npm run test:security`.
 
 Private — not for distribution.
 
-Initial design bundle generated at [claude.ai/design](https://claude.ai/design). Logo and brand assets in `frontend/public/brand/`. Wake-word training based on [openwakeword](https://github.com/dscripka/openWakeWord) + [piper-tts](https://github.com/rhasspy/piper). Interactive terminal via [node-pty](https://github.com/microsoft/node-pty) + [xterm.js](https://xtermjs.org/). Editor via [CodeMirror 6](https://codemirror.net/).
+Initial design bundle generated at [claude.ai/design](https://claude.ai/design). Logo and brand assets in `frontend/public/brand/`. Interactive terminal via [node-pty](https://github.com/microsoft/node-pty) + [xterm.js](https://xtermjs.org/). Editor via [CodeMirror 6](https://codemirror.net/).

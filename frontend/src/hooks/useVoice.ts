@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { translate, loadLang } from '@/lib/i18n';
-import { stripWakePrefix } from '@/lib/meta-commands';
 
 declare global {
   interface Window {
@@ -72,17 +71,15 @@ export type VoiceHookResult = {
 
 type Options = {
   language?: string;
-  /** Se llama con cada frase final del reconocedor. El consumidor decide si es comando meta o input a la burbuja. */
+  /** Se llama con cada frase final del reconocedor (dictado a la terminal). */
   onPhrase: (text: string) => void;
-  /** Se llama cuando el interim detecta el wake prefix "Eco/Hey Eco/..." — feedback temprano antes del final. */
-  onWakeDetected?: () => void;
   /** Modo dictado: tolera pausas más largas y frases más largas para no cortar a mitad de oración. */
   isLongForm?: () => boolean;
 };
 
 const MIN_PHRASE_CHARS = 2;
 
-export function useVoice({ language = 'es-419', onPhrase, onWakeDetected, isLongForm }: Options): VoiceHookResult {
+export function useVoice({ language = 'es-419', onPhrase, isLongForm }: Options): VoiceHookResult {
   const [state, setState] = useState<VoiceState>('off');
   const [interimText, setInterimText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -91,12 +88,8 @@ export function useVoice({ language = 'es-419', onPhrase, onWakeDetected, isLong
   const wantedRef = useRef(false);
   const onPhraseRef = useRef(onPhrase);
   useEffect(() => { onPhraseRef.current = onPhrase; }, [onPhrase]);
-  const onWakeDetectedRef = useRef(onWakeDetected);
-  useEffect(() => { onWakeDetectedRef.current = onWakeDetected; }, [onWakeDetected]);
   const isLongFormRef = useRef(isLongForm);
   useEffect(() => { isLongFormRef.current = isLongForm; }, [isLongForm]);
-  // Para no disparar el wake repetido durante el mismo interim
-  const wakeFiredRef = useRef(false);
 
   // En Electron empaquetado, Web Speech API no funciona (sin API key de
   // Google Speech). Usamos un pipeline propio: MediaRecorder captura chunks
@@ -149,25 +142,13 @@ export function useVoice({ language = 'es-419', onPhrase, onWakeDetected, isLong
       }
 
       setError(null);
-      const trimmedInterim = interim.trim();
-      setInterimText(trimmedInterim);
-
-      // Feedback temprano: dispara una sola vez por ciclo cuando el interim arranca con el wake prefix.
-      if (trimmedInterim && !wakeFiredRef.current) {
-        if (stripWakePrefix(trimmedInterim).isMeta) {
-          wakeFiredRef.current = true;
-          try { onWakeDetectedRef.current?.(); } catch (e) { console.error('onWakeDetected error', e); }
-        }
-      }
+      setInterimText(interim.trim());
 
       for (const phrase of finals) {
         try { onPhraseRef.current(phrase); } catch (e) { console.error('onPhrase error', e); }
       }
 
-      if (finals.length > 0) {
-        setInterimText('');
-        wakeFiredRef.current = false;
-      }
+      if (finals.length > 0) setInterimText('');
     };
 
     r.onerror = (e) => {
