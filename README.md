@@ -205,6 +205,8 @@ When a bubble is no longer active but you don't want to lose its state, archive 
 
 Three views: **Grid** (Liquid Glass cards), **Kanban** (by state: Active / Waiting / Inactive / Shell open / Done / Error), **Graph** (nodes floating around the Eco hub with data particles when an agent is running/thinking/executing). The right rail shows recent agents, active folders, and quick stats.
 
+**Admin "all users" mode**: an admin sees a **My agents / All users** toggle (members don't). In "All users" the three views switch to the whole team's agents — Grid groups them by owner, Kanban tags each card with its owner, Graph clusters by user — each showing status, workspace and live indicators so the admin can tell who is working on what. Other users' agents are read-only (no navigation into someone else's worktree).
+
 ### Dock (opt-in)
 
 macOS-style dock of bubbles in the left sidebar with single-target hover magnification and an accent bar on the side when there's activity.
@@ -218,6 +220,8 @@ First launch shows an 8-step wizard: welcome, language, appearance (theme + acce
 The first registered user is the **admin owner** (keeps a BIP39 recovery phrase). The admin creates the rest from **Admin → Users** with just a name + role — Eco mints a **one-time activation code**. The new user opens Eco, pastes the code in "Activate account", and sets **their own PIN**; the admin never sees or sets PINs. Reset = generate a new code. Users can be enabled/disabled. Each user gets per-user GitHub identity and workspace grants; the admin sets the dev-server command(s) and favorite base branches **per workspace**, and members only start/stop.
 
 Run `npm run serve:web` to expose Eco to your **Tailscale** tailnet over HTTPS. A teammate (laptop or iPad) opens the share URL, enters the shared access token, then logs in with their user + PIN. Their bubbles, conversations, categories, notes, review state and theme are **server-authoritative** and sync live across all their devices — start on the Mac, continue on the iPad. (Logical, trusted-team isolation — see CLAUDE.md Appendix D.)
+
+**Admin console** (`Admin`) has three tabs: **Users** (create/enable/disable, roles, workspace grants, activation codes), **Activity** (who is working on what right now, live PTY/dev indicators), and **Audit log** ("Bitácora") — an append-only record of session and agent events (login / account activation / logout, and agent created / archived / deleted), filterable by user and type, so the admin can see who did what and in which folder. The log lives in `~/.eco/audit-log.jsonl` and never stores PINs, tokens or message text.
 
 ---
 
