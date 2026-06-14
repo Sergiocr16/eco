@@ -84,6 +84,10 @@ const DICT = {
     es: 'Pegá tu frase de 12 palabras y elegí un nuevo PIN. Se te dará una frase nueva.',
     en: 'Paste your 12-word phrase and choose a new PIN. You will receive a new phrase.',
   },
+  'auth.recover.no_phrase': {
+    es: '¿No tenés frase de recuperación? Pedile a tu admin un código de reseteo',
+    en: "Don't have a recovery phrase? Ask your admin for a reset code",
+  },
   'auth.recovery.title.new': { es: 'Guardá tu frase de recuperación', en: 'Save your recovery phrase' },
   'auth.recovery.title.reset': { es: 'Nueva frase de recuperación', en: 'New recovery phrase' },
   'auth.recovery.warning': {
