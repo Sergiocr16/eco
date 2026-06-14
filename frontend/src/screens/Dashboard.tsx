@@ -2280,25 +2280,30 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   // por carpeta/workspace, y de cada nodo de carpeta salen sus agentes.
   // Excepción: si solo hay UN workspace, los agentes salen directo del hub
   // Eco (sin nodo intermedio) — no aporta nada con un solo proyecto.
-  const wsGroups: Array<{ key: string; label: string; items: Bubble[] }> = (() => {
+  // En modo owner agrupamos por (usuario, workspace) — clave compuesta — para
+  // que cada workspace de cada usuario sea su propio cluster (Eco → usuario →
+  // workspace → bubbles). En modo normal, por workspace.
+  const wsGroups: Array<{ key: string; label: string; items: Bubble[]; ownerId?: string; workspace?: string }> = (() => {
+    const SEP = '';
     const map = new Map<string, Bubble[]>();
     for (const b of bubbles) {
-      const key = groupMode === 'owner'
-        ? (b.ownerId || '__none__')
-        : (b.workspace || '__none__');
+      const ws = b.workspace || '__none__';
+      const key = groupMode === 'owner' ? `${b.ownerId || '__none__'}${SEP}${ws}` : ws;
       const arr = map.get(key);
       if (arr) arr.push(b);
       else map.set(key, [b]);
     }
-    return [...map.entries()].map(([key, items]) => ({
-      key,
-      label: groupMode === 'owner'
-        ? (ownerNames?.[key] ?? (key === '__none__' ? '—' : key))
-        : (key === '__none__'
-          ? tr('dash.no_folder')
-          : (key.split('/').filter(Boolean).pop() || key)),
-      items,
-    }));
+    return [...map.entries()].map(([key, items]) => {
+      const ws = groupMode === 'owner' ? (key.split(SEP)[1] ?? '__none__') : key;
+      const ownerId = groupMode === 'owner' ? (key.split(SEP)[0] ?? '__none__') : undefined;
+      return {
+        key,
+        label: ws === '__none__' ? tr('dash.no_folder') : (ws.split('/').filter(Boolean).pop() || ws),
+        items,
+        ownerId,
+        workspace: ws,
+      };
+    });
   })();
   // En modo owner SIEMPRE jerárquico: cada usuario debe tener su nodo y sus
   // bubbles colgando de él — aunque haya un solo usuario con agentes (sino
@@ -2392,30 +2397,80 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   // más carpetas → anillo más grande para que el arco horizontal no se
   // amontone. Tope al 46% del lado menor del canvas. `spreadWs` multiplica
   // esta separación (carpetas ↔ Eco).
+  const OWNER_NODE_R = 30;
+  const ownerMode = groupMode === 'owner';
+
+  // Tier de USUARIO (solo owner mode): un nodo por dueño, en arco horizontal
+  // alrededor de Eco. Los workspaces de cada usuario orbitan SU nodo.
+  const ownerGroupsArr: Array<[string, Bubble[]]> = ownerMode
+    ? (() => {
+        const m = new Map<string, Bubble[]>();
+        for (const b of bubbles) {
+          const k = b.ownerId || '__none__';
+          const a = m.get(k);
+          if (a) a.push(b); else m.set(k, [b]);
+        }
+        return [...m.entries()];
+      })()
+    : [];
+  const ownerOrbitR = Math.min(
+    Math.min(W, H) * 0.46,
+    Math.max(180, 120 + ownerGroupsArr.length * 46),
+  ) * spreadWs;
+  const ownerNodes = ownerGroupsArr.map(([id, items], i) => {
+    const N = ownerGroupsArr.length;
+    const aStart = Math.PI * (175 / 180);
+    const aEnd = Math.PI * (5 / 180);
+    const angle = N === 1 ? Math.PI / 2 : aStart + (i / (N - 1)) * (aEnd - aStart);
+    return {
+      id, key: 'owner:' + id,
+      label: ownerNames?.[id] ?? '—',
+      items, angle, angleDeg: (angle * 180) / Math.PI,
+      x: cx + Math.cos(angle) * ownerOrbitR,
+      y: cy + Math.sin(angle) * ownerOrbitR * tilt,
+      active: items.some((b) => nodeFlags(b).isActive),
+    };
+  });
+
   const wsOrbitR = Math.min(
     Math.min(W, H) * 0.46,
     Math.max(170, 110 + wsGroups.length * 42),
   ) * spreadWs;
-  const wsNodes = hierarchical
-    ? wsGroups.map((g, i) => {
-        const N = wsGroups.length;
-        const aStart = Math.PI * (175 / 180);
-        const aEnd = Math.PI * (5 / 180);
-        const angle = N === 1
-          ? Math.PI / 2
-          : aStart + (i / (N - 1)) * (aEnd - aStart);
-        // Offset manual del user (si arrastró este nodo de carpeta).
-        const off = wsOffsets[g.key] ?? { dx: 0, dy: 0 };
-        return {
-          ...g,
-          angle,
-          angleDeg: (angle * 180) / Math.PI,
-          x: cx + Math.cos(angle) * wsOrbitR + off.dx,
-          y: cy + Math.sin(angle) * wsOrbitR * tilt + off.dy,
-          active: g.items.some((b) => nodeFlags(b).isActive),
-        };
-      })
-    : [];
+  const wsAroundOwnerR = 110 * spreadNodes;
+  const wsNodes = !hierarchical
+    ? []
+    : ownerMode
+      ? ownerNodes.flatMap((o) => {
+          const owWs = wsGroups.filter((g) => g.ownerId === o.id);
+          const k = owWs.length;
+          const span = Math.min(280, 60 + k * 40);
+          return owWs.map((g, j) => {
+            const phaseDeg = k === 1 ? o.angleDeg : o.angleDeg - span / 2 + (j / (k - 1)) * span;
+            const ph = (phaseDeg * Math.PI) / 180;
+            const off = wsOffsets[g.key] ?? { dx: 0, dy: 0 };
+            return {
+              ...g, angle: ph, angleDeg: phaseDeg,
+              x: o.x + Math.cos(ph) * wsAroundOwnerR + off.dx,
+              y: o.y + Math.sin(ph) * wsAroundOwnerR * tilt + off.dy,
+              parentX: o.x, parentY: o.y, parentR: OWNER_NODE_R,
+              active: g.items.some((b) => nodeFlags(b).isActive),
+            };
+          });
+        })
+      : wsGroups.map((g, i) => {
+          const N = wsGroups.length;
+          const aStart = Math.PI * (175 / 180);
+          const aEnd = Math.PI * (5 / 180);
+          const angle = N === 1 ? Math.PI / 2 : aStart + (i / (N - 1)) * (aEnd - aStart);
+          const off = wsOffsets[g.key] ?? { dx: 0, dy: 0 };
+          return {
+            ...g, angle, angleDeg: (angle * 180) / Math.PI,
+            x: cx + Math.cos(angle) * wsOrbitR + off.dx,
+            y: cy + Math.sin(angle) * wsOrbitR * tilt + off.dy,
+            parentX: cx, parentY: cy, parentR: 34,
+            active: g.items.some((b) => nodeFlags(b).isActive),
+          };
+        });
 
   const nodes: GraphNode[] = [];
   if (!hierarchical) {
@@ -2758,17 +2813,39 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
           eco
         </motion.text>
 
+        {/* Enlaces hub Eco → nodo de usuario (solo modo owner / admin). */}
+        {ownerMode && ownerNodes.map((o) => {
+          const dx = o.x - cx, dy = o.y - cy;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          const ux = dx / dist, uy = dy / dist;
+          const gap = 2;
+          const x1 = cx + ux * (34 + gap);
+          const y1 = cy + uy * (34 + gap);
+          const x2 = o.x - ux * (OWNER_NODE_R + gap);
+          const y2 = o.y - uy * (OWNER_NODE_R + gap);
+          const stroke = o.active ? t.accent : t.text2;
+          const opacity = o.active ? 0.6 : 0.28;
+          return (
+            <line key={'owner-bond-' + o.id}
+              x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={stroke} strokeOpacity={opacity}
+              strokeWidth={o.active ? 1.6 : 1.2}
+              strokeLinecap="round"/>
+          );
+        })}
+
         {/* Enlaces hub Eco → nodo de workspace (solo modo jerárquico). */}
         {hierarchical && wsNodes.map((ws) => {
-          const dx = ws.x - cx;
-          const dy = ws.y - cy;
+          // El padre es Eco (modo normal) o el nodo de usuario (modo owner).
+          const px = ws.parentX, py = ws.parentY, pr = ws.parentR;
+          const dx = ws.x - px;
+          const dy = ws.y - py;
           const dist = Math.max(1, Math.hypot(dx, dy));
           const ux = dx / dist;
           const uy = dy / dist;
-          const ECO_R = 34;
           const gap = 2;
-          const x1 = cx + ux * (ECO_R + gap);
-          const y1 = cy + uy * (ECO_R + gap);
+          const x1 = px + ux * (pr + gap);
+          const y1 = py + uy * (pr + gap);
           const x2 = ws.x - ux * (WS_NODE_R + gap);
           const y2 = ws.y - uy * (WS_NODE_R + gap);
           const stroke = ws.active ? t.accent : t.text2;
@@ -2869,6 +2946,31 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
             </g>
           );
         })}
+
+        {/* Nodos de usuario (modo owner / admin) — inicial + nombre. */}
+        {ownerMode && ownerNodes.map((o) => (
+          <g key={'owner-node-' + o.id} transform={`translate(${o.x},${o.y})`}>
+            {o.active && (
+              <motion.circle cx={0} cy={0} r={OWNER_NODE_R}
+                fill="none" stroke={t.accent} strokeWidth={1.4}
+                animate={{ r: [OWNER_NODE_R, OWNER_NODE_R + 16], opacity: [0.45, 0] }}
+                transition={{ duration: 2.2, ease: 'easeOut', repeat: Infinity }}/>
+            )}
+            <circle cx={0} cy={0} r={OWNER_NODE_R}
+              fill={t.accentFaint} stroke={t.accent}
+              strokeWidth={o.active ? 2 : 1.4} strokeOpacity={0.85}/>
+            <text x={0} y={5} textAnchor="middle" fill={t.accent}
+              fontFamily={t.fontSans} fontSize="16" fontWeight="700"
+              style={{ pointerEvents: 'none' }}>
+              {o.label.charAt(0).toUpperCase()}
+            </text>
+            <text x={0} y={OWNER_NODE_R + 16} textAnchor="middle" fill={t.text0}
+              fontFamily={t.fontSans} fontSize="12.5" fontWeight="600"
+              style={{ pointerEvents: 'none' }}>
+              {o.label.length > 16 ? o.label.slice(0, 16) + '…' : o.label}
+            </text>
+          </g>
+        ))}
 
         {/* Nodos de workspace — un círculo por carpeta, con glifo de folder
             y el nombre de la carpeta. Solo en modo jerárquico (2+ proyectos). */}
