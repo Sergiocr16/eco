@@ -24,6 +24,8 @@ import { hydrateCategories } from './hooks/useCategories';
 import { hydratePrefs } from './lib/prefs-sync';
 import { hydrateReviewAll } from './hooks/useReviewState';
 import { hydrateNotesAll } from './components/NotesPanel/types';
+import { hydrateWorkspaceConfig, getWorkspaceConfig } from './lib/workspace-config';
+import { setRole } from './lib/auth-role';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
@@ -232,8 +234,14 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       hydrateReviewAll(docs);
       hydrateNotesAll(docs);
     });
+    // Config por workspace (admin define server + base branches; todos leen).
+    void hydrateWorkspaceConfig();
     return () => { cancelled = true; };
   }, [auth.state.userId]);
+
+  // Rol del usuario como singleton de módulo → ServerPanel/NameAgentDialog
+  // saben si es admin sin prop-drilling.
+  useEffect(() => { setRole(auth.state.role); }, [auth.state.role]);
 
   // Click en una notificación nativa del .dmg → abrir el agente que terminó.
   useEffect(() => {
@@ -862,7 +870,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       if (!ws) return undefined;
       const last = window.localStorage.getItem(`eco.worktree.last_branch.${ws}`);
       if (last) return last;
-      const favRaw = window.localStorage.getItem(`eco.worktree.favorites.${ws}`) || '';
+      const favRaw = getWorkspaceConfig(ws).baseBranches;
       const first = favRaw.split(',').map((s) => s.trim()).filter(Boolean)[0];
       return first || undefined;
     } catch { return undefined; }

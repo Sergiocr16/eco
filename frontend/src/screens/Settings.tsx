@@ -22,6 +22,7 @@ import { GhStatusBanner } from '@/components/GhStatusBanner';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useMcpConfig } from '@/hooks/useMcpConfig';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
+import { useWorkspaceConfig, saveWorkspaceConfig } from '@/lib/workspace-config';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { getExternalIde, setExternalIde, ideDisplayLabel, type ExternalIde } from '@/lib/ide-uri';
 import {
@@ -1262,6 +1263,7 @@ function SectionFolders() {
                     </button>
                   )}
                 </div>
+                <WorkspaceServerConfigField workspace={p}/>
                 <WorktreeFavoritesField workspace={p}/>
               </Glass>
             );
@@ -1275,26 +1277,21 @@ function SectionFolders() {
   );
 }
 
-// Editor inline para los branches base favoritos de un workspace. Se guarda
-// en localStorage `eco.worktree.favorites.<workspace>` como CSV. El picker
-// del NameAgentDialog lee desde acá.
+// Branches base favoritos de un workspace (CSV). Server-authoritative: lo
+// define el admin (esta sección es admin-only) y lo lee el diálogo de nuevo
+// agente para TODOS. Antes era localStorage por dispositivo.
 function WorktreeFavoritesField({ workspace }: { workspace: string }) {
   const t = useTokens();
   const tr = useT();
-  const key = `eco.worktree.favorites.${workspace}`;
-  const [draft, setDraft] = useState<string>(() => {
-    try { return window.localStorage.getItem(key) ?? ''; } catch { return ''; }
-  });
+  const config = useWorkspaceConfig(workspace);
+  const [draft, setDraft] = useState(config.baseBranches);
   const [savedFlash, setSavedFlash] = useState(false);
+  useEffect(() => { setDraft(config.baseBranches); }, [config.baseBranches]);
 
-  function save(v: string) {
-    setDraft(v);
-    try {
-      if (v.trim()) window.localStorage.setItem(key, v.trim());
-      else window.localStorage.removeItem(key);
-    } catch { /* noop */ }
-    setSavedFlash(true);
-    window.setTimeout(() => setSavedFlash(false), 1200);
+  async function commit() {
+    if (draft.trim() === config.baseBranches) return;
+    const ok = await saveWorkspaceConfig(workspace, { baseBranches: draft.trim() });
+    if (ok) { setSavedFlash(true); window.setTimeout(() => setSavedFlash(false), 1200); }
   }
 
   return (
@@ -1312,7 +1309,9 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
       </div>
       <input
         value={draft}
-        onChange={(e) => save(e.target.value)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         placeholder={tr('settings.bases.placeholder')}
         spellCheck={false}
         autoCorrect="off"
@@ -1326,6 +1325,87 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
       />
       <div style={{ marginTop: 4, fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
         {tr('settings.bases.hint')}
+      </div>
+    </div>
+  );
+}
+
+// Editor de la config de dev server por workspace (admin). Define single/dual
+// y el/los comando(s). El ServerPanel de cada burbuja la consume read-only:
+// el member solo inicia/detiene.
+function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
+  const t = useTokens();
+  const tr = useT();
+  const config = useWorkspaceConfig(workspace);
+  const srv = config.server;
+  const [dual, setDual] = useState(srv.dual);
+  const [main, setMain] = useState(srv.main);
+  const [front, setFront] = useState(srv.frontend);
+  const [back, setBack] = useState(srv.backend);
+  const [savedFlash, setSavedFlash] = useState(false);
+  useEffect(() => {
+    setDual(srv.dual); setMain(srv.main); setFront(srv.frontend); setBack(srv.backend);
+  }, [srv.dual, srv.main, srv.frontend, srv.backend]);
+
+  const dirty = dual !== srv.dual || main !== srv.main || front !== srv.frontend || back !== srv.backend;
+
+  async function commit() {
+    const ok = await saveWorkspaceConfig(workspace, {
+      server: { dual, main, frontend: front, backend: back },
+    });
+    if (ok) { setSavedFlash(true); window.setTimeout(() => setSavedFlash(false), 1200); }
+  }
+
+  const inputStyle = {
+    width: '100%', boxSizing: 'border-box' as const,
+    background: t.bg2, border: `1px solid ${t.glassBorder}`,
+    borderRadius: 8, padding: '7px 10px',
+    fontFamily: t.fontMono, fontSize: 12, color: t.text0, outline: 'none',
+  };
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${t.glassBorder}` }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        fontSize: 11, color: t.text2, marginBottom: 8,
+      }}>
+        <IconCpu size={11}/>
+        <span>{tr('settings.srv.label')}</span>
+        {savedFlash && <span style={{ color: t.ok, fontSize: 10.5 }}>{tr('settings.bases.saved')}</span>}
+      </div>
+
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
+        fontSize: 12, color: t.text1, cursor: 'pointer',
+      }}>
+        <Toggle on={dual} onChange={setDual}/>
+        <span>{tr('settings.srv.dual')}</span>
+      </label>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {!dual ? (
+          <input value={main} onChange={(e) => setMain(e.target.value)}
+            placeholder="npm run dev -- --port $PORT"
+            spellCheck={false} autoCorrect="off" style={inputStyle}/>
+        ) : (
+          <>
+            <input value={front} onChange={(e) => setFront(e.target.value)}
+              placeholder="frontend: npm run dev -- --port $PORT"
+              spellCheck={false} autoCorrect="off" style={inputStyle}/>
+            <input value={back} onChange={(e) => setBack(e.target.value)}
+              placeholder="backend: PORT=$PORT node server.js"
+              spellCheck={false} autoCorrect="off" style={inputStyle}/>
+          </>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+        <Btn kind="secondary" size="sm" onClick={() => void commit()} disabled={!dirty}>
+          {tr('common.save')}
+        </Btn>
+        <span style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
+          {tr('settings.srv.hint')}
+        </span>
       </div>
     </div>
   );

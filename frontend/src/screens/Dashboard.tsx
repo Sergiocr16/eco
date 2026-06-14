@@ -20,6 +20,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 import { useCategories, getCategoryById } from '@/hooks/useCategories';
+import { getWorkspaceConfig } from '@/lib/workspace-config';
 import { useBubbleHasFilesMap } from '@/hooks/useGitChanges';
 import { useTeamBubbles } from '@/components/AdminGraph';
 
@@ -821,7 +822,7 @@ function NameAgentDialog({
   const favorites = useMemo<string[]>(() => {
     if (!selectedWs) return [];
     try {
-      const raw = window.localStorage.getItem(`eco.worktree.favorites.${selectedWs}`) || '';
+      const raw = getWorkspaceConfig(selectedWs).baseBranches;
       return raw.split(',').map((s) => s.trim()).filter(Boolean);
     } catch { return []; }
   }, [selectedWs]);
@@ -858,7 +859,7 @@ function NameAgentDialog({
     catch { /* noop */ }
     let favs: string[] = [];
     try {
-      const raw = window.localStorage.getItem(`eco.worktree.favorites.${selectedWs}`) || '';
+      const raw = getWorkspaceConfig(selectedWs).baseBranches;
       favs = raw.split(',').map((s) => s.trim()).filter(Boolean);
     } catch { /* noop */ }
     setBaseBranch(last || favs[0] || '');
@@ -1166,7 +1167,7 @@ function NewAgentCard({
   const favorites = useMemo<string[]>(() => {
     if (!selectedWs) return [];
     try {
-      const raw = window.localStorage.getItem(`eco.worktree.favorites.${selectedWs}`) || '';
+      const raw = getWorkspaceConfig(selectedWs).baseBranches;
       return raw.split(',').map((s) => s.trim()).filter(Boolean);
     } catch { return []; }
   }, [selectedWs]);
@@ -1192,7 +1193,7 @@ function NewAgentCard({
     catch { /* noop */ }
     let favs: string[] = [];
     try {
-      const raw = window.localStorage.getItem(`eco.worktree.favorites.${selectedWs}`) || '';
+      const raw = getWorkspaceConfig(selectedWs).baseBranches;
       favs = raw.split(',').map((s) => s.trim()).filter(Boolean);
     } catch { /* noop */ }
     setBaseBranch(last || favs[0] || '');
