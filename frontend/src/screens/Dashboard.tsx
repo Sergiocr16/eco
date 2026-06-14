@@ -21,7 +21,7 @@ import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 import { useCategories, getCategoryById } from '@/hooks/useCategories';
 import { useBubbleHasFilesMap } from '@/hooks/useGitChanges';
-import { AdminGraph } from '@/components/AdminGraph';
+import { useTeamBubbles } from '@/components/AdminGraph';
 
 type Props = {
   bubbles: Bubble[];
@@ -42,16 +42,21 @@ type Props = {
   availableWorkspaces: string[];
   voiceError?: string | null;
   role?: 'admin' | 'member' | null;
+  userId?: string | null;
 };
 
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive, role } = props;
+  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive, role, userId } = props;
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
   const { username } = useProfile();
+  const isAdmin = role === 'admin';
+  // Grafo de equipo del admin: bubbles propias (reales) + las de otros usuarios
+  // (sintetizadas desde /admin/overview). Para members el hook no hace nada.
+  const { teamBubbles, ownerNames } = useTeamBubbles(bubbles, userId ?? null, isAdmin);
   // onSend / interimText / voiceError / voiceState / onMicToggle siguen
   // llegando por contrato pero ya no se usan en el Dashboard: la CommandBar y
   // el VoiceOrb ("Eco escuchando") se removieron — el dictado vive dentro de
@@ -171,9 +176,15 @@ export function Dashboard(props: Props) {
             onCreateAgent={onCreateAgent}
             workspaces={availableWorkspaces}
           />
-        ) : role === 'admin' ? (
-          // Admin: la vista grafo muestra el equipo completo (Eco → usuarios → bubbles).
-          <AdminGraph/>
+        ) : isAdmin ? (
+          // Admin: el MISMO GraphView pero agrupado por usuario (Eco → usuario →
+          // sus bubbles), con todas las animaciones/controles. Solo abre las propias.
+          <GraphView
+            bubbles={teamBubbles}
+            groupMode="owner"
+            ownerNames={ownerNames}
+            onOpenAgent={(id) => { if (bubbles.some((b) => b.id === id)) onOpenAgent(id); }}
+          />
         ) : (
           <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
         )}
@@ -2095,7 +2106,14 @@ function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) 
   );
 }
 
-function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (id: string) => void }) {
+function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }: {
+  bubbles: Bubble[];
+  onOpenAgent: (id: string) => void;
+  // 'workspace' (default): clusters por carpeta. 'owner': clusters por usuario
+  // (grafo de equipo del admin) — usa b.ownerId + ownerNames para el label.
+  groupMode?: 'workspace' | 'owner';
+  ownerNames?: Record<string, string>;
+}) {
   const t = useTokens();
   const tr = useT();
   const [hover, setHover] = useState<string | null>(null);
@@ -2265,16 +2283,20 @@ function GraphView({ bubbles, onOpenAgent }: { bubbles: Bubble[]; onOpenAgent: (
   const wsGroups: Array<{ key: string; label: string; items: Bubble[] }> = (() => {
     const map = new Map<string, Bubble[]>();
     for (const b of bubbles) {
-      const key = b.workspace || '__none__';
+      const key = groupMode === 'owner'
+        ? (b.ownerId || '__none__')
+        : (b.workspace || '__none__');
       const arr = map.get(key);
       if (arr) arr.push(b);
       else map.set(key, [b]);
     }
     return [...map.entries()].map(([key, items]) => ({
       key,
-      label: key === '__none__'
-        ? tr('dash.no_folder')
-        : (key.split('/').filter(Boolean).pop() || key),
+      label: groupMode === 'owner'
+        ? (ownerNames?.[key] ?? (key === '__none__' ? '—' : key))
+        : (key === '__none__'
+          ? tr('dash.no_folder')
+          : (key.split('/').filter(Boolean).pop() || key)),
       items,
     }));
   })();
