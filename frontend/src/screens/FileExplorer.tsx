@@ -3,35 +3,53 @@ import { Glass, Pill, SectionLabel } from '@/design/primitives';
 import { IconFolder, IconFolderOpen, IconDiff, IconExt, IconEdit, IconPlus, IconClock, IconTrash } from '@/design/icons';
 import { Btn, IconBtn } from '@/design/primitives';
 import type { Bubble } from '@/lib/types';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useT } from '@/hooks/useI18n';
+import { useAllBubbleChanges } from '@/hooks/useGitChanges';
+import { workspaceName } from '@/lib/workspace-name';
 
 type Props = {
   bubbles: Bubble[];
 };
 
+type ChangeOp = 'created' | 'modified' | 'pending' | 'deleted';
+
+function opFromChange(change: string): ChangeOp {
+  if (change === 'created') return 'created';
+  if (change === 'deleted') return 'deleted';
+  return 'modified'; // modified / renamed
+}
+
 export function FileExplorer({ bubbles }: Props) {
   const t = useTokens();
   const tr = useT();
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const folders = useMemo(
+    () => Array.from(new Set(bubbles.map((b) => b.workspace).filter(Boolean))),
+    [bubbles],
+  );
+
+  // Cambios git REALES (git status de cada worktree), no la heurística de
+  // tool-calls. Cada archivo viene etiquetado con su burbuja.
+  const gitChanges = useAllBubbleChanges(
+    useMemo(() => bubbles.map((b) => ({ id: b.id, workspace: b.workspace })), [bubbles]),
+  );
+  const bubbleMeta = useMemo(
+    () => new Map(bubbles.map((b) => [b.id, { title: b.title, workspace: b.workspace }])),
+    [bubbles],
+  );
 
   const changes = useMemo(() => {
-    const out: Array<{ agent: string; file: string; op: 'created' | 'modified' | 'pending' | 'deleted'; t: number }> = [];
-    for (const b of bubbles) {
-      for (const m of b.messages) {
-        for (const tc of m.toolCalls ?? []) {
-          const filePath = String((tc.input as { file_path?: unknown }).file_path ?? '');
-          if (!filePath) continue;
-          let op: 'created' | 'modified' | 'pending' | 'deleted' = 'pending';
-          if (tc.status === 'success') op = tc.name === 'Write' ? 'created' : 'modified';
-          else if (tc.status === 'error' || tc.status === 'denied') op = 'pending';
-          out.push({ agent: b.title, file: filePath, op, t: m.createdAt });
-        }
-      }
-    }
-    return out.sort((a, b) => b.t - a.t).slice(0, 50);
-  }, [bubbles]);
-
-  const folders = Array.from(new Set(bubbles.map((b) => b.workspace).filter(Boolean)));
+    return gitChanges
+      .filter((c) => !selected || c.workspace === selected)
+      .map((c) => ({
+        agent: bubbleMeta.get(c.bubbleId)?.title ?? '',
+        file: c.file,
+        op: opFromChange(c.change),
+      }))
+      .slice(0, 100);
+  }, [gitChanges, bubbleMeta, selected]);
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
@@ -44,38 +62,35 @@ export function FileExplorer({ bubbles }: Props) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {folders.length === 0 ? (
             <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('files.no_folders')}</div>
-          ) : folders.map((f) => {
-            const bcount = bubbles.filter((b) => b.workspace === f).length;
-            return (
-              <div key={f} style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '8px 10px', borderRadius: 8,
-                color: t.text1,
-              }}>
-                <div style={{ color: bcount ? t.accent : t.text2 }}>
-                  <IconFolder size={14}/>
-                </div>
-                <span style={{
-                  flex: 1, fontFamily: t.fontMono, fontSize: 11.5, minWidth: 0,
-                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                }}>{f}</span>
-                {bcount > 0 && (
-                  <span style={{
-                    padding: '1px 6px', background: t.accentFaint, color: t.accent,
-                    borderRadius: 999, fontSize: 10, fontWeight: 500,
-                  }}>{bcount}</span>
-                )}
-              </div>
-            );
-          })}
+          ) : (
+            <>
+              <FolderListRow
+                label={tr('files.all_folders')}
+                active={selected === null}
+                onClick={() => setSelected(null)}
+              />
+              {folders.map((f) => (
+                <FolderListRow
+                  key={f}
+                  label={workspaceName(f)}
+                  title={f}
+                  count={bubbles.filter((b) => b.workspace === f).length}
+                  changes={gitChanges.filter((c) => c.workspace === f).length}
+                  active={selected === f}
+                  onClick={() => setSelected(f)}
+                />
+              ))}
+            </>
+          )}
         </div>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <div style={{ color: t.accent }}><IconFolderOpen size={16}/></div>
-          <span style={{ fontFamily: t.fontMono, fontSize: 13, color: t.text0 }}>
-            {folders[0] || tr('files.no_folder_selected')}
+          <span style={{ fontFamily: t.fontMono, fontSize: 13, color: t.text0 }}
+            title={selected ?? undefined}>
+            {selected ? workspaceName(selected) : tr('files.all_folders')}
           </span>
         </div>
         <SectionLabel count={changes.length}>{tr('files.recent_changes')}</SectionLabel>
@@ -85,7 +100,7 @@ export function FileExplorer({ bubbles }: Props) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {changes.map((c, i) => <ChangeRow key={i} change={c}/>)}
+            {changes.map((c, i) => <ChangeRow key={`${c.file}-${i}`} change={c}/>)}
           </div>
         )}
       </div>
@@ -93,10 +108,60 @@ export function FileExplorer({ bubbles }: Props) {
   );
 }
 
-function ChangeRow({ change }: { change: { agent: string; file: string; op: 'created' | 'modified' | 'pending' | 'deleted'; t: number } }) {
+function FolderListRow({ label, title, count, changes, active, onClick }: {
+  label: string;
+  title?: string;
+  count?: number;
+  changes?: number;
+  active: boolean;
+  onClick: () => void;
+}) {
   const t = useTokens();
   const tr = useT();
-  const m = Math.max(1, Math.round((Date.now() - change.t) / 60000));
+  const [h, setH] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      title={title}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+        background: active ? t.bg3 : (h ? t.bg2 : 'transparent'),
+        color: active ? t.text0 : t.text1,
+      }}>
+      <div style={{ color: (count ?? 0) > 0 || active ? t.accent : t.text2 }}>
+        <IconFolder size={14}/>
+      </div>
+      <span style={{
+        flex: 1, fontFamily: t.fontMono, fontSize: 11.5, minWidth: 0,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>{label}</span>
+      {(changes ?? 0) > 0 && (
+        <span
+          title={tr('dash.rail.folder_changes', { n: changes! })}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '1px 6px', background: `color-mix(in oklch, ${t.warn} 16%, transparent)`,
+            color: t.warn, borderRadius: 999, fontSize: 10, fontWeight: 600,
+          }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.warn }}/>
+          {changes}
+        </span>
+      )}
+      {(count ?? 0) > 0 && (
+        <span style={{
+          padding: '1px 6px', background: t.accentFaint, color: t.accent,
+          borderRadius: 999, fontSize: 10, fontWeight: 500,
+        }}>{count}</span>
+      )}
+    </div>
+  );
+}
+
+function ChangeRow({ change }: { change: { agent: string; file: string; op: ChangeOp } }) {
+  const t = useTokens();
+  const tr = useT();
   const opMeta = {
     created: { color: t.ok, label: tr('files.op.created'), icon: IconPlus },
     modified: { color: t.accent, label: tr('files.op.modified'), icon: IconEdit },
@@ -122,8 +187,6 @@ function ChangeRow({ change }: { change: { agent: string; file: string; op: 'cre
           <span style={{ fontSize: 11.5, color: t.text2 }}>
             {tr('files.by')} <span style={{ color: t.text1 }}>{change.agent}</span>
           </span>
-          <span style={{ color: t.text3 }}>·</span>
-          <span style={{ fontSize: 11.5, color: t.text2 }}>{m < 60 ? `${m}m` : `${Math.round(m / 60)}h`}</span>
         </div>
       </div>
       <Btn kind="ghost" size="sm" icon={IconDiff}>{tr('files.diff_btn')}</Btn>
