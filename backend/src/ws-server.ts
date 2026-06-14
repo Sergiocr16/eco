@@ -26,8 +26,25 @@ function extractSessionUserId(req: IncomingMessage): string | undefined {
 let broadcastFn: ((msg: ServerMessage) => void) | null = null;
 let wssRef: WebSocketServer | null = null;
 
+// Conexiones /ws indexadas por userId — para empujar el sync cross-device solo
+// a los dispositivos del usuario dueño. Se puebla en 'connection' y se limpia
+// en 'close'.
+const wsByUser = new Map<string, Set<WebSocket>>();
+
 export function broadcastServerMessage(msg: ServerMessage): void {
   broadcastFn?.(msg);
+}
+
+/** Empuja un mensaje SOLO a las conexiones del usuario dado (sus dispositivos). */
+export function broadcastToUser(userId: string, msg: ServerMessage): void {
+  const conns = wsByUser.get(userId);
+  if (!conns) return;
+  const data = JSON.stringify(msg);
+  for (const client of conns) {
+    if (client.readyState === client.OPEN) {
+      try { client.send(data); } catch { /* noop */ }
+    }
+  }
 }
 
 // Broadcast tipado para client_action — usado por endpoints HTTP (ej.
@@ -107,6 +124,11 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
 
   wss.on('connection', (ws, req: IncomingMessage) => {
     const connUserId = extractSessionUserId(req);
+    if (connUserId) {
+      let set = wsByUser.get(connUserId);
+      if (!set) { set = new Set(); wsByUser.set(connUserId, set); }
+      set.add(ws);
+    }
     let activeAbort: AbortController | null = null;
     let activeTimeout: NodeJS.Timeout | null = null;
     let activeQuery: Query | null = null;
@@ -218,6 +240,10 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
     ws.on('close', () => {
       if (activeTimeout) clearTimeout(activeTimeout);
       activeAbort?.abort();
+      if (connUserId) {
+        const set = wsByUser.get(connUserId);
+        if (set) { set.delete(ws); if (set.size === 0) wsByUser.delete(connUserId); }
+      }
     });
   });
 

@@ -39,4 +39,9 @@ export type ServerMessage =
   // como si el user hubiese tipeado el mensaje. `workspace` es opcional —
   // si está, se usa para resumir/iniciar la sesión; si no, el frontend cae
   // al workspace de la bubble.
-  | { type: 'inject_prompt'; bubbleId: string; text: string; workspace?: string };
+  | { type: 'inject_prompt'; bubbleId: string; text: string; workspace?: string }
+  // Sync cross-device del estado del usuario (bubbles, categorías, notas, etc.).
+  // El backend lo empuja a los OTROS dispositivos del mismo usuario cuando uno
+  // guarda un doc. `key` es la clave del doc (p.ej. "bubble:b_1", "prefs").
+  | { type: 'doc_updated'; key: string; value: unknown; updatedAt: number }
+  | { type: 'doc_deleted'; key: string };

@@ -7,7 +7,8 @@ import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
-import { attachWebSocket, broadcastServerMessage, broadcastClientAction, wsClientCount } from './ws-server.js';
+import { attachWebSocket, broadcastServerMessage, broadcastClientAction, broadcastToUser, wsClientCount } from './ws-server.js';
+import { listDocs, writeDoc, deleteDoc } from './user-docs.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
 import { setBubblesSnapshot, getBubblesSnapshot, findBubble, getAllSnapshots, type BubbleSummary } from './bubbles-index.js';
 import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble, runningPtyBubbleIds } from './pty-server.js';
@@ -90,7 +91,10 @@ app.use(
     maxAge: 600,
   }),
 );
-app.use(express.json({ limit: '128kb' }));
+// 5mb: el sync cross-device (PUT /user/doc) manda la bubble completa con sus
+// mensajes (ya vienen "thinned"); 128kb se quedaba corto. El resto de endpoints
+// usa cuerpos chicos igual.
+app.use(express.json({ limit: '5mb' }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const host = req.headers.host;
@@ -397,6 +401,46 @@ app.get('/admin/overview', requireAdmin, (_req: Request, res: Response) => {
     if (!all.byUser[u.id]) users.push({ id: u.id, username: u.username, role: u.role, lastSync: 0, bubbles: [] });
   }
   res.json({ ok: true, users });
+});
+
+// ─── Sync cross-device: doc store por usuario ────────────────────────────
+// El frontend hidrata todo su estado al loguear (GET) y guarda cada cambio
+// (PUT, debounced). El push WS a los otros dispositivos lo hace el PUT. La
+// identidad SIEMPRE sale de la sesión (req.ecoUser.id), nunca del cliente.
+const DocPutSchema = z.object({
+  key: z.string().min(1).max(200),
+  value: z.unknown(),
+  updatedAt: z.number(),
+});
+const DocDeleteSchema = z.object({ key: z.string().min(1).max(200) });
+
+app.get('/user/docs', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  res.json({ ok: true, docs: listDocs(uid) });
+});
+
+app.put('/user/doc', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  const parsed = DocPutSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const { key, value, updatedAt } = parsed.data;
+  const r = writeDoc(uid, key, value, updatedAt);
+  // Push a los OTROS dispositivos del mismo usuario (sync en vivo). El que
+  // originó la escritura ignora el eco por updatedAt.
+  if (r.applied) broadcastToUser(uid, { type: 'doc_updated', key, value, updatedAt });
+  res.json({ ok: true, applied: r.applied, updatedAt: r.updatedAt });
+});
+
+app.delete('/user/doc', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id;
+  if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  const parsed = DocDeleteSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  deleteDoc(uid, parsed.data.key);
+  broadcastToUser(uid, { type: 'doc_deleted', key: parsed.data.key });
+  res.json({ ok: true });
 });
 
 app.get('/info', async (req: Request, res: Response) => {
