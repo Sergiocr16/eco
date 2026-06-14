@@ -67,6 +67,8 @@ export default defineConfig({
       '/user': { target: HTTP_TARGET, changeOrigin: false },
       // Cubre /bubble/* y /bubbles (sync + list) por match de prefijo.
       '/bubble': { target: HTTP_TARGET, changeOrigin: false },
+      // Config por workspace (admin define server + base branches, todos leen).
+      '/workspace-config': { target: HTTP_TARGET, changeOrigin: false },
     },
   },
 });

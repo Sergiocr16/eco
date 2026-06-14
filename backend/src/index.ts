@@ -47,6 +47,7 @@ import { searchInWorkspace } from './fs-search.js';
 import { summarizeBubble } from './notes-summary.js';
 import * as backupMod from './backup.js';
 import * as mcpConfig from './mcp-config.js';
+import * as workspaceConfig from './workspace-config.js';
 import { z } from 'zod';
 
 function errResponse(res: Response, status: number, code: string, message: string) {
@@ -401,6 +402,38 @@ app.get('/admin/overview', requireAdmin, (_req: Request, res: Response) => {
     if (!all.byUser[u.id]) users.push({ id: u.id, username: u.username, role: u.role, lastSync: 0, bubbles: [] });
   }
   res.json({ ok: true, users });
+});
+
+// ─── Config por workspace (admin define, todos consumen) ──────────────────
+// server: comando(s) de dev server por workspace; baseBranches: ramas favoritas.
+// GET: cualquier sesión, filtrado a los workspaces que el usuario puede ver.
+// POST: solo admin. El member consume (inicia server, elige rama) sin editar.
+app.get('/workspace-config', (req: Request, res: Response) => {
+  if (!req.ecoUser) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
+  const visible = workspacesForUser(req.ecoUser.id);
+  res.json({ ok: true, configs: workspaceConfig.readAll(visible) });
+});
+
+const WorkspaceConfigPostSchema = z.object({
+  workspace: z.string().min(1).max(4096),
+  server: z.object({
+    dual: z.boolean().optional(),
+    main: z.string().max(2000).optional(),
+    frontend: z.string().max(2000).optional(),
+    backend: z.string().max(2000).optional(),
+  }).optional(),
+  baseBranches: z.string().max(2000).optional(),
+});
+app.post('/workspace-config', requireAdmin, (req: Request, res: Response) => {
+  const parsed = WorkspaceConfigPostSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  const { workspace, server, baseBranches } = parsed.data;
+  // El workspace debe pertenecer al universo permitido (admin = todos).
+  if (!isAllowedWorkspace(workspace, req.ecoUser!.id)) {
+    return errResponse(res, 400, 'wsp.not_allowed', 'Workspace no permitido');
+  }
+  const config = workspaceConfig.setFor(workspace, { server, baseBranches });
+  res.json({ ok: true, workspace, config });
 });
 
 // ─── Sync cross-device: doc store por usuario ────────────────────────────

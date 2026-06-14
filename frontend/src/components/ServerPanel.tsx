@@ -16,13 +16,13 @@ import '@xterm/xterm/css/xterm.css';
 import { useTokens } from '@/design/theme';
 import {
   IconPlay, IconStop, IconResume, IconCpu, IconAlert,
-  IconPlus, IconTrash, IconSettings, IconChevD, IconChevR, IconExt, IconGlobe,
+  IconTrash, IconSettings, IconChevD, IconChevR, IconExt, IconGlobe,
 } from '@/design/icons';
 import { Glass, Btn } from '@/design/primitives';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
-import { useDevPresets, type PresetRole } from '@/hooks/useDevPresets';
 import { useWorkspaceServerDefaults } from '@/hooks/useWorkspaceServerDefaults';
+import { useIsAdmin } from '@/lib/auth-role';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { ecoToken } from '@/lib/eco-config';
 import { useT } from '@/hooks/useI18n';
@@ -43,9 +43,6 @@ type DevStatusEvent = {
   skill?: string;
 };
 
-const CMD_KEY = (bubbleId: string, role: SlotRole) =>
-  role === 'main' ? `eco.dev.cmd.${bubbleId}` : `eco.dev.cmd.${role}.${bubbleId}`;
-const DUAL_KEY = (bubbleId: string) => `eco.dev.dual.${bubbleId}`;
 
 type SlotState = {
   status: Status;
@@ -63,25 +60,11 @@ const initSlot = (): SlotState => ({
 export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string; workspace: string; visible?: boolean }) {
   const t = useTokens();
   const tr = useT();
+  const isAdmin = useIsAdmin();
   const wsDefaults = useWorkspaceServerDefaults(workspace);
 
-  // Si el bubble nunca tocó el toggle dual, arrancamos con el default del
-  // workspace. Si ya lo tocó, respetamos su elección.
-  const DUAL_TOUCHED_KEY = `${DUAL_KEY(bubbleId)}.touched`;
-  const [dual, setDual] = useState<boolean>(() => {
-    try {
-      const touched = window.localStorage.getItem(DUAL_TOUCHED_KEY) === '1';
-      if (touched) return window.localStorage.getItem(DUAL_KEY(bubbleId)) === '1';
-      return wsDefaults.defaults.dual;
-    } catch { return false; }
-  });
-  const setDualPersist = (v: boolean) => {
-    setDual(v);
-    try {
-      window.localStorage.setItem(DUAL_KEY(bubbleId), v ? '1' : '0');
-      window.localStorage.setItem(DUAL_TOUCHED_KEY, '1');
-    } catch { /* noop */ }
-  };
+  // El modo single/dual lo define la config del workspace (admin). Read-only acá.
+  const dual = wsDefaults.defaults.dual;
 
   // ¿Está colapsada la sección de configuración? Persistido por agente.
   // Default: colapsado (la mayoría del tiempo el user solo quiere mirar logs).
@@ -126,22 +109,10 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
     try { window.localStorage.setItem(RESTART_MODE_KEY, v); } catch { /* noop */ }
   };
 
-  // Comandos por rol — persistidos por separado. Fallback al default del
-  // workspace si el bubble nunca tiene nada guardado para ese rol.
-  const [cmdMain, setCmdMain] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'main')) || wsDefaults.defaults.main);
-  const [cmdFrontend, setCmdFrontend] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'frontend')) || wsDefaults.defaults.frontend);
-  const [cmdBackend, setCmdBackend] = useState<string>(() => readLs(CMD_KEY(bubbleId, 'backend')) || wsDefaults.defaults.backend);
-
-  function saveCmd(role: SlotRole, v: string) {
-    const key = CMD_KEY(bubbleId, role);
-    try {
-      if (v) window.localStorage.setItem(key, v);
-      else window.localStorage.removeItem(key);
-    } catch { /* noop */ }
-    if (role === 'main') setCmdMain(v);
-    if (role === 'frontend') setCmdFrontend(v);
-    if (role === 'backend') setCmdBackend(v);
-  }
+  // Comandos definidos por el admin en la config del workspace. Read-only acá.
+  const cmdMain = wsDefaults.defaults.main;
+  const cmdFrontend = wsDefaults.defaults.frontend;
+  const cmdBackend = wsDefaults.defaults.backend;
   function cmdFor(role: SlotRole): string {
     if (role === 'main') return cmdMain;
     if (role === 'frontend') return cmdFrontend;
@@ -407,92 +378,31 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
 
         {!configCollapsed && (
           <>
-            {/* Comando(s) — lo más importante, va primero */}
-            {!dual ? (
-              <CommandSlot
-                role="main"
-                label={tr('server.cmd.main_label')}
-                placeholder="npm run dev -- --port $PORT"
-                command={cmdMain}
-                onChange={(v) => saveCmd('main', v)}
-              />
+            {/* Config del server: la define el admin por workspace. Read-only acá:
+                el member solo inicia/detiene; admin la edita en Settings → Folders. */}
+            {(dual ? (cmdFrontend || cmdBackend) : cmdMain) ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {!dual ? (
+                  <ReadonlyCmd label={tr('server.cmd.main_label')} value={cmdMain}/>
+                ) : (
+                  <>
+                    <ReadonlyCmd label="Frontend" value={cmdFrontend}/>
+                    <ReadonlyCmd label="Backend" value={cmdBackend}/>
+                  </>
+                )}
+                <div style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5, marginTop: 2 }}>
+                  {tr('server.cfg.admin_defined')}{isAdmin ? ` ${tr('server.cfg.admin_edit_hint')}` : ''}
+                </div>
+              </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <CommandSlot
-                  role="frontend"
-                  label="Frontend"
-                  placeholder="npm run dev -- --port $PORT"
-                  command={cmdFrontend}
-                  onChange={(v) => saveCmd('frontend', v)}
-                />
-                <CommandSlot
-                  role="backend"
-                  label="Backend"
-                  placeholder="PORT=$PORT node server.js"
-                  command={cmdBackend}
-                  onChange={(v) => saveCmd('backend', v)}
-                />
+              <div style={{
+                padding: '12px 14px', borderRadius: 10,
+                background: t.bg2, border: `1px solid ${t.glassBorder}`,
+                fontSize: 12, color: t.text2, lineHeight: 1.5,
+              }}>
+                {isAdmin ? tr('server.cfg.none_admin') : tr('server.cfg.none_member')}
               </div>
             )}
-
-            {/* Ajustes secundarios — agrupados debajo de los comandos */}
-            <div style={{
-              fontSize: 10.5, color: t.text3, fontWeight: 600,
-              textTransform: 'uppercase', letterSpacing: 0.5,
-              margin: '16px 2px 8px',
-            }}>
-              Ajustes
-            </div>
-
-            {/* Toggle de dual */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '10px 12px', marginBottom: 12, borderRadius: 10,
-              background: t.bg2, border: `1px solid ${dual ? t.accent : t.glassBorder}`,
-            }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>
-                  Frontend + Backend en paralelo
-                </div>
-                <div style={{ fontSize: 11, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
-                  Activá si tu proyecto necesita dos servers (ej. Vite + Express). Cada uno tiene su puerto y logs.
-                </div>
-              </div>
-              <Toggle on={dual} onChange={setDualPersist}/>
-            </div>
-
-            {/* Preset del proyecto: guardar/cargar comandos por workspace */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 12px', marginBottom: 12, borderRadius: 10,
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: t.text0 }}>
-                  Preset del proyecto
-                </div>
-                <div style={{ fontSize: 10.5, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
-                  {wsDefaults.hasAny
-                    ? 'Hay un preset guardado para este workspace. Las conversaciones nuevas lo van a usar automáticamente.'
-                    : 'Guardá los comandos actuales como default del proyecto — todas las conversaciones nuevas en este workspace los van a heredar.'}
-                </div>
-              </div>
-              <Btn kind="secondary" size="sm" onClick={() => {
-                wsDefaults.save({
-                  dual,
-                  main: cmdMain,
-                  frontend: cmdFrontend,
-                  backend: cmdBackend,
-                });
-              }}>
-                Guardar
-              </Btn>
-              {wsDefaults.hasAny && (
-                <Btn kind="ghost" size="sm" onClick={() => wsDefaults.clear()}>
-                  Borrar
-                </Btn>
-              )}
-            </div>
 
         {/* En dual, picker de qué panel de logs se ve grande por defecto */}
         {dual && (
@@ -684,8 +594,17 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
   );
 }
 
-function readLs(key: string): string {
-  try { return window.localStorage.getItem(key) ?? ''; } catch { return ''; }
+function ReadonlyCmd({ label, value }: { label: string; value: string }) {
+  const t = useTokens();
+  return (
+    <div style={{ padding: 10, borderRadius: 10, background: t.bg2, border: `1px solid ${t.glassBorder}` }}>
+      <div style={{ fontSize: 11, color: t.text2, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+      <code style={{
+        display: 'block', fontFamily: t.fontMono, fontSize: 12,
+        color: value ? t.text0 : t.text3, wordBreak: 'break-all',
+      }}>{value || '—'}</code>
+    </div>
+  );
 }
 
 function mono(t: ReturnType<typeof useTokens>) {
@@ -852,250 +771,6 @@ function PanelHeader({
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  const t = useTokens();
-  return (
-    <button type="button" onClick={() => onChange(!on)}
-      style={{
-        width: 42, height: 24, borderRadius: 999, border: 0,
-        background: on ? t.accent : t.bg3,
-        position: 'relative', cursor: 'pointer',
-        transition: 'background 140ms',
-        flexShrink: 0,
-      }}>
-      <span style={{
-        position: 'absolute', top: 3, left: on ? 21 : 3,
-        width: 18, height: 18, borderRadius: '50%',
-        background: '#fff',
-        transition: 'left 140ms',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-      }}/>
-    </button>
-  );
-}
-
-function CommandSlot({
-  role, label, placeholder, command, onChange,
-}: {
-  role: SlotRole;
-  label: string;
-  placeholder: string;
-  command: string;
-  onChange: (v: string) => void;
-}) {
-  const t = useTokens();
-  const [draft, setDraft] = useState(command);
-  useEffect(() => { setDraft(command); }, [command]);
-  const presetRole: PresetRole | undefined = role === 'frontend' ? 'frontend'
-    : role === 'backend' ? 'backend'
-    : undefined;
-
-  return (
-    <div style={{
-      padding: 12, borderRadius: 10,
-      background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: 8,
-      }}>
-        <div style={{ fontSize: 12, color: t.text1, fontWeight: 600 }}>{label}</div>
-        <PresetMenu role={presetRole ?? 'any'} currentCommand={draft}
-          onPick={(cmd) => { setDraft(cmd); onChange(cmd); }}
-          onSaveAs={(name) => {
-            // saved inside PresetMenu via hook
-            // also persist current command if name given
-            if (!draft.trim()) return;
-            return { name, command: draft };
-          }}/>
-      </div>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => onChange(draft)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); } }}
-          placeholder={placeholder}
-          spellCheck={false}
-          autoCorrect="off"
-          style={{
-            flex: 1, padding: '6px 10px', borderRadius: 6,
-            border: `1px solid ${t.glassBorder}`, background: t.bg3,
-            color: t.text0, outline: 'none',
-            fontFamily: t.fontMono, fontSize: 12,
-          }}
-        />
-        <Btn kind="primary" size="sm" onClick={() => onChange(draft)} disabled={draft === command}>
-          Guardar
-        </Btn>
-      </div>
-    </div>
-  );
-}
-
-function PresetMenu({
-  role, currentCommand, onPick,
-}: {
-  role: PresetRole;
-  currentCommand: string;
-  onPick: (command: string) => void;
-  onSaveAs?: (name: string) => unknown;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const { forRole, add, remove } = useDevPresets();
-  const [open, setOpen] = useState(false);
-  const [saveOpen, setSaveOpen] = useState(false);
-  const [saveName, setSaveName] = useState('');
-  const items = forRole(role);
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open && !saveOpen) return;
-    function onDoc(e: MouseEvent) {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) {
-        setOpen(false); setSaveOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open, saveOpen]);
-
-  function saveAndClose() {
-    if (!saveName.trim() || !currentCommand.trim()) return;
-    add({ name: saveName.trim(), command: currentCommand.trim(), role });
-    setSaveName('');
-    setSaveOpen(false);
-  }
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button type="button"
-          onClick={() => { setOpen((o) => !o); setSaveOpen(false); }}
-          style={{
-            padding: '4px 10px', borderRadius: 6,
-            border: `1px solid ${t.glassBorder}`,
-            background: t.bg3, color: t.text1,
-            fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-            cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-          }}>
-          {tr('server.config.use_preset')} <span style={{ color: t.text3, fontSize: 10 }}>▾</span>
-        </button>
-        {currentCommand.trim() && (
-          <button type="button"
-            title={tr('server.config.save_preset_tooltip')}
-            onClick={() => { setSaveOpen((o) => !o); setOpen(false); }}
-            style={{
-              width: 26, height: 26, borderRadius: 6,
-              border: `1px solid ${t.glassBorder}`,
-              background: t.bg3, color: t.text2, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-            <IconPlus size={12}/>
-          </button>
-        )}
-      </div>
-
-      {open && (
-        <div style={{
-          position: 'absolute', right: 0, top: '100%', marginTop: 4,
-          minWidth: 260, maxWidth: 360, zIndex: 20,
-          background: t.bg1, border: `1px solid ${t.glassBorder}`,
-          borderRadius: 10, padding: 6,
-          boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
-          maxHeight: 280, overflowY: 'auto',
-        }}>
-          {items.length === 0 ? (
-            <div style={{ padding: 10, fontSize: 11.5, color: t.text3, textAlign: 'center' }}>
-              Sin presets para este rol.
-            </div>
-          ) : items.map((p) => (
-            <div key={p.id} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 8px', borderRadius: 6,
-            }}
-              onMouseEnter={(e) => e.currentTarget.style.background = t.bg3}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-              <button type="button"
-                onClick={() => { onPick(p.command); setOpen(false); }}
-                style={{
-                  flex: 1, minWidth: 0, padding: 0, border: 0,
-                  background: 'transparent', cursor: 'pointer', textAlign: 'left',
-                }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: t.text0 }}>{p.name}</div>
-                <code style={{
-                  display: 'block', fontFamily: t.fontMono, fontSize: 10.5,
-                  color: t.text3, marginTop: 1,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>{p.command}</code>
-              </button>
-              <button type="button"
-                onClick={(e) => { e.stopPropagation(); remove(p.id); }}
-                title={p.builtin ? 'Ocultar preset' : 'Borrar preset'}
-                style={{
-                  width: 22, height: 22, borderRadius: 5,
-                  background: 'transparent', border: 0,
-                  color: t.text3, cursor: 'pointer',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                <IconTrash size={11}/>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {saveOpen && (
-        <div style={{
-          position: 'absolute', right: 0, top: '100%', marginTop: 4,
-          width: 260, zIndex: 20,
-          background: t.bg1, border: `1px solid ${t.glassBorder}`,
-          borderRadius: 10, padding: 10,
-          boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
-        }}>
-          <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
-            Guardar como preset {role !== 'any' && (<span style={{ color: t.accent }}>({role})</span>)}
-          </div>
-          <input
-            autoFocus value={saveName}
-            onChange={(e) => setSaveName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') saveAndClose(); if (e.key === 'Escape') setSaveOpen(false); }}
-            placeholder={tr('server.config.preset_name_placeholder')}
-            style={{
-              width: '100%', boxSizing: 'border-box',
-              padding: '6px 8px', borderRadius: 6,
-              border: `1px solid ${t.glassBorder}`, background: t.bg3,
-              color: t.text0, outline: 'none',
-              fontFamily: t.fontSans, fontSize: 12,
-              marginBottom: 6,
-            }}
-          />
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-            <button type="button" onClick={() => setSaveOpen(false)}
-              style={{
-                padding: '4px 10px', borderRadius: 6,
-                background: 'transparent', color: t.text2,
-                border: `1px solid ${t.glassBorder}`, cursor: 'pointer',
-                fontSize: 11.5,
-              }}>{tr('common.cancel')}</button>
-            <button type="button" onClick={saveAndClose} disabled={!saveName.trim()}
-              style={{
-                padding: '4px 10px', borderRadius: 6,
-                background: t.accent, color: t.accentOn, border: 0,
-                cursor: saveName.trim() ? 'pointer' : 'default',
-                fontSize: 11.5, fontWeight: 600,
-                opacity: saveName.trim() ? 1 : 0.5,
-              }}>{tr('common.save')}</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
