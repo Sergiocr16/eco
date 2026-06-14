@@ -262,7 +262,8 @@ The "Hablar a la terminal" button in the bubble header turns the mic on, accumul
 - `backend/src/ws-server.ts:broadcastToUser` — push WS `doc_updated`/`doc_deleted` a los otros dispositivos del user.
 - `frontend/src/lib/user-sync.ts` + `lib/prefs-sync.ts` — clientes de sync (bubbles/categorías/notas/review/tema).
 - `backend/src/workspace-config.ts` + `frontend/src/lib/workspace-config.ts` — config por workspace (admin define server+baseBranches). `GET/POST /workspace-config`.
-- `frontend/src/screens/AdminScreen.tsx` + `hooks/useAdmin.ts` — consola admin (alta por código, rol, workspaces, reset-code, habilitar/deshabilitar).
+- `frontend/src/screens/AdminScreen.tsx` + `hooks/useAdmin.ts` — consola admin: tabs Usuarios + Actividad + **Bitácora** (alta por código, rol, workspaces, reset-code, habilitar/deshabilitar, audit log).
+- `backend/src/audit-log.ts` — **bitácora append-only** (`~/.eco/audit-log.jsonl`, chmod 600, rotación 1 generación a `.1.jsonl` al pasar `AUDIT_MAX_BYTES` 5 MB). `logEvent` best-effort (nunca rompe el endpoint), `queryEvents` filtra por user/type/since/limit. Eventos: `auth.{login,claim,logout}` + `bubble.{create,archive,delete}`. NO guarda PINs/tokens/texto de mensajes. `GET /admin/audit` (`requireAdmin`). La creación se detecta por diff de IDs nuevos en `setBubblesSnapshot` (la UI crea las bubbles localmente, no vía `/bubble/create`).
 
 ### Workspaces + worktrees
 - `backend/src/worktree-manager.ts` — create/remove/prune
@@ -336,7 +337,8 @@ The "Hablar a la terminal" button in the bubble header turns the mic on, accumul
 - `electron/scripts/prepare-mcp.cjs` — build pre-empaquetado (tsc + prune dev deps)
 
 ### Dashboard
-- `frontend/src/screens/Dashboard.tsx` — grid + kanban + graph views, satellite pulses
+- `frontend/src/screens/Dashboard.tsx` — grid + kanban + graph views, satellite pulses. **Toggle admin "Mis agentes / Todos los usuarios"** (`eco.dashboard.scope`, solo admin): en modo "todos" las 3 vistas usan `teamBubbles` (de `useTeamBubbles`, `components/AdminGraph.tsx`) — grilla agrupada por dueño, kanban con badge de dueño, graph en `groupMode="owner"`; agentes ajenos read-only y clic inerte. Tarjetas ajenas usan `lastMsgPreview`+`categoryIds` (no tienen `messages`).
+- `frontend/src/components/AdminGraph.tsx` — `useTeamBubbles(ownBubbles, userId, enabled)`: combina bubbles propias (reales) + ajenas sintetizadas de `/admin/overview` (poll 5 s), con `ownerNames`.
 
 ---
 
@@ -1498,7 +1500,14 @@ La identidad SALE SIEMPRE de la sesión, NUNCA del cliente:
 - Solo admin: secciones **Claude & API**, **Folders**, **Integraciones** (Obsidian + MCP server, recursos del anfitrión), **Backup**; y en **General** los toggles "Barra de menú" y la acción "Limpiar worktrees" (cosas de host/dispositivo). (La sección **Voice** y los toggles de "Escuchar al iniciar" se eliminaron junto con la voz.) El member ve General (review/notify/dock/carpeta/atajo/idioma/IDE/sugerencias), GitHub, Seguridad, Apariencia, Acerca de. **History** está oculto del menú lateral para todos.
 
 ### Consola de admin
-- `frontend/src/screens/AdminScreen.tsx` (gated en `AppSidebar` por `role==='admin'`): Usuarios (crear con nombre+rol → diálogo con código copiable; rol; workspaces; generar código de reseteo; habilitar/deshabilitar; borrar; badge pending/disabled) + Actividad (usuario → bubbles con dot de estado + badges PTY/DEV, `GET /admin/overview`). Hook: `useAdmin.ts`. **Sin inputs de PIN** en ningún lado.
+- `frontend/src/screens/AdminScreen.tsx` (gated en `AppSidebar` por `role==='admin'`). Tres tabs:
+  - **Usuarios**: crear con nombre+rol → diálogo con código copiable; rol; workspaces; generar código de reseteo; habilitar/deshabilitar; borrar; badge pending/disabled. **Sin inputs de PIN** en ningún lado.
+  - **Actividad**: usuario → bubbles con dot de estado + badges PTY/DEV (`GET /admin/overview`, poll 5 s).
+  - **Bitácora** (`AuditTab`): eventos de sesión y agentes (`GET /admin/audit`), filtrables por usuario y tipo, con actor + acción + workspace + tiempo relativo (`useFormatRelTime`). Ver `audit-log.ts` en el file-map (§4).
+  - Hook: `useAdmin.ts` (`refreshUsers`/`refreshOverview`/`refreshAudit` + `AUDIT_EVENT_TYPES`).
+
+### Dashboard global del admin (vista "todos los usuarios")
+- El admin tiene un toggle **"Mis agentes / Todos los usuarios"** en el Dashboard (`eco.dashboard.scope`, oculto para members). En "todos", las 3 vistas (grilla/kanban/graph) muestran los agentes de TODO el equipo vía `useTeamBubbles` (propias reales + ajenas sintetizadas de `/admin/overview`): grilla **agrupada por dueño**, kanban con **badge de dueño**, graph en `groupMode="owner"`. Los agentes ajenos son **read-only** (sin menú/rename/acciones) y el clic es **inerte** (el admin no abre worktrees ajenos). Las tarjetas ajenas no tienen `messages` → usan `lastMsgPreview`+`categoryIds` propagados por `/bubbles/sync` → `BubbleSummary` → `/admin/overview`. Ver `Dashboard.tsx` y `AdminGraph.tsx` en el file-map (§4).
 
 ### Backup
 - `backup.ts` captura `~/.eco/users/**` **incluyendo la subcarpeta `docs/` por usuario** (ahí viven bubbles+mensajes, categorías, notas, review en el modelo cross-device) además de los archivos planos. `restoreEcoState` acepta rutas de 3 niveles (`<id>/docs/<key>.json`) y el schema de `/backup/restore` acepta `eco.users` como objeto anidado (`z.union([z.string(), z.record(z.string())])`). El objeto `eco` del snapshot es opaco para el frontend. Solo admin (cada 2h, retención 30).
