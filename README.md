@@ -71,7 +71,10 @@ Switching between bubbles A → B → A reloads nothing — each open bubble kee
 - **Obsidian integration** — save the current conversation as a `.md` note in your vault.
 - **Onboarding wizard** — 9-step setup on first run (language, theme, Claude auth, GitHub, workspace, Obsidian, voice).
 - **Bilingual** — Spanish ⇄ English UI. Detects system language; switch from Settings. Backend errors come with stable codes; the frontend translates.
-- **Local-first auth** — PIN + BIP39 recovery phrase + optional profile photo. argon2id hash in `~/.eco/user.json` (chmod 600). No external server.
+- **Multi-user (admin / member)** — one shared backend, per-user storage. The admin creates users with a **one-time activation code** (no admin-set PINs); the user sets their own PIN. Per-user GitHub identity, per-user workspace grants, enable/disable, PIN reset via a fresh code. argon2id in `~/.eco/users/<id>/user.json` (chmod 600). The owner admin keeps a BIP39 recovery phrase.
+- **Cross-device state** — each user's bubbles, conversations, categories, notes, review state and theme live on the host (server-authoritative doc store) and sync live across their devices over WebSocket. Log in from any machine and find your work.
+- **Remote team access (Tailscale)** — `npm run serve:web` exposes Eco to the tailnet over HTTPS (`tailscale serve`); members connect from a browser (even an iPad) with a shared access token + their PIN. Dev-server previews are exposed per-port over the tailnet too.
+- **Admin console** — manage users (create / role / workspaces / reset code / enable-disable) and watch who's working on which bubble (team graph: Eco → user → workspace → bubbles). Server commands + favorite base branches are defined **by the admin per workspace**; members only start/stop.
 - **Themes** — 19 themes + accent hues, including AMOLED. `glassEffect` helper for Liquid Glass styling.
 
 ---
@@ -221,6 +224,12 @@ macOS-style dock of bubbles in the left sidebar with single-target hover magnifi
 
 First launch shows a 9-step wizard: welcome, language, appearance (theme + accent), Claude auth (CLI or API key), GitHub PAT (optional), workspace folder, Obsidian vault (optional), voice autostart, done. Skippable per step. The `eco.onboarded` flag prevents re-showing.
 
+### Multi-user & remote team access
+
+The first registered user is the **admin owner** (keeps a BIP39 recovery phrase). The admin creates the rest from **Admin → Users** with just a name + role — Eco mints a **one-time activation code**. The new user opens Eco, pastes the code in "Activate account", and sets **their own PIN**; the admin never sees or sets PINs. Reset = generate a new code. Users can be enabled/disabled. Each user gets per-user GitHub identity and workspace grants; the admin sets the dev-server command(s) and favorite base branches **per workspace**, and members only start/stop.
+
+Run `npm run serve:web` to expose Eco to your **Tailscale** tailnet over HTTPS. A teammate (laptop or iPad) opens the share URL, enters the shared access token, then logs in with their user + PIN. Their bubbles, conversations, categories, notes, review state and theme are **server-authoritative** and sync live across all their devices — start on the Mac, continue on the iPad. (Logical, trusted-team isolation — see CLAUDE.md Appendix D.)
+
 ---
 
 <a id="voice"></a>
@@ -267,10 +276,11 @@ The **Skills** picker next to the Plan tab shows the count and lets you click a 
 ## 10. Privacy & security
 
 - **Audio never leaves your machine.** STT is on-device (Apple Speech in the `.dmg`, or `openwakeword` + `faster-whisper` locally in browser dev). TTS is Piper or `macOS say` — both local.
-- **All state on disk is `chmod 600`**: `~/.eco/token`, `~/.eco/user.json`, `~/.eco/api-key`, `~/.eco/github.json`, `~/.eco/dev-sessions.json`.
+- **All state on disk is `chmod 600`**: `~/.eco/token`, `~/.eco/users/<id>/{user.json,github.json,docs/*}`, `~/.eco/api-key`, `~/.eco/workspace-config.json`, `~/.eco/dev-sessions.<port>.json`.
 - **No telemetry.** The only external calls are the Anthropic API (when the active agent needs it) and a one-shot validation when you save your API key or a GitHub PAT.
-- **Local auth**: PIN (argon2id) + BIP39 recovery phrase shown pre-authentication. No external auth server.
-- **Bind 127.0.0.1 only.** Host check, origin whitelist, `X-Eco-Client: 1` required header, in-memory session token TTL 1 h.
+- **Local auth**: PIN (argon2id) per user. Members activate via a one-time code and set their own PIN — the admin never sees PINs. The owner admin keeps a BIP39 recovery phrase. No external auth server.
+- **Bind 127.0.0.1 only.** Host check, origin whitelist, `X-Eco-Client: 1` required header, in-memory session token TTL 1 h, per-user refresh token. Remote access only through Tailscale Serve (never Funnel; never `0.0.0.0`).
+- **Trusted-team isolation**: multi-user separation is **logical, at the app layer**. All spawns run as the same OS user and share the Claude CLI — fine for a trusted team, not hardened sandboxing. See CLAUDE.md Appendix D.
 - **Filesystem boundary**: `realpathSync` + workspace whitelist + path-traversal check on every endpoint that touches files.
 - **Git op safety**: SHA / branch / tag names validated against shell metacharacters; reset hard pre-checks lost commits and requires `force: true`.
 
@@ -337,6 +347,12 @@ Run the security suite with `npm run test:security`.
 - **GitHub PAT** support with validation + masked storage + env injection (`GH_TOKEN`, `GIT_AUTHOR_*`)
 - **GitBusyToast** + improved file change detection (`gitCapture` helper)
 - **OnboardingWizard** — 9-step setup on first run
+- **Multi-tenant** — admin/member roles, per-user storage, per-user GitHub identity + workspace grants, admin console + team graph
+- **User activation by one-time code** — admin creates users without a PIN; the user sets their own PIN via a claim token; enable/disable; PIN reset = new code; admin never handles PINs
+- **Server-authoritative cross-device state** — per-user doc store (bubbles+messages, categories, notes, review, theme) synced live over WebSocket; log in anywhere and find your work
+- **Server mode (remote web via Tailscale)** — `npm run serve:web` serves the built app over HTTPS on the tailnet; dev-server previews exposed per-port; thin clients (browser/iPad) connect with token + PIN
+- **Admin-defined server config + base branches per workspace** — set once by the admin in Settings → Folders; the ServerPanel becomes start/stop-only for everyone
+- **Role-gated Settings** — host/device options (Claude & API, Voice, Folders, Backup, listen-on-boot, menu bar, clean worktrees) are admin-only
 
 ### Pending
 

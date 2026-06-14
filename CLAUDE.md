@@ -37,9 +37,10 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 - **User**: Sergio Castro (Florida, USA). Rules in §2 + the global `~/.claude/CLAUDE.md` apply (Obsidian vault, no auto-commits, Spanish UI but English docs).
 - **State**: fully standalone. Voice on-device via Swift + Apple Speech (no Python required). Dev servers persist across reloads. Everything bundled.
 - **Dev logs flow via WS push** (`dev_log` batched every 80 ms), not polling.
+- **Multi-tenant** (admin/member sobre un backend compartido; los users entran por Tailscale). Identidad SIEMPRE de la sesión. Alta por **token de activación** (el admin no fija PINs), habilitar/deshabilitar, estado **server-authoritative cross-device** (doc store por usuario), config de server por workspace (admin), Settings gateado por rol. **Todo el detalle en Appendix D — leelo antes de tocar auth/usuarios/sync/workspace-config.**
 
 **Read in this order to ramp up:**
-1. This file
+1. This file (especialmente Appendix D para multi-tenant)
 2. `README.md` (product overview)
 3. `backend/src/index.ts` (all endpoints)
 4. `frontend/src/App.tsx` (command dispatcher + shell setup)
@@ -88,8 +89,17 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 | `setInterval` polling of `/dev/logs` | WS push (`eco:dev_log` batched 80 ms) | Cuts ~80 req/min per server. |
 | Auto-open of `webContents.openDevTools` in dev | Opt-in via `ECO_DEVTOOLS=1` or `Cmd+Opt+I` | DevTools always-on consumed 50–80 MB. |
 | `components/ToolPermissionDialog.tsx` + `confirmEdits` setting + `tool_permission_request/response` WS messages | Cursor-style post-edit review (`eco.agent.review_mode`) | Modal-per-edit was invasive; review-after is calmer. |
+| `backend/src/user-store.ts` (single-user) | `users-store.ts` (multi-tenant) | Eco es multi-usuario; identidad sale de la sesión. |
+| Admin-set PIN: `POST /admin/users {pin}`, `/admin/users/:id/reset-pin`, `resetPin` | Token de activación: `createMember`(sin pin), `/auth/claim`, `/admin/users/:id/issue-claim` | El admin nunca ve ni fija PINs. |
+| BIP39/`recoveryHash` para members | Reseteo por token del admin | Solo el admin dueño conserva frase. |
+| localStorage `eco.dev.workspace_defaults.*`, `eco.worktree.favorites.*`, `eco.dev.cmd.*`, `eco.dev.dual.*` | `~/.eco/workspace-config.json` (admin define por workspace) | Server config server-authoritative; ServerPanel solo-consumo. |
+| `CommandSlot`/`PresetMenu`/`Toggle` editables + `useDevPresets` en ServerPanel | Resumen read-only + Settings → Folders | El member no edita comandos de server. |
+| Borrar la propia cuenta (`DELETE /auth/user` desde UI, `destroyUser`, DestroyDialog) | Solo lock / cerrar sesión | Decisión: nadie borra datos desde la UI. |
+| "History" en el sidebar (`AppSidebar`) | — | No se usa; pantalla sigue existiendo pero oculta del menú. |
 
 If you spot any of these in live code, it's residue to clean.
+
+> **Regla multi-tenant**: la config compartida (server por workspace, base branches, universo de workspaces, alta/baja de usuarios) la define **solo el admin**; el member la consume. No reintroduzcas edición de esas cosas para members ni storage por-dispositivo para lo que ahora es server-authoritative. La identidad SIEMPRE sale de la sesión (`req.ecoUser`), nunca del cliente.
 
 ---
 
@@ -239,13 +249,23 @@ If you're touching X, the key files are:
 - `frontend/src/components/BrowserPanel.tsx` — UI + DevTools + persisted zoom
 - `frontend/src/components/SmartBrowserView.tsx` — `<webview>` (Electron) / `<iframe>` (web) wrapper
 
-### Auth
-- `backend/src/user-store.ts` — argon2id + BIP39 + `~/.eco/user.json`
-- `backend/src/auth.ts` — Bearer token + in-memory sessions
-- `backend/src/sessions.ts` — Session TTL 1 h, `X-Eco-Session` header
-- `frontend/src/hooks/useAuth.ts` — register/login/recover/lock/destroy
-- `frontend/src/screens/AuthScreen.tsx` — view switcher (register/login/show_recovery/recover)
-- `frontend/src/components/AccountMenu.tsx` — avatar + lock + destroy
+### Auth (multi-tenant — ver Appendix D)
+- `backend/src/users-store.ts` — colección de usuarios argon2id (`~/.eco/users/<id>/user.json`); `createMember`(sin pin)→claimToken, `claimAccount`, `issueClaim`, `setDisabled`, `verifyPin`, `recover` (solo admin dueño), `userStatus`, refresh tokens, `migrateLegacyUserIfNeeded`.
+- `backend/src/auth.ts` — Bearer token compartido (`~/.eco/token`)
+- `backend/src/sessions.ts` — Session TTL 1 h, `X-Eco-Session` + refresh por usuario (`X-Eco-Refresh`)
+- `backend/src/request-context.ts` — AsyncLocalStorage con el userId del request
+- `frontend/src/hooks/useAuth.ts` — register/login/**claim**/recover/lock/signOut (sin destroy)
+- `frontend/src/lib/auth-role.ts` — rol como singleton (`useIsAdmin`) sin prop-drilling
+- `frontend/src/screens/AuthScreen.tsx` — views register/login/recover/show_recovery/**claim** (ClaimView) + ConnectView
+- `frontend/src/components/AccountMenu.tsx` — avatar + lock + **cerrar sesión** (sin borrar usuario)
+- `backend/src/index.ts` — `/auth/{register,login,claim,recover,session,me,logout}`, `/admin/users*` (ver Appendix D)
+
+### Multi-tenant: cross-device + workspace config + admin (ver Appendix D)
+- `backend/src/user-docs.ts` — doc store por usuario (`~/.eco/users/<id>/docs/<key>.json`, LWW). `GET/PUT/DELETE /user/doc(s)`.
+- `backend/src/ws-server.ts:broadcastToUser` — push WS `doc_updated`/`doc_deleted` a los otros dispositivos del user.
+- `frontend/src/lib/user-sync.ts` + `lib/prefs-sync.ts` — clientes de sync (bubbles/categorías/notas/review/tema).
+- `backend/src/workspace-config.ts` + `frontend/src/lib/workspace-config.ts` — config por workspace (admin define server+baseBranches). `GET/POST /workspace-config`.
+- `frontend/src/screens/AdminScreen.tsx` + `hooks/useAdmin.ts` — consola admin (alta por código, rol, workspaces, reset-code, habilitar/deshabilitar).
 
 ### Workspaces + worktrees
 - `backend/src/worktree-manager.ts` — create/remove/prune
@@ -348,13 +368,16 @@ Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources
 
 | Path | Contents |
 |---|---|
-| `~/.eco/token` | 32 B bearer token |
-| `~/.eco/user.json` | `{username, pinHash, recoveryHash, photo?}` argon2id |
-| `~/.eco/api-key` | Optional Anthropic API key |
-| `~/.eco/github.json` | GitHub PAT + cached username/email |
+| `~/.eco/token` | 32 B bearer token (gate de transporte, compartido) |
+| `~/.eco/users/index.json` | Índice de usuarios `[{id, username, role, status, disabled}]` |
+| `~/.eco/users/<id>/user.json` | `{username, role, pinHash, recoveryHash, refreshHash, claimHash, claimExpiresAt?, disabled?, workspaceGrants[], …}` argon2id. **Multi-tenant** (ver Appendix D). El legacy `~/.eco/user.json` solo existe como respaldo post-migración. |
+| `~/.eco/users/<id>/github.json` | GitHub PAT por usuario |
+| `~/.eco/users/<id>/docs/<key>.json` | Doc store cross-device por usuario (`bubble:<id>`, `categories`, `notes:<id>`, `review:<id>`, `prefs`). Autoridad del estado del usuario. |
+| `~/.eco/workspace-config.json` | Config por workspace (admin): `{ [ws]: { server, baseBranches } }` |
+| `~/.eco/api-key` | Optional Anthropic API key (global, compartida) |
 | `~/.eco/dev-sessions.<port>.json` | `[{bubbleId, role, pgid, port, command, ...}]` — namespaced by backend port (7050/7100/7200) so parallel backends don't clobber each other. |
 | `~/.eco/obsidian.json` | `{vaultPath, enabled}` |
-| `~/.eco/backup.json` | `{enabled, folder?, retention, lastBackup?, lastError?}` — config del auto-backup diario |
+| `~/.eco/backup.json` | `{enabled, folder?, retention, lastBackup?, lastError?}` — config del auto-backup (cada 2h, retención 30) |
 | `~/.eco/worktrees/<bubbleId>` | Per-agent git worktree |
 
 ### Frontend localStorage
@@ -364,6 +387,8 @@ All keys use prefix `eco.`. Maintain this prefix when adding new keys:
 ```
 eco.session                              ← session token (X-Eco-Session)
 eco.token                                ← bearer token pasted in ConnectView (server mode remote clients only)
+eco.refresh                              ← per-user refresh token (X-Eco-Refresh)
+eco.lockedUser                           ← username recordado por el lock screen (pide solo PIN)
 eco.onboarded                            ← '1' once the wizard finished
 eco.voice.autostart                      ← '0' to disable auto-listen
 eco.tts.enabled / voice / rate / volume
@@ -374,10 +399,6 @@ eco.terminals.<bubbleId>                 ← extra terminals (no Claude) [{id,la
 eco.terminals.active.<bubbleId>          ← active terminal id in Shell tab
 eco.browser.url.<bubbleId>               ← BrowserPanel URL
 eco.browser.zoom.<bubbleId>              ← zoom (0.25..3)
-eco.dev.dual.<bubbleId>                  ← '1' if dual mode
-eco.dev.dual.<bubbleId>.touched          ← '1' once user toggled (controls fallback to workspace preset)
-eco.dev.cmd.<bubbleId>.<role>            ← per-slot command (role: main|frontend|backend)
-eco.dev.workspace_defaults.<wsPath>      ← workspace preset {dual, main, frontend, backend}
 eco.dev.config_collapsed.<bubbleId>      ← '1' collapsed (default true)
 eco.dev.min.<role>.<bubbleId>            ← '1' minimized in dual
 eco.dev.logheight.<bubbleId>.<role>      ← log pane height in px
@@ -387,8 +408,8 @@ eco.dev.presets.hidden                   ← built-ins hidden by user
 eco.remote.<bubbleId>                    ← slug if remote control active
 eco.skills.favorites                     ← Skills favorites
 eco.skills.fav_collapsed                 ← '1' if Skills favorites collapsed
-eco.bubbles                              ← global bubble state (id, title, workspace, messages, archived, categoryIds[], …)
-eco.categories                           ← configurable categories (id, name, color)
+eco.bubbles.v1                           ← bubble state CACHE (autoridad = docs server `bubble:*`); se reemplaza al loguear
+eco.categories                           ← categories CACHE (autoridad = doc server `categories`)
 eco.graph.{spread_nodes,spread_ws,scale,ws_offsets,agent_offsets,fullscreen}  ← graph view tuning
 eco.files.openTabs.<bubbleId>            ← FilesPanel: open file tabs
 eco.files.activeFile.<bubbleId>          ← active file
@@ -470,6 +491,7 @@ Auth via subprotocol: `eco.token.<bearer>`.
 - `{type:'dev_status', bubbleId, role, status, port, url, command, exitCode, skill?}` — dev server state change
 - `{type:'dev_log', bubbleId, role, chunk}` — dev server stdout/stderr batched every 80 ms
 - `{type:'client_action', action}` — own MCP tool asking the client to act
+- `{type:'doc_updated', key, value, updatedAt}` / `{type:'doc_deleted', key}` — push del doc store cross-device a los OTROS dispositivos del MISMO usuario (`broadcastToUser`). Ver Appendix D.
 
 ### `/ws/pty` (interactive terminal)
 
@@ -554,10 +576,18 @@ Output: `electron/build/bin/eco-stt` (universal arm64+x64, ~150 KB). Run this wh
 
 **Server** tab in each conversation. Manages gulp/vite/spring-boot/etc. inside the agent's worktree.
 
+> **Multi-tenant: el panel es solo-consumo.** Los comandos y el modo single/dual los
+> define el **admin por workspace** en Settings → Folders (server-authoritative, ver
+> Appendix D → "Config de server por workspace"). El ServerPanel de cada burbuja
+> muestra el comando **read-only** y solo deja **Iniciar / Detener / Reiniciar** — el
+> member no edita comandos. Si el workspace no tiene server configurado, muestra
+> "pedile al admin". `dual` y los comandos vienen de `useWorkspaceServerDefaults`
+> (que ahora lee del store de `lib/workspace-config.ts`, no de localStorage).
+
 ### Single vs dual
 
 - **Single** (default): one `main` slot. One-process projects.
-- **Dual** (`eco.dev.dual.<bubbleId>=1`): `frontend` + `backend` slots in parallel. Full-stack.
+- **Dual**: `frontend` + `backend` slots in parallel. Full-stack. Lo define la config del workspace (admin), no un toggle por bubble.
 
 ### Auto-port
 
@@ -598,9 +628,9 @@ API_PORT=8080 gulp serve
 
 Avoids ECONNREFUSED of the frontend proxy while the backend is still binding. `down` and `restart` run in parallel.
 
-### Workspace preset
+### Config por workspace (server-authoritative)
 
-`useWorkspaceServerDefaults(workspace)` reads/writes `eco.dev.workspace_defaults.<workspacePath> = {dual, main, frontend, backend}`. "Save as project default" button. New conversations in that workspace inherit the commands.
+`useWorkspaceServerDefaults(workspace)` ahora lee del store server-side (`lib/workspace-config.ts` → `GET /workspace-config`), NO de localStorage. La define el **admin** en Settings → Folders (`WorkspaceServerConfigField`): single/dual + comando(s), guardado vía `POST /workspace-config` (`requireAdmin`). Todas las burbujas de ese workspace heredan esos comandos. Ver Appendix D.
 
 ### Persistence + re-adopt
 
@@ -832,18 +862,23 @@ POST /bubble/archive  {bubbleId}
 <a id="backup"></a>
 ## Backup & Restore
 
-Settings → **Backup** permite exportar e importar todo el estado de Eco (agentes, configs, cambios sin commitear por worktree) a un archivo `.zip`. También hay auto-backup diario configurable.
+Settings → **Backup** (solo admin — respalda a TODOS los usuarios) permite exportar e importar todo el estado de Eco a un `.zip`. Auto-backup **cada 2h, retención 30** configurable.
 
 ### Qué se incluye en el .zip
 
 ```
 eco-backup-YYYY-MM-DD-HHMM.zip
 ├── version.txt          ← "1"
-├── metadata.json        ← localStorage (todas las claves eco.*) + ~/.eco/*.json + api-key
+├── metadata.json        ← localStorage (claves eco.* del navegador) + eco snapshot:
+│                            archivos planos ~/.eco/*.json + api-key
+│                            + users/** : index.json, <id>/user.json, <id>/github.json,
+│                              y <id>/docs/<key>.json  ← bubbles+mensajes, categorías, notas, review
 └── worktrees/<bubbleId>/
     ├── HEAD.txt         ← "branch\nsha"
     └── diff.patch       ← `git diff HEAD --binary` (vacío si limpio)
 ```
+
+> **Multi-tenant**: el snapshot recorre un nivel de subcarpeta para capturar `users/<id>/docs/` — ahí vive el contenido real de cada usuario (estado cross-device). Sin eso, el backup quedaba **vacío de bubbles** (era un bug). `restoreEcoState` acepta rutas `<id>/docs/<key>.json` (3 segmentos) y el schema de `/backup/restore` acepta `eco.users` como objeto anidado.
 
 **NO se incluye**: `~/.eco/token` (regenerable, security risk si el zip se filtra), archivos untracked de worktrees, `~/.claude/projects/*` (sesiones del CLI de Claude, viven fuera de Eco).
 
@@ -926,11 +961,16 @@ The frontend never sees the raw token after save — `maskedPat` is prefix + las
 
 ### Auth
 
-- PIN 4–8 digits + BIP39 12-word recovery phrase → argon2id in `~/.eco/user.json`.
-- 32 B in-memory session token, TTL 1 h, header `X-Eco-Session`.
-- 32 B persistent bearer token in `~/.eco/token`, validated via `timingSafeEqual` on every request.
-- `RegisterView` shows the recovery phrase BEFORE transitioning to `authenticated` — user must confirm.
-- Lock screen + delete-user from `AccountMenu`.
+> **Multi-tenant**: el modelo completo (roles, alta por token de activación, deshabilitar,
+> recuperación) está en **Appendix D**. Resumen acá:
+
+- **Multi-usuario** en `~/.eco/users/<id>/user.json` (argon2id). PIN 4–8 dígitos.
+- El **primer usuario** = admin dueño, registrado en `RegisterView` (muestra la **frase BIP39** antes de entrar). Es el único con frase de auto-recuperación.
+- A los demás los crea el **admin** sin PIN → **token de activación**; el usuario define su PIN en `ClaimView` ("Activar cuenta"). Reseteo = token nuevo. **Members sin frase BIP39**.
+- 32 B in-memory session token, TTL 1 h, header `X-Eco-Session`. **Refresh token por usuario** (`X-Eco-Refresh`).
+- 32 B persistent bearer token in `~/.eco/token` (gate de transporte, compartido), validado via `timingSafeEqual`.
+- **Lock screen**: recuerda al último usuario en `eco.lockedUser` y pide solo el PIN; "Cerrar sesión" lo olvida. **No hay borrar-usuario** en `AccountMenu` (ni admin ni member).
+- **Deshabilitar/habilitar** usuarios desde la consola admin; un `disabled` no entra (mensaje genérico) y se cae de la sesión al instante.
 
 ### Workspaces
 
@@ -1458,10 +1498,13 @@ Delegar a la CLI usa un contrato estable (exit 0 = registrado).
 
 ## Appendix D: Multi-tenant (rol admin + per-user)
 
-> **Estado:** branch `feature/multi-tenant` (F0–F4). Convierte Eco de single-user a
-> **multi-tenant sobre un único backend compartido** (una Mac corriendo el server;
-> los usuarios entran por Tailscale). El CLI de Claude es **compartido** (una sola
-> auth/billing). Aislamiento **lógico a nivel app** (equipo de confianza).
+> **Estado:** mergeado a `main`. Convierte Eco de single-user a **multi-tenant sobre
+> un único backend compartido** (una Mac corriendo el server; los usuarios entran por
+> Tailscale). El CLI de Claude es **compartido** (una sola auth/billing). Aislamiento
+> **lógico a nivel app** (equipo de confianza). Incluye: alta por **token de
+> activación** (el admin no fija PINs), habilitar/deshabilitar usuarios, estado
+> **server-authoritative cross-device** (doc store por usuario), config de server +
+> base branches **por workspace definida por el admin**, y gating de Settings por rol.
 
 ### Invariante central
 La identidad SALE SIEMPRE de la sesión, NUNCA del cliente:
@@ -1471,27 +1514,45 @@ La identidad SALE SIEMPRE de la sesión, NUNCA del cliente:
 - `request-context.ts` (AsyncLocalStorage) lleva el userId del request HTTP en curso → `githubEnvOverrides()`/`isAllowedWorkspace()` resuelven el usuario sin threadear userId por todos lados.
 
 ### Modelo de datos (por usuario)
-- `~/.eco/users/<userId>/user.json` = `{ id, username, role: admin|member, pinHash, recoveryHash, refreshHash, workspaceGrants[], … }` (argon2id + BIP39). Índice en `~/.eco/users/index.json`. Módulo: `backend/src/users-store.ts`.
+- `~/.eco/users/<userId>/user.json` = `{ id, username, role: admin|member, pinHash, recoveryHash, refreshHash, claimHash, claimExpiresAt?, disabled?, workspaceGrants[], … }` (argon2id + BIP39). Índice en `~/.eco/users/index.json` (lleva `status` + `disabled`). Módulo: `backend/src/users-store.ts`.
+  - `pinHash:''` = **pending** (creado pero sin activar). `claimHash` = argon2 del secreto del token de activación vigente (null una vez activado). `claimExpiresAt` = epoch ms (TTL 7d). `disabled` ausente = false. Estado derivado: `userStatus()` → `pending | active | disabled`.
 - `~/.eco/users/<userId>/github.json` — PAT por usuario (`github-credentials-store.ts` toma userId; fallback al primer admin para procesos sin sesión).
-- Bubbles: `bubbles-index.ts` por usuario con `ownerId` (server-authoritative; el frontend sincroniza SU porción vía `/bubbles/sync`). El contenido (mensajes) sigue en localStorage del navegador.
-- Sesiones (`sessions.ts`): llevan `userId` + `role`. Renovación vía **refresh token por usuario** (`X-Eco-Refresh`), NO el bearer compartido.
+- `~/.eco/users/<userId>/docs/<key>.json` — **doc store cross-device** (`backend/src/user-docs.ts`): cada "store" del frontend es un doc `{ key, value, updatedAt }`, LWW por doc. Keys: `bubble:<id>` (bubble + mensajes, uno por archivo), `categories`, `notes:<id>`, `review:<id>`, `prefs` (tema/idioma). ES la autoridad del estado del usuario — el localStorage es solo cache de primer paint. El `:` se mapea a `__` en el nombre de archivo (`safeKey`).
+- `~/.eco/workspace-config.json` — config **por workspace definida por el admin** (`backend/src/workspace-config.ts`): `{ [wsPath]: { server:{dual,main,frontend,backend}, baseBranches } }`. La leen todos (filtrada a sus workspaces visibles), la escribe solo el admin.
+- Bubbles: `bubbles-index.ts` mantiene un summary por usuario con `ownerId` (para admin/overview/MCP). El contenido autoritativo vive en los docs `bubble:*`.
+- Sesiones (`sessions.ts`): llevan `userId` + `role`. Renovación vía **refresh token por usuario** (`X-Eco-Refresh`), NO el bearer compartido. Un usuario `disabled` se cae del middleware de sesión al instante (lee `user.json`).
 - API key de Claude: global (`~/.eco/api-key`) — compartida por decisión.
 
-### Auth
-- Primer usuario registrado = **admin** (`/auth/register` solo si no hay usuarios). Los demás los crea el admin (`/admin/users`).
-- Login = **usuario + PIN** (`/auth/login {username, pin}`). `/auth/me` devuelve la identidad de la sesión.
-- Migración one-time al boot: `~/.eco/user.json` viejo → primer admin; `~/.eco/github.json` → su carpeta (`migrateLegacyUserIfNeeded`).
-- Endpoints admin tras `requireAdmin`: `GET /admin/users`, `POST /admin/users`, `DELETE /admin/users/:id`, `POST /admin/users/:id/{role,workspaces,reset-pin}`, `GET /admin/overview`.
+### Auth — alta por token de activación (el admin NUNCA ve ni fija PINs)
+- **Primer usuario** = admin dueño (`/auth/register` solo si no hay usuarios). Es el ÚNICO con **frase BIP39** (auto-recuperación). `createBootstrapAdmin`.
+- **Alta de usuarios**: el admin crea con **nombre + rol** (sin PIN) → `createMember` devuelve un **token de activación** de un solo uso (`<userId>.<secret>`, argon2 at rest, TTL 7d). El admin lo comparte; el usuario lo pega en la vista **"Activar cuenta"** (`POST /auth/claim {claimToken, pin}`, bearer-exempt) y define **su propio PIN** → `claimAccount` setea `pinHash`, limpia `claimHash`, mintea sesión+refresh.
+- **Reseteo de PIN** = el admin emite un token nuevo (`issueClaim`), NO fija PIN. El PIN viejo sigue válido hasta que se complete la re-activación (evita lockout). Los **members no tienen frase BIP39** — se resetean siempre por token.
+- **Habilitar/deshabilitar**: `setDisabled` + `disabled` flag. Deshabilitado rechazado en login (vía `verifyPin`, mensaje **genérico** anti-enumeración), en `/auth/session` (refresh) y en el middleware de sesión vivo (se cae al instante, no espera el TTL de 1h). Al deshabilitar se corta el `refreshHash`.
+- Login = **usuario + PIN** (`/auth/login`). Lock screen recuerda al último user en `eco.lockedUser` y pide solo el PIN; "Cerrar sesión" lo olvida. **No hay opción de borrar la propia cuenta** para nadie.
+- Migración one-time al boot: `~/.eco/user.json` viejo → primer admin; `~/.eco/github.json` → su carpeta (`migrateLegacyUserIfNeeded`). Usuarios legacy quedan `active` sin migración (defaults defensivos: `claimHash:null`, `disabled:false`).
+- Endpoints admin tras `requireAdmin`: `GET /admin/users` (incluye `status`+`disabled`), `POST /admin/users {username, role?}` → `{ claimToken }`, `DELETE /admin/users/:id`, `POST /admin/users/:id/{role,workspaces}`, `POST /admin/users/:id/issue-claim` → `{ claimToken }`, `POST /admin/users/:id/disabled {disabled}` (no podés deshabilitarte a vos mismo), `GET /admin/overview`.
+- Frontend: `useAuth.claim`; `AuthScreen` view `claim` (ClaimView), link "¿Tenés un código de activación?" en login y "¿No tenés frase? Pedile al admin un código" en RecoverView. Rol del usuario como singleton sin prop-drilling: `frontend/src/lib/auth-role.ts` (`useIsAdmin`).
 
 ### Per-user git identity + workspace ACL (F1)
 - Cada usuario maneja su PAT desde Settings → GitHub (web incluida). Los spawns (PTY/agente) inyectan `githubEnvOverrides(ownerId)` → commits/push con la identidad del dueño de la bubble.
 - `config.ts:isAllowedWorkspace(target, userId?)` + `workspacesForUser(userId?)`: admin = todos; member = `workspaceGrants`; sin userId = legacy global. El universo global (`ECO_WORKSPACES`/`workspaces-store`) lo gestiona solo el admin.
 
-### Consola de admin (F3)
-- `frontend/src/screens/AdminScreen.tsx` (gated en `AppSidebar` por `role==='admin'`): Usuarios (crear/rol/workspaces/reset-pin/borrar) + Actividad (usuario → bubbles con dot de estado + badges PTY/DEV, `GET /admin/overview`). Hook: `useAdmin.ts`.
+### Estado server-authoritative cross-device (doc store)
+- Al loguear, el frontend hidrata TODO su estado del servidor (`GET /user/docs`) y **reemplaza** el localStorage (no mergea — evita estado viejo o de otro usuario). Cada cambio sube por `PUT /user/doc {key,value,updatedAt}` (debounced), que además hace **push WS** (`doc_updated`/`doc_deleted`) a los OTROS dispositivos del mismo usuario (`broadcastToUser` en `ws-server.ts`). `DELETE /user/doc` borra. LWW por doc (`updatedAt`).
+- Frontend: `lib/user-sync.ts` (genérico), `lib/prefs-sync.ts` (tema/idioma), y los hooks `useBubbles`/`useCategories`/`useReviewState` + `NotesPanel/types` hidratan y guardan su doc. `App.tsx` hidrata todo en el effect on `userId`. Las prefs de UI por-bubble (anchos, tab activa, zoom, terminales) quedan **locales al dispositivo**.
+
+### Config de server + base branches por workspace (admin define, member consume)
+- `backend/src/workspace-config.ts` + `frontend/src/lib/workspace-config.ts` (store-singleton + `useWorkspaceConfig`/`saveWorkspaceConfig`). `GET /workspace-config` (sesión, filtrado a workspaces visibles), `POST /workspace-config` (`requireAdmin`).
+- El **admin** define el/los comando(s) de dev server (single/dual) y las base branches favoritas **en Settings → Folders** por workspace. El **ServerPanel de cada burbuja es solo-consumo**: muestra el comando read-only y solo Iniciar/Detener/Reiniciar (el member no edita nada). El diálogo de nuevo agente lee las base branches del server config. Reemplazó el viejo localStorage `eco.dev.workspace_defaults.*` / `eco.worktree.favorites.*`.
+
+### Gating de Settings por rol
+- Solo admin: secciones **Claude & API**, **Voice**, **Folders**, **Backup**; y en **General** los toggles "Escuchar al iniciar", "Escuchar al iniciar conversación", "Barra de menú" y la acción "Limpiar worktrees" (cosas de host/dispositivo). El member ve General (review/notify/dock/carpeta/atajo/idioma/IDE/sugerencias), GitHub, Seguridad, Apariencia, Integraciones, Acerca de. **History** está oculto del menú lateral para todos.
+
+### Consola de admin
+- `frontend/src/screens/AdminScreen.tsx` (gated en `AppSidebar` por `role==='admin'`): Usuarios (crear con nombre+rol → diálogo con código copiable; rol; workspaces; generar código de reseteo; habilitar/deshabilitar; borrar; badge pending/disabled) + Actividad (usuario → bubbles con dot de estado + badges PTY/DEV, `GET /admin/overview`). Hook: `useAdmin.ts`. **Sin inputs de PIN** en ningún lado.
 
 ### Backup
-- `backup.ts` captura `~/.eco/users/**` (index + cada usuario) además de los archivos planos. El objeto `eco` del snapshot es opaco para el frontend.
+- `backup.ts` captura `~/.eco/users/**` **incluyendo la subcarpeta `docs/` por usuario** (ahí viven bubbles+mensajes, categorías, notas, review en el modelo cross-device) además de los archivos planos. `restoreEcoState` acepta rutas de 3 niveles (`<id>/docs/<key>.json`) y el schema de `/backup/restore` acepta `eco.users` como objeto anidado (`z.union([z.string(), z.record(z.string())])`). El objeto `eco` del snapshot es opaco para el frontend. Solo admin (cada 2h, retención 30).
 
 ### Caveat de aislamiento
 Todos los spawns corren como el MISMO usuario del SO y comparten el CLI de Claude. Eco separa por usuario en la capa de la app, pero alguien con acceso al SO puede leer worktrees/credenciales de otros bajo `~/.eco`. Aceptable para equipo de confianza; NO es aislamiento endurecido.
