@@ -68,6 +68,27 @@ export function Dashboard(props: Props) {
     try { window.localStorage.setItem('eco.dashboard.view', v); } catch { /* noop */ }
   };
 
+  // Alcance del dashboard (solo admin): "mine" = mis agentes, "all" = todos los
+  // usuarios. Persistido. Un member (o admin degradado) siempre queda en "mine".
+  type DashScope = 'mine' | 'all';
+  const [scope, setScopeState] = useState<DashScope>(() => {
+    try {
+      const saved = window.localStorage.getItem('eco.dashboard.scope');
+      if (saved === 'all') return 'all';
+    } catch { /* noop */ }
+    return 'mine';
+  });
+  const setScope = (s: DashScope) => {
+    setScopeState(s);
+    try { window.localStorage.setItem('eco.dashboard.scope', s); } catch { /* noop */ }
+  };
+  const showAll = isAdmin && scope === 'all';
+  // En modo "todos" usamos las bubbles de equipo (propias reales + ajenas
+  // sintetizadas, ya sin archivadas y con ownerId). El grafo de admin ya lo hacía.
+  const viewBubbles = showAll ? teamBubbles : bubbles;
+  // Clic inerte sobre agentes ajenos: el admin solo abre los que realmente posee.
+  const openGuarded = (id: string) => { if (!showAll || bubbles.some((b) => b.id === id)) onOpenAgent(id); };
+
   // "Activos" usa el criterio compartido (Claude SDK busy, PTY busy, server
   // up, browser abierto, archivos modificados) — mismo que la card "Agentes
   // en vivo" y la vista de nodos. Sin esto, el header decía "0 agentes
@@ -138,8 +159,14 @@ export function Dashboard(props: Props) {
           <DashboardCards bubbles={bubbles} onOpenAgent={onOpenAgent}/>
         </motion.div>
 
-        <SectionLabel count={bubbles.length} action={
+        <SectionLabel count={viewBubbles.length} action={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isAdmin && (
+              <div style={{ display: 'flex', gap: 4, marginRight: 4 }}>
+                <ScopeBtn active={scope === 'mine'} onClick={() => setScope('mine')}>{tr('dash.scope.mine')}</ScopeBtn>
+                <ScopeBtn active={scope === 'all'} onClick={() => setScope('all')}>{tr('dash.scope.all')}</ScopeBtn>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 4 }}>
               <IconBtn icon={IconGrid} size={28} active={view === 'grid'} onClick={() => setView('grid')}/>
               <IconBtn icon={IconColumns} size={28} active={view === 'kanban'} onClick={() => setView('kanban')}/>
@@ -151,30 +178,35 @@ export function Dashboard(props: Props) {
 
         {view === 'grid' ? (
           <GridView
-            bubbles={bubbles}
+            bubbles={viewBubbles}
             workspaces={availableWorkspaces}
-            onOpenAgent={onOpenAgent}
+            onOpenAgent={openGuarded}
             onRename={onRename}
             onRemove={onRemove}
             onChangeWorkspace={onChangeWorkspace}
             onToggleCategory={onToggleCategory}
             onCreateAgent={onCreateAgent}
+            groupByOwner={showAll}
+            ownerNames={showAll ? ownerNames : undefined}
+            readOnlyOwnerId={showAll ? (userId ?? null) : null}
           />
         ) : view === 'kanban' ? (
           <KanbanView
-            bubbles={bubbles}
-            onOpenAgent={onOpenAgent}
+            bubbles={viewBubbles}
+            onOpenAgent={openGuarded}
             onCreateAgent={onCreateAgent}
             workspaces={availableWorkspaces}
+            ownerNames={showAll ? ownerNames : undefined}
+            readOnlyOwnerId={showAll ? (userId ?? null) : null}
           />
-        ) : isAdmin ? (
-          // Admin: el MISMO GraphView pero agrupado por usuario (Eco → usuario →
-          // sus bubbles), con todas las animaciones/controles. Solo abre las propias.
+        ) : showAll ? (
+          // Admin en modo "todos": el MISMO GraphView agrupado por usuario
+          // (Eco → usuario → sus bubbles), con todas las animaciones/controles.
           <GraphView
             bubbles={teamBubbles}
             groupMode="owner"
             ownerNames={ownerNames}
-            onOpenAgent={(id) => { if (bubbles.some((b) => b.id === id)) onOpenAgent(id); }}
+            onOpenAgent={openGuarded}
           />
         ) : (
           <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
@@ -184,6 +216,31 @@ export function Dashboard(props: Props) {
       {/* El input global se removió del Dashboard. Para crear un agente
           nuevo, usar el botón "+" del grid. */}
     </div>
+  );
+}
+
+// Botón de texto segmentado para el toggle de alcance (Mis agentes / Todos).
+function ScopeBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  const t = useTokens();
+  const [h, setH] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={{
+        height: 28, padding: '0 10px',
+        display: 'inline-flex', alignItems: 'center',
+        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
+        background: active ? t.accentFaint : (h ? t.bg3 : 'transparent'),
+        color: active ? t.accent : (h ? t.text0 : t.text1),
+        border: `1px solid ${active ? t.accentDim : 'transparent'}`,
+        borderRadius: 8, cursor: 'pointer', transition: 'all 140ms', whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -553,6 +610,7 @@ function SystemStatusCard() {
 
 function AgentBubble({
   bubble, workspaces, onClick, onRename, onRemove, onChangeWorkspace, onToggleCategory,
+  ownerLabel, readOnly = false,
 }: {
   bubble: Bubble;
   workspaces: string[];
@@ -561,6 +619,8 @@ function AgentBubble({
   onRemove: () => void;
   onChangeWorkspace: (ws: string) => void;
   onToggleCategory: (categoryId: string | undefined) => void;
+  ownerLabel?: string;
+  readOnly?: boolean;
 }) {
   const t = useTokens();
   const [hover, setHover] = useState(false);
@@ -588,7 +648,7 @@ function AgentBubble({
     executing: tr('state.executing'),
   };
   const lastMsg = bubble.messages[bubble.messages.length - 1];
-  const lastText = lastMsg?.text || tr('dash.bubble.no_msg');
+  const lastText = lastMsg?.text || bubble.lastMsgPreview || tr('dash.bubble.no_msg');
   const minutesAgo = Math.max(1, Math.round((Date.now() - bubble.updatedAt) / 60000));
   const tStr = minutesAgo < 60 ? `${minutesAgo}m` : `${Math.round(minutesAgo / 60)}h`;
 
@@ -653,38 +713,49 @@ function AgentBubble({
             />
           ) : (
             <div
-              onDoubleClick={(e) => startRename(e)}
-              title={tr('dash.bubble.rename_tip')}
+              onDoubleClick={(e) => { if (!readOnly) startRename(e); }}
+              title={readOnly ? undefined : tr('dash.bubble.rename_tip')}
               style={{
                 fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, color: t.text0,
                 letterSpacing: -0.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{bubble.title}</div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('dash.bubble.agent')}</span>
             <span style={{ color: t.text3 }}>·</span>
             <span style={{ fontSize: 11.5, color: t.text2 }}>{tStr}</span>
+            {ownerLabel && (
+              <span title={tr('dash.bubble.owner')} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '1px 7px', borderRadius: 999,
+                background: t.accentFaint, border: `1px solid ${t.accentDim}`,
+                fontSize: 10, fontWeight: 500, color: t.accent,
+                whiteSpace: 'nowrap', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>{ownerLabel}</span>
+            )}
           </div>
         </div>
-        <div ref={menuAnchorRef} style={{ position: 'relative' }}>
-          <IconBtn
-            icon={IconMore}
-            size={26}
-            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
-          />
-          {menuOpen && (
-            <BubbleMenu
-              anchorRef={menuAnchorRef}
-              onClose={() => setMenuOpen(false)}
-              onRename={startRename}
-              onRemove={(e) => { e.stopPropagation(); onRemove(); setMenuOpen(false); }}
-              currentCategoryIds={bubble.categoryIds}
-              // Toggle de categoría deja el menú abierto (multi-selección);
-              // "Sin categoría" (undefined) limpia todo y cierra.
-              onToggleCategory={(catId) => { onToggleCategory(catId); if (!catId) setMenuOpen(false); }}
+        {!readOnly && (
+          <div ref={menuAnchorRef} style={{ position: 'relative' }}>
+            <IconBtn
+              icon={IconMore}
+              size={26}
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
             />
-          )}
-        </div>
+            {menuOpen && (
+              <BubbleMenu
+                anchorRef={menuAnchorRef}
+                onClose={() => setMenuOpen(false)}
+                onRename={startRename}
+                onRemove={(e) => { e.stopPropagation(); onRemove(); setMenuOpen(false); }}
+                currentCategoryIds={bubble.categoryIds}
+                // Toggle de categoría deja el menú abierto (multi-selección);
+                // "Sin categoría" (undefined) limpia todo y cierra.
+                onToggleCategory={(catId) => { onToggleCategory(catId); if (!catId) setMenuOpen(false); }}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
@@ -725,21 +796,37 @@ function AgentBubble({
       }}>{lastText}</div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto' }}>
-        <WorkspaceChip
-          workspace={bubble.workspace}
-          workspaces={workspaces}
-          onChange={onChangeWorkspace}
-        />
-        <div style={{ display: 'flex', gap: 2 }}>
-          {state === 'running' || state === 'thinking' || state === 'executing' ? (
-            <IconBtn icon={IconPause} size={26} title={tr('dash.bubble.pause')}/>
-          ) : state === 'paused' ? (
-            <IconBtn icon={IconPlay} size={26} title={tr('dash.bubble.resume')}/>
-          ) : state === 'error' ? (
-            <IconBtn icon={IconResume} size={26} title={tr('dash.bubble.retry')}/>
-          ) : null}
-          <IconBtn icon={IconExt} size={26} title={tr('dash.bubble.open_detail')}/>
-        </div>
+        {readOnly ? (
+          <span style={{
+            display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0,
+            background: t.bg3, border: `1px solid ${t.glassBorder}`,
+            borderRadius: 999, padding: '4px 10px',
+            fontFamily: t.fontMono, fontSize: 10.5, color: bubble.workspace ? t.text1 : t.text3,
+          }} title={bubble.workspace}>
+            <IconFolder size={10}/>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {bubble.workspace ? bubble.workspace.split('/').filter(Boolean).slice(-2).join('/') : tr('wsp.chip.none')}
+            </span>
+          </span>
+        ) : (
+          <>
+            <WorkspaceChip
+              workspace={bubble.workspace}
+              workspaces={workspaces}
+              onChange={onChangeWorkspace}
+            />
+            <div style={{ display: 'flex', gap: 2 }}>
+              {state === 'running' || state === 'thinking' || state === 'executing' ? (
+                <IconBtn icon={IconPause} size={26} title={tr('dash.bubble.pause')}/>
+              ) : state === 'paused' ? (
+                <IconBtn icon={IconPlay} size={26} title={tr('dash.bubble.resume')}/>
+              ) : state === 'error' ? (
+                <IconBtn icon={IconResume} size={26} title={tr('dash.bubble.retry')}/>
+              ) : null}
+              <IconBtn icon={IconExt} size={26} title={tr('dash.bubble.open_detail')}/>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1559,6 +1646,7 @@ function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
 function GridView({
   bubbles, workspaces, onOpenAgent, onRename, onRemove,
   onChangeWorkspace, onToggleCategory, onCreateAgent,
+  groupByOwner = false, ownerNames, readOnlyOwnerId = null,
 }: {
   bubbles: Bubble[];
   workspaces: string[];
@@ -1568,28 +1656,37 @@ function GridView({
   onChangeWorkspace: (id: string, workspace: string) => void;
   onToggleCategory: (id: string, categoryId: string | undefined) => void;
   onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
+  groupByOwner?: boolean;
+  ownerNames?: Record<string, string>;
+  readOnlyOwnerId?: string | null;
 }) {
   const t = useTokens();
   const tr = useT();
 
+  // Modo admin "todos": una sección por dueño. Modo normal: por workspace (si 2+).
   const groups = (() => {
     const map = new Map<string, Bubble[]>();
     for (const b of bubbles) {
-      const key = b.workspace || '__none__';
+      const key = groupByOwner
+        ? (b.ownerId || '__none__')
+        : (b.workspace || '__none__');
       const arr = map.get(key);
       if (arr) arr.push(b);
       else map.set(key, [b]);
     }
     return [...map.entries()].map(([key, items]) => ({
       key,
-      label: key === '__none__'
-        ? tr('dash.no_folder')
-        : (key.split('/').filter(Boolean).pop() || key),
-      path: key === '__none__' ? '' : key,
+      label: groupByOwner
+        ? (key === '__none__' ? tr('dash.no_owner') : (ownerNames?.[key] ?? key))
+        : (key === '__none__' ? tr('dash.no_folder') : (key.split('/').filter(Boolean).pop() || key)),
+      path: groupByOwner ? '' : (key === '__none__' ? '' : key),
       items,
     }));
   })();
-  const grouped = groups.length > 1;
+  const grouped = groupByOwner || groups.length > 1;
+
+  const ownerLabelFor = (b: Bubble): string | undefined =>
+    ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
 
   const gridStyle: CSSProperties = {
     display: 'grid',
@@ -1618,11 +1715,13 @@ function GridView({
         onRemove={() => onRemove(b.id)}
         onChangeWorkspace={(ws) => onChangeWorkspace(b.id, ws)}
         onToggleCategory={(catId) => onToggleCategory(b.id, catId)}
+        ownerLabel={ownerLabelFor(b)}
+        readOnly={!!ownerLabelFor(b)}
       />
     </motion.div>
   );
 
-  const newCard = (
+  const newCard = groupByOwner ? null : (
     <motion.div
       layout
       initial={{ opacity: 0, scale: 0.92 }}
@@ -1682,15 +1781,20 @@ function GridView({
 // (drag real es feature aparte — por ahora click para abrir).
 function KanbanView({
   bubbles, onOpenAgent, onCreateAgent, workspaces,
+  ownerNames, readOnlyOwnerId = null,
 }: {
   bubbles: Bubble[];
   onOpenAgent: (id: string) => void;
   onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
   workspaces: string[];
+  ownerNames?: Record<string, string>;
+  readOnlyOwnerId?: string | null;
 }) {
   const t = useTokens();
   const tr = useT();
   const { open: openNameDialog, dialog: nameDialog } = useNameAgentDialog(onCreateAgent, workspaces);
+  const ownerLabelFor = (b: Bubble): string | undefined =>
+    ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
 
   type ColumnDef = {
     id: string;
@@ -1809,7 +1913,7 @@ function KanbanView({
                     }}
                     whileHover={{ y: -2 }}
                   >
-                    <KanbanCard bubble={b} onOpen={() => onOpenAgent(b.id)}/>
+                    <KanbanCard bubble={b} onOpen={() => onOpenAgent(b.id)} ownerLabel={ownerLabelFor(b)}/>
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -2047,8 +2151,9 @@ function SatellitesLocal({
   );
 }
 
-function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) {
+function KanbanCard({ bubble, onOpen, ownerLabel }: { bubble: Bubble; onOpen: () => void; ownerLabel?: string }) {
   const t = useTokens();
+  const tr = useT();
   const state = (bubble.status as AgentState) || 'idle';
   const busy = useBubbleBusy(bubble.id);
   const sColor = busy ? t.ok : stateColor(state, t);
@@ -2056,6 +2161,8 @@ function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) 
   // Un PTY abierto solo no cuenta (shell idle no es trabajo).
   const isActive = useBubbleActive(bubble) || busy;
   const lastMsg = bubble.messages[bubble.messages.length - 1];
+  // Para bubbles ajenas (sin messages) caemos al preview sintetizado.
+  const previewText = lastMsg ? `${lastMsg.role === 'user' ? '› ' : '← '}${lastMsg.text.slice(0, 120)}` : (bubble.lastMsgPreview ?? '');
   return (
     <button
       type="button"
@@ -2096,13 +2203,19 @@ function KanbanCard({ bubble, onOpen }: { bubble: Bubble; onOpen: () => void }) 
           }}/>
         )}
       </div>
-      {lastMsg && (
+      {ownerLabel && (
+        <div style={{
+          fontFamily: t.fontSans, fontSize: 10.5, color: t.accent, fontWeight: 500,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }} title={tr('dash.bubble.owner')}>{ownerLabel}</div>
+      )}
+      {previewText && (
         <div style={{
           fontSize: 11, color: t.text2, lineHeight: 1.4,
           display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
           overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
-          {lastMsg.role === 'user' ? '› ' : '← '}{lastMsg.text.slice(0, 120)}
+          {previewText}
         </div>
       )}
       {bubble.workspace && (

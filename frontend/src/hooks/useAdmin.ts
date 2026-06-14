@@ -21,9 +21,29 @@ export type AdminUser = {
 export type OverviewBubble = {
   id: string; title: string; workspace: string; status: string;
   archived: boolean; updatedAt: number; ptyRunning: boolean; devActive: boolean;
+  lastMsgPreview?: string; categoryIds?: string[];
 };
 export type OverviewUser = {
   id: string; username: string; role: Role; lastSync: number; bubbles: OverviewBubble[];
+};
+
+export type AuditEventType =
+  | 'auth.login' | 'auth.claim' | 'auth.logout'
+  | 'bubble.create' | 'bubble.archive' | 'bubble.delete';
+
+export const AUDIT_EVENT_TYPES: AuditEventType[] = [
+  'auth.login', 'auth.claim', 'auth.logout',
+  'bubble.create', 'bubble.archive', 'bubble.delete',
+];
+
+export type AuditEvent = {
+  ts: number;
+  actorId: string | null;
+  actorName: string | null;
+  type: AuditEventType;
+  workspace?: string;
+  bubbleId?: string;
+  meta?: Record<string, string | number | boolean>;
 };
 
 type Result<T = undefined> = ({ ok: true } & (T extends undefined ? object : { data: T })) | { ok: false; error: string };
@@ -46,6 +66,7 @@ async function post<T = undefined>(path: string, body?: unknown): Promise<Result
 export function useAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [overview, setOverview] = useState<OverviewUser[]>([]);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refreshUsers = useCallback(async () => {
@@ -61,6 +82,18 @@ export function useAdmin() {
     const r = await apiFetch('/admin/overview');
     const d = await r.json().catch(() => null);
     if (r.ok && Array.isArray(d?.users)) setOverview(d.users as OverviewUser[]);
+  }, []);
+
+  const refreshAudit = useCallback(async (q?: { userId?: string; type?: AuditEventType; since?: number; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (q?.userId) params.set('userId', q.userId);
+    if (q?.type) params.set('type', q.type);
+    if (q?.since) params.set('since', String(q.since));
+    if (q?.limit) params.set('limit', String(q.limit));
+    const qs = params.toString();
+    const r = await apiFetch(`/admin/audit${qs ? `?${qs}` : ''}`);
+    const d = await r.json().catch(() => null);
+    if (r.ok && Array.isArray(d?.events)) setAudit(d.events as AuditEvent[]);
   }, []);
 
   const createMember = useCallback(async (username: string, role: Role) => {
@@ -103,5 +136,5 @@ export function useAdmin() {
     }
   }, [refreshUsers]);
 
-  return { users, overview, loading, refreshUsers, refreshOverview, createMember, setRole, setWorkspaces, issueClaim, setDisabled, deleteUser };
+  return { users, overview, audit, loading, refreshUsers, refreshOverview, refreshAudit, createMember, setRole, setWorkspaces, issueClaim, setDisabled, deleteUser };
 }

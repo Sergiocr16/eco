@@ -238,14 +238,19 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
   // durante streaming de mensajes (status flips de thinking → executing →
   // idle disparan varios re-renders por turn).
   useEffect(() => {
-    const summary = bubbles.map((b) => ({
-      id: b.id,
-      title: b.title,
-      workspace: b.workspace,
-      status: b.status,
-      archived: !!b.archived,
-      updatedAt: b.updatedAt,
-    }));
+    const summary = bubbles.map((b) => {
+      const lastText = b.messages[b.messages.length - 1]?.text;
+      return {
+        id: b.id,
+        title: b.title,
+        workspace: b.workspace,
+        status: b.status,
+        archived: !!b.archived,
+        updatedAt: b.updatedAt,
+        ...(lastText ? { lastMsgPreview: lastText.slice(0, 160) } : {}),
+        ...(b.categoryIds && b.categoryIds.length > 0 ? { categoryIds: b.categoryIds } : {}),
+      };
+    });
     const handle = setTimeout(() => {
       void apiFetch('/bubbles/sync', {
         method: 'POST',

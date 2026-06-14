@@ -22,6 +22,8 @@ export type BubbleSummary = {
   archived: boolean;
   updatedAt: number;
   ownerId: string;
+  lastMsgPreview?: string;
+  categoryIds?: string[];
 };
 
 export type BubblesSnapshot = {
@@ -82,12 +84,20 @@ function persist() {
   } catch { /* best-effort */ }
 }
 
-export function setBubblesSnapshot(userId: string, bubbles: Omit<BubbleSummary, 'ownerId'>[]): void {
+// Devuelve las bubbles que aparecieron por primera vez en este sync (no estaban
+// en el snapshot previo del usuario y no llegan archivadas) — base de la bitácora
+// de "creación de agente". El primer sync de un usuario con index vacío puede
+// reportar las preexistentes una sola vez; aceptable.
+export function setBubblesSnapshot(userId: string, bubbles: Omit<BubbleSummary, 'ownerId'>[]): BubbleSummary[] {
   const s = store();
+  const prevIds = new Set((s.byUser[userId] ?? []).map((b) => b.id));
   // ownerId SIEMPRE = el usuario de la sesión (ignora cualquier owner del cliente).
-  s.byUser[userId] = bubbles.map((b) => ({ ...b, ownerId: userId }));
+  const next = bubbles.map((b) => ({ ...b, ownerId: userId }));
+  const added = next.filter((b) => !b.archived && !prevIds.has(b.id));
+  s.byUser[userId] = next;
   s.lastSync[userId] = Date.now();
   persist();
+  return added;
 }
 
 export function getBubblesSnapshot(userId: string): BubblesSnapshot {
