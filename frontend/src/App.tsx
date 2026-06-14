@@ -1003,6 +1003,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   <Dashboard
                     bubbles={bubbles.bubbles}
                     activeBubbleId={bubbles.activeBubbleId}
+                    role={auth.state.role}
                     voiceState={voiceStateForOrb}
                     listening={voice.state === 'listening'}
                     wakeActive={wakeActive}

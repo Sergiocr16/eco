@@ -21,6 +21,7 @@ import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 import { useCategories, getCategoryById } from '@/hooks/useCategories';
 import { useBubbleHasFilesMap } from '@/hooks/useGitChanges';
+import { AdminGraph } from '@/components/AdminGraph';
 
 type Props = {
   bubbles: Bubble[];
@@ -40,12 +41,13 @@ type Props = {
   onToggleCategory: (id: string, categoryId: string | undefined) => void;
   availableWorkspaces: string[];
   voiceError?: string | null;
+  role?: 'admin' | 'member' | null;
 };
 
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive } = props;
+  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, wakeActive, role } = props;
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
@@ -169,6 +171,9 @@ export function Dashboard(props: Props) {
             onCreateAgent={onCreateAgent}
             workspaces={availableWorkspaces}
           />
+        ) : role === 'admin' ? (
+          // Admin: la vista grafo muestra el equipo completo (Eco → usuarios → bubbles).
+          <AdminGraph/>
         ) : (
           <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
         )}
