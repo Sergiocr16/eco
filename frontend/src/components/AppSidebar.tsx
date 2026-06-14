@@ -1,7 +1,7 @@
 import { useTokens } from '@/design/theme';
 import { EcoMarkStacked } from '@/design/EcoMark';
 import {
-  IconCommand, IconFolderOpen, IconHistory, IconArchive, IconSettings, IconShield, type IconProps,
+  IconCommand, IconFolderOpen, IconArchive, IconSettings, IconShield, type IconProps,
 } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 import { AccountMenu } from './AccountMenu';
@@ -21,7 +21,6 @@ type Props = {
 const BASE_ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: string }[] = [
   { id: 'dashboard', icon: IconCommand, labelKey: 'nav.dashboard' },
   { id: 'files',     icon: IconFolderOpen, labelKey: 'nav.files' },
-  { id: 'history',   icon: IconHistory, labelKey: 'nav.history' },
   { id: 'archived',  icon: IconArchive, labelKey: 'nav.archived' },
   { id: 'settings',  icon: IconSettings, labelKey: 'nav.settings' },
 ];

@@ -39,12 +39,14 @@ export function Settings({ role = null }: { role?: 'admin' | 'member' | null }) 
   const [sec, setSec] = useState<Section>('general');
   // El backup vive en la máquina anfitriona y respalda a TODOS los usuarios →
   // solo el admin lo ve y lo maneja.
+  // Claude & API (key global compartida), Voice y Folders (workspaces los
+  // gestiona el admin) son recursos compartidos del anfitrión → solo admin.
   const sections: { id: Section; label: string; icon: (p: IconProps) => JSX.Element }[] = [
     { id: 'general', label: tr('settings.section.general'), icon: IconSettings },
-    { id: 'claude', label: tr('settings.section.claude'), icon: IconKey },
+    ...(isAdmin ? [{ id: 'claude' as Section, label: tr('settings.section.claude'), icon: IconKey }] : []),
     { id: 'github', label: tr('settings.section.github'), icon: IconGithub },
-    { id: 'voice', label: tr('settings.section.voice'), icon: IconMic },
-    { id: 'folders', label: tr('settings.section.folders'), icon: IconFolder },
+    ...(isAdmin ? [{ id: 'voice' as Section, label: tr('settings.section.voice'), icon: IconMic }] : []),
+    ...(isAdmin ? [{ id: 'folders' as Section, label: tr('settings.section.folders'), icon: IconFolder }] : []),
     { id: 'security', label: tr('settings.section.security'), icon: IconShield },
     { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
     { id: 'integrations', label: tr('settings.section.integrations'), icon: IconBolt },
@@ -82,10 +84,10 @@ export function Settings({ role = null }: { role?: 'admin' | 'member' | null }) 
 
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
         {sec === 'general' && <SectionGeneral/>}
-        {sec === 'claude' && <SectionClaude/>}
+        {sec === 'claude' && isAdmin && <SectionClaude/>}
         {sec === 'github' && <SectionGithub/>}
-        {sec === 'voice' && <SectionVoice/>}
-        {sec === 'folders' && <SectionFolders/>}
+        {sec === 'voice' && isAdmin && <SectionVoice/>}
+        {sec === 'folders' && isAdmin && <SectionFolders/>}
         {sec === 'security' && <SectionSecurity/>}
         {sec === 'appearance' && <SectionAppearance/>}
         {sec === 'integrations' && <SectionIntegrations/>}
