@@ -183,7 +183,6 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
   // locales que el servidor no tenía — migración del localStorage).
   const syncedRef = useRef<Map<string, string>>(new Map());
   const hydratedRef = useRef(false);
-  const [syncTick, setSyncTick] = useState(0);
 
   // No crear "Conversación principal" automática. Si hay burbujas guardadas,
   // restauramos activeBubbleId si es necesario. Sin burbujas → dashboard vacío.
@@ -257,14 +256,16 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
     return () => clearTimeout(handle);
   }, [bubbles]);
 
-  // ─── Sync cross-device (servidor autoritativo) ──────────────────────────
-  // Hidratación al loguear: trae los docs `bubble:*` del servidor y MERGEA con
-  // lo local (no pierde bubbles creadas offline). Siembra syncedRef para no
-  // re-subir lo que ya está, y dispara una pasada para subir lo que falte.
+  // ─── Sync cross-device (servidor anfitrión = ÚNICA fuente de verdad) ─────
+  // Al loguear cargamos SOLO lo del servidor. NO mergeamos el localStorage:
+  // podría tener datos viejos o de otro usuario que usó este navegador antes y
+  // confundir. Limpiamos primero (por si el cache era de otra cuenta) y
+  // reemplazamos con lo del servidor.
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
     hydratedRef.current = false;
+    setBubbles([]); // descarta cualquier cache local antes de cargar del server
     (async () => {
       const docs = await hydrateDocs();
       if (cancelled) return;
@@ -275,13 +276,8 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
       const seeded = new Map<string, string>();
       for (const b of serverBubbles) seeded.set(b.id, JSON.stringify(bubbleDocValue(b)));
       syncedRef.current = seeded;
-      const serverIds = new Set(serverBubbles.map((b) => b.id));
-      setBubbles((local) => {
-        const extra = local.filter((b) => !serverIds.has(b.id));
-        return [...serverBubbles, ...extra];
-      });
+      setBubbles(serverBubbles); // REEMPLAZA — nunca mergea el localStorage
       hydratedRef.current = true;
-      setSyncTick((t) => t + 1); // sube las bubbles locales que el server no tenía
     })();
     return () => { cancelled = true; };
   }, [userId]);
@@ -307,7 +303,7 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
       }
     }, 700);
     return () => clearTimeout(handle);
-  }, [bubbles, userId, syncTick]);
+  }, [bubbles, userId]);
 
   // Push en vivo desde otros dispositivos del mismo usuario (WS → eco-bus).
   useEffect(() => {

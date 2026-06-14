@@ -223,8 +223,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     let cancelled = false;
     void hydrateDocs().then((docs) => {
       if (cancelled) return;
+      // Categorías: SIEMPRE reflejan el servidor (si no hay doc, se limpian las
+      // locales viejas — el servidor anfitrión es la única fuente de verdad).
       const cat = docs['categories'];
-      if (cat) hydrateCategories(cat.value, cat.updatedAt);
+      hydrateCategories(cat?.value ?? [], cat?.updatedAt ?? Date.now());
       const prefs = docs['prefs'];
       if (prefs) hydratePrefs(prefs.value, prefs.updatedAt);
       hydrateReviewAll(docs);
