@@ -2399,6 +2399,9 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   // esta separación (carpetas ↔ Eco).
   const OWNER_NODE_R = 30;
   const ownerMode = groupMode === 'owner';
+  // En el grafo de admin el núcleo "eco" es más grande para diferenciarse de
+  // los nodos de usuario (que también son círculos con acento).
+  const ECO_HUB_R = ownerMode ? 46 : 34;
 
   // Tier de USUARIO (solo owner mode): un nodo por dueño, en arco horizontal
   // alrededor de Eco. Los workspaces de cada usuario orbitan SU nodo.
@@ -2422,12 +2425,16 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
     const aStart = Math.PI * (175 / 180);
     const aEnd = Math.PI * (5 / 180);
     const angle = N === 1 ? Math.PI / 2 : aStart + (i / (N - 1)) * (aEnd - aStart);
+    // Offset manual si el admin arrastró este nodo de usuario (reusa wsOffsets
+    // con clave 'owner:<id>'). Sus workspaces y bubbles cuelgan de o.x/o.y, así
+    // que se mueven con él automáticamente.
+    const off = wsOffsets['owner:' + id] ?? { dx: 0, dy: 0 };
     return {
       id, key: 'owner:' + id,
       label: ownerNames?.[id] ?? '—',
       items, angle, angleDeg: (angle * 180) / Math.PI,
-      x: cx + Math.cos(angle) * ownerOrbitR,
-      y: cy + Math.sin(angle) * ownerOrbitR * tilt,
+      x: cx + Math.cos(angle) * ownerOrbitR + off.dx,
+      y: cy + Math.sin(angle) * ownerOrbitR * tilt + off.dy,
       active: items.some((b) => nodeFlags(b).isActive),
     };
   });
@@ -2782,21 +2789,21 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
           style={{ transformOrigin: `${cx}px ${cy}px` }}
           animate={{ scale: [1, 1.05, 1] }}
           transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
-          <circle cx={cx} cy={cy} r="34" fill={t.bg1}
+          <circle cx={cx} cy={cy} r={ECO_HUB_R} fill={t.bg1}
             stroke={t.accent} strokeWidth="1" strokeOpacity="0.6"/>
         </motion.g>
         {/* Anillo expansivo 1 */}
         <motion.circle
-          cx={cx} cy={cy} r="28" fill="none"
+          cx={cx} cy={cy} r={ECO_HUB_R - 6} fill="none"
           stroke={t.accent} strokeWidth="0.5"
-          animate={{ r: [28, 44, 28], opacity: [0.5, 0, 0.5] }}
+          animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.5, 0, 0.5] }}
           transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity }}
         />
         {/* Anillo expansivo 2, desfasado */}
         <motion.circle
-          cx={cx} cy={cy} r="28" fill="none"
+          cx={cx} cy={cy} r={ECO_HUB_R - 6} fill="none"
           stroke={t.accent} strokeWidth="0.5"
-          animate={{ r: [28, 44, 28], opacity: [0.3, 0, 0.3] }}
+          animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.3, 0, 0.3] }}
           transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity, delay: 1.2 }}
         />
         {/* Wordmark "eco" dentro del hub — replica /assets/eco-wordmark.svg.
@@ -2807,7 +2814,7 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
           textAnchor="middle" dominantBaseline="middle"
           fill={t.text0}
           fontFamily='-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif'
-          fontSize="24" fontWeight="300" letterSpacing="0.6"
+          fontSize={ownerMode ? 30 : 24} fontWeight="300" letterSpacing="0.6"
           animate={{ opacity: [0.85, 1, 0.85] }}
           transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
           eco
@@ -2819,8 +2826,8 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
           const dist = Math.max(1, Math.hypot(dx, dy));
           const ux = dx / dist, uy = dy / dist;
           const gap = 2;
-          const x1 = cx + ux * (34 + gap);
-          const y1 = cy + uy * (34 + gap);
+          const x1 = cx + ux * (ECO_HUB_R + gap);
+          const y1 = cy + uy * (ECO_HUB_R + gap);
           const x2 = o.x - ux * (OWNER_NODE_R + gap);
           const y2 = o.y - uy * (OWNER_NODE_R + gap);
           const stroke = o.active ? t.accent : t.text2;
@@ -2949,7 +2956,9 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
 
         {/* Nodos de usuario (modo owner / admin) — inicial + nombre. */}
         {ownerMode && ownerNodes.map((o) => (
-          <g key={'owner-node-' + o.id} transform={`translate(${o.x},${o.y})`}>
+          <g key={'owner-node-' + o.id} transform={`translate(${o.x},${o.y})`}
+            onMouseDown={(e) => startWsDrag(o.key, e)}
+            style={{ cursor: wsDragging === o.key ? 'grabbing' : 'grab' }}>
             {o.active && (
               <motion.circle cx={0} cy={0} r={OWNER_NODE_R}
                 fill="none" stroke={t.accent} strokeWidth={1.4}
