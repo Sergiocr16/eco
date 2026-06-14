@@ -1073,6 +1073,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         }}
         onSkip={() => setWsPickerForBubble(null)}
         onClose={() => setWsPickerForBubble(null)}
+        canAddFolders={auth.state.role === 'admin'}
       />
       <FloatingBubbleDock
         bubbles={bubbles.bubbles}

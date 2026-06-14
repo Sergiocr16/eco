@@ -995,6 +995,10 @@ const DICT = {
     es: 'No tenés workspaces autorizados todavía.',
     en: 'You have no authorized workspaces yet.',
   },
+  'wsp.ask_admin': {
+    es: 'Pedile a un admin que te asigne una carpeta.',
+    en: 'Ask an admin to assign you a folder.',
+  },
   'wsp.add_other': { es: 'Agregar otra carpeta…', en: 'Add another folder…' },
   'wsp.pick_folder': { es: 'Elegir carpeta…', en: 'Pick folder…' },
   'wsp.type_path_instead': { es: '…o pegar la ruta manualmente', en: '…or paste path manually' },
