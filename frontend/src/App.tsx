@@ -22,6 +22,8 @@ import { writeToBubblePty } from './lib/pty-bridge';
 import { hydrateDocs } from './lib/user-sync';
 import { hydrateCategories } from './hooks/useCategories';
 import { hydratePrefs } from './lib/prefs-sync';
+import { hydrateReviewAll } from './hooks/useReviewState';
+import { hydrateNotesAll } from './components/NotesPanel/types';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
@@ -225,6 +227,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       if (cat) hydrateCategories(cat.value, cat.updatedAt);
       const prefs = docs['prefs'];
       if (prefs) hydratePrefs(prefs.value, prefs.updatedAt);
+      hydrateReviewAll(docs);
+      hydrateNotesAll(docs);
     });
     return () => { cancelled = true; };
   }, [auth.state.userId]);
