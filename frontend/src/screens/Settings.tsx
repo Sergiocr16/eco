@@ -23,6 +23,7 @@ import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useMcpConfig } from '@/hooks/useMcpConfig';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useWorkspaceConfig, saveWorkspaceConfig } from '@/lib/workspace-config';
+import { useIsAdmin } from '@/lib/auth-role';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { getExternalIde, setExternalIde, ideDisplayLabel, type ExternalIde } from '@/lib/ide-uri';
 import {
@@ -140,16 +141,21 @@ function SectionGeneral() {
   const tr = useT();
   const def = useDefaultWorkspace();
   const ws = useWorkspaces();
+  // Voz al iniciar, menubar y limpieza de worktrees son cosas de host/dispositivo
+  // → solo admin. El member ve las prefs por-usuario (review, notify, dock, etc.).
+  const isAdmin = useIsAdmin();
   return (
     <div style={{ maxWidth: 720 }}>
       <Header title={tr('settings.general.title')} sub={tr('settings.general.sub')}/>
-      <GeneralToggleRow icon={IconBolt} title={tr('settings.general.listen_on_boot')} storageKey="eco.voice.autostart" defaultOn/>
-      <GeneralToggleRow
-        icon={IconMic}
-        title={tr('settings.general.listen_on_conversation')}
-        desc={tr('settings.general.listen_on_conversation_desc')}
-        storageKey="eco.voice.autostart_per_conversation"
-      />
+      {isAdmin && <GeneralToggleRow icon={IconBolt} title={tr('settings.general.listen_on_boot')} storageKey="eco.voice.autostart" defaultOn/>}
+      {isAdmin && (
+        <GeneralToggleRow
+          icon={IconMic}
+          title={tr('settings.general.listen_on_conversation')}
+          desc={tr('settings.general.listen_on_conversation_desc')}
+          storageKey="eco.voice.autostart_per_conversation"
+        />
+      )}
       <GeneralToggleRow
         icon={IconShield}
         title={tr('settings.general.review_mode')}
@@ -162,7 +168,7 @@ function SectionGeneral() {
         desc={tr('settings.general.notify_on_finish_desc')}
         storageKey="eco.notify.on_finish"
       />
-      <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>
+      {isAdmin && <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>}
       <GeneralToggleRow
         icon={IconCommand}
         title={tr('settings.general.dock')}
@@ -188,7 +194,7 @@ function SectionGeneral() {
         control={<KbdRow keys={['⌥', '⇧', 'E']}/>}/>
       <LanguageRow/>
       <ExternalIdeRow/>
-      <WorktreesCleanRow/>
+      {isAdmin && <WorktreesCleanRow/>}
 
       <div style={{ marginTop: 24 }}>
         <SuggestionsEditor/>
@@ -263,9 +269,8 @@ function ExternalIdeRow() {
   return (
     <Row
       icon={IconCommand}
-      title={tr('settings.general.external_ide') || 'Editor externo (IDE)'}
-      desc={tr('settings.general.external_ide_desc') ||
-        'Click en "↗ IDE" del editor abre el archivo en la línea exacta. Eco no tiene debugger; usá el IDE externo para breakpoints.'}
+      title={tr('settings.general.external_ide')}
+      desc={tr('settings.general.external_ide_desc')}
       control={
         <select value={ide} onChange={(e) => onChange(e.target.value as ExternalIde)}
           style={{ ...fieldStyle(t), width: 220 }}>

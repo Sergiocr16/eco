@@ -960,6 +960,11 @@ const DICT = {
     en: 'Press this combination to invoke Eco.',
   },
   'settings.general.app_language': { es: 'Idioma de Eco', en: 'Eco language' },
+  'settings.general.external_ide': { es: 'Editor externo (IDE)', en: 'External editor (IDE)' },
+  'settings.general.external_ide_desc': {
+    es: 'El botón "↗ IDE" del editor abre el archivo en la línea exacta. Eco no tiene debugger; usá el IDE externo para breakpoints.',
+    en: 'The editor\'s "↗ IDE" button opens the file at the exact line. Eco has no debugger; use the external IDE for breakpoints.',
+  },
   'settings.general.worktrees_clean':      { es: 'Limpiar worktrees sin usar', en: 'Clean unused worktrees' },
   'settings.general.worktrees_clean_desc': {
     es: 'Elimina worktrees de agentes cerrados que ya no tienen cambios pendientes en ~/.eco/worktrees/.',
