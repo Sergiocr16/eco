@@ -54,6 +54,8 @@ export function useTeamBubbles(ownBubbles: Bubble[], myUserId: string | null, en
           updatedAt: b.updatedAt,
           ptyOpen: b.ptyRunning,
           ownerId: u.id,
+          ...(b.categoryIds && b.categoryIds.length > 0 ? { categoryIds: b.categoryIds } : {}),
+          ...(b.lastMsgPreview ? { lastMsgPreview: b.lastMsgPreview } : {}),
         });
       }
     }

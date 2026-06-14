@@ -371,6 +371,7 @@ Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources
 | `~/.eco/dev-sessions.<port>.json` | `[{bubbleId, role, pgid, port, command, ...}]` — namespaced by backend port (7050/7100/7200) so parallel backends don't clobber each other. |
 | `~/.eco/obsidian.json` | `{vaultPath, enabled}` |
 | `~/.eco/backup.json` | `{enabled, folder?, retention, lastBackup?, lastError?}` — config del auto-backup (cada 2h, retención 30) |
+| `~/.eco/audit-log.jsonl` (+ `.1.jsonl`) | Bitácora append-only de eventos de sesión y agentes (`{ts, actorId, actorName, type, workspace?, bubbleId?, meta?}`). Solo la lee el admin vía `GET /admin/audit`. Rota a `.1.jsonl` al pasar `AUDIT_MAX_BYTES` (una generación). NO incluye PINs/tokens/texto de mensajes. |
 | `~/.eco/worktrees/<bubbleId>` | Per-agent git worktree |
 
 ### Frontend localStorage
@@ -433,6 +434,7 @@ These were tuned in 2026-05-12/13 after observing renderer growth to 1–2 GB wi
 | PTY ring buffer | **128 KB** (`RING_BUFFER_MAX`) | `pty-server.ts` | Replay on reconnect. |
 | `globalPromptTimestamps` | **1000** | `ws-server.ts` | Defensive cap. |
 | `RAW_MAX_SIZE` (file/raw) | **5 MB** | `index.ts` | Inline image preview / raw read. |
+| `AUDIT_MAX_BYTES` (audit log) | **5 MB** | `audit-log.ts` | Bitácora append-only; al superarlo rota a `.1.jsonl` (una generación, sin historia infinita). |
 | File diff bytes | **512 KB** | `file-diff.ts`, `git-history.ts` | UI can't render bigger diffs usefully. |
 | FS tree entries per scan | **5000** | `fs-tree.ts:MAX_ENTRIES` | Lazy-loaded; cap protects huge repos. |
 | Notes summarizer context | **30 msgs**, **2 KB**/msg, **60 KB** PTY | `notes-summary.ts` | Keep prompt under Claude limits. |

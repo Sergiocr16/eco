@@ -11,6 +11,7 @@ import { attachWebSocket, broadcastClientAction, broadcastToUser, wsClientCount 
 import { listDocs, writeDoc, deleteDoc } from './user-docs.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
 import { setBubblesSnapshot, getBubblesSnapshot, findBubble, getAllSnapshots, type BubbleSummary } from './bubbles-index.js';
+import { logEvent, queryEvents, AUDIT_EVENT_TYPES, type AuditEventType } from './audit-log.js';
 import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble, runningPtyBubbleIds } from './pty-server.js';
 import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
@@ -161,6 +162,7 @@ app.post('/auth/register', async (req: Request, res: Response) => {
     const { user, recoveryPhrase } = await registerFirstUser(parsed.data.username, parsed.data.pin);
     const session = createSession(user.id, user.role, user.username);
     const refresh = await mintRefresh(user.id);
+    logEvent({ actorId: user.id, actorName: user.username, type: 'auth.login' });
     res.json({ ok: true, username: user.username, role: user.role, recoveryPhrase, session, refresh });
   } catch (e) {
     fromException(res, e, 'auth.register_failed', 'Error al registrar');
@@ -177,6 +179,7 @@ app.post('/auth/login', async (req: Request, res: Response) => {
   if (!ok) return errResponse(res, 401, 'auth.login_wrong', 'Usuario o PIN incorrectos');
   const session = createSession(user.id, user.role, user.username);
   const refresh = await mintRefresh(user.id);
+  logEvent({ actorId: user.id, actorName: user.username, type: 'auth.login' });
   res.json({ ok: true, username: user.username, role: user.role, session, refresh });
 });
 
@@ -202,6 +205,7 @@ app.post('/auth/claim', async (req: Request, res: Response) => {
     const { user } = await claimAccount(parsed.data.claimToken, parsed.data.pin);
     const session = createSession(user.id, user.role, user.username);
     const refresh = await mintRefresh(user.id);
+    logEvent({ actorId: user.id, actorName: user.username, type: 'auth.claim' });
     res.json({ ok: true, username: user.username, role: user.role, session, refresh });
   } catch (e) {
     fromException(res, e, 'auth.claim_failed', 'No se pudo activar la cuenta');
@@ -210,6 +214,7 @@ app.post('/auth/claim', async (req: Request, res: Response) => {
 
 app.post('/auth/logout', (req: Request, res: Response) => {
   const session = req.headers[SESSION_HEADER] as string | undefined;
+  if (req.ecoUser) logEvent({ actorId: req.ecoUser.id, actorName: req.ecoUser.username, type: 'auth.logout' });
   destroySession(session);
   res.json({ ok: true });
 });
@@ -424,6 +429,8 @@ app.get('/admin/overview', requireAdmin, (_req: Request, res: Response) => {
     bubbles: bubbles.map((b) => ({
       id: b.id, title: b.title, workspace: b.workspace, status: b.status,
       archived: b.archived, updatedAt: b.updatedAt,
+      lastMsgPreview: b.lastMsgPreview ?? '',
+      categoryIds: b.categoryIds ?? [],
       ptyRunning: ptyBubbles.has(b.id),
       devActive: (devByBubble.get(b.id) ?? 0) > 0,
     })),
@@ -433,6 +440,24 @@ app.get('/admin/overview', requireAdmin, (_req: Request, res: Response) => {
     if (!all.byUser[u.id]) users.push({ id: u.id, username: u.username, role: u.role, lastSync: 0, bubbles: [] });
   }
   res.json({ ok: true, users });
+});
+
+// Bitácora — solo admin. Eventos de sesión y agentes (quién hizo qué, dónde).
+app.get('/admin/audit', requireAdmin, (req: Request, res: Response) => {
+  const userId = typeof req.query.userId === 'string' && req.query.userId ? req.query.userId : undefined;
+  const typeRaw = typeof req.query.type === 'string' ? req.query.type : undefined;
+  if (typeRaw && !AUDIT_EVENT_TYPES.includes(typeRaw as AuditEventType)) {
+    return errResponse(res, 400, 'http.invalid_body', 'Tipo de evento inválido');
+  }
+  const since = req.query.since ? Number(req.query.since) : undefined;
+  const limit = req.query.limit ? Math.min(Number(req.query.limit), 1000) : undefined;
+  const events = queryEvents({
+    userId,
+    type: typeRaw as AuditEventType | undefined,
+    since: Number.isFinite(since) ? since : undefined,
+    limit: Number.isFinite(limit) ? limit : undefined,
+  });
+  res.json({ ok: true, events });
 });
 
 // ─── Config por workspace (admin define, todos consumen) ──────────────────
@@ -1614,7 +1639,13 @@ app.post('/pty/kill-terminal', (req: Request, res: Response) => {
 app.post('/bubble/close', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const summary = findBubble(bubbleId);
   const r = await closeBubbleResources(bubbleId);
+  if (req.ecoUser) logEvent({
+    actorId: req.ecoUser.id, actorName: req.ecoUser.username, type: 'bubble.delete',
+    bubbleId, workspace: summary?.workspace,
+    ...(summary?.title ? { meta: { title: summary.title } } : {}),
+  });
   res.json({ ok: true, ...r });
 });
 
@@ -1624,7 +1655,13 @@ app.post('/bubble/close', async (req: Request, res: Response) => {
 app.post('/bubble/archive', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  const summary = findBubble(bubbleId);
   const r = await closeBubbleResources(bubbleId, { keepWorktree: true });
+  if (req.ecoUser) logEvent({
+    actorId: req.ecoUser.id, actorName: req.ecoUser.username, type: 'bubble.archive',
+    bubbleId, workspace: summary?.workspace,
+    ...(summary?.title ? { meta: { title: summary.title } } : {}),
+  });
   res.json({ ok: true, ...r });
 });
 
@@ -1685,6 +1722,8 @@ app.post('/bubble/create', (req: Request, res: Response) => {
     ...(workspace ? { workspace } : {}),
     ...(baseBranch ? { baseBranch } : {}),
   });
+  // La creación se audita en /bubbles/sync (el frontend materializa la bubble y
+  // la sincroniza) para no duplicar el evento.
 
   // Si vino prompt inicial, spawneamos el PTY server-side y le tipeamos el
   // texto cuando claude CLI esté listo (~5 s cold start). El user descubre
@@ -1774,6 +1813,8 @@ const BubblesSyncSchema = z.object({
     status: z.string().max(64),
     archived: z.boolean().optional(),
     updatedAt: z.number(),
+    lastMsgPreview: z.string().max(400).optional(),
+    categoryIds: z.array(z.string().max(64)).max(20).optional(),
   })).max(500),
 });
 app.post('/bubbles/sync', (req: Request, res: Response) => {
@@ -1792,8 +1833,19 @@ app.post('/bubbles/sync', (req: Request, res: Response) => {
       status: b.status,
       archived: !!b.archived,
       updatedAt: b.updatedAt,
+      ...(b.lastMsgPreview ? { lastMsgPreview: b.lastMsgPreview.slice(0, 160) } : {}),
+      ...(b.categoryIds ? { categoryIds: b.categoryIds } : {}),
     }));
-  setBubblesSnapshot(uid, sanitized);
+  // Detección de creación de agente: bubbles nuevas en este sync → bitácora.
+  // El frontend crea las bubbles localmente (no vía /bubble/create), así que el
+  // sync es el único punto donde el backend ve un agente nuevo de la UI.
+  const added = setBubblesSnapshot(uid, sanitized);
+  for (const b of added) {
+    logEvent({
+      actorId: uid, actorName: req.ecoUser?.username ?? null, type: 'bubble.create',
+      bubbleId: b.id, workspace: b.workspace, meta: { title: b.title },
+    });
+  }
   res.json({ ok: true, count: sanitized.length });
 });
 

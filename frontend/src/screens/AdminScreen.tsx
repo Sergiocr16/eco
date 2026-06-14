@@ -7,15 +7,22 @@ import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { Btn } from '@/design/primitives';
 import { useT } from '@/hooks/useI18n';
-import { useAdmin, type AdminUser, type Role } from '@/hooks/useAdmin';
+import { useAdmin, type AdminUser, type Role, AUDIT_EVENT_TYPES } from '@/hooks/useAdmin';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useFormatRelTime } from '@/components/GitPanel/shared';
 import { IconShield, IconTrash, IconCheck, IconKey } from '@/design/icons';
+
+type AdminTab = 'users' | 'activity' | 'audit';
+const ADMIN_TABS: AdminTab[] = ['users', 'activity', 'audit'];
+const ADMIN_TAB_KEY: Record<AdminTab, string> = {
+  users: 'admin.tab.users', activity: 'admin.tab.activity', audit: 'admin.tab.audit',
+};
 
 export function AdminScreen({ currentUserId }: { currentUserId: string | null }) {
   const t = useTokens();
   const tr = useT();
   const admin = useAdmin();
-  const [tab, setTab] = useState<'users' | 'activity'>('users');
+  const [tab, setTab] = useState<AdminTab>('users');
 
   useEffect(() => { void admin.refreshUsers(); }, [admin.refreshUsers]);
   useEffect(() => {
@@ -24,6 +31,11 @@ export function AdminScreen({ currentUserId }: { currentUserId: string | null })
     const iv = setInterval(() => { void admin.refreshOverview(); }, 5000);
     return () => clearInterval(iv);
   }, [tab, admin.refreshOverview]);
+  useEffect(() => {
+    if (tab !== 'audit') return;
+    void admin.refreshUsers();
+    void admin.refreshAudit();
+  }, [tab, admin.refreshUsers, admin.refreshAudit]);
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px 80px' }}>
@@ -36,18 +48,20 @@ export function AdminScreen({ currentUserId }: { currentUserId: string | null })
       <p style={{ margin: '0 0 20px', color: t.text2, fontSize: 13 }}>{tr('admin.sub')}</p>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
-        {(['users', 'activity'] as const).map((id) => (
+        {ADMIN_TABS.map((id) => (
           <button key={id} type="button" onClick={() => setTab(id)} style={{
             padding: '7px 14px', borderRadius: 9, border: `1px solid ${tab === id ? t.accent : t.glassBorder}`,
             background: tab === id ? t.accentFaint : 'transparent', color: tab === id ? t.accent : t.text1,
             fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: t.fontSans,
-          }}>{tr(id === 'users' ? 'admin.tab.users' : 'admin.tab.activity')}</button>
+          }}>{tr(ADMIN_TAB_KEY[id])}</button>
         ))}
       </div>
 
       {tab === 'users'
         ? <UsersTab admin={admin} currentUserId={currentUserId}/>
-        : <ActivityTab admin={admin}/>}
+        : tab === 'activity'
+          ? <ActivityTab admin={admin}/>
+          : <AuditTab admin={admin}/>}
     </div>
   );
 }
@@ -286,6 +300,79 @@ function ActivityTab({ admin }: { admin: ReturnType<typeof useAdmin> }) {
         );
       })}
       {admin.overview.length === 0 && <div style={{ color: t.text2, fontSize: 13, padding: 16 }}>{tr('admin.activity.loading')}</div>}
+    </div>
+  );
+}
+
+// Bitácora: eventos de sesión y agentes, filtrables por usuario y por tipo.
+function AuditTab({ admin }: { admin: ReturnType<typeof useAdmin> }) {
+  const t = useTokens();
+  const tr = useT();
+  const relTime = useFormatRelTime();
+  const [userId, setUserId] = useState('');
+  const [type, setType] = useState('');
+
+  useEffect(() => {
+    void admin.refreshAudit({
+      userId: userId || undefined,
+      type: (type || undefined) as typeof AUDIT_EVENT_TYPES[number] | undefined,
+    });
+  }, [userId, type, admin.refreshAudit]);
+
+  const nameOf = (id: string | null): string => {
+    if (!id) return tr('admin.audit.unknown_user');
+    return admin.users.find((u) => u.id === id)?.username ?? tr('admin.audit.unknown_user');
+  };
+  const wsName = (ws?: string): string => (ws ? (ws.split('/').filter(Boolean).pop() ?? ws) : '');
+
+  const selectStyle = {
+    padding: '6px 10px', borderRadius: 9, border: `1px solid ${t.glassBorder}`,
+    background: t.bg2, color: t.text0, fontSize: 12.5, fontFamily: t.fontSans, cursor: 'pointer',
+  } as const;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: t.text2, fontSize: 12 }}>
+          {tr('admin.audit.filter.user')}
+          <select value={userId} onChange={(e) => setUserId(e.target.value)} style={selectStyle}>
+            <option value="">{tr('admin.audit.filter.all')}</option>
+            {admin.users.map((u) => <option key={u.id} value={u.id}>{u.username}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: t.text2, fontSize: 12 }}>
+          {tr('admin.audit.filter.type')}
+          <select value={type} onChange={(e) => setType(e.target.value)} style={selectStyle}>
+            <option value="">{tr('admin.audit.filter.all')}</option>
+            {AUDIT_EVENT_TYPES.map((ty) => <option key={ty} value={ty}>{tr(`admin.audit.type.${ty}`)}</option>)}
+          </select>
+        </label>
+      </div>
+
+      {admin.audit.length === 0 ? (
+        <div style={{ color: t.text2, fontSize: 13, padding: 16 }}>{tr('admin.audit.empty')}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {admin.audit.map((ev, i) => (
+            <div key={`${ev.ts}-${i}`} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '9px 12px', borderRadius: 10,
+              border: `1px solid ${t.glassBorder}`, background: t.bg2,
+            }}>
+              <div style={{ width: 26, height: 26, borderRadius: '50%', background: t.accentFaint, color: t.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 12, flexShrink: 0 }}>
+                {nameOf(ev.actorId).charAt(0).toUpperCase()}
+              </div>
+              <span style={{ color: t.text0, fontSize: 13, fontWeight: 600, flexShrink: 0 }}>{nameOf(ev.actorId)}</span>
+              <span style={{ color: t.text1, fontSize: 12.5 }}>{tr(`admin.audit.type.${ev.type}`)}</span>
+              {ev.workspace && (
+                <span style={{ color: t.text3, fontSize: 11, fontFamily: t.fontMono, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{wsName(ev.workspace)}</span>
+              )}
+              <div style={{ flex: 1 }}/>
+              <span style={{ color: t.text3, fontSize: 11.5, flexShrink: 0 }}>{relTime(new Date(ev.ts).toISOString())}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -55,6 +55,10 @@ export type Bubble = {
   // admin (bubbles de otros usuarios sintetizadas desde /admin/overview); en
   // el flujo normal las bubbles son del usuario logueado y va undefined.
   ownerId?: string;
+  // Preview del último mensaje, truncado. Solo se usa para tarjetas de bubbles
+  // ajenas en el dashboard de admin (sintetizadas sin `messages`); las bubbles
+  // propias derivan el preview de `messages` directamente.
+  lastMsgPreview?: string;
   // Soft delete: cuando es true, la burbuja desaparece del Dashboard y
   // aparece en la pantalla "Archivados". El worktree git se mantiene
   // intacto en disco para permitir des-archivar con todo el state.
