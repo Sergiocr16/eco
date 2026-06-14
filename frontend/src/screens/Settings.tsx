@@ -49,7 +49,7 @@ export function Settings({ role = null }: { role?: 'admin' | 'member' | null }) 
     ...(isAdmin ? [{ id: 'folders' as Section, label: tr('settings.section.folders'), icon: IconFolder }] : []),
     { id: 'security', label: tr('settings.section.security'), icon: IconShield },
     { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
-    { id: 'integrations', label: tr('settings.section.integrations'), icon: IconBolt },
+    ...(isAdmin ? [{ id: 'integrations' as Section, label: tr('settings.section.integrations'), icon: IconBolt }] : []),
     ...(isAdmin ? [{ id: 'backup' as Section, label: tr('settings.section.backup'), icon: IconShield }] : []),
     { id: 'about', label: tr('settings.section.about'), icon: IconInfo },
   ];
@@ -89,7 +89,7 @@ export function Settings({ role = null }: { role?: 'admin' | 'member' | null }) 
         {sec === 'folders' && isAdmin && <SectionFolders/>}
         {sec === 'security' && <SectionSecurity/>}
         {sec === 'appearance' && <SectionAppearance/>}
-        {sec === 'integrations' && <SectionIntegrations/>}
+        {sec === 'integrations' && isAdmin && <SectionIntegrations/>}
         {sec === 'backup' && isAdmin && <SectionBackup/>}
         {sec === 'about' && <SectionAbout/>}
       </div>

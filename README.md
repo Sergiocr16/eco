@@ -326,7 +326,7 @@ Run the security suite with `npm run test:security`.
 - **Server-authoritative cross-device state** — per-user doc store (bubbles+messages, categories, notes, review, theme) synced live over WebSocket; log in anywhere and find your work
 - **Server mode (remote web via Tailscale)** — `npm run serve:web` serves the built app over HTTPS on the tailnet; dev-server previews exposed per-port; thin clients (browser/iPad) connect with token + PIN
 - **Admin-defined server config + base branches per workspace** — set once by the admin in Settings → Folders; the ServerPanel becomes start/stop-only for everyone
-- **Role-gated Settings** — host/device options (Claude & API, Folders, Backup, menu bar, clean worktrees) are admin-only
+- **Role-gated Settings** — host/device options (Claude & API, Folders, Integrations, Backup, menu bar, clean worktrees) are admin-only
 
 ### Pending
 

@@ -238,3 +238,56 @@ export function useBubbleHasFilesMap(bubbles: BubbleRef[], intervalMs = 12_000):
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [validBubbles, tick]);
 }
+
+/**
+ * Como `useBubbleHasFilesMap` pero devuelve el NÚMERO de archivos cambiados
+ * por burbuja (Map<bubbleId, count>). Comparte el mismo cache + polling +
+ * dedup, así que montar ambos no duplica requests al backend.
+ */
+export function useBubbleChangeCountMap(bubbles: BubbleRef[], intervalMs = 12_000): Map<string, number> {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((n) => n + 1);
+    subscribers.add(fn);
+    return () => { subscribers.delete(fn); };
+  }, []);
+
+  const validBubbles = useMemo(
+    () => bubbles.filter((b) => !!b.workspace),
+    [bubbles],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      for (const b of validBubbles) {
+        if (cancelled) return;
+        void refreshOne(b.workspace, b.id);
+      }
+    };
+    tick();
+    const iv = setInterval(tick, intervalMs);
+    const onVis = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVis);
+    const offBus = ecoOn('eco:git_refresh', (e) => {
+      const target = validBubbles.find((b) => b.id === e.bubbleId);
+      if (target) void refreshOne(target.workspace, target.id);
+    });
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVis);
+      offBus();
+    };
+  }, [validBubbles, intervalMs]);
+
+  return useMemo(() => {
+    const out = new Map<string, number>();
+    for (const b of validBubbles) {
+      const entry = cache.get(cacheKey(b.workspace, b.id));
+      out.set(b.id, entry?.files.length ?? 0);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validBubbles, tick]);
+}
