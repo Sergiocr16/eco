@@ -19,6 +19,9 @@ import { describeAction, parseMetaCommand, stripWakePrefix, type MetaAction } fr
 import { emit as ecoEmit } from './lib/eco-bus';
 import { getVoiceTarget, writeVoiceToPty } from './lib/voice-router';
 import { writeToBubblePty } from './lib/pty-bridge';
+import { hydrateDocs } from './lib/user-sync';
+import { hydrateCategories } from './hooks/useCategories';
+import { hydratePrefs } from './lib/prefs-sync';
 import { CommandFeedback, type FeedbackPayload } from './components/CommandFeedback';
 import { StatusOverlay } from './components/StatusOverlay';
 import { WorkspacePicker } from './components/WorkspacePicker';
@@ -206,9 +209,25 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // Dispara desktop notifications al transitar busy → idle (opt-in via
   // setting `eco.notify.on_finish`).
   usePtyBusyTracker(bubbles.bubbles, detailBubbleId);
-  // Scheduler de auto-backup diario — chequea cada hora si pasaron 24h
+  // Scheduler de auto-backup (solo admin) — chequea cada 30min si pasaron 2h
   // desde el último backup y dispara export silencioso al folder configurado.
   useBackupScheduler(auth.state.role);
+
+  // Hidratación cross-device de prefs personales (categorías + tema/idioma) al
+  // loguear. Las bubbles las hidrata useBubbles; notas/review por-bubble se
+  // cargan al montar su panel.
+  useEffect(() => {
+    if (!auth.state.userId) return;
+    let cancelled = false;
+    void hydrateDocs().then((docs) => {
+      if (cancelled) return;
+      const cat = docs['categories'];
+      if (cat) hydrateCategories(cat.value, cat.updatedAt);
+      const prefs = docs['prefs'];
+      if (prefs) hydratePrefs(prefs.value, prefs.updatedAt);
+    });
+    return () => { cancelled = true; };
+  }, [auth.state.userId]);
 
   // Click en una notificación nativa del .dmg → abrir el agente que terminó.
   useEffect(() => {
