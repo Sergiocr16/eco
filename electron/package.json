@@ -13,6 +13,7 @@
     "start": "electron .",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac dmg",
+    "build:mac-dir": "electron-builder --mac dir",
     "build:win": "electron-builder --win nsis",
     "build:linux": "electron-builder --linux AppImage"
   },

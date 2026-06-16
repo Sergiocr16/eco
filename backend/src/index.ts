@@ -2036,6 +2036,25 @@ server.listen(config.port, config.host, () => {
   } catch (e) {
     console.error('[worktree-prune] error en startup:', e);
   }
+
+  // Auto-registro del MCP "eco" en Claude Code al arrancar (idempotente): si el
+  // binario está bundleado y `claude` existe pero el MCP no está registrado, lo
+  // instalamos apuntando al index.js de ESTE bundle. Así queda listo "por
+  // defecto" al instalar la app, sin pasos manuales. Best-effort: nunca rompe.
+  void (async () => {
+    try {
+      const st = await mcpConfig.getMcpStatus();
+      if (!st.binaryAvailable || !st.claudeAvailable) return;
+      // Re-registrar si: no está instalado, apunta a OTRO path (ej. una .app
+      // vieja/movida), o quedó con un ECO_BACKEND_URL stale (ej. el viejo :7200).
+      const info = st.rawInfo ?? '';
+      const stale = st.installed && (!info.includes(st.binaryPath) || /ECO_BACKEND_URL/.test(info));
+      if (!st.installed || stale) {
+        const r = await mcpConfig.installMcp();
+        console.log(r.ok ? '   MCP eco: registrado/refrescado automáticamente en Claude Code' : `   MCP eco: no se pudo registrar (${'code' in r ? r.code : ''})`);
+      }
+    } catch { /* best-effort */ }
+  })();
 });
 
 // GC periódico cada 15 min mientras corre.
