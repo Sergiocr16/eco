@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconLock, IconArrowR } from '@/design/icons';
+import { IconLock, IconArrowR, IconKey } from '@/design/icons';
+import { Btn } from '@/design/primitives';
 import { useT } from '@/hooks/useI18n';
 import { useProfile } from '@/hooks/useProfile';
+
+type AuthActionResult = { ok: true } | { ok: false; error: string };
 
 type Props = {
   username: string | null;
   onLock: () => void;
   onSignOut: () => void;
+  onChangePassword: (current: string, next: string) => Promise<AuthActionResult>;
 };
 
 function initial(username: string | null): string {
@@ -17,11 +21,12 @@ function initial(username: string | null): string {
   return trimmed[0]!.toUpperCase();
 }
 
-export function AccountMenu({ username, onLock, onSignOut }: Props) {
+export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: Props) {
   const t = useTokens();
   const tr = useT();
   const profile = useProfile();
   const [open, setOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -122,6 +127,12 @@ export function AccountMenu({ username, onLock, onSignOut }: Props) {
             onClick={handleLock}
           />
           <MenuItem
+            icon={IconKey}
+            label={tr('account.password')}
+            sub={tr('account.password.sub')}
+            onClick={() => { setOpen(false); setPwOpen(true); }}
+          />
+          <MenuItem
             icon={IconArrowR}
             label={tr('account.signout')}
             sub={tr('account.signout.sub')}
@@ -129,7 +140,76 @@ export function AccountMenu({ username, onLock, onSignOut }: Props) {
           />
         </div>
       )}
+
+      {pwOpen && <ChangePasswordDialog onChangePassword={onChangePassword} onClose={() => setPwOpen(false)}/>}
     </>
+  );
+}
+
+function ChangePasswordDialog({ onChangePassword, onClose }: {
+  onChangePassword: (current: string, next: string) => Promise<AuthActionResult>;
+  onClose: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit() {
+    if (busy) return;
+    setErr(null);
+    if (next.length < 6) { setErr(tr('account.password.err_short')); return; }
+    if (next !== confirm) { setErr(tr('account.password.err_mismatch')); return; }
+    setBusy(true);
+    const r = await onChangePassword(current, next);
+    setBusy(false);
+    if (r.ok) setDone(true); else setErr(r.error);
+  }
+
+  const input = (value: string, set: (v: string) => void, placeholder: string, autoFocus = false) => (
+    <input
+      type="password" value={value} autoFocus={autoFocus}
+      onChange={(e) => set(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
+      placeholder={placeholder}
+      style={{
+        padding: '10px 12px', borderRadius: 10, border: `1px solid ${t.glassBorder}`,
+        background: t.bg2, color: t.text0, fontSize: 13, fontFamily: t.fontSans, outline: 'none',
+      }}
+    />
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 'min(380px, calc(100vw - 48px))', background: t.bg2, border: `1px solid ${t.glassBorder}`, borderRadius: 16, padding: 24 }}>
+        <h3 style={{ margin: '0 0 14px', color: t.text0, fontSize: 16 }}>{tr('account.password')}</h3>
+        {done ? (
+          <>
+            <p style={{ color: t.text1, fontSize: 13, margin: '0 0 16px' }}>{tr('account.password.done')}</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Btn kind="primary" size="sm" onClick={onClose}>{tr('account.password.close')}</Btn>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+              {input(current, setCurrent, tr('account.password.current'), true)}
+              {input(next, setNext, tr('account.password.new'))}
+              {input(confirm, setConfirm, tr('account.password.confirm'))}
+            </div>
+            {err && <div style={{ marginBottom: 10, color: t.err, fontSize: 12.5 }}>{err}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Btn kind="secondary" size="sm" onClick={onClose}>{tr('account.password.cancel')}</Btn>
+              <Btn kind="primary" size="sm" onClick={submit} disabled={busy}>{busy ? tr('account.password.saving') : tr('account.password.save')}</Btn>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

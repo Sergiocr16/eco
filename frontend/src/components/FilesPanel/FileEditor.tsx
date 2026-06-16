@@ -5,7 +5,7 @@ import { useTokens, useTheme } from '@/design/theme';
 import { isLightTheme } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
 import { IconX } from '@/design/icons';
-import { ecoBackend, ecoToken } from '@/lib/eco-config';
+import { apiFetch } from '@/lib/api';
 import { baseExtensions, type SelectionInfo } from './cm-extensions';
 import { loadLang } from './lang-loader';
 import { openInIde, resolveAbsPath, getExternalIde, ideDisplayLabel } from '@/lib/ide-uri';
@@ -396,13 +396,7 @@ function ImagePreview({ bubbleId, workspace, path }: { bubbleId: string; workspa
     let revoke: string | null = null;
     (async () => {
       try {
-        const url = `${ecoBackend()}/file/raw?bubbleId=${encodeURIComponent(bubbleId)}&workspace=${encodeURIComponent(workspace)}&path=${encodeURIComponent(path)}`;
-        const headers: Record<string, string> = { 'X-Eco-Client': '1' };
-        const token = ecoToken();
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const session = window.localStorage.getItem('eco.session');
-        if (session) headers['X-Eco-Session'] = session;
-        const r = await fetch(url, { headers });
+        const r = await apiFetch(`/file/raw?bubbleId=${encodeURIComponent(bubbleId)}&workspace=${encodeURIComponent(workspace)}&path=${encodeURIComponent(path)}`);
         if (!r.ok) { setErr(tr('files.err.read_failed')); return; }
         const blob = await r.blob();
         if (cancelled) return;

@@ -91,6 +91,9 @@ function spawnBackend() {
     ECO_HOST: BACKEND_HOST,
     ECO_PORT: BACKEND_PORT,
     ECO_FRONTEND_DIST: frontendDist,
+    // Project id de Firebase para que el backend verifique los ID tokens (jose).
+    // Es config pública, no secreta (la seguridad son las Security Rules).
+    ECO_FIREBASE_PROJECT_ID: process.env.ECO_FIREBASE_PROJECT_ID || 'aditum-eco',
   };
   console.log('[electron] spawn backend:', entry);
   backendProc = spawn(process.execPath, [entry], {

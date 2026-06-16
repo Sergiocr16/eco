@@ -6,13 +6,14 @@
 // en el backend, así que el texto llega al Claude CLI ya corriendo dentro.
 // Cerramos el WS después de mandar (no nos quedamos escuchando output).
 
-import { readStoredSession } from './eco-config';
+import { currentIdToken } from './firebase';
 
 export type WriteToBubblePtyOpts = {
   bubbleId: string;
   workspace: string;
   text: string;       // texto a escribir tal cual (typicamente termina en \r)
-  token: string;
+  // Legacy (ignorado): la auth del WS ahora sale del ID token de Firebase.
+  token?: string;
   // Espera extra (ms) cuando el PTY se está creando recién — sin esto la
   // primera escritura puede llegar antes de que zsh + claude CLI imprimieran
   // el prompt y el input se pierde.
@@ -29,6 +30,9 @@ export async function writeToBubblePty(
   const firstStartDelay = opts.firstStartDelay ?? 2000;
   const totalTimeout    = opts.totalTimeout    ?? 6000;
 
+  const idToken = await currentIdToken();
+  if (!idToken) return { ok: false, error: 'sesión no iniciada' };
+
   return new Promise((resolve) => {
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = new URL(`${wsProto}//${window.location.host}/ws/pty`);
@@ -37,10 +41,7 @@ export async function writeToBubblePty(
     url.searchParams.set('cols', '120');
     url.searchParams.set('rows', '30');
 
-    const sess = readStoredSession();
-    const protocols = opts.token
-      ? [`eco.token.${opts.token}`, ...(sess ? [`eco.session.${sess}`] : [])]
-      : undefined;
+    const protocols = [`eco.idtoken.${idToken}`];
     let ws: WebSocket;
     try {
       ws = new WebSocket(url.toString(), protocols);

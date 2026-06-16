@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { ecoToken, readStoredSession } from '@/lib/eco-config';
+import { currentIdToken } from '@/lib/firebase';
 import { useTokens } from '@/design/theme';
 
 type Props = {
@@ -73,12 +73,6 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       return url.toString();
     };
 
-    const token = ecoToken();
-    const sess = readStoredSession();
-    const protocols = token
-      ? [`eco.token.${token}`, ...(sess ? [`eco.session.${sess}`] : [])]
-      : undefined;
-
     let ws: WebSocket | null = null;
     let pingTimer: number | null = null;
     let resizeObs: ResizeObserver | null = null;
@@ -88,8 +82,16 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
 
     const disposeInputRef: { current: { dispose: () => void } | null } = { current: null };
 
-    function connect() {
+    async function connect() {
       if (disposed) return;
+      const idToken = await currentIdToken();
+      if (disposed) return;
+      if (!idToken) {
+        setStatus('error');
+        setErrMsg('Sesión no iniciada');
+        return;
+      }
+      const protocols = [`eco.idtoken.${idToken}`];
       const urlStr = buildUrl();
       try {
         ws = new WebSocket(urlStr, protocols);

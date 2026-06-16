@@ -8,10 +8,14 @@ import { on as ecoOn } from './eco-bus';
 
 const DOC_KEY = 'prefs';
 
-export type Prefs = { themeMode?: string; accentHue?: number; lang?: string };
+// photo: data-URL JPEG chiquito (128px, <8KB) de la foto de perfil. Va en prefs
+// para sincronizar cross-device como el resto. null = sin foto (limpiada).
+export type Prefs = { themeMode?: string; accentHue?: number; lang?: string; photo?: string | null };
 
 let current: Prefs = {};
 const subs = new Set<(p: Prefs) => void>();
+
+export function getPrefs(): Prefs { return current; }
 
 export function subscribePrefs(fn: (p: Prefs) => void): () => void {
   subs.add(fn);
@@ -27,6 +31,7 @@ function applyFromServer(value: unknown) {
     themeMode: typeof v.themeMode === 'string' ? v.themeMode : current.themeMode,
     accentHue: typeof v.accentHue === 'number' ? v.accentHue : current.accentHue,
     lang: typeof v.lang === 'string' ? v.lang : current.lang,
+    photo: typeof v.photo === 'string' ? v.photo : (v.photo === null ? null : current.photo),
   };
   emit();
 }

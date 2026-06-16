@@ -68,7 +68,11 @@ function userPath(id: string): string { return join(userDir(id), 'user.json'); }
 /** Path a un archivo de datos dentro de la carpeta del usuario (github.json,
  *  mcp-token, etc.). Crea la carpeta si hace falta. Valida el id. */
 export function userFilePath(userId: string, name: string): string {
-  if (!/^[a-f0-9]{1,32}$/.test(userId)) throw new AppError('auth.no_user', 'userId inválido', 400);
+  // Acepta ids legacy (hex) Y uids de Firebase (alfanuméricos con _/-, hasta
+  // 128 chars). Sigue siendo path-safe: sin '.', '/', ni separadores → no hay
+  // traversal. El doc-store en disco y las credenciales por usuario se indexan
+  // por este id mientras Firestore no sea aún la autoridad de esos datos.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId)) throw new AppError('auth.no_user', 'userId inválido', 400);
   const dir = userDir(userId);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
   return join(dir, name);

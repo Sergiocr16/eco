@@ -40,6 +40,8 @@ import {
 } from './users-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
 import { runWithUser } from './request-context.js';
+import { verifyFirebaseIdToken } from './firebase-auth.js';
+import { getMachineUser, setMachineUser } from './machine-user.js';
 import { isAppError } from './app-error.js';
 import { resolveSafePath } from './fs-paths.js';
 import { listTree } from './fs-tree.js';
@@ -116,7 +118,9 @@ const SESSION_HEADER = 'x-eco-session';
 // re-mintar una sesión desde el bearer token permanente cuando la suya expiró
 // por inactividad, sin volver a pedir PIN. El lock manual no se ve afectado:
 // el frontend solo dispara la renovación si todavía tenía una sesión guardada.
-const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login', '/auth/recover', '/auth/session', '/auth/claim']);
+// Con Firebase Auth, la identidad sale del ID token verificado en cada request.
+// Los /auth/* legacy (PIN/sesión) quedan inertes — no se exponen sin token.
+const AUTH_FREE_PATHS = new Set(['/auth/status']);
 // Endpoints adicionales que NO requieren sesión interactiva — solo Bearer +
 // X-Eco-Client. Consumidos por clientes "bot" como el MCP server stdio (en
 // mcp-server/), que viven en otro proceso y no tienen UI de login. La
@@ -262,39 +266,40 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const token = extractBearer(req.headers.authorization);
-  if (!tokensMatch(authToken, token)) {
-    return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
-  }
-  next();
-});
-
-// Session check: si hay usuario registrado, requiere session válida en TODOS los endpoints
-// excepto los de /auth/* y /health (este último ya pasó arriba). Adjunta la
-// identidad derivada de la sesión a `req.ecoUser` — NUNCA se confía en un
-// userId que mande el cliente.
+// Identidad por request. Dos credenciales válidas (multi-tenant en la nube,
+// backend local single-user):
+//  1) ID token de Firebase (Authorization: Bearer <jwt>) → identidad del usuario
+//     de la app. Se verifica contra las claves públicas de Google (sin
+//     service-account). El uid resultante es la identidad; el rol admin/member es
+//     un asunto del frontend (enforced por las Security Rules de Firestore).
+//  2) Token de máquina (~/.eco/token) → transporte local de confianza para los
+//     procesos sin login interactivo (MCP server stdio). Solo habilita los paths
+//     MCP_FREE; el dueño se resuelve al "usuario de máquina" (último login).
+// NUNCA se confía en un userId que mande el cliente.
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (AUTH_FREE_PATHS.has(req.path)) return next();
-  if (isMcpFreePath(req.method, req.path)) {
-    // No requiere sesión interactiva, pero si el cliente manda una válida
-    // (p.ej. el browser pidiendo /workspaces) la usamos para scoping por usuario.
-    const s = getSession(req.headers[SESSION_HEADER] as string | undefined);
-    if (s) req.ecoUser = { id: s.userId, role: s.role, username: s.username };
-    return next();
+  const token = extractBearer(req.headers.authorization);
+
+  // 1) Token de máquina (MCP / procesos locales).
+  if (token && tokensMatch(authToken, token)) {
+    if (isMcpFreePath(req.method, req.path)) {
+      const uid = getMachineUser();
+      if (uid) req.ecoUser = { id: uid, role: 'member', username: '' };
+      return next();
+    }
+    return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
   }
-  if (!hasAnyUser()) return next(); // sin user registrado, no se requiere sesión todavía
-  const sessionId = req.headers[SESSION_HEADER] as string | undefined;
-  const session = getSession(sessionId);
-  if (!session) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
-  // Un usuario deshabilitado mid-sesión pierde acceso al instante (no espera el
-  // TTL de 1h). Lee user.json — solo en paths con sesión, no en los AUTH_FREE/MCP.
-  if (getUser(session.userId)?.disabled) {
-    destroySession(sessionId);
-    return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
-  }
-  req.ecoUser = { id: session.userId, role: session.role, username: session.username };
-  next();
+
+  // 2) ID token de Firebase (identidad de usuario de la app). Verificación async.
+  void verifyFirebaseIdToken(token).then((verified) => {
+    if (!verified) {
+      // Paths MCP_FREE pueden entrar con el token de máquina; sin credencial válida, 401.
+      return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
+    }
+    setMachineUser(verified.uid);
+    req.ecoUser = { id: verified.uid, role: 'member', username: verified.email ?? '' };
+    next();
+  }).catch(() => errResponse(res, 401, 'http.unauthorized', 'No autorizado'));
 });
 
 // Contexto por-request: corre el resto de la cadena dentro de un store con el
@@ -304,10 +309,12 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   runWithUser(req.ecoUser?.id, () => next());
 });
 
-// requireAdmin — guarda para los endpoints /admin/*. Se usa DESPUÉS del
-// middleware de sesión (que ya pobló req.ecoUser).
+// Guarda para endpoints "de host" (backup, workspace-config, admin legacy). En
+// el backend local single-user basta con estar autenticado: la máquina sirve a
+// UNA persona y el rol admin/member para datos compartidos lo enforce Firestore
+// (Security Rules), no este backend. Mantiene el nombre para no tocar call sites.
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.ecoUser?.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
+  if (!req.ecoUser) return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
   next();
 }
 

@@ -65,6 +65,11 @@ export type Bubble = {
   // Eliminar definitivamente borra el worktree y limpia localStorage.
   archived?: boolean;
   archivedAt?: number;
+  // "Eliminado": estado oculto. El doc NUNCA se borra de Firestore — solo se
+  // marca deleted=true y se filtra en todos lados (dashboard, archivados,
+  // overview de admin). Permite recuperarlo manualmente desde la nube si hace falta.
+  deleted?: boolean;
+  deletedAt?: number;
 };
 
 export type BubbleAction =
