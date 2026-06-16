@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { isAllowedWorkspace, isInsideWorkspace } from './config.js';
 import { buildSafeEnv, isDangerousBash } from './security.js';
+import { shRun } from './platform.js';
 
 export const ShellRequestSchema = z.object({
   command: z.string().min(1).max(10_000),
@@ -41,7 +42,8 @@ export async function runShell(req: ShellRequest): Promise<ShellResult> {
   }
 
   return await new Promise<ShellResult>((resolve, reject) => {
-    const child = spawn('sh', ['-c', req.command], {
+    const { cmd, args } = shRun(req.command);
+    const child = spawn(cmd, args, {
       cwd: req.cwd,
       env: buildSafeEnv({ NO_COLOR: '1' }),
       stdio: ['ignore', 'pipe', 'pipe'],

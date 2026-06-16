@@ -201,6 +201,9 @@ type Props = {
   // Dictado a la terminal: el botón de la cabecera enciende el mic en modo
   // dictado; lo dictado se acumula en `dictationText` y se muestra como burbuja
   // arriba. "Enviar a terminal" lo escribe en el PTY principal sin Enter.
+  // Soporte de dictado en esta plataforma (false en Windows/Linux empaquetado,
+  // donde no hay STT nativo). Cuando es false se oculta el botón de dictar.
+  dictationSupported?: boolean;
   dictationActive?: boolean;
   dictationText?: string;
   onStartDictation?: () => void;
@@ -310,7 +313,7 @@ function DictationBar({
 export function AgentDetail({
   bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
   onToggleCategory,
-  dictationActive = false, dictationText = '',
+  dictationSupported = false, dictationActive = false, dictationText = '',
   onStartDictation, onSendDictation, onCancelDictation, onClearDictation,
   onOpenInNewWindow, solo = false,
 }: Props) {
@@ -499,7 +502,7 @@ export function AgentDetail({
         </div>
 
         <div style={{ display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
-          {!solo && (
+          {!solo && dictationSupported && (
             <Btn
               icon={dictationActive ? IconStop : IconMic}
               kind={dictationActive ? 'primary' : 'secondary'}

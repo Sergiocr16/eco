@@ -30,17 +30,27 @@ export function isDangerousBash(command: string): { dangerous: boolean; reason?:
   return { dangerous: false };
 }
 
+import { delimiter as PATH_DELIMITER } from 'node:path';
+
+const IS_WIN = process.platform === 'win32';
+
 export const SAFE_ENV_KEYS = [
   'PATH', 'HOME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE',
   'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'PWD', 'TERM',
+  // Windows: sin estas, spawnear cmd/powershell, resolver binarios (PATHEXT) o
+  // que muchos programas arranquen (SystemRoot/windir) falla silenciosamente.
+  'SystemRoot', 'windir', 'SystemDrive', 'ComSpec', 'PATHEXT',
+  'USERPROFILE', 'USERNAME', 'USERDOMAIN', 'HOMEDRIVE', 'HOMEPATH',
+  'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)',
+  'ProgramW6432', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'PROCESSOR_ARCHITEW6432',
 ];
 
 // Directorios bin que macOS NO incluye en el PATH cuando una app .app se
 // lanza desde Finder/Dock (solo hereda `/usr/bin:/bin:/usr/sbin:/sbin`).
 // Homebrew instala en `/opt/homebrew/bin` (Apple Silicon) o `/usr/local/bin`
 // (Intel). Sin esto, herramientas como `gh`, `git` de brew, `mvn`, etc.
-// no se encuentran al spawnear desde el backend empaquetado.
-const EXTRA_PATH_DIRS = [
+// no se encuentran al spawnear desde el backend empaquetado. Solo POSIX.
+const EXTRA_PATH_DIRS = IS_WIN ? [] : [
   '/opt/homebrew/bin',
   '/opt/homebrew/sbin',
   '/usr/local/bin',
@@ -49,15 +59,16 @@ const EXTRA_PATH_DIRS = [
 
 /** Devuelve un PATH que combina el heredado + los dirs de Homebrew/local,
  *  sin duplicados. Los dirs extra van al FINAL (prioridad al PATH del user
- *  si lo tiene completo, ej. en dev con `npm run`). */
+ *  si lo tiene completo, ej. en dev con `npm run`). El separador es ';' en
+ *  Windows y ':' en POSIX (path.delimiter). */
 function augmentedPath(): string {
-  const inherited = (process.env.PATH || '').split(':').filter(Boolean);
+  const inherited = (process.env.PATH || '').split(PATH_DELIMITER).filter(Boolean);
   const seen = new Set(inherited);
   const merged = [...inherited];
   for (const d of EXTRA_PATH_DIRS) {
     if (!seen.has(d)) { merged.push(d); seen.add(d); }
   }
-  return merged.join(':');
+  return merged.join(PATH_DELIMITER);
 }
 
 export function buildSafeEnv(extras: Record<string, string | undefined> = {}): Record<string, string> {

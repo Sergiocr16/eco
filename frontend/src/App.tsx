@@ -677,6 +677,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                         }}
                         onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(b.id, ws)}
                         onToggleCategory={(catId) => bubbles.toggleBubbleCategory(b.id, catId)}
+                        dictationSupported={voice.isSupported}
                         dictationActive={dictationActive && dictationBubbleIdRef.current === b.id}
                         dictationText={dictationActive && dictationBubbleIdRef.current === b.id ? (dictationBuffer + (voice.interimText ? ` ${voice.interimText}` : '')).trim() : ''}
                         onStartDictation={() => startTerminalDictation(b.id)}

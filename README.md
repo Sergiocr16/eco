@@ -1,6 +1,6 @@
 # Eco
 
-Local-first personal assistant for macOS Apple Silicon. Parallel Claude agents, terminal, files, code, git, and an embedded browser — 100% local. Distributed as a native `.dmg` (~112 MB) via Electron 33.
+Local-first personal assistant for **macOS Apple Silicon and Windows x64**. Parallel Claude agents, terminal, files, code, git, and an embedded browser — 100% local. Distributed as a native `.dmg` (~112 MB) on macOS and an NSIS `.exe` (~96 MB) on Windows, via Electron 33.
 
 ```
         ┌───────────────────────────────────────┐
@@ -78,12 +78,12 @@ Switching between bubbles A → B → A reloads nothing — each open bubble kee
 <a id="requirements"></a>
 ## 3. Requirements
 
-- **macOS Apple Silicon** (arm64). x64 is not packaged.
+- **macOS Apple Silicon** (arm64) **or Windows x64**. macOS Intel is not packaged.
 - **Node 20** (`nvm use 20.20.2` works).
-- **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated (`claude login` or an API key saved from Settings).
+- **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated (`claude login` or an API key saved from Settings). On Windows, the native installer's `claude.exe` is auto-resolved; otherwise set `CLAUDE_CLI_PATH` to a real `.exe`.
 - **git**.
-- **`gh` (GitHub CLI)** — required for the **PRs sub-tab** of the Git panel. Without `gh` installed, the Branches/History sub-tabs work fine but `PRs` shows `pr.gh_missing`. Install with `brew install gh`. The GitHub PAT you save in Settings is injected as `GH_TOKEN` into `gh` calls — it does NOT replace the `gh` binary itself.
-- Optional: **Xcode Command Line Tools** if you need to rebuild the Swift dictation CLI (`eco-stt`).
+- **`gh` (GitHub CLI)** — required for the **PRs sub-tab** of the Git panel. Without `gh` installed, the Branches/History sub-tabs work fine but `PRs` shows `pr.gh_missing`. Install with `brew install gh` (macOS) or `winget install GitHub.cli` (Windows). The GitHub PAT you save in Settings is injected as `GH_TOKEN` into `gh` calls — it does NOT replace the `gh` binary itself.
+- Optional (macOS only): **Xcode Command Line Tools** if you need to rebuild the Swift dictation CLI (`eco-stt`). **Terminal dictation is macOS-only** — the button is hidden on Windows.
 
 ---
 
@@ -118,7 +118,9 @@ For env vars, see [CLAUDE.md §3](./CLAUDE.md#env).
 ---
 
 <a id="build"></a>
-## 5. Build the .dmg
+## 5. Build the installer
+
+**macOS** (`.dmg`):
 
 ```bash
 npm run dmg
@@ -126,11 +128,19 @@ npm run dmg
 # → release/mac-arm64/Eco.app       (~296 MB installed)
 ```
 
-The `.dmg` is unsigned (`identity: null`) — fine for personal use. To distribute, add Apple Developer ID code signing + notarization.
+The `.dmg` is unsigned (`identity: null`) — fine for personal use. To distribute, add Apple Developer ID code signing + notarization. If you modified the Swift dictation CLI (`eco-stt`), run `./electron/native/build.sh` first.
 
-If you modified the Swift dictation CLI (`eco-stt`), run `./electron/native/build.sh` first.
+**Windows** (NSIS `.exe`), from a Windows machine with PowerShell:
 
-For the full reinstall recipe (kill running app, delete previous install, copy with `ditto`, strip quarantine, optional cache wipe), see [CLAUDE.md Appendix B](./CLAUDE.md#debug).
+```powershell
+npm run dist:win
+# → release/Eco Setup 1.0.0.exe      (NSIS, ~96 MB, per-user, unsigned)
+# → release/win-unpacked/Eco.exe     (portable — runs without installing)
+```
+
+The installer is unsigned, so Windows SmartScreen shows "Windows protected your PC" → click *More info → Run anyway*. If a previous install is half-broken, uninstall it from Settings → Apps first, or just run the portable `win-unpacked\Eco.exe`. Mac and Windows cannot be cross-built — build each on its own OS.
+
+The build config (`electron/electron-builder.config.cjs`) filters native prebuilds (node-pty, ripgrep) per target, and the OS-dependent backend lives in `backend/src/platform.ts`. For the full Windows reference (build, prepare scripts, icon generation, gotchas) see [CLAUDE.md Appendix E](./CLAUDE.md#windows); for the macOS reinstall recipe see [CLAUDE.md Appendix B](./CLAUDE.md#debug).
 
 ---
 
@@ -143,9 +153,9 @@ eco/
 ├── CLAUDE.md                ← operational manual (rules, gotchas, endpoints, debug)
 ├── package.json             ← workspace root + parallel scripts
 │
-├── backend/                 ← Node + Express + Claude SDK + node-pty
+├── backend/                 ← Node + Express + Claude SDK + node-pty (OS seam: src/platform.ts)
 ├── frontend/                ← Vite + React + TS + Motion + Tailwind v4
-├── electron/                ← Electron 33 wrapper + Swift dictation CLI (eco-stt)
+├── electron/                ← Electron 33 wrapper + electron-builder.config.cjs (mac/win) + Swift dictation CLI (eco-stt, macOS)
 ├── scripts/                 ← check-i18n.mjs and other tooling
 └── release/                 ← electron-builder output (gitignored)
 ```
@@ -276,7 +286,7 @@ Run the security suite with `npm run test:security`.
 
 | Layer | Technology |
 |---|---|
-| Packaging | Electron 33 + electron-builder 25 (mac arm64 only, ~112 MB DMG) |
+| Packaging | Electron 33 + electron-builder 25 — macOS arm64 `.dmg` (~112 MB) + Windows x64 NSIS `.exe` (~96 MB); JS build config with per-target prebuild filters |
 | Frontend | Vite 6, React 18, TS 5, Tailwind v4, Motion 11, Radix UI |
 | Embedded browser | Chromium `<webview>` with UA Chrome 131 + persisted partition |
 | Terminal | xterm.js + addon-fit + addon-web-links + node-pty (real PTY) |
@@ -331,11 +341,13 @@ Run the security suite with `npm run test:security`.
 - **Server mode (remote web via Tailscale)** — `npm run serve:web` serves the built app over HTTPS on the tailnet; dev-server previews exposed per-port; thin clients (browser/iPad) connect with token + PIN
 - **Admin-defined server config + base branches per workspace** — set once by the admin in Settings → Folders; the ServerPanel becomes start/stop-only for everyone
 - **Role-gated Settings** — host/device options (Claude & API, Folders, Integrations, Backup, menu bar, clean worktrees) are admin-only
+- **Windows x64 packaging** — NSIS `.exe` installer + portable build. OS-dependent backend primitives (shell, ports, process-kill) abstracted in `backend/src/platform.ts`; electron-builder JS config filters native prebuilds per target; single-instance lock + always-show-window hardening. Terminal dictation stays macOS-only (Apple Speech). See CLAUDE.md Appendix E.
 
 ### Pending
 
-- Code signing + Apple notarization for distributable `.dmg`
-- Windows / Linux packaging (currently arm64-darwin only; would require porting the `eco-stt` Swift dictation CLI to an alternative per OS)
+- Code signing (Apple notarization for the `.dmg` / Authenticode for the `.exe`) for distributable installers
+- Windows terminal dictation (would need a Windows STT helper to replace the macOS-only `eco-stt`)
+- Linux packaging (an AppImage target exists in the build config but is untested)
 - Long-form chat history with pagination / lazy load (today: 100 messages per bubble in localStorage, 300 in memory)
 - Auto-update via `electron-updater` + S3/GitHub Releases
 - License gating with Paddle / LemonSqueezy (when it goes to sale)

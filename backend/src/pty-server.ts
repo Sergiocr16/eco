@@ -10,13 +10,10 @@ import { ensureWorktree } from './worktree-manager.js';
 import { githubEnvOverrides } from './github-runtime.js';
 import { verifyFirebaseIdToken } from './firebase-auth.js';
 import { setMachineUser } from './machine-user.js';
+import { defaultShell } from './platform.js';
 
 // uid resuelto en verifyClient (verificación async del ID token de Firebase).
 type ReqWithUid = IncomingMessage & { ecoUid?: string };
-
-function defaultShell(): string {
-  return process.env.SHELL || (existsSync('/bin/zsh') ? '/bin/zsh' : '/bin/bash');
-}
 
 type PtyInput =
   | { type: 'input'; data: string }

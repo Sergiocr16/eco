@@ -26,14 +26,17 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 19. [Build & .dmg packaging](#build)
 20. [Appendix A: Common errors → fixes](#errors)
 21. [Appendix B: Debug commands + reading order](#debug)
+22. [Appendix C: External MCP server](#mcp-appendix)
+23. [Appendix D: Multi-tenant](#multitenant)
+24. [Appendix E: Windows & cross-platform packaging](#windows)
 
 ---
 
 <a id="tldr"></a>
 ## 1. TL;DR
 
-- **Eco** is a local-first macOS Apple Silicon app that orchestrates Claude conversations. Each conversation ("agent" / "bubble") gets its own git worktree, PTY, files, dev server, browser, notes. 100% local except the Anthropic API.
-- **Packaged** via Electron 33 + electron-builder 25. `.dmg` arm64 only (~112 MB). Windows/Linux targets removed.
+- **Eco** is a local-first **cross-platform** desktop app (macOS Apple Silicon + Windows x64) that orchestrates Claude conversations. Each conversation ("agent" / "bubble") gets its own git worktree, PTY, files, dev server, browser, notes. 100% local except the Anthropic API.
+- **Packaged** via Electron 33 + electron-builder 25. macOS → `.dmg` arm64 (~112 MB). Windows → NSIS `.exe` x64 (~96 MB). The OS-dependent backend primitives (shell, ports, process-kill) live in `backend/src/platform.ts`; the build config is `electron/electron-builder.config.cjs` (conditional native prebuilds per target). **Full Windows + packaging detail in Appendix E — read it before touching spawn/shell/port/kill code, the electron-builder config, or the prepare scripts.**
 - **User**: Sergio Castro (Florida, USA). Rules in §2 + the global `~/.claude/CLAUDE.md` apply (Obsidian vault, no auto-commits, Spanish UI but English docs).
 - **State**: fully standalone. The ONLY voice feature is **terminal dictation** (on-device STT via Swift + Apple Speech in the .dmg, Web Speech in the browser). Everything else voice-related was removed (wake word, voice commands, TTS, voice settings — see the Removed table in §2). Dev servers persist across reloads. Everything bundled.
 - **Dev logs flow via WS push** (`dev_log` batched every 80 ms), not polling.
@@ -74,6 +77,10 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 | **User-facing errors in Spanish.** Backend returns stable `code` + `message`; frontend translates via `translateBackendError`. | |
 | **Persist important state to disk** (`~/.eco/*.json` chmod 600) when it must survive a backend reload. | tsx-watch + .app reload would lose memory-only state. |
 | **Validate input at the boundary.** Zod schemas for POST, regex/whitelist for any arg that hits `spawn` or path joins. | |
+| **Cross-platform: never hardcode the shell, the path separator, `lsof`, `process.kill(-pgid)`, or POSIX paths.** Route OS-dependent ops through `backend/src/platform.ts` (`defaultShell`/`shellRun`/`shRun`/`pidsOnPort`/`killTree`/`killPid`/`detachForGroup`/`resolveClaudeCli`) and use `path.delimiter`. | Eco ships on macOS AND Windows. See Appendix E. |
+| **In ESM use `fileURLToPath(import.meta.url)`, never `new URL(import.meta.url).pathname`.** The latter yields `/C:/…` on Windows and leaves `%20` for spaces. | Breaks path resolution on Windows (and on Mac paths with spaces). |
+| **`chmodSync` to 0o600 must be in try/catch.** It's a no-op on NTFS and security relies on the FS, not POSIX mode bits. | Windows has no POSIX perms. |
+| **After touching packaging or the prepare scripts, build BOTH targets** (`npm run dist:mac` on a Mac, `npm run dist:win` on Windows) — they can't be cross-built. | NSIS/dmg, node-pty + ripgrep prebuilds, and code-signing are host-specific. |
 
 **Removed items — do NOT restore:**
 
@@ -1021,7 +1028,7 @@ The whole meta-command system (wake word + `Eco …` navigation/agent/tab/server
 
 ### Modules
 
-- **Backend ESM**: `import.meta.url` instead of `__dirname`; `.js` extensions in relative imports.
+- **Backend ESM**: derive module paths with `fileURLToPath(import.meta.url)` (NOT `new URL(import.meta.url).pathname` — breaks on Windows); `.js` extensions in relative imports.
 - **Frontend Vite ESM**: alias `@/...` for `src/`.
 - **Electron CJS**: `main.cjs` and `preload.cjs` (the main process requires CJS).
 
@@ -1110,7 +1117,14 @@ If any fails, the PR is not ready.
 ---
 
 <a id="build"></a>
-## 19. Build & .dmg packaging
+## 19. Build & packaging
+
+> **macOS** below. For the **Windows NSIS `.exe`** build (`npm run dist:win`), the
+> electron-builder JS config, the native-prebuild filtering per target, the
+> `prepare-backend` hoisted-install fix, and every Windows gotcha (claude CLI
+> resolution, `buildSafeEnv` env keys, single-instance lock, the `icon.ico`
+> generator, install/SmartScreen notes), see **Appendix E**. Both share
+> `npm run build:all`; only the final `electron-builder` target differs.
 
 ### Clean build for the .dmg
 
@@ -1316,6 +1330,7 @@ To understand features without flailing:
 - **FilesPanel security**: `backend/src/fs-paths.ts:resolveSafePath` — single chokepoint for path validation
 - **Notes summarizer**: `backend/src/notes-summary.ts` — slimming + claude-p spawn + 3-section prompt
 
+<a id="mcp-appendix"></a>
 ## Appendix C: External MCP server (Claude Code)
 
 Paquete standalone en `mcp-server/` que expone tools MCP por stdio para
@@ -1447,6 +1462,7 @@ El formato de `~/.claude.json` es interno de Claude Code y puede cambiar
 entre versiones; además contiene config sensible no relacionada al MCP.
 Delegar a la CLI usa un contrato estable (exit 0 = registrado).
 
+<a id="multitenant"></a>
 ## Appendix D: Multi-tenant (rol admin + per-user)
 
 > **Estado:** mergeado a `main`. Convierte Eco de single-user a **multi-tenant sobre
@@ -1521,3 +1537,90 @@ Todos los spawns corren como el MISMO usuario del SO y comparten el CLI de Claud
 - **Namespacing de directorios de worktree por usuario**: hoy `~/.eco/worktrees/<bubbleId>` (plano). No causa colisiones (bubbleIds son únicos globalmente) y la ownership la imponen los checks de endpoint; queda como hardening.
 - **Token MCP por usuario**: el MCP server (`/bubble/create|send`, `/bubbles`) atribuye al primer admin cuando no hay sesión. Falta un token MCP por usuario (`X-Eco-Mcp`).
 - **Ownership fino en endpoints FS** (`/fs/tree`, `/file/*`): hoy gateados por `isAllowedWorkspace` (per-usuario vía ALS) + early-return incondicional de worktrees.
+
+---
+
+<a id="windows"></a>
+## Appendix E: Windows & cross-platform packaging
+
+Eco runs and packages on **macOS (arm64 `.dmg`)** AND **Windows (x64 NSIS `.exe`)**. The Firebase/Auth/data layer is platform-agnostic and untouched by the port. Everything OS-dependent is funneled through a small set of seams so the rest of the code stays platform-blind.
+
+### The platform seam — `backend/src/platform.ts`
+
+The single home for OS-dependent primitives. **Never inline a shell, `lsof`, `process.kill(-pgid)`, or a `:` path separator anywhere else — call these.**
+
+| Export | POSIX | Windows |
+|---|---|---|
+| `IS_WIN` | `false` | `true` |
+| `defaultShell()` | `$SHELL` → `/bin/zsh`/`/bin/bash` | `%ComSpec%` (cmd.exe) / PowerShell |
+| `shellRun(cmd)` | `/bin/bash -c <cmd>` | `cmd.exe /d /s /c <cmd>` |
+| `shRun(cmd)` | `sh -c <cmd>` | `cmd.exe /d /s /c <cmd>` |
+| `detachForGroup` | `true` (spawn `detached` → process group) | `false` (no process groups) |
+| `pidsOnPort(port)` | `lsof -ti :<port> -sTCP:LISTEN` | parse `netstat -ano` LISTENING rows |
+| `killTree(pid, sig)` | `process.kill(-pgid, sig)` (group) | `taskkill /PID <pid> /T /F` (tree) |
+| `killPid(pid, sig)` | `process.kill(pid, sig)` | `taskkill /PID <pid> /F` |
+| `resolveClaudeCli()` | `~/.local/bin/claude` | `$CLAUDE_CLI_PATH` → `~/.local/bin/claude.exe` → `where claude` (prefers `.exe`) |
+
+Wired into: `pty-server.ts` (`defaultShell`), `dev-server.ts` (spawn via `shellRun`+`detachForGroup`, ports via `pidsOnPort`, kill via `killTree`/`killPid`, PATH joined with `path.delimiter`), `shell.ts` (`shRun`), `config.ts` (`claudeCliPath = resolveClaudeCli()`).
+
+> **Why prefer a real `claude.exe` over the npm `.cmd` shim**: spawning a `.cmd` on Windows needs `shell:true`, which re-parses args — several call sites (`git-ops`, `notes-summary`) pass the prompt as argv, so a shim would break quoting / invite injection. With a real `.exe` no shell is needed and args stay safe. If a user only has the `.cmd` shim, set `CLAUDE_CLI_PATH` to a real exe.
+
+### Other cross-platform code changes
+
+- **`security.ts:buildSafeEnv`** — splits/joins `PATH` with `path.delimiter` (was hardcoded `:`), drops the Homebrew `EXTRA_PATH_DIRS` on Windows, and adds the Windows env keys spawned children need: `SystemRoot`, `windir`, `ComSpec`, `PATHEXT`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, etc. Without `SystemRoot`/`PATHEXT` a spawned cmd/PowerShell or `.cmd` resolution fails silently.
+- **`mcp-config.ts` + `index.ts`** — module paths via `fileURLToPath(import.meta.url)` (the old `new URL(...).pathname` returns `/C:/…` on Windows and breaks `path.resolve`; it also leaves `%20` for spaces, so this is a latent fix on macOS too).
+- **`fs-search.ts`** — ripgrep detection probes `rg --version` directly instead of `which rg` (no `which` on Windows). No `rg` on PATH → graceful `grep` fallback (which won't exist on Windows → global search just degrades, never crashes).
+- **`auth.ts`** — `chmodSync` calls wrapped in try/catch (no-op on NTFS).
+- **Voice (`useVoice.ts`)** — terminal dictation STT is **macOS-only** (the Swift `eco-stt` + Apple Speech). `isSupported` is forced `false` on non-darwin Electron via `ecoPlatform()` so `AgentDetail` hides the "Hablar a la terminal" button. The `/voice/transcribe-blob` endpoint already 501s off-darwin. To add Windows dictation you'd need a Windows STT helper (System.Speech / Windows.Media.SpeechRecognition) + re-enable the gate.
+- **`getTopInset()` (`frontend/lib/platform.ts`)** — returns 36px **only on macOS** (traffic-light inset for `titleBarStyle: hiddenInset`). On Windows/Linux it returns 0 — the native frame already owns the top, so reserving 36px left an empty strip ("border") that looked wrong, especially maximized/fullscreen.
+
+### `electron/main.cjs` (shared lifecycle)
+
+- Already branches `process.platform === 'darwin'` for the traffic-light titlebar and the hide-on-close behavior (Win/Linux quit on window close via `window-all-closed` → `killBackend`).
+- Passes `ECO_FIREBASE_PROJECT_ID` to the backend.
+- **Single-instance lock** (`app.requestSingleInstanceLock()`): a 2nd launch focuses the existing window and quits instead of spawning a parallel instance. Without it, double-clicking an app whose window was hidden spawned zombie instances that piled up and made the NSIS installer refuse to run ("Eco cannot be closed"). The `whenReady` body early-returns when the lock isn't held.
+- **`createWindow` always shows the window**: `ready-to-show` is registered BEFORE `loadURL`, and `loadURL` is wrapped in try/catch with a fallback `show()`. Previously a `loadURL` rejection (e.g. backend didn't boot) skipped the `ready-to-show` registration → a `show:false` window stayed invisible forever ("nothing opens").
+
+### Build config — `electron/electron-builder.config.cjs`
+
+The build config moved from the `build` block in `electron/package.json` to a **JS config file** so the native-prebuild filters can be **conditional on the build target** — impossible in static JSON. It detects the target from `process.argv` (`--win`/`--mac`/`--linux`, else `process.platform`) and keeps only that platform's prebuilds:
+
+- **node-pty** `prebuilds/<os-arch>/` — keep `darwin-arm64` (mac) / `win32-x64` (win); exclude the rest + `src`/`scripts`/`tools`/`build`/`deps` + `*.pdb`.
+- **ripgrep** (`@anthropic-ai/claude-agent-sdk/vendor/ripgrep/<arch>/`) — keep `arm64-darwin` (mac) / `x64-win32` (win); exclude the rest.
+- **`eco-stt`** (mac-only Swift binary) is added to `extraResources` only for the mac target.
+
+The mac `dmg`/`win` `nsis`/`linux` `AppImage` blocks coexist; only the relevant one runs per target. `electron/package.json` `build:*` scripts all pass `--config electron-builder.config.cjs`. **The mac build is byte-for-byte equivalent to the old inline config** (same dmg arm64, icon.icns, both `NS*UsageDescription`, eco-stt, prebuild filters).
+
+### Prepare scripts (`electron/scripts/`)
+
+- **`prepare-backend.cjs`** — installs `backend/node_modules` (prod only) for `extraResources`. **Uses npm's default hoisted strategy, NOT `--install-strategy=nested`.** The nested strategy + Windows file-locking (EPERM on cleanup) left an INCOMPLETE tree (missing shared transitive deps like `function-bind`) → the packaged backend crashed at boot with `MODULE_NOT_FOUND`, so its HTTP server never bound and the window never loaded. Hoisted flattens everything into `backend/node_modules` with no holes. Adds `shell: true` on Windows (npm is `npm.cmd`).
+- **`prepare-mcp.cjs`** — same `shell: true` on Windows for `npm`/`npx`.
+- The `chmod +x` of node-pty `spawn-helper` only targets darwin/linux prebuilds (no-op on Windows; the win32-x64 prebuild ships `pty.node` + `conpty/*.dll` + `winpty.dll`, no chmod needed).
+
+> **Gotcha**: running `npm install` (or `npm i <pkg> --no-save`) at the repo ROOT prunes the standalone `backend/node_modules` that `prepare-backend` created (it's not in the root lockfile). Always re-run `npm run build:all` (or `prepare-backend`) before packaging if you touched root deps.
+
+### App icon for Windows (`electron/build/`)
+
+`win.icon` points to a pre-generated **`icon.ico`** (16/32/48/256, Lanczos). Do NOT let electron-builder auto-convert the PNG — its downscale feathered the rounded corners. The source `icon-opaque.png` is the macOS-style squircle on a **white opaque** background; on Windows that showed as **white corners**. `electron/scripts/make-win-icon.cjs` flood-fills transparency from the 4 corners (NOT a global luminance threshold — the teal ring is light too but lives inside, walled off by the dark body) and packs the `.ico`. Regenerate with `npm install png-to-ico pngjs --no-save && node electron/scripts/make-win-icon.cjs`. Both `icon-opaque.png` (source) and the generated `icon.png` (transparent) + `icon.ico` are committed; `png-to-ico`/`pngjs`/`sharp` are NOT package.json deps (one-time asset tooling).
+
+### Windows build & install
+
+```powershell
+# Full installer (build:all = backend tsc + frontend vite + prepare-backend + prepare-mcp, then electron-builder)
+npm run dist:win
+#   → release/Eco Setup 1.0.0.exe        (NSIS, ~96 MB, per-user, unsigned)
+#   → release/win-unpacked/Eco.exe       (portable — runs without installing)
+
+# Iterate without the installer (just the app folder):
+npm run build:all
+npm --workspace electron run build:win-dir   # → release/win-unpacked/
+```
+
+- **Unsigned** → Windows SmartScreen shows "Windows protected your PC" → *More info → Run anyway*. Required every time until code-signed.
+- **Install location**: NSIS is `perMachine: false` (per-user, `%LOCALAPPDATA%\Programs\Eco`, no UAC). If the user picks `C:\Program Files\Eco` they trigger elevation; a half-broken per-machine install there can make a later per-user installer false-positive "Eco cannot be closed". Uninstall via Settings → Apps first, or just use the portable `win-unpacked\Eco.exe`.
+- **Kill all instances**: `taskkill /IM Eco.exe /F /T` (an elevated instance needs an elevated shell to kill).
+- **Disk paths**: `homedir()` → `C:\Users\<user>\.eco` (works as-is). `dev-sessions.<port>.json` is namespaced by port. chmod-600 is a no-op on NTFS.
+
+### Verification done on a real Windows machine
+
+Backend boots via `ELECTRON_RUN_AS_NODE` and serves `/health` 200; MCP auto-registers (`claude mcp get eco` → Connected); node-pty opens `cmd.exe` and round-trips output; `pidsOnPort` + `taskkill /T /F` free a held port with no orphans; the NSIS installer builds; the app launches with a visible window. PTY/`taskkill`/ports CANNOT be validated from macOS — test on Windows.

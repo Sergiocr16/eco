@@ -193,24 +193,25 @@ async function createWindow() {
 
   hardenWindow(mainWindow);
 
-  if (isDev) {
-    await mainWindow.loadURL(DEV_FRONTEND_URL);
-    // En dev solo abrimos DevTools si ECO_DEVTOOLS=1 — abrirlas siempre gasta
-    // bastante GPU/memoria. Cmd+Opt+I las abre a demanda igual.
-    if (process.env.ECO_DEVTOOLS === '1') {
-      mainWindow.webContents.openDevTools({ mode: 'detach' });
-    }
-  } else {
-    // El backend sirve el frontend bundle como static. Cargamos por http://
-    // del mismo origen → sin CORS, fetch funciona, ws funciona, todo en un
-    // solo origen 127.0.0.1:7100.
-    await mainWindow.loadURL(BACKEND_URL + '/');
-    if (process.env.ECO_DEVTOOLS === '1') {
-      mainWindow.webContents.openDevTools({ mode: 'detach' });
-    }
-  }
-
+  // Mostrar la ventana en cuanto el contenido esté listo. Registrado ANTES del
+  // loadURL a propósito: si loadURL rechaza (ej. el backend no levantó), abajo
+  // forzamos el show igual — sino la ventana (show:false) quedaba INVISIBLE para
+  // siempre y la app parecía "no abrir nada".
   mainWindow.once('ready-to-show', () => mainWindow.show());
+
+  // Dev: Vite. Packaged: el backend sirve el frontend bundle como static en el
+  // mismo origen (127.0.0.1:<port>) → sin CORS, fetch y ws funcionan directo.
+  const targetUrl = isDev ? DEV_FRONTEND_URL : BACKEND_URL + '/';
+  try {
+    await mainWindow.loadURL(targetUrl);
+  } catch (e) {
+    console.error('[electron] loadURL falló:', (e && e.message) || e);
+    // Aunque la carga falle, mostramos la ventana (sino queda invisible).
+    if (!mainWindow.isVisible()) mainWindow.show();
+  }
+  if (process.env.ECO_DEVTOOLS === '1') {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
 
   // Estado fullscreen → renderer. En fullscreen los traffic lights de macOS
   // desaparecen, así que el renderer no necesita reservar los 36px del top
@@ -599,7 +600,23 @@ ipcMain.handle('eco:set-menu-labels', (_e, labels) => {
   return { ok: true };
 });
 
+// Lock de instancia única: si ya corre un Eco, el segundo proceso le pasa el
+// foco a la ventana existente y se cierra. Sin esto, cada doble clic abría una
+// instancia NUEVA (con su propio backend): procesos zombie que después bloquean
+// al instalador ("Eco cannot be closed") y hacen que "no pase nada" al abrir,
+// porque el backend nuevo no puede bindear el puerto y la ventana queda detrás.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) app.quit();
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (!mainWindow.isVisible()) mainWindow.show();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
   buildAppMenu();
   spawnBackend();
   if (!isDev) {

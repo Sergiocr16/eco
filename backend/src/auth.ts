@@ -7,8 +7,9 @@ const TOKEN_PATH = `${homedir()}/.eco/token`;
 
 export function getOrCreateToken(): string {
   if (existsSync(TOKEN_PATH)) {
+    // chmod es no-op en NTFS (Windows); lo envolvemos por si tira en algún FS.
     const mode = statSync(TOKEN_PATH).mode & 0o777;
-    if (mode !== 0o600) chmodSync(TOKEN_PATH, 0o600);
+    if (mode !== 0o600) { try { chmodSync(TOKEN_PATH, 0o600); } catch { /* noop */ } }
     const value = readFileSync(TOKEN_PATH, 'utf-8').trim();
     if (value.length >= 32) return value;
   }
@@ -16,7 +17,7 @@ export function getOrCreateToken(): string {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
   const token = randomBytes(32).toString('base64url');
   writeFileSync(TOKEN_PATH, token, { mode: 0o600 });
-  chmodSync(TOKEN_PATH, 0o600);
+  try { chmodSync(TOKEN_PATH, 0o600); } catch { /* noop */ }
   return token;
 }
 

@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync, statSync, mkdirSync, createReadStream } from 'node:fs';
 import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
 import { attachWebSocket, broadcastClientAction, broadcastToUser, wsClientCount } from './ws-server.js';
@@ -554,19 +555,22 @@ app.get('/skills', (req: Request, res: Response) => {
 const AddWorkspaceSchema = z.object({ path: z.string().min(1).max(4096) });
 
 app.get('/workspaces', (req: Request, res: Response) => {
-  const isAdmin = req.ecoUser?.role === 'admin';
+  // Backend local: la máquina sirve a UNA persona, así que cualquier usuario
+  // autenticado puede gestionar sus carpetas (mismo criterio que `requireAdmin`).
+  // El rol que manda el backend siempre es 'member'; el gating real de datos
+  // compartidos lo hacen las Security Rules de Firestore, no este proceso.
+  const canManage = !!req.ecoUser;
   res.json({
-    // El picker usa `workspaces`: cada usuario ve solo los suyos (admin = todos).
     workspaces: workspacesForUser(req.ecoUser?.id),
-    // La gestión del universo global (fromEnv/editable) es solo del admin.
-    fromEnv: isAdmin ? (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [],
-    editable: isAdmin ? readWorkspaceStore() : [],
+    fromEnv: canManage ? (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [],
+    editable: canManage ? readWorkspaceStore() : [],
   });
 });
 
-// Agregar/quitar carpetas del universo global es solo del admin.
-app.post('/workspaces', (req: Request, res: Response) => {
-  if (req.ecoUser && req.ecoUser.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
+// Agregar/quitar carpetas: basta con estar autenticado (backend local). Antes
+// exigía rol 'admin', pero el backend siempre marca 'member' → quedaba imposible
+// de usar. Consistente con `requireAdmin` (resto de config compartida local).
+app.post('/workspaces', requireAdmin, (req: Request, res: Response) => {
   const parsed = AddWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const result = addWorkspace(parsed.data.path);
@@ -574,8 +578,7 @@ app.post('/workspaces', (req: Request, res: Response) => {
   res.json({ ok: true, path: result.path, workspaces: config.workspaces });
 });
 
-app.delete('/workspaces', (req: Request, res: Response) => {
-  if (req.ecoUser && req.ecoUser.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
+app.delete('/workspaces', requireAdmin, (req: Request, res: Response) => {
   const parsed = AddWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   removeWorkspace(parsed.data.path);
@@ -751,7 +754,8 @@ app.post('/voice/transcribe-blob',
     // queda undefined. Hacemos cast defensivo a string|undefined.
     const resourcesPath = (process as unknown as { resourcesPath?: string }).resourcesPath;
     // __dirname no existe en módulos ESM — derivamos del import.meta.url.
-    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+    // fileURLToPath en vez de `.pathname` para que sea correcto en Windows.
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
     const candidatePaths = [
       // Empaquetado: extraResources puso bin/eco-stt en Resources/
       resourcesPath ? path.join(resourcesPath, 'bin', 'eco-stt') : '',

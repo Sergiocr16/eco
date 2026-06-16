@@ -4,8 +4,35 @@
 
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export const IS_WIN = process.platform === 'win32';
+
+/** Resuelve el path del CLI `claude` cross-platform.
+ *  Prioridad: $CLAUDE_CLI_PATH → instalador nativo (~/.local/bin) → PATH.
+ *  En Windows preferimos un ejecutable real (.exe) sobre los shims .cmd de
+ *  npm: spawnear un .cmd requiere `shell:true`, que rompe el paso de args
+ *  (varios call-sites mandan el prompt como argv → riesgo de quoting/injection). */
+export function resolveClaudeCli(): string {
+  const override = process.env.CLAUDE_CLI_PATH?.trim();
+  if (override) return override;
+  if (IS_WIN) {
+    const local = join(homedir(), '.local', 'bin', 'claude.exe');
+    if (existsSync(local)) return local;
+    try {
+      const r = spawnSync('where', ['claude'], { encoding: 'utf-8', timeout: 4000 });
+      if (r.status === 0 && r.stdout) {
+        const hits = r.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+        const exe = hits.find((h) => /\.exe$/i.test(h));
+        if (exe) return exe;
+        if (hits[0]) return hits[0];
+      }
+    } catch { /* noop */ }
+    return local;
+  }
+  return join(homedir(), '.local', 'bin', 'claude');
+}
 
 /** Shell interactivo para el PTY. */
 export function defaultShell(): string {

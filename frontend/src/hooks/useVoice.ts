@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { translate, loadLang } from '@/lib/i18n';
+import { ecoPlatform } from '@/lib/eco-config';
 
 declare global {
   interface Window {
@@ -107,9 +108,14 @@ export function useVoice({ language = 'es-419', onPhrase, isLongForm }: Options)
 
   // En Electron, el "soporte" depende de que el browser tenga getUserMedia
   // (siempre lo tiene en Chromium). El backend valida que el CLI Swift exista.
+  // El pipeline nativo de STT (eco-stt + Apple Speech) es SOLO macOS: en
+  // Windows/Linux empaquetado no hay binario y /voice/transcribe-blob rechaza
+  // no-darwin, así que marcamos no-soportado para que la UI oculte el dictado
+  // en vez de mostrar un botón que nunca transcribe.
   const hasGetUserMedia =
     typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
-  const isSupported = isElectron ? hasGetUserMedia : !!Ctor;
+  const electronVoiceOk = isElectron && hasGetUserMedia && ecoPlatform() === 'darwin';
+  const isSupported = isElectron ? electronVoiceOk : !!Ctor;
 
   useEffect(() => {
     if (!isSupported) setState('unsupported');
