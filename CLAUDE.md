@@ -1056,7 +1056,7 @@ The whole meta-command system (wake word + `Eco …` navigation/agent/tab/server
 ### Security
 
 - `realpathSync` + workspace whitelist + path-traversal check on every endpoint that touches the filesystem.
-- Bash blacklist + env allowlist in `security.ts`.
+- Bash blacklist in `security.ts`. Spawned processes (PTY/dev-server/git/`claude -p`) inherit the **full user environment** via `buildSafeEnv` (passthrough + denylist of the `ECO_` prefix), so any installed toolchain (`JAVA_HOME`, NVM, pyenv, GOROOT, …) works in the terminals — an interactive PTY already grants a full shell, so an env allowlist added no real security and broke libraries. Only `PATH` is rewritten (augmented) and `extras` (git identity, API key) override last.
 - Claude tools via explicit allowlist; MCP `mcp__*` permitted as configured by the user.
 - Header `X-Eco-Client: 1` required. Minimal CSRF defense.
 - Origin whitelist with auto-include of own origin.
@@ -1553,8 +1553,8 @@ The single home for OS-dependent primitives. **Never inline a shell, `lsof`, `pr
 |---|---|---|
 | `IS_WIN` | `false` | `true` |
 | `defaultShell()` | `$SHELL` → `/bin/zsh`/`/bin/bash` | `%ComSpec%` (cmd.exe) / PowerShell |
-| `shellRun(cmd)` | `/bin/bash -c <cmd>` | `cmd.exe /d /s /c <cmd>` |
-| `shRun(cmd)` | `sh -c <cmd>` | `cmd.exe /d /s /c <cmd>` |
+| `shellRun(cmd)` | `/bin/bash -c <cmd>` | `cmd.exe /d /s /c <cmd>` (con `normalizeWinCommand`) |
+| `shRun(cmd)` | `sh -c <cmd>` | `cmd.exe /d /s /c <cmd>` (con `normalizeWinCommand`) |
 | `detachForGroup` | `true` (spawn `detached` → process group) | `false` (no process groups) |
 | `pidsOnPort(port)` | `lsof -ti :<port> -sTCP:LISTEN` | parse `netstat -ano` LISTENING rows |
 | `killTree(pid, sig)` | `process.kill(-pgid, sig)` (group) | `taskkill /PID <pid> /T /F` (tree) |
@@ -1567,7 +1567,9 @@ Wired into: `pty-server.ts` (`defaultShell`), `dev-server.ts` (spawn via `shellR
 
 ### Other cross-platform code changes
 
-- **`security.ts:buildSafeEnv`** — splits/joins `PATH` with `path.delimiter` (was hardcoded `:`), drops the Homebrew `EXTRA_PATH_DIRS` on Windows, and adds the Windows env keys spawned children need: `SystemRoot`, `windir`, `ComSpec`, `PATHEXT`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, etc. Without `SystemRoot`/`PATHEXT` a spawned cmd/PowerShell or `.cmd` resolution fails silently.
+- **`platform.ts:normalizeWinCommand`** (applied inside `shellRun`/`shRun` on Windows) — cmd.exe doesn't understand the POSIX `./script` prefix (it parses `.` as a command → "'.' no se reconoce…"), so a workspace dev-server command like `./mvnw spring-boot:run` failed. The helper rewrites a leading `./`/`../` (at command start or after a space/`&&`/`|`/`;`/`(`) to backslash form — URLs (`http://`, preceded by `:`) and slashes inside other args are left untouched. Keeps the per-workspace server command cross-platform (set once, runs on both OSes).
+- **`config.ts:isAllowedWorkspace` + `git-ops.ts` worktree-conflict cleanup** — the `~/.eco/worktrees` root was built as `` `${homedir()}/.eco/worktrees` `` (hardcoded `/`), so on Windows it mixed separators (`C:\Users\x/.eco/worktrees`) and never `startsWith`-matched the native-separator realpath → every bubble's Files/`/fs/tree` returned `http.workspace_forbidden` ("no autorizado"). Now built with `resolve(homedir(), '.eco', 'worktrees')`; the git-ops path (git emits `/` even on Windows) normalizes both sides to `path.sep` before comparing.
+- **`security.ts:buildSafeEnv`** — **passthrough + denylist**, not an allowlist: spawned children inherit ALL of `process.env` minus the `ECO_` prefix, so installed toolchains (`JAVA_HOME`, etc.) just work on both OSes (this replaced the old per-OS key allowlist, which silently broke `mvnw`/`gradlew` with "JAVA_HOME not found" and any non-listed tool). `PATH` is split/joined with `path.delimiter` and augmented with `EXTRA_PATH_DIRS`: Homebrew + `~/.local/bin` on POSIX, `%APPDATA%\npm` (npm global) + `%USERPROFILE%\.local\bin` (claude) on Windows — so `claude`/`gh`/`mvn` resolve when the app is launched from the OS launcher with a minimal PATH. The Windows-critical keys (`SystemRoot`, `PATHEXT`, `ComSpec`, …) now flow through automatically as part of the full passthrough.
 - **`mcp-config.ts` + `index.ts`** — module paths via `fileURLToPath(import.meta.url)` (the old `new URL(...).pathname` returns `/C:/…` on Windows and breaks `path.resolve`; it also leaves `%20` for spaces, so this is a latent fix on macOS too).
 - **`fs-search.ts`** — ripgrep detection probes `rg --version` directly instead of `which rg` (no `which` on Windows). No `rg` on PATH → graceful `grep` fallback (which won't exist on Windows → global search just degrades, never crashes).
 - **`auth.ts`** — `chmodSync` calls wrapped in try/catch (no-op on NTFS).

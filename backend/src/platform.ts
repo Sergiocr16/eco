@@ -40,15 +40,24 @@ export function defaultShell(): string {
   return process.env.SHELL || (existsSync('/bin/zsh') ? '/bin/zsh' : '/bin/bash');
 }
 
+/** cmd.exe NO entiende el prefijo POSIX `./script` (parsea `.` como comando →
+ *  "'.' no se reconoce…"). Traducimos `./` (y `../`) a la forma con backslash
+ *  solo al INICIO de un comando (start o tras espacio/operador), así un
+ *  `./mvnw spring-boot:run` configurado una vez corre en ambos SO. No tocamos
+ *  `//` de URLs (precedido por `:`) ni slashes dentro de otros args. */
+function normalizeWinCommand(command: string): string {
+  return command.replace(/(^|[\s&|;(])(\.\.?)\//g, '$1$2\\');
+}
+
 /** Cómo ejecutar un STRING de comando: `bash -c <cmd>` / `cmd /c <cmd>`. */
 export function shellRun(command: string): { cmd: string; args: string[] } {
-  if (IS_WIN) return { cmd: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', command] };
+  if (IS_WIN) return { cmd: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', normalizeWinCommand(command)] };
   return { cmd: '/bin/bash', args: ['-c', command] };
 }
 
 /** Igual pero con `sh` en POSIX (para runShell, que históricamente usaba sh). */
 export function shRun(command: string): { cmd: string; args: string[] } {
-  if (IS_WIN) return { cmd: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', command] };
+  if (IS_WIN) return { cmd: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', normalizeWinCommand(command)] };
   return { cmd: 'sh', args: ['-c', command] };
 }
 

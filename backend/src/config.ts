@@ -120,7 +120,7 @@ export function isAllowedWorkspace(target: string | undefined, userId?: string):
   if (!target || !isAbsolute(target)) return false;
   const real = safeRealpath(target);
   if (!real) return false;
-  const ecoWorktreesRoot = `${homedir()}/.eco/worktrees`;
+  const ecoWorktreesRoot = resolve(homedir(), '.eco', 'worktrees');
   if (real === ecoWorktreesRoot || real.startsWith(ecoWorktreesRoot + sep)) return true;
   const inUniverse = config.workspaces.some(
     (allowed) => real === allowed || real.startsWith(allowed + sep),

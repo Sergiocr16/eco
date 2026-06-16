@@ -328,8 +328,10 @@ export function checkoutBranch(
     const conflictMatch = stderr.match(/already used by worktree at '([^']+)'/);
     if (conflictMatch && conflictMatch[1]) {
       const conflictingPath = conflictMatch[1];
-      const ecoRoot = `${homedir()}/.eco/worktrees`;
-      if (conflictingPath === ecoRoot || conflictingPath.startsWith(ecoRoot + '/')) {
+      const ecoRoot = pathResolve(homedir(), '.eco', 'worktrees');
+      // git reporta el path con '/' incluso en Windows; normalizamos al sep del SO.
+      const normConflict = conflictingPath.replace(/\//g, pathSep);
+      if (normConflict === ecoRoot || normConflict.startsWith(ecoRoot + pathSep)) {
         console.log('[git-ops] auto-removiendo worktree huérfano de Eco:', conflictingPath);
         git(['worktree', 'remove', conflictingPath, '--force'], workspace);
         git(['worktree', 'prune'], workspace);

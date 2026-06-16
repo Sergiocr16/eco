@@ -34,30 +34,30 @@ import { delimiter as PATH_DELIMITER } from 'node:path';
 
 const IS_WIN = process.platform === 'win32';
 
-export const SAFE_ENV_KEYS = [
-  'PATH', 'HOME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE',
-  'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'PWD', 'TERM',
-  // Windows: sin estas, spawnear cmd/powershell, resolver binarios (PATHEXT) o
-  // que muchos programas arranquen (SystemRoot/windir) falla silenciosamente.
-  'SystemRoot', 'windir', 'SystemDrive', 'ComSpec', 'PATHEXT',
-  'USERPROFILE', 'USERNAME', 'USERDOMAIN', 'HOMEDRIVE', 'HOMEPATH',
-  'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)',
-  'ProgramW6432', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'PROCESSOR_ARCHITEW6432',
-];
+// Prefijos de variables internas de Eco que NO se filtran a procesos
+// spawneados (config/puertos/ids del backend; el bearer vive en ~/.eco/token,
+// la API key se inyecta explícitamente vía `extras`, no por env del proceso).
+const ENV_DENY_PREFIXES = ['ECO_'];
 
-// Directorios bin que macOS NO incluye en el PATH cuando una app .app se
-// lanza desde Finder/Dock (solo hereda `/usr/bin:/bin:/usr/sbin:/sbin`).
-// Homebrew instala en `/opt/homebrew/bin` (Apple Silicon) o `/usr/local/bin`
-// (Intel). Sin esto, herramientas como `gh`, `git` de brew, `mvn`, etc.
-// no se encuentran al spawnear desde el backend empaquetado. Solo POSIX.
-const EXTRA_PATH_DIRS = IS_WIN ? [] : [
-  '/opt/homebrew/bin',
-  '/opt/homebrew/sbin',
-  '/usr/local/bin',
-  '/usr/local/sbin',
-];
+// Directorios bin que el SO NO siempre incluye en el PATH cuando la app se
+// lanza desde su launcher (Finder/Dock en mac, acceso directo en Windows).
+// Sin esto, `claude`, `gh`, `git`/`mvn` de Homebrew o los binarios de npm
+// global no se resuelven al spawnear desde el backend empaquetado.
+const EXTRA_PATH_DIRS = (IS_WIN
+  ? [
+      process.env.APPDATA ? `${process.env.APPDATA}\\npm` : '', // npm global (claude.cmd, etc.)
+      process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.local\\bin` : '', // claude.exe
+    ]
+  : [
+      '/opt/homebrew/bin',
+      '/opt/homebrew/sbin',
+      '/usr/local/bin',
+      '/usr/local/sbin',
+      process.env.HOME ? `${process.env.HOME}/.local/bin` : '',
+    ]
+).filter(Boolean);
 
-/** Devuelve un PATH que combina el heredado + los dirs de Homebrew/local,
+/** Devuelve un PATH que combina el heredado + los dirs de Homebrew/npm/local,
  *  sin duplicados. Los dirs extra van al FINAL (prioridad al PATH del user
  *  si lo tiene completo, ej. en dev con `npm run`). El separador es ';' en
  *  Windows y ':' en POSIX (path.delimiter). */
@@ -71,15 +71,20 @@ function augmentedPath(): string {
   return merged.join(PATH_DELIMITER);
 }
 
+// Los procesos spawneados (terminal interactiva, dev-server, git, claude -p)
+// HEREDAN todo el entorno del usuario, así cualquier toolchain instalado
+// (JAVA_HOME, NVM, PYENV, GOROOT, etc.) funciona sin mantener un allowlist.
+// No es un riesgo: la terminal ya da shell completo al usuario, filtrar
+// variables no aportaba seguridad y rompía librerías. Solo bloqueamos el
+// prefijo interno de Eco y reescribimos PATH (augmentado). `extras` pisa al
+// final (identidad git, API key, etc.).
 export function buildSafeEnv(extras: Record<string, string | undefined> = {}): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const key of SAFE_ENV_KEYS) {
-    const v = process.env[key];
-    if (v) env[key] = v;
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v === undefined) continue;
+    if (ENV_DENY_PREFIXES.some((p) => k.startsWith(p))) continue;
+    env[k] = v;
   }
-  // PATH siempre augmentado — incluso si el caller pasó uno, lo
-  // sobreescribimos con la versión completa (el extras lo puede pisar abajo
-  // si explícitamente manda PATH).
   env.PATH = augmentedPath();
   for (const [k, v] of Object.entries(extras)) {
     if (v) env[k] = v;
