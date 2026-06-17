@@ -315,7 +315,7 @@ export function AgentDetail({
   onToggleCategory,
   dictationSupported = false, dictationActive = false, dictationText = '',
   onStartDictation, onSendDictation, onCancelDictation, onClearDictation,
-  onOpenInNewWindow, solo = false,
+  onOpenInNewWindow, solo: _solo = false,
 }: Props) {
   const t = useTokens();
   const tr = useT();
@@ -502,7 +502,7 @@ export function AgentDetail({
         </div>
 
         <div style={{ display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
-          {!solo && dictationSupported && (
+          {dictationSupported && (
             <Btn
               icon={dictationActive ? IconStop : IconMic}
               kind={dictationActive ? 'primary' : 'secondary'}
@@ -531,7 +531,7 @@ export function AgentDetail({
         </div>
       </div>
 
-      {!solo && dictationActive && (
+      {dictationActive && (
         <DictationBar
           text={dictationText}
           onSend={() => onSendDictation?.()}

@@ -347,6 +347,18 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
     })();
   }, [handleSdkMessage, token, url]);
 
+  // Cierra el socket actual (aunque parezca OPEN — tras dormir queda "zombie")
+  // y reconecta de cero.
+  const forceReconnect = useCallback(() => {
+    if (!wantedRef.current) return;
+    reconnectAttempt.current = 0;
+    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
+    const ws = wsRef.current;
+    wsRef.current = null;
+    try { ws?.close(); } catch { /* noop */ }
+    connect();
+  }, [connect]);
+
   useEffect(() => {
     wantedRef.current = true;
     connect();
@@ -356,6 +368,30 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
       wsRef.current?.close();
     };
   }, [connect]);
+
+  // Recuperación tras sleep/wake. Los timers de JS se pausan mientras la
+  // máquina duerme; al despertar, un tick que debía caer cada 3s cae mucho
+  // después → detectamos el "salto" y forzamos reconexión (el socket suele
+  // quedar zombie: readyState OPEN pero muerto). Igual al volver online / foco.
+  useEffect(() => {
+    let last = Date.now();
+    const iv = setInterval(() => {
+      const now = Date.now();
+      const slept = now - last > 10_000;
+      last = now;
+      if (slept) forceReconnect();
+    }, 3000);
+    const onWake = () => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) forceReconnect();
+    };
+    window.addEventListener('online', onWake);
+    window.addEventListener('focus', onWake);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('online', onWake);
+      window.removeEventListener('focus', onWake);
+    };
+  }, [forceReconnect]);
 
   const send = useCallback((opts: { bubbleId: string; text: string; workspace?: string; resumeSessionId?: string | null }) => {
     const ws = wsRef.current;

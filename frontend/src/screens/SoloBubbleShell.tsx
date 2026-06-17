@@ -142,6 +142,7 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
             onClose={() => { bubbles.archiveBubble(bubble.id); closeThisWindow(bubbleId); }}
             onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(bubble.id, ws)}
             onToggleCategory={(catId) => bubbles.toggleBubbleCategory(bubble.id, catId)}
+            dictationSupported={voice.isSupported}
             dictationActive={dictationActive}
             dictationText={dictationActive ? (dictationBuffer + (voice.interimText ? ` ${voice.interimText}` : '')).trim() : ''}
             onStartDictation={() => startTerminalDictation()}
