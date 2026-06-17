@@ -3,12 +3,16 @@
 // scheduler ni notificaciones — esos viven en la ventana principal y no deben
 // duplicarse. Comparte backend, token y localStorage con la principal.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '../design/theme';
 import { useBubbles } from '../hooks/useBubbles';
 import { useWorkspaces } from '../hooks/useWorkspaces';
 import { useEcoSocket } from '../hooks/useEcoSocket';
+import { useVoice } from '../hooks/useVoice';
 import { bubbleStreamHandlers } from '../lib/bubble-socket';
+import { writeToBubblePty } from '../lib/pty-bridge';
+import { emit as ecoEmit } from '../lib/eco-bus';
+import { hydrateWorkspaceConfig } from '../lib/workspace-config';
 import { AgentDetail } from './AgentDetail';
 import { useT } from '../hooks/useI18n';
 import { getTopInset } from '../lib/platform';
@@ -50,6 +54,48 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
   const topInset = isFullscreen ? 0 : getTopInset();
 
   const bubble = bubbles.bubbles.find((b) => b.id === bubbleId) ?? null;
+
+  // La config por workspace (comandos de server + base branches) la hidrata el
+  // App principal al loguear; la ventana "solo bubble" tiene su propio árbol, así
+  // que la hidratamos también acá — si no, el ServerPanel cree que el workspace
+  // no tiene server configurado.
+  useEffect(() => { void hydrateWorkspaceConfig(); }, []);
+
+  // Dictado a la terminal (igual que en la ventana principal). El motor real
+  // en Windows es el degradado de useVoice; el botón aparece en ambas.
+  const [dictationActive, setDictationActive] = useState(false);
+  const [dictationBuffer, setDictationBuffer] = useState('');
+  const dictationActiveRef = useRef(false);
+  const voice = useVoice({
+    language: 'es-419',
+    onPhrase: (text: string) => {
+      if (!dictationActiveRef.current) return;
+      const clean = text.trim();
+      if (clean) setDictationBuffer((prev) => (prev ? `${prev} ${clean}` : clean));
+    },
+    isLongForm: () => true,
+  });
+  function startTerminalDictation() {
+    setDictationBuffer('');
+    dictationActiveRef.current = true;
+    setDictationActive(true);
+    if (voice.state !== 'listening') voice.start();
+  }
+  function cancelTerminalDictation() {
+    dictationActiveRef.current = false;
+    setDictationActive(false);
+    setDictationBuffer('');
+    voice.stop();
+  }
+  function sendDictationToTerminal() {
+    const text = dictationBuffer.trim();
+    const token = ecoToken();
+    if (bubble && text && token) {
+      ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId: bubble.id });
+      void writeToBubblePty({ bubbleId: bubble.id, workspace: bubble.workspace ?? '', text, token });
+    }
+    cancelTerminalDictation();
+  }
 
   // Título de la ventana = título del bubble.
   useEffect(() => {
@@ -96,6 +142,12 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
             onClose={() => { bubbles.archiveBubble(bubble.id); closeThisWindow(bubbleId); }}
             onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(bubble.id, ws)}
             onToggleCategory={(catId) => bubbles.toggleBubbleCategory(bubble.id, catId)}
+            dictationActive={dictationActive}
+            dictationText={dictationActive ? (dictationBuffer + (voice.interimText ? ` ${voice.interimText}` : '')).trim() : ''}
+            onStartDictation={() => startTerminalDictation()}
+            onSendDictation={sendDictationToTerminal}
+            onCancelDictation={cancelTerminalDictation}
+            onClearDictation={() => setDictationBuffer('')}
           />
         ) : (
           <div style={{

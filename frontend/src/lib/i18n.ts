@@ -1992,10 +1992,12 @@ const DICT = {
   'berr.notes.summarize_failed': { es: 'No se pudo generar el resumen', en: 'Could not generate summary' },
 
   // ─────────────────────────── Commit con AI
-  'commit.title': { es: 'Commit con AI', en: 'Commit with AI' },
-  'commit.sub': { es: 'Analiza el diff y propone mensaje', en: 'Analyzes the diff and proposes a message' },
+  'commit.title': { es: 'Commit', en: 'Commit' },
+  'commit.sub': { es: 'Escribí el mensaje o generalo con IA', en: 'Write the message or generate it with AI' },
   'commit.placeholder': { es: 'Contexto opcional (ej: fix login bug)', en: 'Optional context (e.g. fix login bug)' },
-  'commit.btn.generate': { es: 'Generar mensaje', en: 'Generate message' },
+  'commit.field.title': { es: 'Título del commit', en: 'Commit title' },
+  'commit.field.body': { es: 'Descripción (opcional)', en: 'Description (optional)' },
+  'commit.btn.generate': { es: 'Generar con IA', en: 'Generate with AI' },
   'commit.analyzing': { es: 'Analizando diff…', en: 'Analyzing diff…' },
   'commit.btn.regenerate': { es: 'Regenerar', en: 'Regenerate' },
   'commit.btn.commit': { es: 'Hacer commit', en: 'Commit' },
