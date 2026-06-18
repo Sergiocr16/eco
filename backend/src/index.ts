@@ -452,18 +452,18 @@ app.get('/admin/overview', requireAdmin, (_req: Request, res: Response) => {
 
 // Bitácora — solo admin. Eventos de sesión y agentes (quién hizo qué, dónde).
 app.get('/admin/audit', requireAdmin, (req: Request, res: Response) => {
-  const userId = typeof req.query.userId === 'string' && req.query.userId ? req.query.userId : undefined;
+  const userId = typeof req.query.userId === 'string' && req.query.userId ? req.query.userId.slice(0, 128) : undefined;
   const typeRaw = typeof req.query.type === 'string' ? req.query.type : undefined;
   if (typeRaw && !AUDIT_EVENT_TYPES.includes(typeRaw as AuditEventType)) {
     return errResponse(res, 400, 'http.invalid_body', 'Tipo de evento inválido');
   }
   const since = req.query.since ? Number(req.query.since) : undefined;
-  const limit = req.query.limit ? Math.min(Number(req.query.limit), 1000) : undefined;
+  const limit = req.query.limit ? Number(req.query.limit) : undefined;
   const events = queryEvents({
     userId,
     type: typeRaw as AuditEventType | undefined,
-    since: Number.isFinite(since) ? since : undefined,
-    limit: Number.isFinite(limit) ? limit : undefined,
+    since: Number.isFinite(since) ? Math.max(0, since!) : undefined,
+    limit: Number.isFinite(limit) ? Math.min(1000, Math.max(1, Math.floor(limit!))) : undefined,
   });
   res.json({ ok: true, events });
 });
@@ -548,7 +548,11 @@ app.get('/info', (req: Request, res: Response) => {
 });
 
 app.get('/skills', (req: Request, res: Response) => {
-  const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : undefined;
+  // listSkills reads project skills under <workspace>/.claude — only honor the
+  // workspace if it's an allowed one (avoids reading arbitrary dirs); otherwise
+  // fall back to user-level skills.
+  const raw = typeof req.query.workspace === 'string' ? req.query.workspace : undefined;
+  const workspace = raw && isAllowedWorkspace(raw) ? raw : undefined;
   res.json({ skills: listSkills(workspace), sources: config.skillSources });
 });
 
@@ -1034,7 +1038,9 @@ app.post('/file/diff', async (req: Request, res: Response) => {
     const result = await fileDiff(parsed.data);
     res.json(result);
   } catch (err) {
+    console.error('[file/diff]', err);
     const status = (err as { httpStatus?: number }).httpStatus ?? 500;
+    // Git/file error messages are dev-facing and useful; we never send stack traces.
     const message = err instanceof Error ? err.message : 'Error';
     res.status(status).json({ error: 'file.diff_failed', message });
   }
@@ -1238,6 +1244,9 @@ app.post('/worktree/create', (req: Request, res: Response) => {
   res.json({ ok: true, path, baseBranch: baseBranch ?? null });
 });
 
+// Valid git ref name (branch/tag): no shell metachars, spaces or path tricks.
+const BRANCH_RE = /^[A-Za-z0-9._\-/]{1,256}$/;
+
 app.post('/git/checkout', (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
@@ -1245,7 +1254,7 @@ app.post('/git/checkout', (req: Request, res: Response) => {
   const create = req.body?.create === true;
   const rawMode = typeof req.body?.mode === 'string' ? req.body.mode : 'plain';
   const mode: gitOps.CheckoutMode = (rawMode === 'carry' || rawMode === 'discard') ? rawMode : 'plain';
-  if (!branch) return errResponse(res, 400, 'http.invalid_body', 'branch requerido');
+  if (!BRANCH_RE.test(branch)) return errResponse(res, 400, 'http.invalid_body', 'invalid branch name');
   res.json(gitOps.checkoutBranch(dir, branch, create, mode));
 });
 
@@ -1271,7 +1280,7 @@ app.post('/git/rename-branch', (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const newName = typeof req.body?.newName === 'string' ? req.body.newName : '';
-  if (!newName) return errResponse(res, 400, 'http.invalid_body', 'newName requerido');
+  if (!BRANCH_RE.test(newName)) return errResponse(res, 400, 'http.invalid_body', 'invalid branch name');
   res.json(gitOps.renameBranch(dir, newName));
 });
 
@@ -1279,6 +1288,7 @@ app.post('/git/commit-suggest', (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const context = typeof req.body?.context === 'string' ? req.body.context : '';
+  if (context.length > 5000) return errResponse(res, 400, 'http.invalid_body', 'context too long');
   res.json(gitOps.suggestCommitMessage(dir, context));
 });
 
@@ -1287,6 +1297,7 @@ app.post('/git/commit', (req: Request, res: Response) => {
   if (!dir) return;
   const message = typeof req.body?.message === 'string' ? req.body.message : '';
   if (!message) return errResponse(res, 400, 'http.invalid_body', 'message requerido');
+  if (message.length > 10_000) return errResponse(res, 400, 'http.invalid_body', 'message too long');
   res.json(gitOps.commitWithMessage(dir, message));
 });
 
@@ -1341,6 +1352,7 @@ app.post('/git/pr/close', async (req: Request, res: Response) => {
   const num = Number(req.body?.number);
   if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
   const comment = typeof req.body?.comment === 'string' ? req.body.comment : undefined;
+  if (comment !== undefined && comment.length > 5000) return errResponse(res, 400, 'http.invalid_body', 'comment too long');
   res.json(await gitOps.closePullRequest(dir, num, comment));
 });
 
@@ -1350,23 +1362,27 @@ app.get('/git/log', (req: Request, res: Response) => {
   if (!dir) return;
   const branch = typeof req.query.branch === 'string' ? req.query.branch : undefined;
   const pathFilter = typeof req.query.path === 'string' ? req.query.path : undefined;
+  if (branch !== undefined && !BRANCH_RE.test(branch)) return errResponse(res, 400, 'http.invalid_body', 'invalid branch name');
+  if (pathFilter !== undefined && pathFilter.length > 4096) return errResponse(res, 400, 'http.invalid_body', 'path too long');
   const limitRaw = Number(req.query.limit);
   const skipRaw = Number(req.query.skip);
   const all = req.query.all === '1' || req.query.all === 'true';
   res.json(gitHistory.gitLog(dir, {
     branch,
     path: pathFilter,
-    limit: Number.isFinite(limitRaw) ? limitRaw : undefined,
-    skip: Number.isFinite(skipRaw) ? skipRaw : undefined,
+    // Clamp to sane bounds so a client can't request an unbounded log scan.
+    limit: Number.isFinite(limitRaw) ? Math.min(500, Math.max(1, Math.floor(limitRaw))) : undefined,
+    skip: Number.isFinite(skipRaw) ? Math.max(0, Math.floor(skipRaw)) : undefined,
     all,
   }));
 });
 
+const SHA_RE = /^[0-9a-fA-F]{4,40}$/;
 app.get('/git/show', (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const sha = typeof req.query.sha === 'string' ? req.query.sha : '';
-  if (!sha) return errResponse(res, 400, 'http.invalid_body', 'sha requerido');
+  if (!SHA_RE.test(sha)) return errResponse(res, 400, 'http.invalid_body', 'invalid sha');
   res.json(gitHistory.gitShow(dir, sha));
 });
 
@@ -1490,8 +1506,9 @@ app.post('/dev/start', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
-  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  if (!isValidBubbleId(bubbleId)) return errResponse(res, 400, 'http.invalid_body', 'invalid bubbleId');
   const command = typeof req.body?.command === 'string' ? req.body.command : undefined;
+  if (command !== undefined && command.length > 10_000) return errResponse(res, 400, 'http.invalid_body', 'command too long');
   const role = parseRole(req.body?.role);
   const result = await devServer.startDevServer(bubbleId, dir, command, role);
   res.json(result);
@@ -1499,14 +1516,14 @@ app.post('/dev/start', async (req: Request, res: Response) => {
 
 app.post('/dev/stop', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
-  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  if (!isValidBubbleId(bubbleId)) return errResponse(res, 400, 'http.invalid_body', 'invalid bubbleId');
   const role = parseRole(req.body?.role);
   res.json(await devServer.stopDevServer(bubbleId, role));
 });
 
 app.post('/dev/restart', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
-  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  if (!isValidBubbleId(bubbleId)) return errResponse(res, 400, 'http.invalid_body', 'invalid bubbleId');
   const role = parseRole(req.body?.role);
   const result = await devServer.restartDevServer(bubbleId, role);
   res.json(result);
@@ -1520,7 +1537,7 @@ app.get('/dev/active', (_req: Request, res: Response) => {
 
 app.get('/dev/status', (req: Request, res: Response) => {
   const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
-  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  if (!isValidBubbleId(bubbleId)) return errResponse(res, 400, 'http.invalid_body', 'invalid bubbleId');
   const role = parseRole(req.query.role);
   const s = devServer.devStatus(bubbleId, role);
   if (!s) return res.json({ status: 'idle', port: 0, url: '', command: '', exitCode: null, role });
@@ -1537,9 +1554,12 @@ app.post('/dev/skill', async (req: Request, res: Response) => {
   const bubbleId = typeof req.body?.bubbleId === 'string' ? req.body.bubbleId : '';
   const skill = typeof req.body?.skill === 'string' ? req.body.skill : '';
   const action = typeof req.body?.action === 'string' ? req.body.action : '';
-  if (!bubbleId || !skill) return errResponse(res, 400, 'http.invalid_body', 'bubbleId y skill requeridos');
+  if (!isValidBubbleId(bubbleId)) return errResponse(res, 400, 'http.invalid_body', 'invalid bubbleId');
+  // The skill name is interpolated into a slash command written to the PTY, so
+  // restrict it hard (alphanumerics + . _ -) to avoid command/prompt injection.
+  if (!/^[a-zA-Z0-9._-]{1,200}$/.test(skill)) return errResponse(res, 400, 'http.invalid_body', 'invalid skill');
   if (!['up', 'down', 'restart', 'status'].includes(action)) {
-    return errResponse(res, 400, 'http.invalid_body', 'action debe ser up|down|restart|status');
+    return errResponse(res, 400, 'http.invalid_body', 'action must be up|down|restart|status');
   }
   const result = await devServer.runSkillAction(bubbleId, dir, skill, action as 'up' | 'down' | 'restart' | 'status');
   res.json(result);
@@ -1547,7 +1567,7 @@ app.post('/dev/skill', async (req: Request, res: Response) => {
 
 app.get('/dev/logs', (req: Request, res: Response) => {
   const bubbleId = typeof req.query.bubbleId === 'string' ? req.query.bubbleId : '';
-  if (!bubbleId) return errResponse(res, 400, 'http.invalid_body', 'bubbleId requerido');
+  if (!isValidBubbleId(bubbleId)) return errResponse(res, 400, 'http.invalid_body', 'invalid bubbleId');
   const role = parseRole(req.query.role);
   res.type('text/plain').send(devServer.devLogs(bubbleId, role));
 });
@@ -1564,7 +1584,7 @@ app.get('/integrations/obsidian/vaults', (_req: Request, res: Response) => {
 
 const ObsidianConfigSchema = z.object({
   enabled: z.boolean(),
-  vaultPath: z.string(),
+  vaultPath: z.string().max(4096),
   mode: z.enum(['builtin', 'custom']).optional(),
   customCommand: z.string().max(2000).optional(),
 });
@@ -1586,14 +1606,14 @@ app.get('/integrations/obsidian/context', (req: Request, res: Response) => {
 });
 
 const SaveSessionSchema = z.object({
-  bubbleId: z.string(),
-  title: z.string(),
-  workspace: z.string(),
+  bubbleId: z.string().min(1).max(128),
+  title: z.string().min(1).max(400),
+  workspace: z.string().min(1).max(4096),
   createdAt: z.number(),
   updatedAt: z.number(),
   messages: z.array(z.object({
     role: z.enum(['user', 'assistant', 'system', 'tool']),
-    text: z.string(),
+    text: z.string().max(20_000),
     createdAt: z.number(),
   })).max(2000),
 });
