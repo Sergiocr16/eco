@@ -35,19 +35,21 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 <a id="tldr"></a>
 ## 1. TL;DR
 
-- **Eco** is a local-first **cross-platform** desktop app (macOS Apple Silicon + Windows x64) that orchestrates Claude conversations. Each conversation ("agent" / "bubble") gets its own git worktree, PTY, files, dev server, browser, notes. 100% local except the Anthropic API.
+- **Eco** is a **cross-platform** desktop app (macOS Apple Silicon + Windows x64 + Linux x64 experimental) that orchestrates Claude conversations. Each conversation ("agent" / "bubble") gets its own git worktree, PTY, files, dev server, browser, notes. **Local-first compute** (worktrees/PTY/dev-servers/git/files never leave the host) but **cloud identity + state**: login via **Firebase Auth**, multi-tenant app state in **Firestore** (gated by `firestore.rules`). External calls: Anthropic API + Firebase (Auth + Firestore).
 - **Packaged** via Electron 33 + electron-builder 25. macOS → `.dmg` arm64 (~112 MB). Windows → NSIS `.exe` x64 (~96 MB). The OS-dependent backend primitives (shell, ports, process-kill) live in `backend/src/platform.ts`; the build config is `electron/electron-builder.config.cjs` (conditional native prebuilds per target). **Full Windows + packaging detail in Appendix E — read it before touching spawn/shell/port/kill code, the electron-builder config, or the prepare scripts.**
 - **User**: Sergio Castro (Florida, USA). Rules in §2 + the global `~/.claude/CLAUDE.md` apply (Obsidian vault, no auto-commits, Spanish UI but English docs).
-- **State**: fully standalone. The ONLY voice feature is **terminal dictation** (on-device STT via Swift + Apple Speech in the .dmg, Web Speech in the browser). Everything else voice-related was removed (wake word, voice commands, TTS, voice settings — see the Removed table in §2). Dev servers persist across reloads. Everything bundled.
+- **Voice**: the ONLY voice feature is **terminal dictation** (on-device STT via Swift + Apple Speech in the .dmg, Web Speech in the browser, macOS-only). Everything else voice-related was removed (wake word, voice commands, TTS, voice settings — see the Removed table in §2). Dev servers persist across reloads.
 - **Dev logs flow via WS push** (`dev_log` batched every 80 ms), not polling.
-- **Multi-tenant** (admin/member sobre un backend compartido; los users entran por Tailscale). Identidad SIEMPRE de la sesión. Alta por **token de activación** (el admin no fija PINs), habilitar/deshabilitar, estado **server-authoritative cross-device** (doc store por usuario), config de server por workspace (admin), Settings gateado por rol. **Todo el detalle en Appendix D — leelo antes de tocar auth/usuarios/sync/workspace-config.**
+- **Multi-tenant = Firebase Auth + Firestore.** Login es **Firebase Auth** (email/password); el ID token viaja como `Authorization: Bearer <jwt>` (HTTP) y subprotocolo WS `eco.idtoken.<jwt>`. El backend local **verifica el ID token stateless** (JWKS de Google, `firebase-auth.ts`) y **NO autoriza** — `requireAdmin` solo exige que haya `req.ecoUser`. La **autorización real son las Firestore Security Rules** (`firestore.rules`); el **estado de la app vive en Firestore** (users/role, bubbles+messages, categories, notes, review, prefs, auditLog). El backend local hace solo **cómputo** (worktrees/PTY/git/dev-servers/files/voz/backup). El PIN local es un **lock** de dispositivo (SHA-256), no auth de cuenta. **Todo el detalle en Appendix D — leelo antes de tocar auth/usuarios/sync/workspace-config.** El modelo local anterior (PIN/argon2id/BIP39/sessions/doc-store) quedó **inerte** (ver §2 Removed/Legacy).
 
 **Read in this order to ramp up:**
 1. This file (especialmente Appendix D para multi-tenant)
 2. `README.md` (product overview)
-3. `backend/src/index.ts` (all endpoints)
-4. `frontend/src/App.tsx` (command dispatcher + shell setup)
-5. `electron/main.cjs` (.dmg lifecycle)
+3. `backend/src/firebase-auth.ts` + `frontend/src/lib/firebase.ts` (auth: verificación + cliente)
+4. `firestore.rules` (la frontera de autorización)
+5. `backend/src/index.ts` (all endpoints)
+6. `frontend/src/App.tsx` (command dispatcher + shell setup)
+7. `electron/main.cjs` (.dmg lifecycle)
 
 ---
 
@@ -113,7 +115,16 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 
 If you spot any of these in live code, it's residue to clean.
 
-> **Regla multi-tenant**: la config compartida (server por workspace, base branches, universo de workspaces, alta/baja de usuarios) la define **solo el admin**; el member la consume. No reintroduzcas edición de esas cosas para members ni storage por-dispositivo para lo que ahora es server-authoritative. La identidad SIEMPRE sale de la sesión (`req.ecoUser`), nunca del cliente.
+**Legacy/inert — do NOT use as the live path (code still present, dormant):**
+
+| Item | Live replacement | Status |
+|---|---|---|
+| Local auth: PIN (argon2id) + BIP39 recovery + activation tokens (`users-store.ts`, `/auth/{register,login,recover,claim}`) | **Firebase Auth** (email/password) → ID token; verified by `backend/src/firebase-auth.ts` (JWKS, `jose`) | Inert. Endpoints exist but are not the auth path. Don't reintroduce PIN as account auth. |
+| Sessions (`sessions.ts`, `X-Eco-Session` / `X-Eco-Refresh`, `/auth/session`) | Stateless ID-token verification per request/connection | Inert. No session is minted on the Firebase path. |
+| Per-user doc store (`user-docs.ts`, `GET/PUT/DELETE /user/doc(s)`, WS `doc_updated`/`doc_deleted`, `broadcastToUser`) | **Firestore** collections (frontend client SDK, `firestore.rules`) | Legacy. Used only for a one-time migration (`ensureMigrated` in `lib/user-sync.ts`). |
+| Local PIN as identity | Local PIN = device **lock** only (`lib/lock-pin.ts`, SHA-256, `LockScreen.tsx`) over a live Firebase session | Repurposed — not account auth. |
+
+> **Regla multi-tenant (Firebase)**: la identidad SALE SIEMPRE del **ID token de Firebase verificado** (`req.ecoUser.id` = uid; subprotocolo WS `eco.idtoken.<jwt>`), nunca de un userId del cliente. La **autorización vive en `firestore.rules`** (owner-based + rol admin en `users/{uid}.role`), NO en el backend local — `requireAdmin` solo exige sesión válida porque la máquina sirve a una persona. El **estado de la app es Firestore**; no reintroduzcas el doc-store local ni PIN/argon2/BIP39 como auth. La config de server por workspace y las base branches las define el **admin** (sigue server-side vía `/workspace-config`); el member la consume.
 
 ---
 
@@ -141,10 +152,13 @@ Override: `ECO_PORT=<n>` for backend/electron; `ECO_BACKEND_PORT=<n>` for Vite p
 | `npm run web` | Backend + Vite. Open `http://localhost:5173` in a real browser. |
 | `npm run dev:app` | Backend + Vite + Electron window with hot-reload + DevTools. |
 | `npm run dmg` | Build `.dmg` for Mac (alias `dist:mac`). |
-| `npm run dev:backend` / `dev:frontend` / `dev:electron` | Single-service variants. |
+| `npm run dist:win` / `dist:linux` | NSIS `.exe` (x64) / AppImage (x64, experimental). |
+| `npm run dev:backend` / `dev:frontend` / `dev:electron` | Single-service variants. `dev:backend` exports `ECO_FIREBASE_PROJECT_ID=aditum-eco`. |
 | `npm run typecheck` | TS for both workspaces. |
 | `npm run check:i18n` / `check:i18n:report` | i18n enforcement (strict / report-only). |
 | `npm run test:security` | Backend security test suite. |
+| `npm run bootstrap:admin <email>` | One-time: promote a Firebase user to admin (`scripts/bootstrap-admin.mjs`, needs `GOOGLE_APPLICATION_CREDENTIALS` / service-account). Writes `users/<uid>.role=admin` in Firestore. |
+| `npm run test:rules` | Firestore Security Rules tests against the emulator (`scripts/firestore-rules.test.mjs`). |
 
 All dev scripts hardcode `ECO_PORT=7050` / `ECO_BACKEND_PORT=7050` — do not export manually.
 
@@ -153,9 +167,16 @@ All dev scripts hardcode `ECO_PORT=7050` / `ECO_BACKEND_PORT=7050` — do not ex
 ```
 VITE_ECO_BACKEND=
 VITE_ECO_TOKEN=<optional, copy of ~/.eco/token>
+# Firebase web config (Auth + Firestore). PUBLIC, not a secret — real security is firestore.rules.
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
 ```
 
-`VITE_ECO_BACKEND` must be **empty** so calls go through the Vite proxy. An absolute URL forces cross-origin → fragile with CORS. In Electron this env is ignored (`window.electronAPI.getConfig()` returns the right URL via IPC).
+`VITE_ECO_BACKEND` must be **empty** so calls go through the Vite proxy. An absolute URL forces cross-origin → fragile with CORS. In Electron this env is ignored (`window.electronAPI.getConfig()` returns the right URL via IPC). The `VITE_FIREBASE_*` block is read by `frontend/src/lib/firebase.ts:readConfig()`; if `apiKey`/`projectId`/`appId` are missing, `firebaseConfigured()` returns false and login can't proceed.
 
 ### Versions required
 
@@ -163,6 +184,7 @@ VITE_ECO_TOKEN=<optional, copy of ~/.eco/token>
 - **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated.
 - **Swift 5+** (Xcode CLT) if rebuilding the native CLI.
 - **git** (worktrees, branches).
+- **A Firebase project** (Auth email/password + Firestore). Default project id `aditum-eco` (`.firebaserc`). Emulators in `firebase.json` (auth `:9099`, firestore `:8085`) for `npm run test:rules`.
 
 ### Backend env vars
 
@@ -173,6 +195,7 @@ VITE_ECO_TOKEN=<optional, copy of ~/.eco/token>
 | `ECO_PORT` | `7000` (overridden: 7050 dev, 7100 packaged) | HTTP/WS port. |
 | `ECO_ALLOWED_ORIGINS` | (defaults + auto-include own origin) | WS origin whitelist. |
 | `ECO_MODEL` | `claude-sonnet-4-5-20250929` | Claude model. |
+| `ECO_FIREBASE_PROJECT_ID` | (none; dev script sets `aditum-eco`) | Firebase project id used to verify ID tokens (`firebase-auth.ts`; falls back to `FIREBASE_PROJECT_ID`/`GCLOUD_PROJECT`). Without it, `verifyFirebaseIdToken` returns null → every request 401s. |
 | `ECO_RATE_LIMIT` | `10` | Prompts per minute. |
 | `ECO_PROMPT_TIMEOUT_MS` | `600000` | Absolute prompt timeout. |
 | `ECO_PTY_AUTOCLAUDE` | `1` | Auto-launch `claude` in each new PTY. |
@@ -187,7 +210,7 @@ VITE_ECO_TOKEN=<optional, copy of ~/.eco/token>
 
 `npm run serve:web` (script `scripts/eco-server.mjs`) runs Eco as a web server for the fase-0 thin-client experiment: backend on `127.0.0.1:7200` serving the built frontend, exposed to the tailnet as `https://<machine>.ts.net` via `tailscale serve` (HTTPS = secure context → mic/Web Speech work in remote Chrome). The script derives the hostname from `tailscale status --json`, builds missing dists (`--rebuild` to force), sets `ECO_ALLOWED_ORIGINS`/`ECO_EXTRA_HOSTS`, and prints the share URL. The backend keeps binding 127.0.0.1 — Tailscale Serve is the only ingress.
 
-Remote auth: the browser shows **ConnectView** ("Conectar al servidor") and asks for the access token (`~/.eco/token`, share it over a secure channel) → stored in localStorage `eco.token` → `useAuth` detects the missing-bearer state (`!window.electronAPI && !ecoToken()`) → reload → normal PIN login. Idle sessions renew silently (`/auth/session` + bearer); the renewal check in `api.ts` reads the error code from `data.error` (not `data.code`).
+Remote auth: a remote browser logs in with **Firebase Auth** (email/password) like any client; the Firebase ID token is sent as Bearer/WS subprotocol and the local backend (behind Tailscale Serve) verifies it. The legacy ConnectView/`eco.token` bearer + PIN flow is inert. (Historical note: the old single-tenant fase-0 server used a shared `~/.eco/token` + PIN.)
 
 #### Dev-server previews over the tailnet
 
@@ -253,24 +276,23 @@ The "Hablar a la terminal" button in the bubble header turns the mic on, accumul
 - `frontend/src/components/BrowserPanel.tsx` — UI + DevTools + persisted zoom
 - `frontend/src/components/SmartBrowserView.tsx` — `<webview>` (Electron) / `<iframe>` (web) wrapper
 
-### Auth (multi-tenant — ver Appendix D)
-- `backend/src/users-store.ts` — colección de usuarios argon2id (`~/.eco/users/<id>/user.json`); `createMember`(sin pin)→claimToken, `claimAccount`, `issueClaim`, `setDisabled`, `verifyPin`, `recover` (solo admin dueño), `userStatus`, refresh tokens, `migrateLegacyUserIfNeeded`.
-- `backend/src/auth.ts` — Bearer token compartido (`~/.eco/token`)
-- `backend/src/sessions.ts` — Session TTL 1 h, `X-Eco-Session` + refresh por usuario (`X-Eco-Refresh`)
-- `backend/src/request-context.ts` — AsyncLocalStorage con el userId del request
-- `frontend/src/hooks/useAuth.ts` — register/login/**claim**/recover/lock/signOut (sin destroy)
-- `frontend/src/lib/auth-role.ts` — rol como singleton (`useIsAdmin`) sin prop-drilling
-- `frontend/src/screens/AuthScreen.tsx` — views register/login/recover/show_recovery/**claim** (ClaimView) + ConnectView
-- `frontend/src/components/AccountMenu.tsx` — avatar + lock + **cerrar sesión** (sin borrar usuario)
-- `backend/src/index.ts` — `/auth/{register,login,claim,recover,session,me,logout}`, `/admin/users*` (ver Appendix D)
+### Auth (Firebase — ver Appendix D)
+- `backend/src/firebase-auth.ts` — **verificación stateless del ID token** contra el JWKS de Google (`jose`, `createRemoteJWKSet`); valida issuer `securetoken.google.com/<pid>` + audience `<pid>`; devuelve `{uid, email}`. Project id de `ECO_FIREBASE_PROJECT_ID`.
+- `backend/src/index.ts` (middleware ~280-320) — setea `req.ecoUser = {id: uid, role: 'member', username: email}` desde el Bearer (Firebase) o el token de máquina (MCP). `requireAdmin` = solo exige `req.ecoUser` (la autorización real es Firestore). `/auth/*` legacy inertes.
+- `frontend/src/lib/firebase.ts` — cliente Firebase: `getEcoAuth`/`getDb` (Firestore con offline persistence), `currentIdToken` (Bearer + WS `eco.idtoken.<jwt>`), `createUserAsAdmin` (alta sin desloguear al admin, instancia secundaria in-memory), `firebaseConfigured`.
+- `frontend/src/hooks/useAuth.ts` — login/signOut con Firebase Auth + estado de lock (`unlocked|locked|setup`).
+- `frontend/src/lib/lock-pin.ts` + `frontend/src/screens/LockScreen.tsx` — PIN de **lock** local (SHA-256, salteado con uid) sobre una sesión Firebase viva; NO es auth de cuenta.
+- `frontend/src/screens/AuthScreen.tsx` — login/reset (email/password). `frontend/src/components/AccountMenu.tsx` — avatar + lock + cerrar sesión.
+- `firestore.rules` — **la frontera de autorización** (owner-based + rol admin en `users/{uid}.role`). Ver Appendix D.
+- **Legacy/inerte (dormido):** `backend/src/{users-store,sessions,auth}.ts`, `request-context.ts`, `frontend/src/lib/auth-role.ts`. `auth.ts` sigue vivo solo para el **token de máquina** (`~/.eco/token`) de procesos MCP stdio.
 
-### Multi-tenant: cross-device + workspace config + admin (ver Appendix D)
-- `backend/src/user-docs.ts` — doc store por usuario (`~/.eco/users/<id>/docs/<key>.json`, LWW). `GET/PUT/DELETE /user/doc(s)`.
-- `backend/src/ws-server.ts:broadcastToUser` — push WS `doc_updated`/`doc_deleted` a los otros dispositivos del user.
-- `frontend/src/lib/user-sync.ts` + `lib/prefs-sync.ts` — clientes de sync (bubbles/categorías/notas/review/tema).
-- `backend/src/workspace-config.ts` + `frontend/src/lib/workspace-config.ts` — config por workspace (admin define server+baseBranches). `GET/POST /workspace-config`.
-- `frontend/src/screens/AdminScreen.tsx` + `hooks/useAdmin.ts` — consola admin: tabs Usuarios + Actividad + **Bitácora** (alta por código, rol, workspaces, reset-code, habilitar/deshabilitar, audit log).
-- `backend/src/audit-log.ts` — **bitácora append-only** (`~/.eco/audit-log.jsonl`, chmod 600, rotación 1 generación a `.1.jsonl` al pasar `AUDIT_MAX_BYTES` 5 MB). `logEvent` best-effort (nunca rompe el endpoint), `queryEvents` filtra por user/type/since/limit. Eventos: `auth.{login,claim,logout}` + `bubble.{create,archive,delete}`. NO guarda PINs/tokens/texto de mensajes. `GET /admin/audit` (`requireAdmin`). La creación se detecta por diff de IDs nuevos en `setBubblesSnapshot` (la UI crea las bubbles localmente, no vía `/bubble/create`).
+### Multi-tenant: Firestore + workspace config + admin (ver Appendix D)
+- `frontend/src/lib/firestore-model.ts` — tipos de los docs Firestore (`BubbleDoc`, `MessageDoc`, `NoteDoc`, `PrefsDoc`, …).
+- `frontend/src/lib/user-sync.ts` — hidratación + sync a **Firestore** (bubbles+mensajes, categorías, notas, review, prefs). `ensureMigrated` sube el doc-store local (`GET /user/docs`) a Firestore **una sola vez**; después todo es Firestore.
+- `frontend/src/screens/AdminScreen.tsx` + `hooks/useAdmin.ts` — consola admin **directo contra Firestore**: tabs Usuarios (crear vía `createUserAsAdmin`+doc, rol via `updateDoc users/{uid}.role`, disable via `users/{uid}.disabled`, reset via `sendPasswordResetEmail`), Actividad (lee `bubbles`), Bitácora (lee `auditLog`).
+- `backend/src/workspace-config.ts` + `frontend/src/lib/workspace-config.ts` — config por workspace (admin define server+baseBranches). **Sigue local** vía `GET/POST /workspace-config` (no migrado a Firestore).
+- **auditLog**: colección Firestore append-only (`firestore.rules`: owner crea, nadie edita/borra, admin lee). El backend `audit-log.ts` (`~/.eco/audit-log.jsonl`) es legacy.
+- **Legacy/inerte:** `backend/src/user-docs.ts` (`/user/doc(s)`) + `ws-server.ts:broadcastToUser` (`doc_updated`/`doc_deleted`) — solo para la migración one-time.
 
 ### Workspaces + worktrees
 - `backend/src/worktree-manager.ts` — create/remove/prune
@@ -368,31 +390,33 @@ Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources
 
 ### Disk state (chmod 600)
 
+> **El estado de la app NO vive en disco** — vive en **Firestore** (users/role, bubbles+messages, categories, notes, review, prefs, auditLog). El backend local solo persiste lo operativo/de cómputo + credenciales:
+
 | Path | Contents |
 |---|---|
-| `~/.eco/token` | 32 B bearer token (gate de transporte, compartido) |
-| `~/.eco/users/index.json` | Índice de usuarios `[{id, username, role, status, disabled}]` |
-| `~/.eco/users/<id>/user.json` | `{username, role, pinHash, recoveryHash, refreshHash, claimHash, claimExpiresAt?, disabled?, workspaceGrants[], …}` argon2id. **Multi-tenant** (ver Appendix D). El legacy `~/.eco/user.json` solo existe como respaldo post-migración. |
-| `~/.eco/users/<id>/github.json` | GitHub PAT por usuario |
-| `~/.eco/users/<id>/docs/<key>.json` | Doc store cross-device por usuario (`bubble:<id>`, `categories`, `notes:<id>`, `review:<id>`, `prefs`). Autoridad del estado del usuario. |
+| `~/.eco/token` | 32 B token de máquina (solo para procesos MCP stdio; ver Appendix C/D) |
+| `~/.eco/users/<uid>/github.json` | GitHub PAT por usuario (indexado por uid de Firebase) |
 | `~/.eco/workspace-config.json` | Config por workspace (admin): `{ [ws]: { server, baseBranches } }` |
 | `~/.eco/api-key` | Optional Anthropic API key (global, compartida) |
 | `~/.eco/dev-sessions.<port>.json` | `[{bubbleId, role, pgid, port, command, ...}]` — namespaced by backend port (7050/7100/7200) so parallel backends don't clobber each other. |
 | `~/.eco/obsidian.json` | `{vaultPath, enabled}` |
 | `~/.eco/backup.json` | `{enabled, folder?, retention, lastBackup?, lastError?}` — config del auto-backup (cada 2h, retención 30) |
-| `~/.eco/audit-log.jsonl` (+ `.1.jsonl`) | Bitácora append-only de eventos de sesión y agentes (`{ts, actorId, actorName, type, workspace?, bubbleId?, meta?}`). Solo la lee el admin vía `GET /admin/audit`. Rota a `.1.jsonl` al pasar `AUDIT_MAX_BYTES` (una generación). NO incluye PINs/tokens/texto de mensajes. |
 | `~/.eco/worktrees/<bubbleId>` | Per-agent git worktree |
+| **legacy** `~/.eco/users/index.json` + `~/.eco/users/<id>/user.json` | Registro de usuarios local argon2id/BIP39 — **inerte** (solo fallback PIN / migración). |
+| **legacy** `~/.eco/users/<id>/docs/<key>.json` | Doc-store local — **legacy**; la autoridad es Firestore. Solo se lee en la migración one-time (`ensureMigrated`). |
+| **legacy** `~/.eco/audit-log.jsonl` (+ `.1.jsonl`) | Bitácora local append-only — **legacy**; la auditoría viva es la colección `auditLog` de Firestore (la lee el admin). |
+
+**Firebase config (en el repo, no en `~/.eco`):** `firestore.rules` (autorización), `firestore.indexes.json` (índices compuestos: bubbles, categories, auditLog), `firebase.json` (emuladores), `.firebaserc` (project id `aditum-eco`).
 
 ### Frontend localStorage
 
 All keys use prefix `eco.`. Maintain this prefix when adding new keys:
 
 ```
-eco.session                              ← session token (X-Eco-Session)
-eco.token                                ← bearer token pasted in ConnectView (server mode remote clients only)
-eco.refresh                              ← per-user refresh token (X-Eco-Refresh)
-eco.lockedUser                           ← username recordado por el lock screen (pide solo PIN)
+eco.lock.pin.<uid>                       ← hash SHA-256 del PIN de lock por usuario (lib/lock-pin.ts)
+eco.lockedUser                           ← uid/email recordado por el lock screen (pide solo PIN)
 eco.onboarded                            ← '1' once the wizard finished
+# Firebase maneja la sesión (ID token en IndexedDB del SDK); NO hay eco.session/eco.token/eco.refresh.
 eco.detail.tab.<bubbleId>                ← last active tab (chat|terminal|git|plan|browser|server|files|notes). 'files' legacy maps to 'git' on read.
 eco.git.subtab.<bubbleId>                ← Git sub-tab (changes|history|prs); legacy 'branches' auto-migrates to 'changes'.
 eco.git.splitter.{changes,history}.<bubbleId>  ← left column width
@@ -409,8 +433,8 @@ eco.dev.presets.hidden                   ← built-ins hidden by user
 eco.remote.<bubbleId>                    ← slug if remote control active
 eco.skills.favorites                     ← Skills favorites
 eco.skills.fav_collapsed                 ← '1' if Skills favorites collapsed
-eco.bubbles.v1                           ← bubble state CACHE (autoridad = docs server `bubble:*`); se reemplaza al loguear
-eco.categories                           ← categories CACHE (autoridad = doc server `categories`)
+eco.bubbles.v1                           ← bubble state CACHE (autoridad = Firestore `bubbles/*` + subcol `messages`); se reemplaza al loguear
+eco.categories                           ← categories CACHE (autoridad = Firestore `categories/<uid>`)
 eco.graph.{spread_nodes,spread_ws,scale,ws_offsets,agent_offsets,fullscreen}  ← graph view tuning
 eco.files.openTabs.<bubbleId>            ← FilesPanel: open file tabs
 eco.files.activeFile.<bubbleId>          ← active file
@@ -477,7 +501,7 @@ If you add a new `eco.*.${bubbleId}` key, add its prefix to the cleanup list in 
 
 ### `/ws` (Claude SDK + dev status)
 
-Auth via subprotocol: `eco.token.<bearer>`.
+Auth via subprotocol: **`eco.idtoken.<jwt>`** (Firebase ID token). `verifyClient` (`ws-server.ts`) verifica el token con `verifyFirebaseIdToken`, rechaza con 401 si falla, y deja el uid en `req.ecoUid` (la identidad de la conexión). El viejo `eco.token.<bearer>`/`eco.session.<id>` es legacy.
 
 **Client → server** (`ClientMessageSchema` in `backend/src/protocol.ts`):
 - `{type:'prompt', bubbleId, workspace, text, resumeSessionId?}` — send prompt
@@ -492,11 +516,11 @@ Auth via subprotocol: `eco.token.<bearer>`.
 - `{type:'dev_status', bubbleId, role, status, port, url, command, exitCode, skill?}` — dev server state change
 - `{type:'dev_log', bubbleId, role, chunk}` — dev server stdout/stderr batched every 80 ms
 - `{type:'client_action', action}` — own MCP tool asking the client to act
-- `{type:'doc_updated', key, value, updatedAt}` / `{type:'doc_deleted', key}` — push del doc store cross-device a los OTROS dispositivos del MISMO usuario (`broadcastToUser`). Ver Appendix D.
+- **legacy** `{type:'doc_updated', key, value, updatedAt}` / `{type:'doc_deleted', key}` — push del doc-store local a otros dispositivos (`broadcastToUser`). Reemplazado por la sincronización directa de Firestore; solo sobrevive para la migración one-time.
 
 ### `/ws/pty` (interactive terminal)
 
-Auth same. Subprotocol with `bubbleId` + `workspace` query.
+Auth same (`eco.idtoken.<jwt>`). Subprotocol with `bubbleId` + `workspace` query.
 
 - Client → server: `{type:'data', data}` (input), `{type:'resize', cols, rows}`
 - Server → client: `{type:'data', data}`, `{type:'snapshot', data}` (128 KB replay on reconnect), `{type:'closed', exitCode}`
@@ -863,7 +887,9 @@ POST /bubble/archive  {bubbleId}
 <a id="backup"></a>
 ## Backup & Restore
 
-Settings → **Backup** (solo admin — respalda a TODOS los usuarios) permite exportar e importar todo el estado de Eco a un `.zip`. Auto-backup **cada 2h, retención 30** configurable.
+Settings → **Backup** (solo admin) permite exportar e importar el estado **local** de Eco a un `.zip`. Auto-backup **cada 2h, retención 30** configurable.
+
+> **Nota (post-migración a Firestore):** el estado de la app (bubbles+mensajes, categorías, notas, review, prefs) **ya NO vive en `~/.eco/users/<id>/docs/`** — vive en **Firestore** y se respalda/exporta desde ahí. Lo que sigue describe el formato del zip que aún captura los archivos locales (token, api-key, workspace-config, github por usuario, worktrees); las referencias a `docs/<key>.json` con "bubbles+mensajes" son **legacy** (solo relevantes para restaurar un backup viejo, pre-Firestore).
 
 ### Qué se incluye en el .zip
 
@@ -962,16 +988,17 @@ The frontend never sees the raw token after save — `maskedPat` is prefix + las
 
 ### Auth
 
-> **Multi-tenant**: el modelo completo (roles, alta por token de activación, deshabilitar,
-> recuperación) está en **Appendix D**. Resumen acá:
+> **Multi-tenant = Firebase Auth + Firestore**: el modelo completo (verificación del ID token,
+> roles en Firestore, alta in-app, deshabilitar, bootstrap del primer admin) está en **Appendix D**.
+> Resumen acá:
 
-- **Multi-usuario** en `~/.eco/users/<id>/user.json` (argon2id). PIN 4–8 dígitos.
-- El **primer usuario** = admin dueño, registrado en `RegisterView` (muestra la **frase BIP39** antes de entrar). Es el único con frase de auto-recuperación.
-- A los demás los crea el **admin** sin PIN → **token de activación**; el usuario define su PIN en `ClaimView` ("Activar cuenta"). Reseteo = token nuevo. **Members sin frase BIP39**.
-- 32 B in-memory session token, TTL 1 h, header `X-Eco-Session`. **Refresh token por usuario** (`X-Eco-Refresh`).
-- 32 B persistent bearer token in `~/.eco/token` (gate de transporte, compartido), validado via `timingSafeEqual`.
-- **Lock screen**: recuerda al último usuario en `eco.lockedUser` y pide solo el PIN; "Cerrar sesión" lo olvida. **No hay borrar-usuario** en `AccountMenu` (ni admin ni member).
-- **Deshabilitar/habilitar** usuarios desde la consola admin; un `disabled` no entra (mensaje genérico) y se cae de la sesión al instante.
+- **Identidad = Firebase Auth** (email/password). El frontend (`lib/firebase.ts`, `useAuth.ts`) obtiene el ID token y lo manda como `Authorization: Bearer <jwt>` (HTTP) y subprotocolo WS `eco.idtoken.<jwt>`.
+- El backend **verifica el ID token stateless** (`firebase-auth.ts`, JWKS de Google, `jose`) → `req.ecoUser.id = uid`. NO autoriza: `requireAdmin` solo exige sesión válida; la autorización real son las **Firestore Security Rules**.
+- **Rol** (`admin`/`member`) vive en Firestore `users/{uid}.role` (no es custom claim). El **primer admin** se promueve una vez con `npm run bootstrap:admin <email>` (firebase-admin). El admin da de alta a los demás **in-app** (`createUserAsAdmin` + doc Firestore); nadie se auto-promueve.
+- **Lock screen**: el PIN local (`lib/lock-pin.ts`, SHA-256 por uid) bloquea/desbloquea una sesión Firebase viva en el dispositivo — es conveniencia, NO auth de cuenta. `eco.lockedUser` recuerda al último usuario.
+- **Deshabilitar/habilitar** desde la consola admin (`users/{uid}.disabled` en Firestore). Reset de contraseña = `sendPasswordResetEmail` de Firebase.
+- **Token de máquina** `~/.eco/token` sobrevive solo para procesos **MCP stdio** (allowlist chico; ver Appendix C/D).
+- **Legacy/inerte:** PIN/argon2id/BIP39, sessions (`X-Eco-Session`/`X-Eco-Refresh`), `/auth/{register,login,claim,recover,session}` — código dormido, no es el camino vivo.
 
 ### Workspaces
 
@@ -1136,14 +1163,14 @@ source ~/.nvm/nvm.sh && nvm use 20.20.2
 ./electron/native/build.sh
 
 # 3) If a previous build left the DMG volume mounted, detach it
-hdiutil detach -force "/Volumes/Eco 0.1.0" 2>/dev/null || true
+hdiutil detach -force "/Volumes/Eco 1.0.0" 2>/dev/null || true
 
 # 4) Clean build of the .dmg
 pkill -9 -f "Eco" 2>/dev/null
 rm -rf release frontend/dist backend/dist
 npm run dmg
 # Expected output:
-#   release/Eco-0.1.0-arm64.dmg    (~112 MB)
+#   release/Eco-1.0.0-arm64.dmg    (~112 MB)
 #   release/mac-arm64/Eco.app      (~296 MB installed)
 ```
 
@@ -1463,50 +1490,51 @@ entre versiones; además contiene config sensible no relacionada al MCP.
 Delegar a la CLI usa un contrato estable (exit 0 = registrado).
 
 <a id="multitenant"></a>
-## Appendix D: Multi-tenant (rol admin + per-user)
+## Appendix D: Multi-tenant (Firebase Auth + Firestore)
 
-> **Estado:** mergeado a `main`. Convierte Eco de single-user a **multi-tenant sobre
-> un único backend compartido** (una Mac corriendo el server; los usuarios entran por
-> Tailscale). El CLI de Claude es **compartido** (una sola auth/billing). Aislamiento
-> **lógico a nivel app** (equipo de confianza). Incluye: alta por **token de
-> activación** (el admin no fija PINs), habilitar/deshabilitar usuarios, estado
-> **server-authoritative cross-device** (doc store por usuario), config de server +
-> base branches **por workspace definida por el admin**, y gating de Settings por rol.
+> **Estado:** mergeado a `main`. Eco es **multi-tenant sobre un único backend local**
+> (una Mac corriendo el server; los usuarios remotos entran por Tailscale). La
+> **identidad es Firebase Auth** y el **estado de la app vive en Firestore**
+> (gobernado por `firestore.rules`). El backend local solo hace **cómputo**
+> (worktrees/PTY/git/dev-servers/files/voz/backup) y verifica el ID token; **no
+> autoriza**. El CLI de Claude es **compartido** (una sola auth/billing). Aislamiento
+> **lógico** (Firestore rules + equipo de confianza), NO sandbox del SO.
+>
+> El modelo local anterior (PIN/argon2id/BIP39, sessions, doc-store por archivo)
+> quedó **inerte** — el código sigue presente pero no es el camino vivo.
 
 ### Invariante central
-La identidad SALE SIEMPRE de la sesión, NUNCA del cliente:
-- HTTP: `X-Eco-Client:1` → `Authorization: Bearer <token compartido>` (gate de transporte, NO identidad) → `X-Eco-Session: <id>` → el middleware setea `req.ecoUser = { id, role, username }`.
-- WS (`/ws`, `/ws/pty`): subprotocolos `eco.token.<bearer>` (transporte) + `eco.session.<sessionId>` → el backend resuelve el userId dueño de la conexión.
-- Los handlers/spawns usan `req.ecoUser.id` o `bubble.ownerId`. Un userId/ownerId mandado por el cliente se ignora.
-- `request-context.ts` (AsyncLocalStorage) lleva el userId del request HTTP en curso → `githubEnvOverrides()`/`isAllowedWorkspace()` resuelven el usuario sin threadear userId por todos lados.
+La identidad SALE SIEMPRE del **ID token de Firebase verificado**, NUNCA del cliente:
+- HTTP: `X-Eco-Client:1` → `Authorization: Bearer <Firebase ID token>` → el middleware (`index.ts`) lo verifica con `verifyFirebaseIdToken` (`firebase-auth.ts`, JWKS de Google) y setea `req.ecoUser = { id: uid, role: 'member', username: email }`. (El `role` SIEMPRE es `'member'` acá; el rol real lo enforce Firestore.)
+- WS (`/ws`, `/ws/pty`): subprotocolo `eco.idtoken.<jwt>` → `verifyClient` verifica el token y deja el uid en `req.ecoUid`.
+- Token de máquina (`~/.eco/token`): SOLO para procesos MCP stdio en un allowlist chico (`/bubble/create`, `/bubble/send`, `/bubbles`, `/workspaces`); el dueño se resuelve al "machine user" (último login Firebase, `setMachineUser`/`getMachineUser`).
+- Los handlers/spawns usan `req.ecoUser.id` (uid) o `bubble.ownerId`. Un userId/ownerId mandado por el cliente se ignora.
 
-### Modelo de datos (por usuario)
-- `~/.eco/users/<userId>/user.json` = `{ id, username, role: admin|member, pinHash, recoveryHash, refreshHash, claimHash, claimExpiresAt?, disabled?, workspaceGrants[], … }` (argon2id + BIP39). Índice en `~/.eco/users/index.json` (lleva `status` + `disabled`). Módulo: `backend/src/users-store.ts`.
-  - `pinHash:''` = **pending** (creado pero sin activar). `claimHash` = argon2 del secreto del token de activación vigente (null una vez activado). `claimExpiresAt` = epoch ms (TTL 7d). `disabled` ausente = false. Estado derivado: `userStatus()` → `pending | active | disabled`.
-- `~/.eco/users/<userId>/github.json` — PAT por usuario (`github-credentials-store.ts` toma userId; fallback al primer admin para procesos sin sesión).
-- `~/.eco/users/<userId>/docs/<key>.json` — **doc store cross-device** (`backend/src/user-docs.ts`): cada "store" del frontend es un doc `{ key, value, updatedAt }`, LWW por doc. Keys: `bubble:<id>` (bubble + mensajes, uno por archivo), `categories`, `notes:<id>`, `review:<id>`, `prefs` (tema/idioma). ES la autoridad del estado del usuario — el localStorage es solo cache de primer paint. El `:` se mapea a `__` en el nombre de archivo (`safeKey`).
-- `~/.eco/workspace-config.json` — config **por workspace definida por el admin** (`backend/src/workspace-config.ts`): `{ [wsPath]: { server:{dual,main,frontend,backend}, baseBranches } }`. La leen todos (filtrada a sus workspaces visibles), la escribe solo el admin.
-- Bubbles: `bubbles-index.ts` mantiene un summary por usuario con `ownerId` (para admin/overview/MCP). El contenido autoritativo vive en los docs `bubble:*`.
-- Sesiones (`sessions.ts`): llevan `userId` + `role`. Renovación vía **refresh token por usuario** (`X-Eco-Refresh`), NO el bearer compartido. Un usuario `disabled` se cae del middleware de sesión al instante (lee `user.json`).
-- API key de Claude: global (`~/.eco/api-key`) — compartida por decisión.
+### Modelo de datos — Firestore (autoridad del estado de la app)
+El frontend habla **directo con Firestore** (client SDK, `frontend/src/lib/firebase.ts:getDb`, offline persistence en IndexedDB). El backend local NO toca Firestore. Colecciones (ver `firestore.rules` + `firestore.indexes.json`):
+- `users/{uid}` — perfil + **`role: admin|member`** + `disabled` + `email`/`displayName`. El rol lo escribe solo un admin; nadie se auto-promueve (regla `update`).
+- `prefs/{uid}` — tema/idioma (un doc por usuario).
+- `bubbles/{bubbleId}` (+ subcolección `messages/{msgId}`) — metadata del agente + mensajes. Lleva `ownerId`. Borrado lógico (`deleted:true`); `allow delete: if false` (un agente nunca se elimina del todo).
+- `categories/{uid}`, `notes/{noteId}`, `review/{reviewId}` — owner-based (`ownerId == uid`).
+- `workspaceConfig/{uid}/…` — por usuario/máquina (existe la colección, pero hoy la config de server la sirve el backend local; ver abajo).
+- `auditLog/{eventId}` — **append-only** (owner crea, nadie edita/borra, admin lee). Reemplaza la bitácora local.
+- Tipos en `frontend/src/lib/firestore-model.ts`. Índices compuestos: `bubbles(ownerId, updatedAt desc)`, `categories(ownerId, order)`, `auditLog(ownerId, ts desc)`.
+- **Security Rules** (`firestore.rules`) son la frontera: owner-based (`ownsExisting`/`ownsIncoming`), admin global read (`isAdmin()` lee `users/{uid}.role`), auditLog append-only, no auto-promoción. Probar con `npm run test:rules` (emulador, `scripts/firestore-rules.test.mjs`, 14 casos).
 
-### Auth — alta por token de activación (el admin NUNCA ve ni fija PINs)
-- **Primer usuario** = admin dueño (`/auth/register` solo si no hay usuarios). Es el ÚNICO con **frase BIP39** (auto-recuperación). `createBootstrapAdmin`.
-- **Alta de usuarios**: el admin crea con **nombre + rol** (sin PIN) → `createMember` devuelve un **token de activación** de un solo uso (`<userId>.<secret>`, argon2 at rest, TTL 7d). El admin lo comparte; el usuario lo pega en la vista **"Activar cuenta"** (`POST /auth/claim {claimToken, pin}`, bearer-exempt) y define **su propio PIN** → `claimAccount` setea `pinHash`, limpia `claimHash`, mintea sesión+refresh.
-- **Reseteo de PIN** = el admin emite un token nuevo (`issueClaim`), NO fija PIN. El PIN viejo sigue válido hasta que se complete la re-activación (evita lockout). Los **members no tienen frase BIP39** — se resetean siempre por token.
-- **Habilitar/deshabilitar**: `setDisabled` + `disabled` flag. Deshabilitado rechazado en login (vía `verifyPin`, mensaje **genérico** anti-enumeración), en `/auth/session` (refresh) y en el middleware de sesión vivo (se cae al instante, no espera el TTL de 1h). Al deshabilitar se corta el `refreshHash`.
-- Login = **usuario + PIN** (`/auth/login`). Lock screen recuerda al último user en `eco.lockedUser` y pide solo el PIN; "Cerrar sesión" lo olvida. **No hay opción de borrar la propia cuenta** para nadie.
-- Migración one-time al boot: `~/.eco/user.json` viejo → primer admin; `~/.eco/github.json` → su carpeta (`migrateLegacyUserIfNeeded`). Usuarios legacy quedan `active` sin migración (defaults defensivos: `claimHash:null`, `disabled:false`).
-- Endpoints admin tras `requireAdmin`: `GET /admin/users` (incluye `status`+`disabled`), `POST /admin/users {username, role?}` → `{ claimToken }`, `DELETE /admin/users/:id`, `POST /admin/users/:id/{role,workspaces}`, `POST /admin/users/:id/issue-claim` → `{ claimToken }`, `POST /admin/users/:id/disabled {disabled}` (no podés deshabilitarte a vos mismo), `GET /admin/overview`.
-- Frontend: `useAuth.claim`; `AuthScreen` view `claim` (ClaimView), link "¿Tenés un código de activación?" en login y "¿No tenés frase? Pedile al admin un código" en RecoverView. Rol del usuario como singleton sin prop-drilling: `frontend/src/lib/auth-role.ts` (`useIsAdmin`).
+### Qué queda en el backend local (NO en Firestore)
+- API key de Claude (`~/.eco/api-key`, global compartida), GitHub PAT por usuario (`~/.eco/users/<uid>/github.json`), worktrees, `dev-sessions.<port>.json`, `workspace-config.json` (servido vía `/workspace-config`), config de Obsidian/backup, token de máquina.
+- **Legacy/inerte:** `users-store.ts`/`user.json`, `sessions.ts`, `user-docs.ts`/`docs/*.json`, `audit-log.jsonl`, `request-context.ts`, `bubbles-index.ts` summary. El doc-store local solo se lee en la **migración one-time** `ensureMigrated` (`lib/user-sync.ts`): si hay datos locales (`GET /user/docs`) y Firestore está vacío, los sube una vez; después todo es Firestore.
 
-### Per-user git identity + workspace ACL (F1)
-- Cada usuario maneja su PAT desde Settings → GitHub (web incluida). Los spawns (PTY/agente) inyectan `githubEnvOverrides(ownerId)` → commits/push con la identidad del dueño de la bubble.
-- `config.ts:isAllowedWorkspace(target, userId?)` + `workspacesForUser(userId?)`: admin = todos; member = `workspaceGrants`; sin userId = legacy global. El universo global (`ECO_WORKSPACES`/`workspaces-store`) lo gestiona solo el admin.
+### Auth — Firebase (el admin da de alta in-app; nadie fija PINs)
+- **Login** = email + password (Firebase Auth, `AuthScreen`/`useAuth`). El ID token va como Bearer + subprotocolo WS.
+- **Primer admin**: se registra en la app y luego se promueve UNA vez con `npm run bootstrap:admin <email>` (`scripts/bootstrap-admin.mjs`, firebase-admin SDK escribe `users/{uid}.role=admin`; bypassa las rules porque aún no hay admin). Chicken-and-egg resuelto una sola vez.
+- **Alta de usuarios**: el admin, desde la consola, llama `createUserAsAdmin(email, password)` (`lib/firebase.ts`) — usa una **instancia secundaria de Firebase in-memory** para crear la cuenta SIN desloguear al admin — y escribe `users/{uid}` con `role:'member'`. Promueve/degrada con `updateDoc(users/{uid}, {role})`.
+- **Reset de contraseña** = `sendPasswordResetEmail` (Firebase). **Deshabilitar** = `updateDoc(users/{uid}, {disabled:true})` (las rules y el frontend lo respetan).
+- **Lock screen**: PIN local de dispositivo (`lib/lock-pin.ts`, SHA-256 salteado con uid) que bloquea/desbloquea una sesión Firebase viva. NO es auth de cuenta. Estados en `useAuth`: `unlocked|locked|setup`.
 
-### Estado server-authoritative cross-device (doc store)
-- Al loguear, el frontend hidrata TODO su estado del servidor (`GET /user/docs`) y **reemplaza** el localStorage (no mergea — evita estado viejo o de otro usuario). Cada cambio sube por `PUT /user/doc {key,value,updatedAt}` (debounced), que además hace **push WS** (`doc_updated`/`doc_deleted`) a los OTROS dispositivos del mismo usuario (`broadcastToUser` en `ws-server.ts`). `DELETE /user/doc` borra. LWW por doc (`updatedAt`).
-- Frontend: `lib/user-sync.ts` (genérico), `lib/prefs-sync.ts` (tema/idioma), y los hooks `useBubbles`/`useCategories`/`useReviewState` + `NotesPanel/types` hidratan y guardan su doc. `App.tsx` hidrata todo en el effect on `userId`. Las prefs de UI por-bubble (anchos, tab activa, zoom, terminales) quedan **locales al dispositivo**.
+### Per-user git identity + workspace ACL
+- Cada usuario maneja su PAT desde Settings → GitHub. Los spawns (PTY/agente) inyectan `githubEnvOverrides(ownerId)` → commits/push con la identidad del dueño de la bubble (`ownerId` = uid de Firebase).
+- `config.ts:isAllowedWorkspace(target, userId?)` + `workspacesForUser(userId?)`: gate de workspaces. El universo global (`ECO_WORKSPACES`/`workspaces-store`) lo gestiona el admin.
 
 ### Config de server + base branches por workspace (admin define, member consume)
 - `backend/src/workspace-config.ts` + `frontend/src/lib/workspace-config.ts` (store-singleton + `useWorkspaceConfig`/`saveWorkspaceConfig`). `GET /workspace-config` (sesión, filtrado a workspaces visibles), `POST /workspace-config` (`requireAdmin`).
@@ -1516,27 +1544,26 @@ La identidad SALE SIEMPRE de la sesión, NUNCA del cliente:
 - Solo admin: secciones **Claude & API**, **Folders**, **Integraciones** (Obsidian + MCP server, recursos del anfitrión), **Backup**; y en **General** los toggles "Barra de menú" y la acción "Limpiar worktrees" (cosas de host/dispositivo). (La sección **Voice** y los toggles de "Escuchar al iniciar" se eliminaron junto con la voz.) El member ve General (review/notify/dock/carpeta/atajo/idioma/IDE/sugerencias), GitHub, Seguridad, Apariencia, Acerca de. **History** está oculto del menú lateral para todos.
 
 ### Consola de admin
-- `frontend/src/screens/AdminScreen.tsx` (gated en `AppSidebar` por `role==='admin'`). Tres tabs:
-  - **Usuarios**: crear con nombre+rol → diálogo con código copiable; rol; workspaces; generar código de reseteo; habilitar/deshabilitar; borrar; badge pending/disabled. **Sin inputs de PIN** en ningún lado.
-  - **Actividad**: usuario → bubbles con dot de estado + badges PTY/DEV (`GET /admin/overview`, poll 5 s).
-  - **Bitácora** (`AuditTab`): eventos de sesión y agentes (`GET /admin/audit`), filtrables por usuario y tipo, con actor + acción + workspace + tiempo relativo (`useFormatRelTime`). Ver `audit-log.ts` en el file-map (§4).
-  - Hook: `useAdmin.ts` (`refreshUsers`/`refreshOverview`/`refreshAudit` + `AUDIT_EVENT_TYPES`).
+- `frontend/src/screens/AdminScreen.tsx` (gated en `AppSidebar` por rol admin de Firestore). Habla **directo con Firestore** vía `hooks/useAdmin.ts`. Tres tabs:
+  - **Usuarios**: crear con **email + nombre** (`createUserAsAdmin` → cuenta Firebase + doc `users/{uid}`); cambiar rol (`updateDoc role`); habilitar/deshabilitar (`updateDoc disabled`); reset de contraseña (`sendPasswordResetEmail`). **Sin inputs de PIN** en ningún lado.
+  - **Actividad**: usuario → sus bubbles con dot de estado (lee las colecciones `users`+`bubbles` de Firestore).
+  - **Bitácora** (`AuditTab`): eventos de la colección `auditLog` de Firestore, filtrables por usuario y tipo, con actor + acción + workspace + tiempo relativo (`useFormatRelTime`).
+  - Hook: `useAdmin.ts` (`refreshUsers`/`refreshOverview`/`refreshAudit`, `setRole`/`setDisabled`/`createUser`/`sendReset`).
 
 ### Dashboard global del admin (vista "todos los usuarios")
-- El admin tiene un toggle **"Mis agentes / Todos los usuarios"** en el Dashboard (`eco.dashboard.scope`, oculto para members). En "todos", las 3 vistas (grilla/kanban/graph) muestran los agentes de TODO el equipo vía `useTeamBubbles` (propias reales + ajenas sintetizadas de `/admin/overview`): grilla **agrupada por dueño**, kanban con **badge de dueño**, graph en `groupMode="owner"`. Los agentes ajenos son **read-only** (sin menú/rename/acciones) y el clic es **inerte** (el admin no abre worktrees ajenos). Las tarjetas ajenas no tienen `messages` → usan `lastMsgPreview`+`categoryIds` propagados por `/bubbles/sync` → `BubbleSummary` → `/admin/overview`. Ver `Dashboard.tsx` y `AdminGraph.tsx` en el file-map (§4).
+- El admin tiene un toggle **"Mis agentes / Todos los usuarios"** en el Dashboard (`eco.dashboard.scope`, oculto para members). En "todos", las 3 vistas (grilla/kanban/graph) muestran los agentes de TODO el equipo vía `useTeamBubbles` (propias reales + ajenas leídas de la colección `bubbles` de Firestore): grilla **agrupada por dueño**, kanban con **badge de dueño**, graph en `groupMode="owner"`. Los agentes ajenos son **read-only** y el clic es **inerte** (el admin no abre worktrees ajenos). Ver `Dashboard.tsx` y `AdminGraph.tsx` en el file-map (§4).
 
 ### Backup
-- `backup.ts` captura `~/.eco/users/**` **incluyendo la subcarpeta `docs/` por usuario** (ahí viven bubbles+mensajes, categorías, notas, review en el modelo cross-device) además de los archivos planos. `restoreEcoState` acepta rutas de 3 niveles (`<id>/docs/<key>.json`) y el schema de `/backup/restore` acepta `eco.users` como objeto anidado (`z.union([z.string(), z.record(z.string())])`). El objeto `eco` del snapshot es opaco para el frontend. Solo admin (cada 2h, retención 30).
+- `backup.ts` captura los archivos planos de `~/.eco` (token, api-key, workspace-config, github por usuario, etc.) + el estado de worktrees. El **estado de la app (bubbles/mensajes/categorías/notas/review/prefs) ya NO está en `~/.eco`** — vive en Firestore, que tiene su propia durabilidad/export; el backup local cubre lo operativo + credenciales. Solo admin (cada 2h, retención 30). Migración histórica de un backup viejo a Firestore: `scripts/restore-backup-to-firestore.mjs` (one-time, firebase-admin).
 
 ### Caveat de aislamiento
-Todos los spawns corren como el MISMO usuario del SO y comparten el CLI de Claude. Eco separa por usuario en la capa de la app, pero alguien con acceso al SO puede leer worktrees/credenciales de otros bajo `~/.eco`. Aceptable para equipo de confianza; NO es aislamiento endurecido.
+Todos los spawns corren como el MISMO usuario del SO y comparten el CLI de Claude. La separación por usuario es **lógica** (Firestore rules para el estado; checks de endpoint para el cómputo), pero alguien con acceso al SO puede leer worktrees/credenciales de otros bajo `~/.eco`. Aceptable para equipo de confianza; NO es aislamiento endurecido.
 
 ### Hardening pendiente (diferido — defense-in-depth bajo aislamiento lógico)
-- **Filtrado de broadcasts por usuario**: `dev_status`/`pty_status`/`dev_log`/`client_action` se emiten a todos los clientes WS (un usuario ve el estado/logs de dev-servers y PTYs de otros). La respuesta del agente (`sdk_message`) SÍ va por-conexión (no se filtra mal).
-- **Namespacing de localStorage de bubbles por usuario** (`eco.bubbles.v1.<userId>`): hoy es global por navegador. Irrelevante en el modelo una-máquina-por-persona, pero si dos usuarios distintos entran en el MISMO navegador, el `/bubbles/sync` re-asignaría ownership. No hacer login de otro usuario en un navegador con bubbles de otro.
-- **Namespacing de directorios de worktree por usuario**: hoy `~/.eco/worktrees/<bubbleId>` (plano). No causa colisiones (bubbleIds son únicos globalmente) y la ownership la imponen los checks de endpoint; queda como hardening.
-- **Token MCP por usuario**: el MCP server (`/bubble/create|send`, `/bubbles`) atribuye al primer admin cuando no hay sesión. Falta un token MCP por usuario (`X-Eco-Mcp`).
-- **Ownership fino en endpoints FS** (`/fs/tree`, `/file/*`): hoy gateados por `isAllowedWorkspace` (per-usuario vía ALS) + early-return incondicional de worktrees.
+- **Backend local sin authz fina**: `requireAdmin` solo exige sesión válida; los endpoints de cómputo (`/dev/*`, `/file/*`, `/git/*`) confían en `isAllowedWorkspace` + bounds de worktree, no en el rol. La autorización del estado la cubre Firestore, pero el cómputo no distingue admin/member más allá del workspace gate.
+- **Filtrado de broadcasts por usuario**: `dev_status`/`pty_status`/`dev_log`/`client_action` se emiten a todos los clientes WS (un usuario ve el estado/logs de dev-servers y PTYs de otros). La respuesta del agente (`sdk_message`) SÍ va por-conexión.
+- **Namespacing de worktree/localStorage por usuario**: `~/.eco/worktrees/<bubbleId>` es plano y `eco.bubbles.v1` es global por navegador. No hacer login de dos usuarios distintos en el MISMO navegador.
+- **Token MCP por usuario**: el MCP server atribuye al "machine user" (último login) cuando entra con el token de máquina. Falta un token MCP por usuario.
 
 ---
 
