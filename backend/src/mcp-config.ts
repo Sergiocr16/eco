@@ -6,6 +6,7 @@
 import { spawn, type SpawnOptionsWithoutStdio } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 
 export type McpStatus = {
@@ -28,7 +29,10 @@ export type McpStatus = {
 // al repo) como en packaged (.app/Resources/backend/dist → .app/Resources/
 // mcp-server/dist via prepare-mcp + extraResources). Mismo offset.
 function resolveBinaryPath(): string {
-  const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+  // fileURLToPath en vez de `new URL(...).pathname`: en Windows el pathname
+  // queda como `/C:/...` (con barra inicial y separadores POSIX) y rompe el
+  // path.resolve. fileURLToPath devuelve el path nativo correcto en todo SO.
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   return path.resolve(moduleDir, '..', '..', 'mcp-server', 'dist', 'index.js');
 }
 

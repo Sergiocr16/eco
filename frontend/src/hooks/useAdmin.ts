@@ -1,21 +1,27 @@
-// Hook de la consola de admin: envuelve los endpoints /admin/*. Solo lo usa
-// AdminScreen (gated por rol admin en el sidebar + requireAdmin en el backend).
+// Hook de la consola de admin. Lee Firestore directo (gateado por las Security
+// Rules de admin) — reemplaza los endpoints /admin/* del backend local, que en
+// el modelo multi-tenant solo conocían al usuario de SU máquina. Ahora el admin
+// ve a TODO el equipo desde la nube.
+//
+// Acciones disponibles: cambiar rol (users/{id}.role) y habilitar/deshabilitar
+// (users/{id}.disabled). El alta de usuarios es self-service (Firebase Auth), así
+// que ya no hay createMember/claim/workspaces/delete acá.
 
 import { useCallback, useState } from 'react';
-import { apiFetch } from '@/lib/api';
-import { translateBackendError } from '@/lib/backend-errors';
+import {
+  collection, getDocs, doc, updateDoc, setDoc, serverTimestamp, query, orderBy, limit as fbLimit,
+} from 'firebase/firestore';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { getDb, getEcoAuth, createUserAsAdmin } from '@/lib/firebase';
 
 export type Role = 'admin' | 'member';
-
-export type UserStatus = 'pending' | 'active' | 'disabled';
 
 export type AdminUser = {
   id: string;
   username: string;
+  email: string;
   role: Role;
-  status: UserStatus;
   disabled: boolean;
-  workspaceGrants: string[];
 };
 
 export type OverviewBubble = {
@@ -46,21 +52,12 @@ export type AuditEvent = {
   meta?: Record<string, string | number | boolean>;
 };
 
-type Result<T = undefined> = ({ ok: true } & (T extends undefined ? object : { data: T })) | { ok: false; error: string };
+type ActionResult = { ok: true } | { ok: false; error: string };
 
-async function post<T = undefined>(path: string, body?: unknown): Promise<Result<T>> {
-  try {
-    const r = await apiFetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
-    return { ok: true, data } as Result<T>;
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Error' };
-  }
+function usernameFromDoc(d: Record<string, unknown>, fallback: string): string {
+  return (typeof d.displayName === 'string' && d.displayName)
+    || (typeof d.email === 'string' && d.email)
+    || fallback;
 }
 
 export function useAdmin() {
@@ -72,69 +69,130 @@ export function useAdmin() {
   const refreshUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await apiFetch('/admin/users');
-      const d = await r.json().catch(() => null);
-      if (r.ok && Array.isArray(d?.users)) setUsers(d.users as AdminUser[]);
-    } finally { setLoading(false); }
+      const snap = await getDocs(collection(getDb(), 'users'));
+      const out: AdminUser[] = [];
+      snap.forEach((d) => {
+        const x = d.data();
+        out.push({
+          id: d.id,
+          username: usernameFromDoc(x, d.id),
+          email: typeof x.email === 'string' ? x.email : '',
+          role: (x.role === 'admin' ? 'admin' : 'member'),
+          disabled: !!x.disabled,
+        });
+      });
+      out.sort((a, b) => a.username.localeCompare(b.username));
+      setUsers(out);
+    } catch { /* sin acceso → vacío */ } finally { setLoading(false); }
   }, []);
 
   const refreshOverview = useCallback(async () => {
-    const r = await apiFetch('/admin/overview');
-    const d = await r.json().catch(() => null);
-    if (r.ok && Array.isArray(d?.users)) setOverview(d.users as OverviewUser[]);
-  }, []);
-
-  const refreshAudit = useCallback(async (q?: { userId?: string; type?: AuditEventType; since?: number; limit?: number }) => {
-    const params = new URLSearchParams();
-    if (q?.userId) params.set('userId', q.userId);
-    if (q?.type) params.set('type', q.type);
-    if (q?.since) params.set('since', String(q.since));
-    if (q?.limit) params.set('limit', String(q.limit));
-    const qs = params.toString();
-    const r = await apiFetch(`/admin/audit${qs ? `?${qs}` : ''}`);
-    const d = await r.json().catch(() => null);
-    if (r.ok && Array.isArray(d?.events)) setAudit(d.events as AuditEvent[]);
-  }, []);
-
-  const createMember = useCallback(async (username: string, role: Role) => {
-    const r = await post<{ claimToken: string; user: AdminUser }>('/admin/users', { username, role });
-    if (r.ok) await refreshUsers();
-    return r;
-  }, [refreshUsers]);
-
-  const setRole = useCallback(async (id: string, role: Role) => {
-    const r = await post(`/admin/users/${id}/role`, { role });
-    if (r.ok) await refreshUsers();
-    return r;
-  }, [refreshUsers]);
-
-  const setWorkspaces = useCallback(async (id: string, workspaces: string[]) => {
-    const r = await post(`/admin/users/${id}/workspaces`, { workspaces });
-    if (r.ok) await refreshUsers();
-    return r;
-  }, [refreshUsers]);
-
-  const issueClaim = useCallback(async (id: string) => {
-    return post<{ claimToken: string }>(`/admin/users/${id}/issue-claim`);
-  }, []);
-
-  const setDisabled = useCallback(async (id: string, disabled: boolean) => {
-    const r = await post(`/admin/users/${id}/disabled`, { disabled });
-    if (r.ok) await refreshUsers();
-    return r;
-  }, [refreshUsers]);
-
-  const deleteUser = useCallback(async (id: string) => {
     try {
-      const r = await apiFetch(`/admin/users/${id}`, { method: 'DELETE' });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) return { ok: false as const, error: translateBackendError(d, `HTTP ${r.status}`) };
+      const db = getDb();
+      const [usersSnap, bubblesSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'bubbles')),
+      ]);
+      const userMap = new Map<string, { username: string; role: Role }>();
+      usersSnap.forEach((d) => {
+        const x = d.data();
+        userMap.set(d.id, { username: usernameFromDoc(x, d.id), role: x.role === 'admin' ? 'admin' : 'member' });
+      });
+      const byOwner = new Map<string, OverviewBubble[]>();
+      bubblesSnap.forEach((d) => {
+        const data = d.data();
+        const owner = typeof data.ownerId === 'string' ? data.ownerId : null;
+        if (!owner) return;
+        const v = (data.value ?? {}) as Record<string, unknown>;
+        if (v.deleted === true) return;  // ocultos en todos lados
+        const arr = byOwner.get(owner) ?? [];
+        arr.push({
+          id: typeof v.id === 'string' ? v.id : d.id,
+          title: typeof v.title === 'string' ? v.title : '—',
+          workspace: typeof v.workspace === 'string' ? v.workspace : '',
+          status: typeof v.status === 'string' ? v.status : 'idle',
+          archived: !!v.archived,
+          updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : (typeof v.updatedAt === 'number' ? v.updatedAt : 0),
+          ptyRunning: false,
+          devActive: false,
+          lastMsgPreview: typeof v.lastMsgPreview === 'string' ? v.lastMsgPreview : undefined,
+          categoryIds: Array.isArray(v.categoryIds) ? v.categoryIds.filter((x): x is string => typeof x === 'string') : undefined,
+        });
+        byOwner.set(owner, arr);
+      });
+      const ids = new Set<string>([...userMap.keys(), ...byOwner.keys()]);
+      const out: OverviewUser[] = [];
+      ids.forEach((id) => {
+        const u = userMap.get(id);
+        out.push({ id, username: u?.username ?? id, role: u?.role ?? 'member', lastSync: 0, bubbles: byOwner.get(id) ?? [] });
+      });
+      setOverview(out);
+    } catch { /* sin acceso → vacío */ }
+  }, []);
+
+  const refreshAudit = useCallback(async (q?: { userId?: string; type?: AuditEventType }) => {
+    try {
+      const snap = await getDocs(query(collection(getDb(), 'auditLog'), orderBy('ts', 'desc'), fbLimit(200)));
+      let evs: AuditEvent[] = [];
+      snap.forEach((d) => {
+        const x = d.data();
+        evs.push({
+          ts: typeof x.ts === 'number' ? x.ts : 0,
+          actorId: typeof x.ownerId === 'string' ? x.ownerId : null,
+          actorName: typeof x.actorName === 'string' ? x.actorName : null,
+          type: x.type as AuditEventType,
+          workspace: typeof x.workspace === 'string' ? x.workspace : undefined,
+          bubbleId: typeof x.bubbleId === 'string' ? x.bubbleId : undefined,
+          meta: (x.meta && typeof x.meta === 'object') ? x.meta as AuditEvent['meta'] : undefined,
+        });
+      });
+      if (q?.userId) evs = evs.filter((e) => e.actorId === q.userId);
+      if (q?.type) evs = evs.filter((e) => e.type === q.type);
+      setAudit(evs);
+    } catch { setAudit([]); }
+  }, []);
+
+  // Alta de usuario por el admin: crea la cuenta Auth (instancia secundaria, no
+  // desloguea al admin) + el doc users/{uid} (rol member). El admin comparte el
+  // email + la contraseña temporal; el usuario la cambia después.
+  const createUser = useCallback(async (email: string, displayName: string, password: string): Promise<ActionResult> => {
+    try {
+      const { uid } = await createUserAsAdmin(email, password);
+      await setDoc(doc(getDb(), 'users', uid), {
+        role: 'member',
+        email: email.trim(),
+        displayName: displayName.trim() || email.trim().split('@')[0],
+        disabled: false,
+        createdAt: serverTimestamp(),
+      });
       await refreshUsers();
-      return { ok: true as const };
+      return { ok: true };
     } catch (e) {
-      return { ok: false as const, error: e instanceof Error ? e.message : 'Error' };
+      const code = (e as { code?: string })?.code ?? '';
+      const msg = code === 'auth/email-already-in-use' ? 'Ese email ya está registrado.'
+        : code === 'auth/invalid-email' ? 'Email inválido.'
+        : code === 'auth/weak-password' ? 'La contraseña debe tener al menos 6 caracteres.'
+        : (e instanceof Error ? e.message : 'Error');
+      return { ok: false, error: msg };
     }
   }, [refreshUsers]);
 
-  return { users, overview, audit, loading, refreshUsers, refreshOverview, refreshAudit, createMember, setRole, setWorkspaces, issueClaim, setDisabled, deleteUser };
+  const setRole = useCallback(async (id: string, role: Role): Promise<ActionResult> => {
+    try { await updateDoc(doc(getDb(), 'users', id), { role }); await refreshUsers(); return { ok: true }; }
+    catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'Error' }; }
+  }, [refreshUsers]);
+
+  const setDisabled = useCallback(async (id: string, disabled: boolean): Promise<ActionResult> => {
+    try { await updateDoc(doc(getDb(), 'users', id), { disabled }); await refreshUsers(); return { ok: true }; }
+    catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'Error' }; }
+  }, [refreshUsers]);
+
+  // Reset de contraseña: Firebase manda un email con link para que el propio
+  // usuario defina la nueva (no requiere Admin SDK).
+  const sendReset = useCallback(async (email: string): Promise<ActionResult> => {
+    try { await sendPasswordResetEmail(getEcoAuth(), email); return { ok: true }; }
+    catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'Error' }; }
+  }, []);
+
+  return { users, overview, audit, loading, refreshUsers, refreshOverview, refreshAudit, createUser, setRole, setDisabled, sendReset };
 }

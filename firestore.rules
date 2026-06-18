@@ -1,0 +1,117 @@
+rules_version = '2';
+
+// Security Rules de Eco. ESTA es la frontera de seguridad del sistema: el
+// frontend habla directo con Firestore (client SDK), el backend local NO valida
+// autorización. Si estas reglas están flojas, cualquier usuario autenticado
+// puede leer/escribir datos ajenos. Probar con el emulador (firestore.test.mjs).
+//
+// Modelo:
+// - Cada doc de datos lleva ownerId == uid del dueño.
+// - El rol (admin/member) vive en users/{uid}.role; un admin lo escribe, el
+//   propio usuario NO puede auto-promoverse.
+// - El admin lee TODO (control en la nube: "quién hace qué"); el member solo lo suyo.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Dueño según el doc ya existente (read/update/delete).
+    function ownsExisting() {
+      return isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Dueño según el doc entrante (create): el ownerId DEBE ser el propio uid.
+    function ownsIncoming() {
+      return isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // --- users: perfil + rol ---
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      // El propio usuario crea/edita su perfil pero NO su role/disabled.
+      // Un admin puede crear el doc de un usuario que dio de alta. Solo un admin
+      // escribe role/disabled de cualquiera.
+      allow create: if isAdmin()
+        || (isSignedIn() && request.auth.uid == uid
+            && request.resource.data.role == 'member'
+            && request.resource.data.disabled == false);
+
+      allow update: if isAdmin()
+        || (request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.disabled == resource.data.disabled);
+
+      allow delete: if isAdmin();
+    }
+
+    // --- prefs: doc único por usuario (tema/idioma) ---
+    match /prefs/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // --- bubbles: metadatos + subcolección de mensajes ---
+    match /bubbles/{bubbleId} {
+      allow read: if ownsExisting() || isAdmin();
+      allow create: if ownsIncoming();
+      // Un agente NUNCA se borra del todo: se actualiza (incl. deleted=true para
+      // ocultarlo) pero el doc no se puede eliminar.
+      allow update: if ownsExisting();
+      allow delete: if false;
+
+      match /messages/{msgId} {
+        // Hereda ownership de la bubble padre.
+        function parentOwner() {
+          return get(/databases/$(database)/documents/bubbles/$(bubbleId)).data.ownerId;
+        }
+        allow read: if isSignedIn()
+          && (parentOwner() == request.auth.uid || isAdmin());
+        allow write: if isSignedIn() && parentOwner() == request.auth.uid;
+      }
+    }
+
+    // --- categories ---
+    match /categories/{categoryId} {
+      allow read: if ownsExisting() || isAdmin();
+      allow create: if ownsIncoming();
+      allow update, delete: if ownsExisting();
+    }
+
+    // --- notes ---
+    match /notes/{noteId} {
+      allow read: if ownsExisting() || isAdmin();
+      allow create: if ownsIncoming();
+      allow update, delete: if ownsExisting();
+    }
+
+    // --- review state ---
+    match /review/{reviewId} {
+      allow read: if ownsExisting() || isAdmin();
+      allow create: if ownsIncoming();
+      allow update, delete: if ownsExisting();
+    }
+
+    // --- workspaceConfig: por usuario y por máquina (cada member edita la suya) ---
+    match /workspaceConfig/{uid}/{rest=**} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // --- auditLog: append-only; el dueño crea, nadie edita/borra, el admin lee ---
+    match /auditLog/{eventId} {
+      allow read: if isAdmin();
+      allow create: if ownsIncoming();
+      allow update, delete: if false;
+    }
+  }
+}

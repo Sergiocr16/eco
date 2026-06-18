@@ -4,7 +4,7 @@ import { AppSidebar, type Screen } from './components/AppSidebar';
 import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
-import { Settings } from './screens/Settings';
+import { Settings, FoldersManager } from './screens/Settings';
 import { AdminScreen } from './screens/AdminScreen';
 import { FileExplorer } from './screens/FileExplorer';
 import { ArchivedScreen } from './screens/ArchivedScreen';
@@ -15,7 +15,7 @@ import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { emit as ecoEmit } from './lib/eco-bus';
 import { writeToBubblePty } from './lib/pty-bridge';
-import { hydrateDocs } from './lib/user-sync';
+import { hydrateDocs, startUserDocListeners } from './lib/user-sync';
 import { hydrateCategories } from './hooks/useCategories';
 import { hydratePrefs } from './lib/prefs-sync';
 import { hydrateReviewAll } from './hooks/useReviewState';
@@ -24,9 +24,9 @@ import { hydrateWorkspaceConfig, getWorkspaceConfig } from './lib/workspace-conf
 import { setRole } from './lib/auth-role';
 import { WorkspacePicker } from './components/WorkspacePicker';
 import { AuthScreen, DriftingOrbs } from './screens/AuthScreen';
+import { LockScreen } from './screens/LockScreen';
 import { OnboardingWizard, hasOnboarded } from './screens/OnboardingWizard';
 import { useAuth } from './hooks/useAuth';
-import { useBackupScheduler } from './hooks/useBackupScheduler';
 import { I18nProvider, useI18n, useT } from './hooks/useI18n';
 import type { Bubble, Message } from './lib/types';
 
@@ -103,6 +103,19 @@ function AuthGate() {
   }
   if (auth.state.status !== 'authenticated') {
     return <AuthScreen authState={auth.state} authActions={auth}/>;
+  }
+  // Lock screen local con PIN: la sesión de Firebase sigue viva; solo gatea la UI.
+  if (auth.lockState !== 'unlocked') {
+    return (
+      <LockScreen
+        mode={auth.lockState === 'setup' ? 'setup' : 'locked'}
+        username={auth.state.username}
+        onUnlock={auth.unlock}
+        onCreate={auth.createPin}
+        onSkip={auth.skipPinSetup}
+        onSignOut={auth.signOut}
+      />
+    );
   }
   return <Shell auth={auth}/>;
 }
@@ -196,24 +209,21 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const workspacesHook = useWorkspaces();
   const defaultWs = workspacesHook.list.workspaces[0] ?? '';
   const bubbles = useBubbles(defaultWs, auth.state.userId);
-  // Mantiene un store global del estado busy/idle del PTY de cada bubble.
-  // Dispara desktop notifications al transitar busy → idle (opt-in via
-  // setting `eco.notify.on_finish`).
-  usePtyBusyTracker(bubbles.bubbles, detailBubbleId);
-  // Scheduler de auto-backup (solo admin) — chequea cada 30min si pasaron 2h
-  // desde el último backup y dispara export silencioso al folder configurado.
-  useBackupScheduler(auth.state.role);
+  // Mantiene un store global del estado busy/idle del PTY de cada bubble
+  // (para los indicadores visuales de la UI).
+  usePtyBusyTracker();
 
   // Hidratación cross-device de prefs personales (categorías + tema/idioma) al
   // loguear. Las bubbles las hidrata useBubbles; notas/review por-bubble se
   // cargan al montar su panel.
   useEffect(() => {
-    if (!auth.state.userId) return;
+    const u = auth.state.userId;
+    if (!u) return;
     let cancelled = false;
     void hydrateDocs().then((docs) => {
       if (cancelled) return;
-      // Categorías: SIEMPRE reflejan el servidor (si no hay doc, se limpian las
-      // locales viejas — el servidor anfitrión es la única fuente de verdad).
+      // Categorías: SIEMPRE reflejan Firestore (si no hay doc, se limpian las
+      // locales viejas — Firestore es la única fuente de verdad).
       const cat = docs['categories'];
       hydrateCategories(cat?.value ?? [], cat?.updatedAt ?? Date.now());
       const prefs = docs['prefs'];
@@ -221,9 +231,11 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       hydrateReviewAll(docs);
       hydrateNotesAll(docs);
     });
+    // Listeners en vivo de Firestore → push cross-device (reemplaza el WS doc_*).
+    const stopListeners = startUserDocListeners(u);
     // Config por workspace (admin define server + base branches; todos leen).
     void hydrateWorkspaceConfig();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; stopListeners(); };
   }, [auth.state.userId]);
 
   // Rol del usuario como singleton de módulo → ServerPanel/NameAgentDialog
@@ -342,6 +354,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     // Cambio de preferencia en Settings → re-armar con el nuevo valor.
     const onPrefChange = () => { lastArm = Date.now(); arm(); };
     window.addEventListener('eco:security-pref-change', onPrefChange);
+    // "Bloquear ahora" desde Settings → lock con PIN (no logout).
+    const onLockNow = () => { authRef.current.lock(); };
+    window.addEventListener('eco:lock-now', onLockNow);
 
     arm();  // armado inicial
 
@@ -349,6 +364,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       if (timer) clearTimeout(timer);
       for (const ev of events) window.removeEventListener(ev, onActivity);
       window.removeEventListener('eco:security-pref-change', onPrefChange);
+      window.removeEventListener('eco:lock-now', onLockNow);
     };
   }, []);
 
@@ -616,6 +632,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           role={auth.state.role}
           onLock={auth.lock}
           onSignOut={auth.signOut}
+          onChangePassword={auth.changePassword}
         />
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           <ScreenError error={socket.error}/>
@@ -660,6 +677,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                         }}
                         onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(b.id, ws)}
                         onToggleCategory={(catId) => bubbles.toggleBubbleCategory(b.id, catId)}
+                        dictationSupported={voice.isSupported}
                         dictationActive={dictationActive && dictationBubbleIdRef.current === b.id}
                         dictationText={dictationActive && dictationBubbleIdRef.current === b.id ? (dictationBuffer + (voice.interimText ? ` ${voice.interimText}` : '')).trim() : ''}
                         onStartDictation={() => startTerminalDictation(b.id)}
@@ -673,6 +691,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                 })}
                 {screen === 'files' ? (
                   <FileExplorer bubbles={bubbles.bubbles} onOpenChange={openBubbleChange}/>
+                ) : screen === 'folders' ? (
+                  <FoldersManager/>
                 ) : screen === 'settings' ? (
                   <Settings role={auth.state.role}/>
                 ) : screen === 'admin' ? (
@@ -721,7 +741,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         }}
         onSkip={() => setWsPickerForBubble(null)}
         onClose={() => setWsPickerForBubble(null)}
-        canAddFolders={auth.state.role === 'admin'}
+        canAddFolders
       />
       <FloatingBubbleDock
         bubbles={bubbles.bubbles}

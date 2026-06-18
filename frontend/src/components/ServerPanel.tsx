@@ -22,7 +22,6 @@ import { Glass, Btn } from '@/design/primitives';
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useWorkspaceServerDefaults } from '@/hooks/useWorkspaceServerDefaults';
-import { useIsAdmin } from '@/lib/auth-role';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { ecoToken } from '@/lib/eco-config';
 import { useT } from '@/hooks/useI18n';
@@ -60,7 +59,6 @@ const initSlot = (): SlotState => ({
 export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string; workspace: string; visible?: boolean }) {
   const t = useTokens();
   const tr = useT();
-  const isAdmin = useIsAdmin();
   const wsDefaults = useWorkspaceServerDefaults(workspace);
 
   // El modo single/dual lo define la config del workspace (admin). Read-only acá.
@@ -391,7 +389,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
                   </>
                 )}
                 <div style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5, marginTop: 2 }}>
-                  {tr('server.cfg.admin_defined')}{isAdmin ? ` ${tr('server.cfg.admin_edit_hint')}` : ''}
+                  {tr('server.cfg.edit_hint')}
                 </div>
               </div>
             ) : (
@@ -400,7 +398,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
                 background: t.bg2, border: `1px solid ${t.glassBorder}`,
                 fontSize: 12, color: t.text2, lineHeight: 1.5,
               }}>
-                {isAdmin ? tr('server.cfg.none_admin') : tr('server.cfg.none_member')}
+                {tr('server.cfg.none')}
               </div>
             )}
 

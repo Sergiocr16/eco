@@ -1,12 +1,12 @@
 import { useTokens } from '@/design/theme';
 import { EcoMarkStacked } from '@/design/EcoMark';
 import {
-  IconCommand, IconFolderOpen, IconArchive, IconSettings, IconShield, type IconProps,
+  IconCommand, IconFolderOpen, IconGrid, IconArchive, IconSettings, IconShield, type IconProps,
 } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 import { AccountMenu } from './AccountMenu';
 
-export type Screen = 'dashboard' | 'files' | 'history' | 'archived' | 'settings' | 'admin' | 'detail' | 'login' | 'onboarding';
+export type Screen = 'dashboard' | 'folders' | 'files' | 'history' | 'archived' | 'settings' | 'admin' | 'detail' | 'login' | 'onboarding';
 
 type Props = {
   screen: Screen;
@@ -16,10 +16,12 @@ type Props = {
   role: 'admin' | 'member' | null;
   onLock: () => void;
   onSignOut: () => void;
+  onChangePassword: (current: string, next: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
 
 const BASE_ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: string }[] = [
   { id: 'dashboard', icon: IconCommand, labelKey: 'nav.dashboard' },
+  { id: 'folders',   icon: IconGrid, labelKey: 'nav.folders' },
   { id: 'files',     icon: IconFolderOpen, labelKey: 'nav.files' },
   { id: 'archived',  icon: IconArchive, labelKey: 'nav.archived' },
   { id: 'settings',  icon: IconSettings, labelKey: 'nav.settings' },
@@ -27,7 +29,7 @@ const BASE_ITEMS: { id: Screen; icon: (p: IconProps) => JSX.Element; labelKey: s
 const ADMIN_ITEM = { id: 'admin' as Screen, icon: IconShield, labelKey: 'nav.admin' };
 
 export function AppSidebar({
-  screen, onScreenChange, agentCount, username, role, onLock, onSignOut,
+  screen, onScreenChange, agentCount, username, role, onLock, onSignOut, onChangePassword,
 }: Props) {
   const t = useTokens();
   const tr = useT();
@@ -87,6 +89,7 @@ export function AppSidebar({
         username={username}
         onLock={onLock}
         onSignOut={onSignOut}
+        onChangePassword={onChangePassword}
       />
     </div>
   );

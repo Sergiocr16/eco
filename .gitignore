@@ -29,6 +29,14 @@ venv/
 .idea/
 *.swp
 
+# Firebase: logs del emulador, exports y service-account (NUNCA committear la SA)
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase/
+*-service-account.json
+service-account.json
+
 # Eco specific — binarios y modelos que se bajan al setup
 data/eco.db
 data/*.db

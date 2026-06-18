@@ -19,15 +19,16 @@ export type SearchResult =
   | { ok: true; hits: SearchHit[]; truncated: boolean; engine: 'rg' | 'grep' }
   | { ok: false; code: 'search.timeout' | 'search.failed'; error: string };
 
-// Detección cacheada al primer uso. spawnSync sincrónico es OK al startup;
-// `which` está siempre disponible en macOS/Linux.
+// Detección cacheada al primer uso. Probamos `rg --version` directo en vez de
+// `which`/`where` — funciona igual en POSIX y Windows y no depende de tener
+// un resolver de PATH específico del SO instalado.
 let rgChecked = false;
 let rgAvailable = false;
 function isRgAvailable(): boolean {
   if (rgChecked) return rgAvailable;
   rgChecked = true;
   try {
-    const r = spawnSync('which', ['rg'], { encoding: 'utf8' });
+    const r = spawnSync('rg', ['--version'], { encoding: 'utf8', timeout: 4000 });
     rgAvailable = r.status === 0 && (r.stdout ?? '').trim().length > 0;
   } catch {
     rgAvailable = false;

@@ -1,14 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn, Glass } from '@/design/primitives';
+import { Btn } from '@/design/primitives';
 import {
-  IconUser, IconShield, IconKey, IconCheck, IconArrowL,
+  IconUser, IconKey, IconCheck, IconArrowL,
 } from '@/design/icons';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
-import { readLockedUser, clearLockedUser } from '@/hooks/useAuth';
 import { useT } from '@/hooks/useI18n';
-import { apiFetch } from '@/lib/api';
-import { writeStoredToken } from '@/lib/eco-config';
 
 type AuthHook = ReturnType<typeof useAuth>;
 
@@ -17,17 +14,13 @@ type Props = {
   authActions: AuthHook;
 };
 
-type View = 'register' | 'login' | 'recover' | 'show_recovery' | 'claim';
+// Auto-registro cerrado: solo login + recuperar contraseña. El alta la hace el
+// admin desde la consola (Opción B).
+type View = 'login' | 'reset';
 
 export function AuthScreen({ authState, authActions }: Props) {
   const t = useTokens();
-  const [view, setView] = useState<View>(authState.status === 'no_user' ? 'register' : 'login');
-  const [recoveryToShow, setRecoveryToShow] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (authState.status === 'no_user') setView('register');
-    if (authState.status === 'needs_login') setView((v) => v === 'recover' ? 'recover' : 'login');
-  }, [authState.status]);
+  const [view, setView] = useState<View>('login');
 
   return (
     <div style={{
@@ -48,41 +41,12 @@ export function AuthScreen({ authState, authActions }: Props) {
         padding: '24px 4px',
       }}>
         <div style={{ position: 'relative' }}>
-          {authState.status === 'needs_token' ? (
-            <ConnectView/>
-          ) : recoveryToShow ? (
-            <ShowRecoveryView
-              phrase={recoveryToShow}
-              onConfirm={() => {
-                setRecoveryToShow(null);
-                void authActions.refresh();
-              }}
-              isReset={view === 'recover'}
-            />
-          ) : view === 'register' ? (
-            <RegisterView
-              authActions={authActions}
-              onSuccess={(phrase) => { setRecoveryToShow(phrase); setView('show_recovery'); }}
-            />
-          ) : view === 'login' ? (
-            <LoginView
-              authActions={authActions}
-              onRecover={() => setView('recover')}
-              onClaim={() => setView('claim')}
-            />
-          ) : view === 'claim' ? (
-            <ClaimView
-              authActions={authActions}
-              onBack={() => setView('login')}
-            />
+          {view === 'reset' ? (
+            <ResetView authActions={authActions} onBack={() => setView('login')} />
           ) : (
-            <RecoverView
-              authActions={authActions}
-              onBack={() => setView('login')}
-              onClaim={() => setView('claim')}
-              onSuccess={(phrase) => { setRecoveryToShow(phrase); }}
-            />
+            <LoginView authActions={authActions} onReset={() => setView('reset')} />
           )}
+          {authState.error && view === 'login' ? <FormError>{authState.error}</FormError> : null}
         </div>
       </div>
 
@@ -349,608 +313,127 @@ export function DriftingOrbs() {
   );
 }
 
-// ─────────────────────────── Register
+// ─────────────────────────── Vistas (email + contraseña)
 
-function RegisterView({
-  authActions, onSuccess,
-}: {
-  authActions: AuthHook;
-  onSuccess: (recoveryPhrase: string) => void;
-}) {
+function AuthCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   const t = useTokens();
-  const tr = useT();
-  const [username, setUsername] = useState('');
-  const [pin, setPin] = useState('');
-  const [pin2, setPin2] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setError(null);
-    if (!username.trim()) return setError(tr('auth.err.name_empty'));
-    if (!/^\d{4,8}$/.test(pin)) return setError(tr('auth.err.pin_format'));
-    if (pin !== pin2) return setError(tr('auth.err.pin_mismatch'));
-    setBusy(true);
-    const r = await authActions.register({ username: username.trim(), pin });
-    setBusy(false);
-    if (r.ok) onSuccess(r.recoveryPhrase);
-    else setError(r.error);
-  }
-
   return (
-    <>
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
-        {tr('auth.welcome.title')}
-      </h1>
-      <p style={{ margin: '6px 0 22px', color: t.text2, fontSize: 12.5, textAlign: 'center', lineHeight: 1.5 }}>
-        {tr('auth.welcome.sub')}
-      </p>
-
-      <FieldGroup>
-        <FormInput
-          icon={IconUser}
-          value={username}
-          onChange={setUsername}
-          placeholder={tr('auth.field.username')}
-          autoFocus
-        />
-        <PinSegmented
-          label={tr('auth.field.pin')}
-          value={pin}
-          onChange={setPin}
-          length={8}
-        />
-        <PinSegmented
-          label={tr('auth.field.pin_repeat')}
-          value={pin2}
-          onChange={setPin2}
-          length={8}
-          onEnter={submit}
-        />
-      </FieldGroup>
-
-      {error && <FormError>{error}</FormError>}
-
-      <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
-        {busy ? tr('auth.btn.create_loading') : tr('auth.btn.create')}
-      </Btn>
-
-      <FooterNote>
-        <IconShield size={11} style={{ marginRight: 4 }}/>
-        {tr('auth.footer.recovery_hint')}
-      </FooterNote>
-    </>
+    <div style={{
+      position: 'relative', zIndex: 2,
+      background: t.glassBg,
+      border: `1px solid ${t.glassBorder}`,
+      borderRadius: 20,
+      padding: '28px 24px',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+      animation: 'aurora-halo 6s ease-in-out infinite',
+    }}>
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: t.text0, letterSpacing: -0.3 }}>{title}</h1>
+      {sub && <p style={{ margin: '6px 0 18px', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>{sub}</p>}
+      {!sub && <div style={{ height: 14 }} />}
+      {children}
+    </div>
   );
 }
 
-// ─────────────────────────── Login
+function linkStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
+  return {
+    background: 'transparent', border: 0, padding: 0, cursor: 'pointer',
+    color: t.accent, fontFamily: t.fontSans, fontSize: 11.5,
+  };
+}
 
-function LoginView({
-  authActions, onRecover, onClaim,
-}: {
-  authActions: AuthHook;
-  onRecover: () => void;
-  onClaim: () => void;
+function LoginView({ authActions, onReset }: {
+  authActions: AuthHook; onReset: () => void;
 }) {
   const t = useTokens();
   const tr = useT();
-  // Si hay un usuario "bloqueado" (lock screen), pedimos solo el PIN de ESE
-  // usuario; si no, login completo (usuario + PIN).
-  const [lockedUser, setLockedUser] = useState<string | null>(() => readLockedUser());
-  const [username, setUsername] = useState(() => readLockedUser() ?? '');
-  const [pin, setPin] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const effectiveUser = (lockedUser ?? username).trim();
-
-  async function submit() {
-    setError(null);
-    if (!effectiveUser || !pin) return;
-    setBusy(true);
-    const r = await authActions.login({ username: effectiveUser, pin });
-    setBusy(false);
-    if (!r.ok) {
-      setError(r.error);
-      setPin('');
-    }
-  }
-
-  function switchUser() {
-    clearLockedUser();
-    setLockedUser(null);
-    setUsername('');
-    setPin('');
-    setError(null);
-  }
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    const r = await authActions.login({ email, password });
+    if (!r.ok) { setErr(r.error); setBusy(false); }
+    // si ok, onAuthStateChanged re-renderiza el árbol — no hace falta limpiar busy
+  };
 
   return (
-    <>
-      {lockedUser ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: '50%', background: t.accentFaint, color: t.accent,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 26, fontWeight: 600, marginBottom: 16, border: `2px solid ${t.accent}`,
-          }}>{lockedUser.charAt(0).toUpperCase()}</div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
-            {tr('auth.greeting', { name: lockedUser })}
-          </h1>
-          <p style={{ margin: '6px 0 0', color: t.text2, fontSize: 12.5, textAlign: 'center' }}>
-            {tr('auth.lock.sub')}
-          </p>
+    <AuthCard title={tr('auth.login.title')} sub={tr('auth.login.sub')}>
+      <FieldGroup>
+        <FormInput icon={IconUser} value={email} onChange={setEmail} placeholder={tr('auth.field.email')} autoFocus onEnter={submit} />
+        <FormInput icon={IconKey} value={password} onChange={setPassword} placeholder={tr('auth.field.password')} type="password" onEnter={submit} />
+      </FieldGroup>
+      {err && <FormError>{err}</FormError>}
+      <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center' }}>
+        {busy ? tr('auth.btn.enter_loading') : tr('auth.btn.enter')}
+      </Btn>
+      <FooterNote>
+        <button onClick={onReset} style={linkStyle(t)}>{tr('auth.login.forgot')}</button>
+      </FooterNote>
+    </AuthCard>
+  );
+}
+
+function ResetView({ authActions, onBack }: { authActions: AuthHook; onBack: () => void }) {
+  const t = useTokens();
+  const tr = useT();
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    const r = await authActions.resetPassword(email);
+    setBusy(false);
+    if (r.ok) setSent(true); else setErr(r.error);
+  };
+
+  return (
+    <AuthCard title={tr('auth.reset.title')} sub={tr('auth.reset.sub')}>
+      {sent ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: t.text1, fontSize: 13, margin: '4px 0 14px' }}>
+          <IconCheck size={16} /> {tr('auth.reset.sent')}
         </div>
       ) : (
         <>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
-            {tr('auth.login.title')}
-          </h1>
-          <p style={{ margin: '6px 0 22px', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
-            {tr('auth.login.sub')}
-          </p>
+          <FieldGroup>
+            <FormInput icon={IconUser} value={email} onChange={setEmail} placeholder={tr('auth.field.email')} autoFocus onEnter={submit} />
+          </FieldGroup>
+          {err && <FormError>{err}</FormError>}
+          <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center' }}>
+            {busy ? tr('auth.reset.btn_loading') : tr('auth.reset.btn')}
+          </Btn>
         </>
       )}
-
-      <FieldGroup>
-        {!lockedUser && (
-          <FormInput
-            icon={IconUser}
-            value={username}
-            onChange={setUsername}
-            placeholder={tr('auth.field.username')}
-            autoFocus
-          />
-        )}
-        <PinSegmented
-          label={tr('auth.field.pin')}
-          value={pin}
-          onChange={setPin}
-          length={8}
-          autoFocus={!!lockedUser}
-          onEnter={submit}
-        />
-      </FieldGroup>
-
-      {error && <FormError>{error}</FormError>}
-
-      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !effectiveUser || pin.length < 4} style={{ width: '100%', justifyContent: 'center', marginTop: 14 }}>
-        {busy ? tr('auth.btn.enter_loading') : tr('auth.btn.enter')}
-      </Btn>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 16 }}>
-        <button
-          type="button"
-          onClick={onRecover}
-          style={{
-            background: 'transparent', border: 0, color: t.text2,
-            fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-            display: 'block', marginInline: 'auto',
-          }}>
-          {tr('auth.forgot_pin')}
+      <FooterNote>
+        <button onClick={onBack} style={linkStyle(t)}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconArrowL size={12} /> {tr('auth.back')}</span>
         </button>
-        {!lockedUser && (
-          <button
-            type="button"
-            onClick={onClaim}
-            style={{
-              background: 'transparent', border: 0, color: t.accent,
-              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-              display: 'block', marginInline: 'auto',
-            }}>
-            {tr('auth.have_claim_code')}
-          </button>
-        )}
-        {lockedUser && (
-          <button
-            type="button"
-            onClick={switchUser}
-            style={{
-              background: 'transparent', border: 0, color: t.text3,
-              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-              display: 'block', marginInline: 'auto',
-            }}>
-            {tr('auth.switch_user')}
-          </button>
-        )}
-      </div>
-    </>
+      </FooterNote>
+    </AuthCard>
   );
 }
 
-// ─────────────────────────── Claim (activar cuenta con token)
-
-function ClaimView({
-  authActions, onBack,
-}: {
-  authActions: AuthHook;
-  onBack: () => void;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [code, setCode] = useState('');
-  const [pin, setPin] = useState('');
-  const [pin2, setPin2] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setError(null);
-    if (!code.trim()) return;
-    if (!/^\d{4,8}$/.test(pin)) return setError(tr('auth.err.pin_format'));
-    if (pin !== pin2) return setError(tr('auth.err.pin_mismatch'));
-    setBusy(true);
-    const r = await authActions.claim({ claimToken: code.trim(), pin });
-    setBusy(false);
-    if (!r.ok) { setError(r.error); setPin(''); setPin2(''); }
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={onBack}
-        style={{
-          position: 'absolute', top: -6, left: -6,
-          width: 32, height: 32, borderRadius: 8, border: 0,
-          background: t.bg3, color: t.text1, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-        title={tr('auth.back')}
-      >
-        <IconArrowL size={14}/>
-      </button>
-
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
-        {tr('auth.claim.title')}
-      </h1>
-      <p style={{ margin: '6px 0 22px', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
-        {tr('auth.claim.sub')}
-      </p>
-
-      <FieldGroup>
-        <FormInput
-          icon={IconKey}
-          value={code}
-          onChange={setCode}
-          placeholder={tr('auth.claim.field.code')}
-          autoFocus
-        />
-        <PinSegmented
-          label={tr('auth.field.pin')}
-          value={pin}
-          onChange={setPin}
-          length={8}
-        />
-        <PinSegmented
-          label={tr('auth.field.pin_repeat')}
-          value={pin2}
-          onChange={setPin2}
-          length={8}
-          onEnter={submit}
-        />
-      </FieldGroup>
-
-      {error && <FormError>{error}</FormError>}
-
-      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !code.trim() || pin.length < 4} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
-        {busy ? tr('auth.claim.btn_loading') : tr('auth.claim.btn')}
-      </Btn>
-    </>
-  );
-}
-
-// ─────────────────────────── Connect (server mode remoto)
-// El browser remoto (servido por el backend vía Tailscale) no tiene el bearer
-// token por ningún canal — esta vista lo pide una vez, lo valida contra
-// /auth/status y lo persiste en localStorage. Reload obligatorio: App.tsx
-// captura el token a nivel módulo durante el bootstrap.
-
-function ConnectView() {
-  const t = useTokens();
-  const tr = useT();
-  const [token, setToken] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    const value = token.trim();
-    if (!value) return;
-    setError(null);
-    setBusy(true);
-    try {
-      // POST /auth/session es el único endpoint detrás del bearer que no pide
-      // sesión — valida el token de verdad (/auth/status responde sin auth).
-      // Ignoramos la sesión que devuelve: el PIN sigue siendo el siguiente paso.
-      const r = await apiFetch('/auth/session', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${value}` },
-      });
-      if (r.status === 401) {
-        setError(tr('auth.connect.err.invalid'));
-        setBusy(false);
-        return;
-      }
-      // Cualquier otra respuesta (incluso 400 auth.no_user en un server sin
-      // usuario) significa que el bearer pasó el middleware → token válido.
-      writeStoredToken(value);
-      window.location.reload();
-    } catch {
-      setError(tr('auth.connect.err.network'));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <div style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        marginBottom: 30,
-      }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: '50%',
-          background: t.accentFaint, color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          marginBottom: 26,
-          border: `2px solid ${t.accent}`,
-          boxShadow: `0 6px 24px color-mix(in oklch, ${t.accent} 18%, transparent)`,
-        }}>
-          <IconKey size={28}/>
-        </div>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
-          {tr('auth.connect.title')}
-        </h1>
-        <p style={{ margin: '6px 0 0', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
-          {tr('auth.connect.sub')}
-        </p>
-      </div>
-
-      <FieldGroup>
-        <FormInput
-          icon={IconKey}
-          value={token}
-          onChange={setToken}
-          placeholder={tr('auth.connect.placeholder')}
-          type="password"
-          autoFocus
-          onEnter={submit}
-        />
-      </FieldGroup>
-
-      {error && <FormError>{error}</FormError>}
-
-      <Btn kind="primary" size="lg" onClick={submit} disabled={busy || !token.trim()} style={{ width: '100%', justifyContent: 'center', marginTop: 14 }}>
-        {busy ? tr('auth.connect.btn_loading') : tr('auth.connect.btn')}
-      </Btn>
-
-      <FooterNote>{tr('auth.connect.note')}</FooterNote>
-    </>
-  );
-}
-
-// ─────────────────────────── Recover
-
-function RecoverView({
-  authActions, onBack, onClaim, onSuccess,
-}: {
-  authActions: AuthHook;
-  onBack: () => void;
-  onClaim: () => void;
-  onSuccess: (newPhrase: string) => void;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [username, setUsername] = useState('');
-  const [phrase, setPhrase] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setError(null);
-    if (!username.trim()) return setError(tr('auth.err.name_empty'));
-    if (phrase.trim().split(/\s+/).length !== 12) return setError(tr('auth.err.phrase_length'));
-    if (!/^\d{4,8}$/.test(newPin)) return setError(tr('auth.err.pin_format'));
-    setBusy(true);
-    const r = await authActions.recover({ username: username.trim(), recoveryPhrase: phrase, newPin });
-    setBusy(false);
-    if (r.ok) onSuccess(r.newRecoveryPhrase);
-    else setError(r.error);
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={onBack}
-        style={{
-          position: 'absolute', top: -6, left: -6,
-          width: 32, height: 32, borderRadius: 8, border: 0,
-          background: t.bg3, color: t.text1, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-        title={tr('auth.back')}
-      >
-        <IconArrowL size={14}/>
-      </button>
-
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
-        {tr('auth.recover.title')}
-      </h1>
-      <p style={{ margin: '6px 0 22px', color: t.text2, fontSize: 12.5, lineHeight: 1.5, textAlign: 'center' }}>
-        {tr('auth.recover.sub')}
-      </p>
-
-      <FieldGroup>
-        <FormInput
-          icon={IconUser}
-          value={username}
-          onChange={setUsername}
-          placeholder={tr('auth.field.username')}
-          autoFocus
-        />
-        <Glass radius={14} style={{ padding: 0 }}>
-          <textarea
-            value={phrase}
-            onChange={(e) => setPhrase(e.target.value)}
-            placeholder={tr('auth.phrase_placeholder')}
-            rows={3}
-            spellCheck={false}
-            style={{
-              width: '100%', boxSizing: 'border-box',
-              background: 'transparent', border: 0, outline: 'none', resize: 'none',
-              fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-              padding: 14, lineHeight: 1.6,
-            }}
-          />
-        </Glass>
-        <PinSegmented
-          value={newPin}
-          onChange={setNewPin}
-          length={8}
-          onEnter={submit}
-          label={tr('auth.field.pin_new')}
-        />
-      </FieldGroup>
-
-      {error && <FormError>{error}</FormError>}
-
-      <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
-        {busy ? tr('auth.btn.recover_loading') : tr('auth.btn.recover')}
-      </Btn>
-
-      <button
-        type="button"
-        onClick={onClaim}
-        style={{
-          marginTop: 16, background: 'transparent', border: 0, color: t.accent,
-          fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-          display: 'block', marginInline: 'auto', lineHeight: 1.5,
-        }}>
-        {tr('auth.recover.no_phrase')}
-      </button>
-    </>
-  );
-}
-
-// ─────────────────────────── Recovery phrase display
-
-function ShowRecoveryView({
-  phrase, onConfirm, isReset,
-}: {
-  phrase: string;
-  onConfirm: () => void;
-  isReset: boolean;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [confirmed, setConfirmed] = useState(false);
-  const words = phrase.split(/\s+/);
-  const copyRef = useRef<HTMLButtonElement>(null);
-
-  async function copy() {
-    try { await navigator.clipboard.writeText(phrase); } catch { /* noop */ }
-    if (copyRef.current) {
-      const old = copyRef.current.innerText;
-      copyRef.current.innerText = tr('auth.recovery.copied');
-      setTimeout(() => { if (copyRef.current) copyRef.current.innerText = old; }, 1200);
-    }
-  }
-
-  return (
-    <>
-      <div style={{
-        width: 56, height: 56, borderRadius: 16, margin: '0 auto 16px',
-        background: t.accentFaint, color: t.accent,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <IconKey size={24}/>
-      </div>
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4, textAlign: 'center' }}>
-        {isReset ? tr('auth.recovery.title.reset') : tr('auth.recovery.title.new')}
-      </h1>
-      <p style={{ margin: '8px 0 18px', color: t.text2, fontSize: 13, lineHeight: 1.5, textAlign: 'center' }}>
-        {tr('auth.recovery.warning')}{' '}
-        <strong style={{ color: t.warn }}>{tr('auth.recovery.no_again')}</strong>
-      </p>
-
-      <Glass radius={16} style={{ padding: 14, marginBottom: 14 }}>
-        <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6,
-        }}>
-          {words.map((w, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 10px', background: t.bg2, borderRadius: 8,
-              fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-            }}>
-              <span style={{ color: t.text3, fontSize: 10, minWidth: 16 }}>{i + 1}</span>
-              {w}
-            </div>
-          ))}
-        </div>
-      </Glass>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <button
-          ref={copyRef}
-          type="button"
-          onClick={copy}
-          style={{
-            flex: 1, height: 36, borderRadius: 10, border: `1px solid ${t.glassBorder}`,
-            background: t.bg3, color: t.text1, fontSize: 13, fontFamily: t.fontSans,
-            cursor: 'pointer',
-          }}>
-          {tr('auth.recovery.copy')}
-        </button>
-      </div>
-
-      <label style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '10px 12px', borderRadius: 10,
-        background: confirmed ? t.accentFaint : t.bg2,
-        border: `1px solid ${confirmed ? t.accentDim : t.glassBorder}`,
-        cursor: 'pointer', fontSize: 12.5, color: t.text1,
-        textAlign: 'left', marginBottom: 12,
-      }}>
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(e) => setConfirmed(e.target.checked)}
-          style={{ accentColor: t.accent }}
-        />
-        {tr('auth.recovery.confirmed')}
-      </label>
-
-      <Btn
-        kind="primary"
-        size="lg"
-        onClick={onConfirm}
-        disabled={!confirmed}
-        style={{ width: '100%', justifyContent: 'center' }}
-        icon={IconCheck}
-      >
-        {tr('auth.btn.enter_eco')}
-      </Btn>
-    </>
-  );
-}
-
-// ─────────────────────────── pieces
+// ─────────────────────────── Helpers de form
 
 function FieldGroup({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>{children}</div>;
 }
 
 function FormInput({
-  icon: Icon, value, onChange, placeholder, type = 'text',
-  inputMode, autoFocus, onEnter,
+  icon: Icon, value, onChange, placeholder, type = 'text', autoFocus, onEnter,
 }: {
   icon: (p: { size?: number }) => JSX.Element;
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   type?: 'text' | 'password';
-  inputMode?: 'numeric' | 'text';
   autoFocus?: boolean;
   onEnter?: () => void;
 }) {
@@ -973,7 +456,6 @@ function FormInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoFocus={autoFocus}
-        inputMode={inputMode}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } }}
@@ -983,96 +465,6 @@ function FormInput({
           padding: '12px 6px',
         }}
       />
-    </div>
-  );
-}
-
-// PIN input — un solo campo limpio, grande, centrado. Sin cuadritos.
-// Muestra los dígitos como dots con tracking generoso para que se sienta tipo PIN.
-function PinSegmented({
-  value, onChange, length = 8, autoFocus, onEnter, label,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  length?: number;
-  autoFocus?: boolean;
-  onEnter?: () => void;
-  onComplete?: () => void;
-  label?: string;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [focused, setFocused] = useState(false);
-
-  // Renderizamos los dots como contenido visual (tracking ancho) y mantenemos
-  // el input nativo como type=password para que cuente como password manager
-  // / autofill, pero con la fuente del display custom.
-  return (
-    <div>
-      {label && (
-        <div style={{
-          fontSize: 11, color: t.text2, marginBottom: 8,
-          textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
-          textAlign: 'center',
-        }}>{label}</div>
-      )}
-      <div style={{
-        position: 'relative',
-        borderRadius: 14,
-        background: t.bg2,
-        border: `1px solid ${focused ? t.accent : t.glassBorder}`,
-        transition: 'border-color 140ms',
-        overflow: 'hidden',
-      }}>
-        {/* Display de progreso — dots accent renderizados como divs, uno por
-            dígito tipeado. Sin cursor pulsante ni halo de focus, solo dots. */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: 10,
-          pointerEvents: 'none',
-        }}>
-          {value.length === 0 && (
-            <span style={{
-              color: t.text3, fontSize: 13, fontFamily: t.fontSans,
-              fontWeight: 400, letterSpacing: 0.2,
-            }}>
-              {tr('auth.field.pin_simple')}
-            </span>
-          )}
-          {Array.from({ length: value.length }, (_, i) => (
-            <span key={i} style={{
-              width: 11, height: 11, borderRadius: '50%',
-              background: t.accent,
-            }}/>
-          ))}
-        </div>
-        <input
-          type="password"
-          value={value}
-          autoFocus={autoFocus}
-          inputMode="numeric"
-          autoComplete="current-password"
-          maxLength={length}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onChange={(e) => {
-            const v = e.target.value.replace(/\D/g, '').slice(0, length);
-            onChange(v);
-          }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } }}
-          style={{
-            width: '100%', boxSizing: 'border-box',
-            height: 58, padding: 0,
-            border: 0, outline: 'none', background: 'transparent',
-            color: 'transparent', caretColor: 'transparent',
-            textAlign: 'center',
-            // Ocultamos el contenido del input pero seguimos capturando los keystrokes.
-            fontSize: 1,
-            cursor: 'text',
-          }}
-        />
-      </div>
     </div>
   );
 }
@@ -1100,3 +492,4 @@ function FooterNote({ children }: { children: React.ReactNode }) {
     }}>{children}</div>
   );
 }
+

@@ -1,213 +1,202 @@
-import { useCallback, useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api';
-import { ecoToken, writeStoredToken, writeStoredRefresh } from '@/lib/eco-config';
-import { translateBackendError } from '@/lib/backend-errors';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut as fbSignOut,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  updateProfile,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  type User,
+} from 'firebase/auth';
+import { onSnapshot, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { getEcoAuth, firebaseConfigured } from '@/lib/firebase';
+import { refs } from '@/lib/firestore-model';
+import { hasLockPin, setLockPin, verifyLockPin, clearLockPin } from '@/lib/lock-pin';
 import { writeProfileUsername } from './useProfile';
 
-const SESSION_KEY = 'eco.session';
-// Usuario recordado por el lock screen — al bloquear se guarda y la pantalla de
-// bloqueo pide solo el PIN de ese usuario (no el nombre otra vez).
-const LOCKED_USER_KEY = 'eco.lockedUser';
+// 'unlocked' = app visible; 'locked' = pide PIN (sesión Firebase viva);
+// 'setup' = pide crear PIN (post-login, primera vez).
+export type LockState = 'unlocked' | 'locked' | 'setup';
 
-export function readLockedUser(): string | null {
-  try { return window.localStorage.getItem(LOCKED_USER_KEY); } catch { return null; }
-}
-export function clearLockedUser(): void {
-  try { window.localStorage.removeItem(LOCKED_USER_KEY); } catch { /* noop */ }
-}
+// Distingue login fresco (email/contraseña) de una sesión persistida que se
+// re-hidrata al abrir la app: el login fresco entra directo; la sesión
+// persistida con PIN configurado arranca bloqueada.
+let justLoggedIn = false;
 
-export type AuthStatus = 'loading' | 'needs_token' | 'no_user' | 'needs_login' | 'authenticated';
+export type AuthStatus = 'loading' | 'no_config' | 'needs_login' | 'authenticated';
 export type Role = 'admin' | 'member';
 
 export type AuthState = {
   status: AuthStatus;
-  username: string | null;
-  userId: string | null;
+  username: string | null; // displayName o email
+  userId: string | null;   // uid de Firebase
   role: Role | null;
   error: string | null;
 };
 
-export type RegisterPayload = { username: string; pin: string };
-export type LoginPayload = { username: string; pin: string };
-export type RecoverPayload = { username: string; recoveryPhrase: string; newPin: string };
+export type LoginPayload = { email: string; password: string };
+export type RegisterPayload = { email: string; password: string; displayName?: string };
+export type AuthResult = { ok: true } | { ok: false; error: string };
 
-export type RegisterResult =
-  | { ok: true; username: string; recoveryPhrase: string }
-  | { ok: false; error: string };
-export type LoginResult = { ok: true; username: string; role: Role } | { ok: false; error: string };
-export type RecoverResult =
-  | { ok: true; username: string; newRecoveryPhrase: string }
-  | { ok: false; error: string };
+// Traducción de los códigos de error de Firebase Auth a mensajes en español.
+function translateAuthError(e: unknown): string {
+  const code = (e as { code?: string })?.code ?? '';
+  switch (code) {
+    case 'auth/invalid-email': return 'Email inválido.';
+    case 'auth/missing-password': return 'Ingresá tu contraseña.';
+    case 'auth/weak-password': return 'La contraseña debe tener al menos 6 caracteres.';
+    case 'auth/email-already-in-use': return 'Ese email ya está registrado.';
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found': return 'Email o contraseña incorrectos.';
+    case 'auth/too-many-requests': return 'Demasiados intentos. Probá más tarde.';
+    case 'auth/network-request-failed': return 'Sin conexión con el servidor de autenticación.';
+    default: return e instanceof Error ? e.message : 'Error de autenticación.';
+  }
+}
 
-function readSession(): string | null {
-  try { return window.localStorage.getItem(SESSION_KEY); } catch { return null; }
-}
-function writeSession(token: string | null) {
-  try {
-    if (token) window.localStorage.setItem(SESSION_KEY, token);
-    else window.localStorage.removeItem(SESSION_KEY);
-  } catch { /* noop */ }
-}
+const displayNameOf = (u: User): string => u.displayName || u.email || u.uid;
 
 export function useAuth() {
-  const [state, setState] = useState<AuthState>({ status: 'loading', username: null, userId: null, role: null, error: null });
+  const [state, setState] = useState<AuthState>(() => ({
+    status: firebaseConfigured() ? 'loading' : 'no_config',
+    username: null, userId: null, role: null, error: null,
+  }));
+  const [lockState, setLockState] = useState<LockState>('unlocked');
+  // Suscripción al doc users/{uid} (rol). Se limpia al cambiar de usuario.
+  const roleUnsubRef = useRef<(() => void) | null>(null);
 
-  const refresh = useCallback(async () => {
-    // Web sin bearer token: NADA puede autenticar (todo HTTP y ambos WS lo
-    // exigen) — server mode remoto donde el user todavía no pegó el token, o
-    // dev web sin VITE_ECO_TOKEN. Pedimos el token antes de tocar la red.
-    if (!window.electronAPI && !ecoToken()) {
-      setState({ status: 'needs_token', username: null, userId: null, role: null, error: null });
-      return;
-    }
-    try {
-      const r = await apiFetch('/auth/status');
-      const data = await r.json();
-      if (!data.hasUser) {
-        setState({ status: 'no_user', username: null, userId: null, role: null, error: null });
-        return;
-      }
-      const session = readSession();
-      if (!session) {
+  useEffect(() => {
+    if (!firebaseConfigured()) return;
+    const auth = getEcoAuth();
+    const unsub = onAuthStateChanged(auth, (user) => {
+      roleUnsubRef.current?.();
+      roleUnsubRef.current = null;
+      if (!user) {
         setState({ status: 'needs_login', username: null, userId: null, role: null, error: null });
+        setLockState('unlocked');
         return;
       }
-      // Verificá la sesión + derivá identidad (username/role) desde el server.
-      const r2 = await apiFetch('/auth/me');
-      if (r2.status === 401) {
-        const d2 = await r2.json().catch(() => null);
-        if (d2?.error === 'http.unauthorized' && !window.electronAPI) {
-          writeStoredToken(null);
-          setState({ status: 'needs_token', username: null, userId: null, role: null, error: null });
+      // Login fresco entra directo; sesión persistida con PIN arranca bloqueada;
+      // sin PIN tras login fresco se ofrece crearlo una vez.
+      setLockState(hasLockPin(user.uid)
+        ? (justLoggedIn ? 'unlocked' : 'locked')
+        : (justLoggedIn ? 'setup' : 'unlocked'));
+      justLoggedIn = false;
+      setState({ status: 'authenticated', username: displayNameOf(user), userId: user.uid, role: null, error: null });
+      // Suscripción en vivo al rol/estado: promover/deshabilitar desde la consola
+      // admin se refleja al instante (el plan: control en la nube sin claims).
+      roleUnsubRef.current = onSnapshot(refs.user(user.uid), (snap) => {
+        const data = snap.data();
+        if (data?.disabled) {
+          void fbSignOut(auth);
+          setState({ status: 'needs_login', username: null, userId: null, role: null, error: 'Tu cuenta fue deshabilitada.' });
           return;
         }
-        writeSession(null);
-        setState({ status: 'needs_login', username: null, userId: null, role: null, error: null });
-        return;
-      }
-      const me = await r2.json().catch(() => null);
-      setState({
-        status: 'authenticated',
-        username: me?.username ?? null,
-        userId: me?.id ?? null,
-        role: (me?.role as Role) ?? null,
-        error: null,
-      });
-    } catch (e) {
-      setState({ status: 'no_user', username: null, userId: null, role: null, error: e instanceof Error ? e.message : 'Error' });
-    }
+        setState((s) => s.userId === user.uid ? { ...s, role: (data?.role as Role) ?? 'member' } : s);
+      }, () => { /* sin acceso al doc → rol member por defecto */ });
+    });
+    return () => { unsub(); roleUnsubRef.current?.(); };
   }, []);
-
-  useEffect(() => { void refresh(); }, [refresh]);
-
-  // Sync de sesión entre ventanas (principal y satélites "solo bubble").
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== SESSION_KEY && e.key !== null) return;
-      if (readSession()) {
-        void refresh();
-      } else {
-        setState((s) => ({ ...s, status: s.username ? 'needs_login' : 'no_user' }));
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [refresh]);
 
   useEffect(() => { writeProfileUsername(state.username); }, [state.username]);
 
-  const register = useCallback(async (payload: RegisterPayload): Promise<RegisterResult> => {
+  const login = useCallback(async ({ email, password }: LoginPayload): Promise<AuthResult> => {
     try {
-      const r = await apiFetch('/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await r.json();
-      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
-      writeSession(data.session);
-      writeStoredRefresh(data.refresh ?? null);
-      // No transicionamos a 'authenticated' acá: la AuthScreen primero muestra
-      // la frase de recuperación; el confirm dispara refresh().
-      return { ok: true, username: data.username, recoveryPhrase: data.recoveryPhrase };
+      justLoggedIn = true;
+      await signInWithEmailAndPassword(getEcoAuth(), email.trim(), password);
+      return { ok: true };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Error' };
+      justLoggedIn = false;
+      return { ok: false, error: translateAuthError(e) };
     }
   }, []);
 
-  const login = useCallback(async (payload: LoginPayload): Promise<LoginResult> => {
+  const register = useCallback(async ({ email, password, displayName }: RegisterPayload): Promise<AuthResult> => {
     try {
-      const r = await apiFetch('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await r.json();
-      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
-      writeSession(data.session);
-      writeStoredRefresh(data.refresh ?? null);
-      void refresh();
-      return { ok: true, username: data.username, role: data.role };
+      const cred = await createUserWithEmailAndPassword(getEcoAuth(), email.trim(), password);
+      const name = (displayName ?? '').trim();
+      if (name) { try { await updateProfile(cred.user, { displayName: name }); } catch { /* noop */ } }
+      // Crea el doc users/{uid} (rol member). Las Rules solo permiten auto-crearlo
+      // con role 'member'; el primer admin se promueve con scripts/bootstrap-admin.
+      const ref = refs.user(cred.user.uid);
+      const existing = await getDoc(ref);
+      if (!existing.exists()) {
+        await setDoc(ref, {
+          role: 'member',
+          email: cred.user.email ?? email.trim(),
+          displayName: name || (cred.user.email ?? email.trim()).split('@')[0],
+          disabled: false,
+          createdAt: serverTimestamp() as unknown as number,
+        });
+      }
+      return { ok: true };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Error' };
-    }
-  }, [refresh]);
-
-  const claim = useCallback(async (payload: { claimToken: string; pin: string }): Promise<LoginResult> => {
-    try {
-      const r = await apiFetch('/auth/claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await r.json();
-      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
-      writeSession(data.session);
-      writeStoredRefresh(data.refresh ?? null);
-      void refresh();
-      return { ok: true, username: data.username, role: data.role };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Error' };
-    }
-  }, [refresh]);
-
-  const recover = useCallback(async (payload: RecoverPayload): Promise<RecoverResult> => {
-    try {
-      const r = await apiFetch('/auth/recover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await r.json();
-      if (!r.ok) return { ok: false, error: translateBackendError(data, `HTTP ${r.status}`) };
-      writeSession(data.session);
-      writeStoredRefresh(data.refresh ?? null);
-      return { ok: true, username: data.username, newRecoveryPhrase: data.newRecoveryPhrase };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Error' };
+      return { ok: false, error: translateAuthError(e) };
     }
   }, []);
 
-  // Bloquea la pantalla: invalida la sesión (local + refresh, para que no se
-  // renueve sola) pero RECUERDA quién estaba logueado (eco.lockedUser) → la
-  // pantalla de bloqueo muestra al usuario y pide solo el PIN.
-  const lock = useCallback(async () => {
-    try { await apiFetch('/auth/logout', { method: 'POST' }); } catch { /* noop */ }
-    writeSession(null);
-    writeStoredRefresh(null);
-    try { if (state.username) window.localStorage.setItem(LOCKED_USER_KEY, state.username); } catch { /* noop */ }
-    setState((s) => ({ ...s, status: 'needs_login' }));
-  }, [state.username]);
+  const resetPassword = useCallback(async (email: string): Promise<AuthResult> => {
+    try {
+      await sendPasswordResetEmail(getEcoAuth(), email.trim());
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: translateAuthError(e) };
+    }
+  }, []);
 
-  // Cerrar sesión de verdad: olvida al usuario recordado → login completo
-  // (usuario + PIN) la próxima vez.
   const signOut = useCallback(async () => {
-    try { await apiFetch('/auth/logout', { method: 'POST' }); } catch { /* noop */ }
-    writeSession(null);
-    writeStoredRefresh(null);
-    try { window.localStorage.removeItem(LOCKED_USER_KEY); } catch { /* noop */ }
-    setState({ status: 'needs_login', username: null, userId: null, role: null, error: null });
+    const uid = getEcoAuth().currentUser?.uid;
+    if (uid) clearLockPin(uid);
+    try { await fbSignOut(getEcoAuth()); } catch { /* noop */ }
   }, []);
 
-  return { state, refresh, register, login, claim, recover, lock, signOut };
+  // Bloquear: NO cierra la sesión de Firebase — solo gatea la UI con el PIN
+  // local. Si no hay PIN configurado, ofrece crearlo.
+  const lock = useCallback(() => {
+    const uid = getEcoAuth().currentUser?.uid;
+    if (!uid) return;
+    setLockState(hasLockPin(uid) ? 'locked' : 'setup');
+  }, []);
+
+  const unlock = useCallback(async (pin: string): Promise<AuthResult> => {
+    const uid = getEcoAuth().currentUser?.uid;
+    if (!uid) return { ok: false, error: 'Sesión no iniciada' };
+    if (await verifyLockPin(uid, pin)) { setLockState('unlocked'); return { ok: true }; }
+    return { ok: false, error: 'PIN incorrecto' };
+  }, []);
+
+  const createPin = useCallback(async (pin: string): Promise<AuthResult> => {
+    const uid = getEcoAuth().currentUser?.uid;
+    if (!uid) return { ok: false, error: 'Sesión no iniciada' };
+    await setLockPin(uid, pin);
+    setLockState('unlocked');
+    return { ok: true };
+  }, []);
+
+  const skipPinSetup = useCallback(() => { setLockState('unlocked'); }, []);
+
+  // Cambiar la contraseña de Firebase. Re-autentica con la actual (Firebase lo
+  // exige para operaciones sensibles) y luego actualiza.
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string): Promise<AuthResult> => {
+    const user = getEcoAuth().currentUser;
+    if (!user || !user.email) return { ok: false, error: 'Sesión no iniciada' };
+    try {
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, currentPassword));
+      await updatePassword(user, newPassword);
+      return { ok: true };
+    } catch (e) {
+      const code = (e as { code?: string })?.code ?? '';
+      const msg = (code === 'auth/invalid-credential' || code === 'auth/wrong-password')
+        ? 'La contraseña actual es incorrecta.'
+        : code === 'auth/weak-password' ? 'La nueva contraseña debe tener al menos 6 caracteres.'
+        : translateAuthError(e);
+      return { ok: false, error: msg };
+    }
+  }, []);
+
+  return { state, lockState, login, register, resetPassword, signOut, lock, unlock, createPin, skipPinSetup, changePassword };
 }

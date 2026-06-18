@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { existsSync as fsExistsSync, existsSync, writeFileSync, unlinkSync, statSync, mkdirSync, createReadStream } from 'node:fs';
 import { join as pathJoin } from 'node:path';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
 import { attachWebSocket, broadcastClientAction, broadcastToUser, wsClientCount } from './ws-server.js';
@@ -40,6 +41,8 @@ import {
 } from './users-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
 import { runWithUser } from './request-context.js';
+import { verifyFirebaseIdToken } from './firebase-auth.js';
+import { getMachineUser, setMachineUser } from './machine-user.js';
 import { isAppError } from './app-error.js';
 import { resolveSafePath } from './fs-paths.js';
 import { listTree } from './fs-tree.js';
@@ -116,7 +119,9 @@ const SESSION_HEADER = 'x-eco-session';
 // re-mintar una sesión desde el bearer token permanente cuando la suya expiró
 // por inactividad, sin volver a pedir PIN. El lock manual no se ve afectado:
 // el frontend solo dispara la renovación si todavía tenía una sesión guardada.
-const AUTH_FREE_PATHS = new Set(['/auth/status', '/auth/register', '/auth/login', '/auth/recover', '/auth/session', '/auth/claim']);
+// Con Firebase Auth, la identidad sale del ID token verificado en cada request.
+// Los /auth/* legacy (PIN/sesión) quedan inertes — no se exponen sin token.
+const AUTH_FREE_PATHS = new Set(['/auth/status']);
 // Endpoints adicionales que NO requieren sesión interactiva — solo Bearer +
 // X-Eco-Client. Consumidos por clientes "bot" como el MCP server stdio (en
 // mcp-server/), que viven en otro proceso y no tienen UI de login. La
@@ -262,39 +267,40 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const token = extractBearer(req.headers.authorization);
-  if (!tokensMatch(authToken, token)) {
-    return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
-  }
-  next();
-});
-
-// Session check: si hay usuario registrado, requiere session válida en TODOS los endpoints
-// excepto los de /auth/* y /health (este último ya pasó arriba). Adjunta la
-// identidad derivada de la sesión a `req.ecoUser` — NUNCA se confía en un
-// userId que mande el cliente.
+// Identidad por request. Dos credenciales válidas (multi-tenant en la nube,
+// backend local single-user):
+//  1) ID token de Firebase (Authorization: Bearer <jwt>) → identidad del usuario
+//     de la app. Se verifica contra las claves públicas de Google (sin
+//     service-account). El uid resultante es la identidad; el rol admin/member es
+//     un asunto del frontend (enforced por las Security Rules de Firestore).
+//  2) Token de máquina (~/.eco/token) → transporte local de confianza para los
+//     procesos sin login interactivo (MCP server stdio). Solo habilita los paths
+//     MCP_FREE; el dueño se resuelve al "usuario de máquina" (último login).
+// NUNCA se confía en un userId que mande el cliente.
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (AUTH_FREE_PATHS.has(req.path)) return next();
-  if (isMcpFreePath(req.method, req.path)) {
-    // No requiere sesión interactiva, pero si el cliente manda una válida
-    // (p.ej. el browser pidiendo /workspaces) la usamos para scoping por usuario.
-    const s = getSession(req.headers[SESSION_HEADER] as string | undefined);
-    if (s) req.ecoUser = { id: s.userId, role: s.role, username: s.username };
-    return next();
+  const token = extractBearer(req.headers.authorization);
+
+  // 1) Token de máquina (MCP / procesos locales).
+  if (token && tokensMatch(authToken, token)) {
+    if (isMcpFreePath(req.method, req.path)) {
+      const uid = getMachineUser();
+      if (uid) req.ecoUser = { id: uid, role: 'member', username: '' };
+      return next();
+    }
+    return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
   }
-  if (!hasAnyUser()) return next(); // sin user registrado, no se requiere sesión todavía
-  const sessionId = req.headers[SESSION_HEADER] as string | undefined;
-  const session = getSession(sessionId);
-  if (!session) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
-  // Un usuario deshabilitado mid-sesión pierde acceso al instante (no espera el
-  // TTL de 1h). Lee user.json — solo en paths con sesión, no en los AUTH_FREE/MCP.
-  if (getUser(session.userId)?.disabled) {
-    destroySession(sessionId);
-    return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida o expirada');
-  }
-  req.ecoUser = { id: session.userId, role: session.role, username: session.username };
-  next();
+
+  // 2) ID token de Firebase (identidad de usuario de la app). Verificación async.
+  void verifyFirebaseIdToken(token).then((verified) => {
+    if (!verified) {
+      // Paths MCP_FREE pueden entrar con el token de máquina; sin credencial válida, 401.
+      return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
+    }
+    setMachineUser(verified.uid);
+    req.ecoUser = { id: verified.uid, role: 'member', username: verified.email ?? '' };
+    next();
+  }).catch(() => errResponse(res, 401, 'http.unauthorized', 'No autorizado'));
 });
 
 // Contexto por-request: corre el resto de la cadena dentro de un store con el
@@ -304,10 +310,12 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   runWithUser(req.ecoUser?.id, () => next());
 });
 
-// requireAdmin — guarda para los endpoints /admin/*. Se usa DESPUÉS del
-// middleware de sesión (que ya pobló req.ecoUser).
+// Guarda para endpoints "de host" (backup, workspace-config, admin legacy). En
+// el backend local single-user basta con estar autenticado: la máquina sirve a
+// UNA persona y el rol admin/member para datos compartidos lo enforce Firestore
+// (Security Rules), no este backend. Mantiene el nombre para no tocar call sites.
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.ecoUser?.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
+  if (!req.ecoUser) return errResponse(res, 401, 'http.unauthorized', 'No autorizado');
   next();
 }
 
@@ -547,19 +555,22 @@ app.get('/skills', (req: Request, res: Response) => {
 const AddWorkspaceSchema = z.object({ path: z.string().min(1).max(4096) });
 
 app.get('/workspaces', (req: Request, res: Response) => {
-  const isAdmin = req.ecoUser?.role === 'admin';
+  // Backend local: la máquina sirve a UNA persona, así que cualquier usuario
+  // autenticado puede gestionar sus carpetas (mismo criterio que `requireAdmin`).
+  // El rol que manda el backend siempre es 'member'; el gating real de datos
+  // compartidos lo hacen las Security Rules de Firestore, no este proceso.
+  const canManage = !!req.ecoUser;
   res.json({
-    // El picker usa `workspaces`: cada usuario ve solo los suyos (admin = todos).
     workspaces: workspacesForUser(req.ecoUser?.id),
-    // La gestión del universo global (fromEnv/editable) es solo del admin.
-    fromEnv: isAdmin ? (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [],
-    editable: isAdmin ? readWorkspaceStore() : [],
+    fromEnv: canManage ? (process.env.ECO_WORKSPACES ?? process.env.ECO_WORKSPACE ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [],
+    editable: canManage ? readWorkspaceStore() : [],
   });
 });
 
-// Agregar/quitar carpetas del universo global es solo del admin.
-app.post('/workspaces', (req: Request, res: Response) => {
-  if (req.ecoUser && req.ecoUser.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
+// Agregar/quitar carpetas: basta con estar autenticado (backend local). Antes
+// exigía rol 'admin', pero el backend siempre marca 'member' → quedaba imposible
+// de usar. Consistente con `requireAdmin` (resto de config compartida local).
+app.post('/workspaces', requireAdmin, (req: Request, res: Response) => {
   const parsed = AddWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   const result = addWorkspace(parsed.data.path);
@@ -567,8 +578,7 @@ app.post('/workspaces', (req: Request, res: Response) => {
   res.json({ ok: true, path: result.path, workspaces: config.workspaces });
 });
 
-app.delete('/workspaces', (req: Request, res: Response) => {
-  if (req.ecoUser && req.ecoUser.role !== 'admin') return errResponse(res, 403, 'admin.required', 'Requiere rol admin');
+app.delete('/workspaces', requireAdmin, (req: Request, res: Response) => {
   const parsed = AddWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   removeWorkspace(parsed.data.path);
@@ -744,7 +754,8 @@ app.post('/voice/transcribe-blob',
     // queda undefined. Hacemos cast defensivo a string|undefined.
     const resourcesPath = (process as unknown as { resourcesPath?: string }).resourcesPath;
     // __dirname no existe en módulos ESM — derivamos del import.meta.url.
-    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+    // fileURLToPath en vez de `.pathname` para que sea correcto en Windows.
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
     const candidatePaths = [
       // Empaquetado: extraResources puso bin/eco-stt en Resources/
       resourcesPath ? path.join(resourcesPath, 'bin', 'eco-stt') : '',
@@ -2029,6 +2040,25 @@ server.listen(config.port, config.host, () => {
   } catch (e) {
     console.error('[worktree-prune] error en startup:', e);
   }
+
+  // Auto-registro del MCP "eco" en Claude Code al arrancar (idempotente): si el
+  // binario está bundleado y `claude` existe pero el MCP no está registrado, lo
+  // instalamos apuntando al index.js de ESTE bundle. Así queda listo "por
+  // defecto" al instalar la app, sin pasos manuales. Best-effort: nunca rompe.
+  void (async () => {
+    try {
+      const st = await mcpConfig.getMcpStatus();
+      if (!st.binaryAvailable || !st.claudeAvailable) return;
+      // Re-registrar si: no está instalado, apunta a OTRO path (ej. una .app
+      // vieja/movida), o quedó con un ECO_BACKEND_URL stale (ej. el viejo :7200).
+      const info = st.rawInfo ?? '';
+      const stale = st.installed && (!info.includes(st.binaryPath) || /ECO_BACKEND_URL/.test(info));
+      if (!st.installed || stale) {
+        const r = await mcpConfig.installMcp();
+        console.log(r.ok ? '   MCP eco: registrado/refrescado automáticamente en Claude Code' : `   MCP eco: no se pudo registrar (${'code' in r ? r.code : ''})`);
+      }
+    } catch { /* best-effort */ }
+  })();
 });
 
 // GC periódico cada 15 min mientras corre.

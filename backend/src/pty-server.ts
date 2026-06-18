@@ -1,19 +1,19 @@
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { Server } from 'node:http';
+import type { Server, IncomingMessage } from 'node:http';
 import { spawn as ptySpawn, type IPty } from 'node-pty';
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import { config, isAllowedWorkspace, hostAllowed } from './config.js';
-import { extractBearer, tokensMatch } from './auth.js';
 import { buildSafeEnv } from './security.js';
 import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
 import { ensureWorktree } from './worktree-manager.js';
 import { githubEnvOverrides } from './github-runtime.js';
-import { getSession } from './sessions.js';
+import { verifyFirebaseIdToken } from './firebase-auth.js';
+import { setMachineUser } from './machine-user.js';
+import { defaultShell } from './platform.js';
 
-function defaultShell(): string {
-  return process.env.SHELL || (existsSync('/bin/zsh') ? '/bin/zsh' : '/bin/bash');
-}
+// uid resuelto en verifyClient (verificación async del ID token de Firebase).
+type ReqWithUid = IncomingMessage & { ecoUid?: string };
 
 type PtyInput =
   | { type: 'input'; data: string }
@@ -258,7 +258,7 @@ export function getBubblePtyBuffer(bubbleId: string): string {
   return parts.map((p) => `=== terminal ${p.ptyId} ===\n${p.buffer}`).join('\n\n');
 }
 
-export function attachPtyServer(httpServer: Server, authToken: string) {
+export function attachPtyServer(httpServer: Server, _authToken: string) {
   // Snapshot: cuando un cliente nuevo se conecta al /ws principal, recibe
   // un pty_status=true por cada PTY corriendo. Así sobrevive reload de UI.
   registerSnapshotProvider(() =>
@@ -273,7 +273,7 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     noServer: true,
     maxPayload: 64 * 1024,
     handleProtocols: (protocols) => {
-      const tokenProto = [...protocols].find((p) => p.startsWith('eco.token.'));
+      const tokenProto = [...protocols].find((p) => p.startsWith('eco.idtoken.'));
       return tokenProto ?? false;
     },
     verifyClient: (info, callback) => {
@@ -284,16 +284,15 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
       if (origin && !config.allowedOrigins.includes(origin)) {
         return callback(false, 403, 'Origin no permitido');
       }
-      const token =
-        extractBearer(info.req.headers['authorization'] as string | undefined) ??
-        extractTokenFromProtocols(info.req.headers['sec-websocket-protocol']);
-      if (!tokensMatch(authToken, token)) {
-        return callback(false, 401, 'http.unauthorized');
-      }
       if (wss.clients.size >= config.maxOpenConnections) {
         return callback(false, 503, 'ws.too_many_connections');
       }
-      callback(true);
+      void verifyFirebaseIdToken(extractIdTokenFromProtocols(info.req.headers['sec-websocket-protocol'])).then((verified) => {
+        if (!verified) return callback(false, 401, 'http.unauthorized');
+        setMachineUser(verified.uid);
+        (info.req as ReqWithUid).ecoUid = verified.uid;
+        callback(true);
+      }).catch(() => callback(false, 401, 'http.unauthorized'));
     },
   });
 
@@ -315,8 +314,8 @@ export function attachPtyServer(httpServer: Server, authToken: string) {
     const ptyId = sanitizePtyId(rawPtyId) || 'main';
     const noClaude = url.searchParams.get('noClaude') === '1';
     const requestedWs = url.searchParams.get('workspace') ?? '';
-    // userId dueño de esta conexión (del subprotocolo eco.session.<id>).
-    const ownerId = extractSessionUserId(req.headers['sec-websocket-protocol']);
+    // userId dueño de esta conexión (uid de Firebase, resuelto en verifyClient).
+    const ownerId = (req as ReqWithUid).ecoUid;
     // Si la burbuja tiene workspace git, su shell vive dentro del worktree.
     const isolated = (bubbleId && requestedWs && isAllowedWorkspace(requestedWs, ownerId))
       ? ensureWorktree(bubbleId, requestedWs)
@@ -484,26 +483,12 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
-function extractTokenFromProtocols(header: string | string[] | undefined): string | undefined {
-  if (!header) return undefined;
+// El ID token de Firebase viaja como subprotocolo `eco.idtoken.<jwt>`.
+function extractIdTokenFromProtocols(header: string | string[] | undefined): string | null {
+  if (!header) return null;
   const raw = Array.isArray(header) ? header.join(',') : header;
   for (const p of raw.split(',').map((s) => s.trim())) {
-    if (p.startsWith('eco.token.')) return p.slice('eco.token.'.length);
+    if (p.startsWith('eco.idtoken.')) return p.slice('eco.idtoken.'.length);
   }
-  return undefined;
-}
-
-// El frontend manda además `eco.session.<sessionId>` para que el backend
-// resuelva el userId dueño de la conexión (identidad de git del PTY +
-// filtrado de pty_status por usuario en F2).
-function extractSessionUserId(header: string | string[] | undefined): string | undefined {
-  if (!header) return undefined;
-  const raw = Array.isArray(header) ? header.join(',') : header;
-  for (const p of raw.split(',').map((s) => s.trim())) {
-    if (p.startsWith('eco.session.')) {
-      const s = getSession(p.slice('eco.session.'.length));
-      return s?.userId;
-    }
-  }
-  return undefined;
+  return null;
 }

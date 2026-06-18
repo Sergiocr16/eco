@@ -19,13 +19,20 @@ rmSync(BACKEND_NM, { recursive: true, force: true });
 
 // `npm install` en backend/ ignorando workspaces — usamos --workspaces=false
 // para que no intente conectar con el root.
+// `shell: true` en Windows: npm es npm.cmd y spawn sin shell no lo resuelve.
+// Estrategia hoisted (default), NO nested: la nested deja un árbol profundo que
+// en Windows, con los EPERM por bloqueo de archivos al limpiar, quedaba
+// INCOMPLETO (faltaban deps transitivas compartidas como function-bind →
+// el backend crasheaba con MODULE_NOT_FOUND y la ventana nunca abría). La
+// hoisted aplana todo en backend/node_modules y resuelve sin agujeros.
 console.log('[prepare-backend] npm install --omit=dev (backend)');
 const r = spawnSync(
   'npm',
-  ['install', '--omit=dev', '--no-package-lock', '--no-audit', '--no-fund', '--workspaces=false', '--install-strategy=nested'],
+  ['install', '--omit=dev', '--no-package-lock', '--no-audit', '--no-fund', '--workspaces=false'],
   {
     cwd: BACKEND_DIR,
     stdio: 'inherit',
+    shell: process.platform === 'win32',
     env: { ...process.env, npm_config_workspaces: 'false' },
   },
 );

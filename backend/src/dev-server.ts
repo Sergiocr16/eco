@@ -20,12 +20,13 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer, type AddressInfo } from 'node:net';
 import { existsSync, symlinkSync, lstatSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, delimiter as PATH_DELIMITER } from 'node:path';
 import { homedir } from 'node:os';
 import { config } from './config.js';
 import { buildSafeEnv } from './security.js';
 import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
 import { serveOn, serveOff } from './tailscale.js';
+import { shellRun, detachForGroup, pidsOnPort, killTree, killPid, IS_WIN } from './platform.js';
 
 export type DevStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 
@@ -251,26 +252,16 @@ function scheduleLogFlush(s: Session, chunk: string) {
 // (p.ej. un worker que sobrevivió porque hace setsid o se daemonizó), lo
 // matamos con `lsof -ti :<port> | xargs kill -9`.
 
+// POSIX: mata el process group entero (`process.kill(-pgid)`). Windows: no hay
+// process groups → `taskkill /PID <pid> /T /F` mata el árbol. Ambos vía killTree.
 function killProcessGroup(pgid: number, signal: NodeJS.Signals): boolean {
-  try {
-    // `-pgid` (negativo) le dice a kill que mate todo el process group.
-    process.kill(-pgid, signal);
-    return true;
-  } catch {
-    // ESRCH si ya está muerto, EPERM si no tenemos permiso — ambos OK.
-    return false;
-  }
+  return killTree(pgid, signal);
 }
 
-/** PIDs que están bindeando el puerto (lsof). Vacío si está libre. */
+/** PIDs que están bindeando el puerto. Vacío si está libre. Cross-platform
+ *  (lsof en POSIX, netstat en Windows) vía platform.pidsOnPort. */
 function pidsHoldingPort(port: number): number[] {
-  try {
-    const r = spawnSync('lsof', ['-ti', `:${port}`, '-sTCP:LISTEN'], {
-      timeout: 1500, encoding: 'utf-8',
-    });
-    if (r.status !== 0) return [];
-    return r.stdout.split(/\s+/).map((s) => parseInt(s, 10)).filter((n) => Number.isFinite(n));
-  } catch { return []; }
+  return pidsOnPort(port);
 }
 
 /**
@@ -294,7 +285,7 @@ async function ensurePortFree(port: number, pgid: number | null): Promise<{ ok: 
   // Esto cubre procesos que se daemonizaron a otro grupo.
   const stuckPids = pidsHoldingPort(port);
   for (const pid of stuckPids) {
-    try { process.kill(pid, 'SIGKILL'); } catch { /* noop */ }
+    killPid(pid, 'SIGKILL');
   }
   // Una pasada final de poll: 2.5s más.
   for (let i = 0; i < 10; i++) {
@@ -634,8 +625,8 @@ function spawnSession(s: Session) {
   // node_modules/.bin del worktree y del repo padre — para que gulp/vite/etc.
   // instalados localmente en el repo padre funcionen sin npm install acá.
   const extraBins = discoverNodeBins(s.workspace);
-  const basePath = process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin';
-  const augmentedPath = [...extraBins, basePath].join(':');
+  const basePath = process.env.PATH ?? (IS_WIN ? '' : '/usr/local/bin:/usr/bin:/bin');
+  const augmentedPath = [...extraBins, basePath].filter(Boolean).join(PATH_DELIMITER);
 
   // En dual mode, si soy el frontend, busco la session del backend para el
   // mismo bubble y expongo su puerto como API_PORT/BACKEND_PORT. Esto permite
@@ -701,19 +692,22 @@ function spawnSession(s: Session) {
     COLORTERM: 'truecolor',
   }) as Record<string, string>;
 
-  // bash -c (sin -l) para que NO re-source .bash_profile/.zshrc, que podrían
-  // pisar nuestro PATH augmentado con el node_modules/.bin del repo padre.
-  // El PATH que pasamos en env ya incluye todo lo necesario (nvm, brew, locales).
+  // Ejecutamos el comando como string vía el shell del SO (bash -c en POSIX,
+  // cmd /c en Windows). En POSIX usamos bash -c (sin -l) para que NO re-source
+  // .bash_profile/.zshrc, que podrían pisar nuestro PATH augmentado con el
+  // node_modules/.bin del repo padre. El PATH que pasamos en env ya incluye
+  // todo lo necesario (nvm, brew, locales).
   //
-  // `detached: true` crea un nuevo process group con pgid = proc.pid. Esto
-  // permite matar el grupo ENTERO (padre bash + todos sus hijos) con un solo
-  // `process.kill(-pgid, …)` cuando se hace stop. Sin esto, kill al bash deja
-  // a gulp/vite/java huérfanos con el puerto tomado.
-  const proc = spawn('/bin/bash', ['-c', s.command], {
+  // POSIX: `detached: true` crea un nuevo process group con pgid = proc.pid, y
+  // así matamos el grupo ENTERO (padre + hijos) con `process.kill(-pgid, …)`.
+  // Windows: no hay process groups (detachForGroup=false); guardamos el pid y
+  // lo matamos con `taskkill /PID <pid> /T /F` (árbol completo) vía killTree.
+  const { cmd: shellCmd, args: shellArgs } = shellRun(s.command);
+  const proc = spawn(shellCmd, shellArgs, {
     cwd: s.workspace,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,
+    detached: detachForGroup,
   });
   // Importante: NO desreferenciar (proc.unref()) — queremos que Node mantenga
   // el handle. La diferencia con un spawn no-detached es el pgid.
@@ -881,7 +875,8 @@ export async function stopDevServer(bubbleId: string, role: ServerRole = 'main')
     return { ok: true };
   }
   // Puerto sigue colgado — devolvemos error explícito con los PIDs.
-  const msg = `Puerto ${port} sigue ocupado por PIDs: ${r.pids.join(', ')}. Inspeccioná con \`lsof -i :${port}\`.`;
+  const inspectHint = IS_WIN ? `netstat -ano | findstr :${port}` : `lsof -i :${port}`;
+  const msg = `Puerto ${port} sigue ocupado por PIDs: ${r.pids.join(', ')}. Inspeccioná con \`${inspectHint}\`.`;
   appendOutput(s, `[eco] ${msg}\n`);
   s.status = 'error';
   broadcastStatus(s);

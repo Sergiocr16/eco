@@ -25,9 +25,11 @@ if (!existsSync(path.join(MCP_DIR, 'package.json'))) {
 }
 
 function run(cmd, args, opts = {}) {
+  // shell: true en Windows — npm/npx son .cmd y spawn sin shell no los resuelve.
   const r = spawnSync(cmd, args, {
     cwd: MCP_DIR,
     stdio: 'inherit',
+    shell: process.platform === 'win32',
     env: { ...process.env, npm_config_workspaces: 'false' },
     ...opts,
   });

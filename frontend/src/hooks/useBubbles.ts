@@ -55,7 +55,7 @@ function loadStored(): { bubbles: Bubble[]; activeId: string | null } {
     if (!raw) return { bubbles: [], activeId: null };
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return { bubbles: [], activeId: null };
-    const bubbles: Bubble[] = parsed.map((b) => {
+    const bubbles: Bubble[] = parsed.filter((b) => !b?.deleted).map((b) => {
       // Migración: `categoryId` (single, legacy) → `categoryIds` (multi).
       const legacySingle = typeof b.categoryId === 'string' ? b.categoryId : undefined;
       const categoryIds: string[] | undefined = Array.isArray(b.categoryIds)
@@ -97,6 +97,9 @@ function normalizeBubble(raw: unknown): Bubble | null {
   if (!raw || typeof raw !== 'object') return null;
   const b = raw as Record<string, unknown>;
   if (typeof b.id !== 'string') return null;
+  // Bubbles "eliminadas" quedan en Firestore pero NO se cargan en memoria —
+  // ocultas en todos lados.
+  if (b.deleted === true) return null;
   const legacySingle = typeof b.categoryId === 'string' ? b.categoryId : undefined;
   const categoryIds: string[] | undefined = Array.isArray(b.categoryIds)
     ? (b.categoryIds as unknown[]).filter((x): x is string => typeof x === 'string')
@@ -316,6 +319,13 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
     const offUpdated = ecoOn('eco:doc_updated', ({ key, value, updatedAt }) => {
       if (!key.startsWith(BUBBLE_DOC_PREFIX)) return;
       if (!shouldApplyRemote(key, updatedAt)) return;
+      // Marcada como eliminada en otro dispositivo → sacarla acá también.
+      if (value && typeof value === 'object' && (value as { deleted?: boolean }).deleted === true) {
+        const id = key.slice(BUBBLE_DOC_PREFIX.length);
+        syncedRef.current.delete(id);
+        setBubbles((prev) => prev.filter((x) => x.id !== id));
+        return;
+      }
       const b = normalizeBubble(value);
       if (!b) return;
       syncedRef.current.set(b.id, JSON.stringify(bubbleDocValue(b)));
@@ -462,7 +472,17 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
 
   // Eliminar definitivamente: borra worktree + branch + TODAS las keys de
   // localStorage + saca el bubble del array. Irreversible.
+  // "Eliminar": NO borra el doc de Firestore — lo marca deleted=true (queda en
+  // la nube, oculto en todos lados). Limpia recursos locales (PTY/worktree) y
+  // el cache local. Recuperable manualmente desde Firestore si hiciera falta.
   const deletePermanently = useCallback((id: string) => {
+    const target = bubbles.find((b) => b.id === id);
+    if (target) {
+      const deletedVal = { ...bubbleDocValue(target), archived: true, deleted: true, deletedAt: Date.now() };
+      saveDoc(BUBBLE_DOC_PREFIX + id, deletedVal);  // persiste deleted=true
+    }
+    // Sacarlo de syncedRef para que el cleanup de sync NO le haga deleteDoc.
+    syncedRef.current.delete(id);
     setBubbles((prev) => prev.filter((b) => b.id !== id));
     setActiveBubbleId((cur) => {
       if (cur !== id) return cur;

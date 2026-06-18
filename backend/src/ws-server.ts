@@ -4,24 +4,28 @@ import { runAgent } from './agent.js';
 import { ClientMessageSchema, type ServerMessage } from './protocol.js';
 import type { ClientAction } from './agent-tools.js';
 import { config, hostAllowed } from './config.js';
-import { extractBearer, tokensMatch } from './auth.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import { ensureWorktree } from './worktree-manager.js';
-import { getSession } from './sessions.js';
+import { verifyFirebaseIdToken } from './firebase-auth.js';
+import { setMachineUser } from './machine-user.js';
 
 // Rate limit POR USUARIO (multi-tenant) — reemplaza el contador global.
 // Map userId → timestamps de prompts en el último minuto. Las conexiones sin
 // userId (legacy / sin sesión) comparten el bucket '_anon'.
 const promptTimestampsByUser = new Map<string, number[]>();
 
-function extractSessionUserId(req: IncomingMessage): string | undefined {
+// El ID token de Firebase viaja como subprotocolo `eco.idtoken.<jwt>`. El JWT
+// tiene puntos pero no comas, así que entra como una sola entrada del header.
+function extractIdToken(req: IncomingMessage): string | null {
   const proto = req.headers['sec-websocket-protocol'];
-  if (!proto) return undefined;
+  if (!proto) return null;
   const parts = Array.isArray(proto) ? proto : proto.split(',').map((p) => p.trim());
-  const entry = parts.find((p) => p.startsWith('eco.session.'));
-  if (!entry) return undefined;
-  return getSession(entry.slice('eco.session.'.length))?.userId;
+  const entry = parts.find((p) => p.startsWith('eco.idtoken.'));
+  return entry ? entry.slice('eco.idtoken.'.length) : null;
 }
+
+// uid resuelto en verifyClient (verificación async del JWT) y leído en 'connection'.
+type ReqWithUid = IncomingMessage & { ecoUid?: string };
 
 let broadcastFn: ((msg: ServerMessage) => void) | null = null;
 let wssRef: WebSocketServer | null = null;
@@ -74,12 +78,12 @@ export function registerSnapshotProvider(fn: SnapshotProvider) {
   snapshotProviders.push(fn);
 }
 
-export function attachWebSocket(httpServer: Server, authToken: string) {
+export function attachWebSocket(httpServer: Server, _authToken: string) {
   const wss = new WebSocketServer({
     noServer: true,
     maxPayload: 128 * 1024,
     handleProtocols: (protocols) => {
-      const tokenProto = [...protocols].find((p) => p.startsWith('eco.token.'));
+      const tokenProto = [...protocols].find((p) => p.startsWith('eco.idtoken.'));
       return tokenProto ?? false;
     },
     verifyClient: (info, callback) => {
@@ -90,16 +94,16 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
       if (origin && !config.allowedOrigins.includes(origin)) {
         return callback(false, 403, 'Origin no permitido');
       }
-      const token =
-        extractBearer(info.req.headers['authorization'] as string | undefined) ??
-        extractToken(info.req);
-      if (!tokensMatch(authToken, token)) {
-        return callback(false, 401, 'http.unauthorized');
-      }
       if (wss.clients.size >= config.maxOpenConnections) {
         return callback(false, 503, 'ws.too_many_connections');
       }
-      callback(true);
+      // Verificación async del ID token de Firebase. El uid queda en req.ecoUid.
+      void verifyFirebaseIdToken(extractIdToken(info.req)).then((verified) => {
+        if (!verified) return callback(false, 401, 'http.unauthorized');
+        setMachineUser(verified.uid);
+        (info.req as ReqWithUid).ecoUid = verified.uid;
+        callback(true);
+      }).catch(() => callback(false, 401, 'http.unauthorized'));
     },
   });
 
@@ -123,7 +127,7 @@ export function attachWebSocket(httpServer: Server, authToken: string) {
   wssRef = wss;
 
   wss.on('connection', (ws, req: IncomingMessage) => {
-    const connUserId = extractSessionUserId(req);
+    const connUserId = (req as ReqWithUid).ecoUid;
     if (connUserId) {
       let set = wsByUser.get(connUserId);
       if (!set) { set = new Set(); wsByUser.set(connUserId, set); }
@@ -269,10 +273,3 @@ function sanitizeErrorMessage(code: string): string {
   }
 }
 
-function extractToken(req: IncomingMessage): string | null {
-  const proto = req.headers['sec-websocket-protocol'];
-  if (!proto) return null;
-  const parts = Array.isArray(proto) ? proto : proto.split(',').map((p) => p.trim());
-  const tokenEntry = parts.find((p) => p.startsWith('eco.token.'));
-  return tokenEntry ? tokenEntry.slice('eco.token.'.length) : null;
-}

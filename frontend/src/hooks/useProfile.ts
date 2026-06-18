@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { subscribePrefs, updatePrefs, getPrefs } from '@/lib/prefs-sync';
 
+// Cache local de primer paint. La AUTORIDAD de la foto es el doc `prefs` en
+// Firestore (sincroniza cross-device); este localStorage solo evita el
+// parpadeo inicial antes de hidratar.
 const PHOTO_KEY = 'eco.profile.photo';
 const USERNAME_KEY = 'eco.profile.username';
 
@@ -65,40 +69,45 @@ async function resizeToDataUrl(file: File, size = 128): Promise<string> {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
+function cachePhoto(dataUrl: string | null) {
+  try {
+    if (dataUrl) window.localStorage.setItem(PHOTO_KEY, dataUrl);
+    else window.localStorage.removeItem(PHOTO_KEY);
+  } catch { /* noop */ }
+}
+
 export function useProfile(): UseProfileResult {
-  const [photo, setPhoto] = useState<string | null>(() => readPhoto());
+  const [photo, setPhoto] = useState<string | null>(() => getPrefs().photo ?? readPhoto());
   const [username, setUsername] = useState<string | null>(() => readUsername());
 
   useEffect(() => {
-    const sync = () => {
-      setPhoto(readPhoto());
-      setUsername(readUsername());
-    };
+    const sync = () => setUsername(readUsername());
     window.addEventListener('storage', sync);
     window.addEventListener(CHANGE_EVENT, sync);
+    // La foto sigue al doc prefs (Firestore) → cross-device.
+    const unsub = subscribePrefs((p) => {
+      const next = p.photo ?? null;
+      cachePhoto(next);
+      setPhoto(next);
+    });
     return () => {
       window.removeEventListener('storage', sync);
       window.removeEventListener(CHANGE_EVENT, sync);
+      unsub();
     };
   }, []);
 
   const setPhotoFromFile = useCallback(async (file: File) => {
     const dataUrl = await resizeToDataUrl(file);
-    try {
-      window.localStorage.setItem(PHOTO_KEY, dataUrl);
-      window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
-      setPhoto(dataUrl);
-    } catch (e) {
-      throw new Error(e instanceof Error ? e.message : 'storage_failed');
-    }
+    cachePhoto(dataUrl);
+    setPhoto(dataUrl);
+    updatePrefs({ photo: dataUrl });  // sube a Firestore (cross-device)
   }, []);
 
   const clearPhoto = useCallback(() => {
-    try {
-      window.localStorage.removeItem(PHOTO_KEY);
-      window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
-      setPhoto(null);
-    } catch { /* noop */ }
+    cachePhoto(null);
+    setPhoto(null);
+    updatePrefs({ photo: null });
   }, []);
 
   return {

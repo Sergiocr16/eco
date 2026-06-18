@@ -3,6 +3,8 @@
 // motor disponible: <webview> en Electron, WKWebView nativo en iOS con
 // puente Capacitor, o iframe + proxy en web puro.
 
+import { ecoPlatform } from './eco-config';
+
 export type Runtime = 'web' | 'electron' | 'tauri' | 'capacitor-ios' | 'capacitor-android';
 
 declare global {
@@ -31,12 +33,15 @@ export function canEmbedArbitrarySites(): boolean {
 }
 
 // Espacio reservado arriba de la ventana para que la UI no tape los traffic
-// lights de macOS (titleBarStyle: hiddenInset). En Win/Linux Electron y en
-// web puro no aplica.
+// lights de macOS (titleBarStyle: hiddenInset). SOLO macOS lo necesita: en
+// Win/Linux la ventana usa el frame nativo del sistema, así que reservar 36px
+// extra deja una franja vacía arriba (se ve como un "borde" y desperdicia
+// espacio, sobre todo al maximizar/fullscreen). Por eso ahí devolvemos 0.
 export function getTopInset(r: Runtime = detectRuntime()): number {
-  // En Electron SIEMPRE reservamos espacio. En Mac los traffic lights ocupan
-  // el área superior izquierda; en Win/Linux el frame del sistema ya cubre,
-  // pero los 36px de margen extra no estorban — mejor consistencia.
+  const isMac =
+    ecoPlatform() === 'darwin'
+    || (ecoPlatform() === '' && typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || ''));
+  if (!isMac) return 0;
   if (r === 'electron') return 36;
   // Fallback web: detectar si el UA es Electron (por si falla detectRuntime).
   if (typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)) {

@@ -6,6 +6,7 @@ import { readStore as readWorkspaceStore } from './workspaces-store.js';
 import { readApiKey } from './api-key-store.js';
 import { getUser, workspaceGrantsFor } from './users-store.js';
 import { currentUserId } from './request-context.js';
+import { resolveClaudeCli } from './platform.js';
 
 function parseEnvWorkspaces(): string[] {
   // Default: el home del user (existe siempre). Antes era ~/projects/eco-test
@@ -74,7 +75,7 @@ export const config = {
   get workspaces(): string[] { return loadWorkspaces(); },
   port: Number(process.env.ECO_PORT ?? 7000),
   host: process.env.ECO_HOST ?? '127.0.0.1',
-  claudeCliPath: process.env.CLAUDE_CLI_PATH ?? `${homedir()}/.local/bin/claude`,
+  claudeCliPath: resolveClaudeCli(),
   model: process.env.ECO_MODEL ?? 'claude-sonnet-4-5-20250929',
   get anthropicApiKey(): string | undefined {
     const env = process.env.ANTHROPIC_API_KEY?.trim();
@@ -119,7 +120,7 @@ export function isAllowedWorkspace(target: string | undefined, userId?: string):
   if (!target || !isAbsolute(target)) return false;
   const real = safeRealpath(target);
   if (!real) return false;
-  const ecoWorktreesRoot = `${homedir()}/.eco/worktrees`;
+  const ecoWorktreesRoot = resolve(homedir(), '.eco', 'worktrees');
   if (real === ecoWorktreesRoot || real.startsWith(ecoWorktreesRoot + sep)) return true;
   const inUniverse = config.workspaces.some(
     (allowed) => real === allowed || real.startsWith(allowed + sep),

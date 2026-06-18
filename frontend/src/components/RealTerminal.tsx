@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { ecoToken, readStoredSession } from '@/lib/eco-config';
+import { currentIdToken } from '@/lib/firebase';
 import { useTokens } from '@/design/theme';
 
 type Props = {
@@ -73,12 +73,6 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       return url.toString();
     };
 
-    const token = ecoToken();
-    const sess = readStoredSession();
-    const protocols = token
-      ? [`eco.token.${token}`, ...(sess ? [`eco.session.${sess}`] : [])]
-      : undefined;
-
     let ws: WebSocket | null = null;
     let pingTimer: number | null = null;
     let resizeObs: ResizeObserver | null = null;
@@ -88,8 +82,16 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
 
     const disposeInputRef: { current: { dispose: () => void } | null } = { current: null };
 
-    function connect() {
+    async function connect() {
       if (disposed) return;
+      const idToken = await currentIdToken();
+      if (disposed) return;
+      if (!idToken) {
+        setStatus('error');
+        setErrMsg('Sesión no iniciada');
+        return;
+      }
+      const protocols = [`eco.idtoken.${idToken}`];
       const urlStr = buildUrl();
       try {
         ws = new WebSocket(urlStr, protocols);
@@ -181,6 +183,23 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     resizeObs = new ResizeObserver(() => doResize());
     resizeObs.observe(container);
 
+    // Recuperación tras sleep/wake: los timers se pausan al dormir; si un tick
+    // cae mucho después de lo esperado, la máquina durmió → el WS suele quedar
+    // zombie (OPEN pero muerto). Forzamos cierre + reconexión.
+    let lastTick = Date.now();
+    const wakeTimer = window.setInterval(() => {
+      const now = Date.now();
+      const slept = now - lastTick > 10_000;
+      lastTick = now;
+      if (slept && !disposed) {
+        if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = null; }
+        attempts = 0;
+        try { ws?.close(); } catch { /* noop */ }
+        ws = null;
+        void connect();
+      }
+    }, 3000);
+
     connect();
 
     return () => {
@@ -188,6 +207,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       disposeInputRef.current?.dispose();
       if (pingTimer) window.clearInterval(pingTimer);
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      window.clearInterval(wakeTimer);
       resizeObs?.disconnect();
       try { ws?.close(1000, 'unmount'); } catch { /* noop */ }
       term.dispose();
