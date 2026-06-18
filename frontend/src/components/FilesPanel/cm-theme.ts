@@ -27,6 +27,7 @@ export function buildEcoCmExtension(tokens: Tokens, isLight: boolean): Extension
   const cursor = accent;
   const gutterBg = bg;
   const activeLineBg = `color-mix(in oklch, ${accent} 7%, transparent)`;
+  const bracketColors = isDark ? BRACKET_COLORS_DARK : BRACKET_COLORS_LIGHT;
 
   const theme = EditorView.theme({
     '&': {
@@ -158,38 +159,95 @@ export function buildEcoCmExtension(tokens: Tokens, isLight: boolean): Extension
       backgroundColor: `color-mix(in oklch, ${accent} 55%, transparent)`,
       outline: `1px solid ${accent}`,
     },
+    // Colorización de pares de brackets por nivel de anidamiento.
+    '.eco-bracket-d0': { color: bracketColors[0] },
+    '.eco-bracket-d1': { color: bracketColors[1] },
+    '.eco-bracket-d2': { color: bracketColors[2] },
+    '.eco-bracket-d3': { color: bracketColors[3] },
+    '.eco-bracket-d4': { color: bracketColors[4] },
+    '.eco-bracket-d5': { color: bracketColors[5] },
   }, { dark: isDark });
 
-  // Highlighting style — paleta derivada de tokens para mantener coherencia
-  // con el resto de la app. Usamos color-mix con accent para varios grupos
-  // de tokens; los strings y comments tienen colores fijos suaves.
+  // Highlighting style — paleta MULTI-COLOR FIJA tipo IDE (VSCode Dark+/Light+),
+  // independiente del accent del theme. Distintos hues por tipo de token para
+  // que el código se LEA como en un IDE real, no monocromático. El accent solo
+  // tiñe el "chrome" del editor (cursor, selección, active line, brackets).
+  const c = isDark ? PALETTE_DARK : PALETTE_LIGHT;
   const highlight = HighlightStyle.define([
-    { tag: t.keyword, color: accent, fontWeight: '600' },
-    { tag: [t.controlKeyword, t.moduleKeyword], color: accent, fontWeight: '600' },
-    { tag: [t.operator, t.operatorKeyword], color: tokens.text0 },
-    { tag: [t.atom, t.bool, t.special(t.variableName)], color: `color-mix(in oklch, ${accent} 70%, ${tokens.warn})` },
-    { tag: t.number, color: tokens.warn },
-    { tag: t.string, color: tokens.ok },
-    { tag: [t.special(t.string), t.regexp], color: tokens.ok },
-    { tag: t.escape, color: tokens.warn },
-    { tag: t.comment, color: fgMuted, fontStyle: 'italic' },
-    { tag: t.lineComment, color: fgMuted, fontStyle: 'italic' },
-    { tag: t.blockComment, color: fgMuted, fontStyle: 'italic' },
-    { tag: t.docComment, color: fgMuted, fontStyle: 'italic' },
-    { tag: [t.typeName, t.className], color: `color-mix(in oklch, ${accent} 60%, ${tokens.text0})` },
-    { tag: [t.propertyName, t.variableName], color: tokens.text0 },
-    { tag: [t.function(t.variableName), t.function(t.propertyName)], color: `color-mix(in oklch, ${accent} 75%, ${tokens.warn})` },
+    { tag: [t.keyword, t.modifier, t.controlKeyword, t.moduleKeyword, t.definitionKeyword], color: c.keyword, fontWeight: '600' },
+    { tag: [t.operator, t.operatorKeyword, t.derefOperator], color: c.operator },
+    { tag: [t.atom, t.bool, t.null, t.special(t.variableName)], color: c.constant },
+    { tag: [t.number, t.integer, t.float], color: c.number },
+    { tag: [t.string, t.special(t.string), t.docString], color: c.string },
+    { tag: [t.regexp], color: c.regexp },
+    { tag: [t.escape, t.character], color: c.escape },
+    { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: c.comment, fontStyle: 'italic' },
+    { tag: [t.typeName, t.className, t.namespace], color: c.type },
+    { tag: [t.propertyName], color: c.property },
+    { tag: [t.variableName, t.labelName], color: c.variable },
+    { tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName], color: c.function },
+    { tag: [t.definition(t.variableName), t.definition(t.propertyName)], color: c.variable },
+    { tag: [t.constant(t.variableName), t.standard(t.variableName)], color: c.constant },
     { tag: t.invalid, color: tokens.err, textDecoration: 'underline' },
-    { tag: [t.heading, t.heading1, t.heading2, t.heading3], color: accent, fontWeight: '700' },
-    { tag: t.link, color: accent, textDecoration: 'underline' },
-    { tag: t.url, color: accent, textDecoration: 'underline' },
+    { tag: [t.heading, t.heading1, t.heading2, t.heading3, t.heading4], color: c.keyword, fontWeight: '700' },
+    { tag: [t.link, t.url], color: c.function, textDecoration: 'underline' },
     { tag: t.emphasis, fontStyle: 'italic' },
     { tag: t.strong, fontWeight: '700' },
-    { tag: t.tagName, color: accent },
-    { tag: t.attributeName, color: `color-mix(in oklch, ${accent} 60%, ${tokens.warn})` },
-    { tag: t.attributeValue, color: tokens.ok },
+    { tag: [t.tagName, t.angleBracket], color: c.tag },
+    { tag: t.attributeName, color: c.attribute },
+    { tag: t.attributeValue, color: c.string },
+    { tag: [t.punctuation, t.separator, t.bracket], color: c.punctuation },
+    { tag: t.meta, color: c.comment },
   ]);
 
   return [theme, syntaxHighlighting(highlight)];
 }
+
+// Paletas fijas estilo VSCode Dark+ / Light+. No dependen del accent: la idea
+// es que el código se vea como en un IDE clásico (keyword violeta-azul, string
+// verde, número naranja, función amarilla, tipo teal, etc.).
+type SyntaxPalette = {
+  keyword: string; operator: string; constant: string; number: string;
+  string: string; regexp: string; escape: string; comment: string;
+  type: string; property: string; variable: string; function: string;
+  tag: string; attribute: string; punctuation: string;
+};
+const PALETTE_DARK: SyntaxPalette = {
+  keyword: '#c586c0',    // violeta (control/keywords)
+  operator: '#d4d4d4',
+  constant: '#569cd6',   // azul (bool/null/const)
+  number: '#b5cea8',     // verde-oliva (números en VSCode)
+  string: '#ce9178',     // naranja-salmón
+  regexp: '#d16969',
+  escape: '#d7ba7d',
+  comment: '#6a9955',    // verde comentario
+  type: '#4ec9b0',       // teal (tipos/clases)
+  property: '#9cdcfe',   // azul claro (propiedades)
+  variable: '#9cdcfe',
+  function: '#dcdcaa',   // amarillo (funciones)
+  tag: '#569cd6',
+  attribute: '#9cdcfe',
+  punctuation: '#808080',
+};
+const PALETTE_LIGHT: SyntaxPalette = {
+  keyword: '#af00db',
+  operator: '#000000',
+  constant: '#0000ff',
+  number: '#098658',
+  string: '#a31515',
+  regexp: '#811f3f',
+  escape: '#ee0000',
+  comment: '#008000',
+  type: '#267f99',
+  property: '#001080',
+  variable: '#001080',
+  function: '#795e26',
+  tag: '#800000',
+  attribute: '#e50000',
+  punctuation: '#383838',
+};
+
+// Colores para la colorización de pares de brackets (ciclan por profundidad).
+export const BRACKET_COLORS_DARK = ['#ffd700', '#da70d6', '#179fff', '#ffd700', '#da70d6', '#179fff'];
+export const BRACKET_COLORS_LIGHT = ['#0431fa', '#319331', '#7b3814', '#0431fa', '#319331', '#7b3814'];
 

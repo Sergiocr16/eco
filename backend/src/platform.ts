@@ -4,8 +4,10 @@
 
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const IS_WIN = process.platform === 'win32';
 
@@ -32,6 +34,55 @@ export function resolveClaudeCli(): string {
     return local;
   }
   return join(homedir(), '.local', 'bin', 'claude');
+}
+
+/** Resuelve el binario de ripgrep (`rg` / `rg.exe`) cross-platform.
+ *  Prioridad: $ECO_RIPGREP/$RG_BIN → binario bundleado del claude-agent-sdk
+ *  (`vendor/ripgrep/<arch>-<plat>/`) → `'rg'` en el PATH.
+ *
+ *  El bundleado es clave en Windows: el `.exe` empaquetado NO está en el PATH,
+ *  así que `spawn('rg')` fallaba y la búsqueda caía a `grep` (inexistente en
+ *  Win). Usar la ruta absoluta del binario que ya se empaqueta lo arregla y
+ *  además hace la búsqueda confiable en Mac sin depender de un `rg` global.
+ *  Devuelve null solo si nada existe. */
+let cachedRgPath: string | null | undefined;
+export function resolveRipgrepPath(): string | null {
+  if (cachedRgPath !== undefined) return cachedRgPath;
+  cachedRgPath = computeRipgrepPath();
+  return cachedRgPath;
+}
+function computeRipgrepPath(): string | null {
+  const override = (process.env.ECO_RIPGREP || process.env.RG_BIN)?.trim();
+  if (override && existsSync(override)) return override;
+
+  // Carpeta vendor por arch: arm64-darwin, x64-win32, x64-linux, etc.
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const plat = IS_WIN ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
+  const binName = IS_WIN ? 'rg.exe' : 'rg';
+  const vendorRel = join('vendor', 'ripgrep', `${arch}-${plat}`, binName);
+
+  // El SDK puede resolverse via require (dev) o estar junto al backend en el
+  // bundle. fileURLToPath, nunca new URL().pathname (rompe en Windows).
+  const candidates: string[] = [];
+  try {
+    const require = createRequire(import.meta.url);
+    const sdkPkg = require.resolve('@anthropic-ai/claude-agent-sdk/package.json');
+    candidates.push(join(dirname(sdkPkg), vendorRel));
+  } catch { /* no resoluble por require: probamos rutas relativas */ }
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  candidates.push(join(moduleDir, '..', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', vendorRel));
+  candidates.push(join(moduleDir, '..', '..', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', vendorRel));
+
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+
+  // Fallback: PATH. Confirmamos que responde a --version (en POSIX típico).
+  try {
+    const r = spawnSync(binName, ['--version'], { encoding: 'utf8', timeout: 4000 });
+    if (r.status === 0 && (r.stdout ?? '').trim().length > 0) return binName;
+  } catch { /* no en PATH */ }
+  return null;
 }
 
 /** Shell interactivo para el PTY. */

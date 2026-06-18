@@ -1122,13 +1122,14 @@ const FsSearchSchema = z.object({
   caseSensitive: z.boolean().optional().default(false),
   includePattern: z.string().max(200).optional(),
   maxResults: z.number().int().min(1).max(2000).optional().default(500),
+  wholeWord: z.boolean().optional().default(false),
 });
 app.post('/fs/search', async (req: Request, res: Response) => {
   const parsed = FsSearchSchema.safeParse(req.body);
   if (!parsed.success) {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
   }
-  const { workspace, bubbleId, query, regex, caseSensitive, includePattern, maxResults } = parsed.data;
+  const { workspace, bubbleId, query, regex, caseSensitive, includePattern, maxResults, wholeWord } = parsed.data;
   if (!isAllowedWorkspace(workspace)) {
     return errResponse(res, 403, 'http.workspace_forbidden', 'Workspace no permitido');
   }
@@ -1143,6 +1144,7 @@ app.post('/fs/search', async (req: Request, res: Response) => {
     caseSensitive,
     includePattern,
     maxResults,
+    wholeWord,
   });
   if (!result.ok) {
     const status = result.code === 'search.timeout' ? 504 : 500;

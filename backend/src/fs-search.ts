@@ -5,8 +5,9 @@
 // Cap 500 hits, timeout 8s. Diseñado para potenciar el panel "Buscar en
 // archivos" de la tab Archivos (Cmd+Shift+F).
 
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { buildSafeEnv } from './security.js';
+import { IS_WIN, resolveRipgrepPath } from './platform.js';
 
 export type SearchHit = {
   path: string;        // relativo al workdir, separador '/' siempre
@@ -17,24 +18,7 @@ export type SearchHit = {
 
 export type SearchResult =
   | { ok: true; hits: SearchHit[]; truncated: boolean; engine: 'rg' | 'grep' }
-  | { ok: false; code: 'search.timeout' | 'search.failed'; error: string };
-
-// Detección cacheada al primer uso. Probamos `rg --version` directo en vez de
-// `which`/`where` — funciona igual en POSIX y Windows y no depende de tener
-// un resolver de PATH específico del SO instalado.
-let rgChecked = false;
-let rgAvailable = false;
-function isRgAvailable(): boolean {
-  if (rgChecked) return rgAvailable;
-  rgChecked = true;
-  try {
-    const r = spawnSync('rg', ['--version'], { encoding: 'utf8', timeout: 4000 });
-    rgAvailable = r.status === 0 && (r.stdout ?? '').trim().length > 0;
-  } catch {
-    rgAvailable = false;
-  }
-  return rgAvailable;
-}
+  | { ok: false; code: 'search.timeout' | 'search.failed' | 'search.no_engine'; error: string };
 
 const SEARCH_TIMEOUT_MS = 8000;
 const PREVIEW_MAX = 200;
@@ -51,30 +35,46 @@ export async function searchInWorkspace(args: {
   caseSensitive: boolean;
   includePattern?: string;
   maxResults: number;
+  wholeWord?: boolean;
 }): Promise<SearchResult> {
-  const { workdir, query, regex, caseSensitive, includePattern, maxResults } = args;
-  const engine: 'rg' | 'grep' = isRgAvailable() ? 'rg' : 'grep';
-  const argv = engine === 'rg'
-    ? buildRgArgv({ query, regex, caseSensitive, includePattern })
-    : buildGrepArgv({ query, regex, caseSensitive });
-  return runSearch({ cmd: argv[0], args: argv.slice(1), cwd: workdir, engine, maxResults });
+  const { workdir, query, regex, caseSensitive, includePattern, maxResults, wholeWord } = args;
+  const rgPath = resolveRipgrepPath();
+  if (rgPath) {
+    const argv = buildRgArgv({ rgPath, query, regex, caseSensitive, includePattern, wholeWord });
+    return runSearch({ cmd: argv[0], args: argv.slice(1), cwd: workdir, engine: 'rg', maxResults });
+  }
+  // Sin ripgrep: en Windows no hay `grep`, así que fallamos con un código claro
+  // en vez de spawnear un binario inexistente. En POSIX caemos a grep.
+  if (IS_WIN) {
+    return Promise.resolve({
+      ok: false, code: 'search.no_engine',
+      error: 'No se encontró ripgrep para la búsqueda',
+    });
+  }
+  const argv = buildGrepArgv({ query, regex, caseSensitive, wholeWord });
+  return runSearch({ cmd: argv[0], args: argv.slice(1), cwd: workdir, engine: 'grep', maxResults });
 }
 
 function buildRgArgv(args: {
+  rgPath: string;
   query: string;
   regex: boolean;
   caseSensitive: boolean;
   includePattern?: string;
+  wholeWord?: boolean;
 }): string[] {
-  const { query, regex, caseSensitive, includePattern } = args;
+  const { rgPath, query, regex, caseSensitive, includePattern, wholeWord } = args;
   const out: string[] = [
-    'rg',
+    rgPath,
     '--json',
     '--max-count=50',
     '--max-filesize=1M',
     caseSensitive ? '--case-sensitive' : '--ignore-case',
   ];
   if (!regex) out.push('--fixed-strings');
+  // --word-regexp envuelve el patrón en límites de palabra (sin lookarounds,
+  // que el motor de Rust no soporta). Ideal para "find usages" de un símbolo.
+  if (wholeWord) out.push('--word-regexp');
   if (includePattern) out.push(`--glob=${includePattern}`);
   // -- separa flags de pattern, para que queries que empiecen con '-' no se
   // interpreten como flag aunque ya pasen como argv.
@@ -86,11 +86,13 @@ function buildGrepArgv(args: {
   query: string;
   regex: boolean;
   caseSensitive: boolean;
+  wholeWord?: boolean;
 }): string[] {
-  const { query, regex, caseSensitive } = args;
+  const { query, regex, caseSensitive, wholeWord } = args;
   const out: string[] = ['grep', '-rn'];
   for (const d of EXCLUDE_DIRS_FOR_GREP) out.push(`--exclude-dir=${d}`);
   if (!caseSensitive) out.push('-i');
+  if (wholeWord) out.push('-w');
   out.push(regex ? '-E' : '-F');
   out.push('--', query, '.');
   return out;
