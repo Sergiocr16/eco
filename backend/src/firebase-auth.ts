@@ -9,6 +9,11 @@
 
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
+// Firebase ID-token claims we read beyond the standard JWT ones.
+interface FirebaseTokenPayload extends JWTPayload {
+  email?: string;
+}
+
 // JWKS de Firebase (formato JWK). jose cachea las claves y respeta el
 // Cache-Control de Google; rota solas.
 const JWKS_URL = new URL(
@@ -46,11 +51,10 @@ export async function verifyFirebaseIdToken(token: string | null | undefined): P
       issuer: `https://securetoken.google.com/${pid}`,
       audience: pid,
     });
-    const uid = typeof payload.sub === 'string' ? payload.sub : null;
+    const p = payload as FirebaseTokenPayload;
+    const uid = typeof p.sub === 'string' ? p.sub : null;
     if (!uid) return null;
-    const email = typeof (payload as JWTPayload & { email?: unknown }).email === 'string'
-      ? ((payload as { email: string }).email)
-      : undefined;
+    const email = typeof p.email === 'string' ? p.email : undefined;
     return { uid, email };
   } catch {
     return null;
