@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
-import { IconFile } from '@/design/icons';
+import { FileTypeIcon } from './file-icon';
 import type { TreeEntry } from './types';
 
 type Props = {
@@ -9,11 +10,14 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onPick: (path: string) => void;
+  recentPaths?: string[];    // archivos abiertos recientemente — flotan arriba.
 };
 
-const MAX_VISIBLE = 50;
+const MAX_VISIBLE = 100;
 
-export function QuickOpen({ entries, open, onClose, onPick }: Props) {
+type Match = { entry: TreeEntry; positions: number[] };
+
+export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props) {
   const t = useTokens();
   const tr = useT();
   const [query, setQuery] = useState('');
@@ -29,18 +33,38 @@ export function QuickOpen({ entries, open, onClose, onPick }: Props) {
     queueMicrotask(() => inputRef.current?.focus());
   }, [open]);
 
-  // Archivos (no dirs) ordenados por score del fuzzy match.
-  const matches = useMemo(() => {
+  // Índice de recientes → rank (0 = más reciente) para bonificar el score.
+  const recentRank = useMemo(() => {
+    const map = new Map<string, number>();
+    (recentPaths ?? []).forEach((p, i) => { if (!map.has(p)) map.set(p, i); });
+    return map;
+  }, [recentPaths]);
+
+  // Archivos (no dirs) ordenados por score del fuzzy match. Con query vacía,
+  // mostramos primero los recientes.
+  const matches = useMemo<Match[]>(() => {
     const files = entries.filter((e) => e.type === 'file');
-    if (!query.trim()) return files.slice(0, MAX_VISIBLE);
+    if (!query.trim()) {
+      const sorted = [...files].sort((a, b) => {
+        const ra = recentRank.has(a.path) ? recentRank.get(a.path)! : Infinity;
+        const rb = recentRank.has(b.path) ? recentRank.get(b.path)! : Infinity;
+        return ra - rb;
+      });
+      return sorted.slice(0, MAX_VISIBLE).map((entry) => ({ entry, positions: [] }));
+    }
     const scored: Array<{ entry: TreeEntry; score: number; positions: number[] }> = [];
     for (const f of files) {
       const m = fuzzyMatch(query, f.path);
-      if (m) scored.push({ entry: f, score: m.score, positions: m.positions });
+      if (m) {
+        // Bonus por reciente: cuanto más arriba en la lista, más peso.
+        const rank = recentRank.get(f.path);
+        const recentBonus = rank === undefined ? 0 : Math.max(0, 12 - rank);
+        scored.push({ entry: f, score: m.score + recentBonus, positions: m.positions });
+      }
     }
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, MAX_VISIBLE).map((s) => s.entry);
-  }, [entries, query]);
+    return scored.slice(0, MAX_VISIBLE).map((s) => ({ entry: s.entry, positions: s.positions }));
+  }, [entries, query, recentRank]);
 
   // Mantener focused dentro del rango.
   useEffect(() => {
@@ -84,7 +108,7 @@ export function QuickOpen({ entries, open, onClose, onPick }: Props) {
             if (e.key === 'Enter') {
               e.preventDefault();
               const pick = matches[focusedIdx];
-              if (pick) { onPick(pick.path); onClose(); }
+              if (pick) { onPick(pick.entry.path); onClose(); }
               return;
             }
           }}
@@ -103,14 +127,20 @@ export function QuickOpen({ entries, open, onClose, onPick }: Props) {
           ) : (
             matches.map((m, idx) => {
               const isActive = idx === focusedIdx;
-              const segs = m.path.split('/');
-              const name = segs[segs.length - 1];
-              const dir = segs.slice(0, -1).join('/');
+              const path = m.entry.path;
+              const lastSep = path.lastIndexOf('/');
+              const name = lastSep >= 0 ? path.slice(lastSep + 1) : path;
+              const dir = lastSep >= 0 ? path.slice(0, lastSep) : '';
+              // positions del fuzzy son índices sobre el path completo; los
+              // separamos en posiciones del nombre vs del dir.
+              const nameStart = lastSep + 1;
+              const namePos = m.positions.filter((p) => p >= nameStart).map((p) => p - nameStart);
+              const dirPos = m.positions.filter((p) => p < lastSep);
               return (
                 <div
-                  key={m.path}
+                  key={path}
                   data-idx={idx}
-                  onMouseDown={(e) => { e.preventDefault(); onPick(m.path); onClose(); }}
+                  onMouseDown={(e) => { e.preventDefault(); onPick(path); onClose(); }}
                   onMouseEnter={() => setFocusedIdx(idx)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
@@ -120,11 +150,13 @@ export function QuickOpen({ entries, open, onClose, onPick }: Props) {
                     color: isActive ? t.text0 : t.text1,
                   }}
                 >
-                  <IconFile size={13} style={{ color: t.text2 }}/>
-                  <span style={{ fontWeight: 500 }}>{name}</span>
+                  <FileTypeIcon path={path} size={14}/>
+                  <span style={{ fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {highlight(name, namePos, t.accent)}
+                  </span>
                   {dir && (
-                    <span style={{ color: t.text3, fontSize: 11, marginLeft: 'auto', fontFamily: t.fontMono }}>
-                      {dir}
+                    <span style={{ color: t.text3, fontSize: 11, marginLeft: 'auto', fontFamily: t.fontMono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>
+                      {highlight(dir, dirPos, t.accent)}
                     </span>
                   )}
                 </div>
@@ -135,6 +167,30 @@ export function QuickOpen({ entries, open, onClose, onPick }: Props) {
       </div>
     </div>
   );
+}
+
+// Renderiza `text` con los chars en `positions` (índices relativos a `text`)
+// resaltados en color accent + bold. Posiciones fuera de rango se ignoran.
+function highlight(text: string, positions: number[], accent: string) {
+  if (positions.length === 0) return text;
+  const set = new Set(positions);
+  const out: ReactNode[] = [];
+  let run = '';
+  let runHi = false;
+  const flush = (key: number) => {
+    if (!run) return;
+    out.push(runHi
+      ? <span key={key} style={{ color: accent, fontWeight: 700 }}>{run}</span>
+      : <span key={key}>{run}</span>);
+    run = '';
+  };
+  for (let i = 0; i < text.length; i++) {
+    const hi = set.has(i);
+    if (hi !== runHi) { flush(i); runHi = hi; }
+    run += text[i];
+  }
+  flush(text.length);
+  return out;
 }
 
 // Fuzzy match casero. Devuelve null si no matchea (algún char del query no

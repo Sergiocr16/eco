@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
 import { apiFetch } from '@/lib/api';
@@ -7,6 +8,9 @@ type Props = {
   bubbleId: string;
   workspace: string;
   onPick: (path: string, line: number, column: number) => void;
+  // Semilla para precargar la búsqueda desde "find usages" (Cmd/Ctrl+click o
+  // Shift+F12 en el editor). `nonce` fuerza re-semilla aunque la palabra repita.
+  seed?: { query: string; wholeWord: boolean; nonce: number } | null;
 };
 
 type Hit = {
@@ -16,16 +20,28 @@ type Hit = {
   preview: string;
 };
 
-const DEBOUNCE_MS = 350;
+const DEBOUNCE_MS = 200;
 
-export function GlobalSearch({ bubbleId, workspace, onPick }: Props) {
+export function GlobalSearch({ bubbleId, workspace, onPick, seed }: Props) {
   const t = useTokens();
   const tr = useT();
 
   const [query, setQuery] = useState('');
   const [regex, setRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
   const [includePattern, setIncludePattern] = useState('');
+
+  // Semilla de "find usages": precarga query + palabra-completa y limpia regex.
+  const lastSeedNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!seed || seed.nonce === lastSeedNonce.current) return;
+    lastSeedNonce.current = seed.nonce;
+    setQuery(seed.query);
+    setWholeWord(seed.wholeWord);
+    setRegex(false);
+    inputRef.current?.focus();
+  }, [seed]);
 
   const [hits, setHits] = useState<Hit[]>([]);
   const [truncated, setTruncated] = useState(false);
@@ -52,14 +68,19 @@ export function GlobalSearch({ bubbleId, workspace, onPick }: Props) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            bubbleId, workspace, query, regex, caseSensitive,
+            bubbleId, workspace, query, regex, caseSensitive, wholeWord,
             includePattern: includePattern.trim() || undefined,
             maxResults: 500,
           }),
         });
         if (!r.ok) {
           const data = await r.json().catch(() => ({})) as { error?: string };
-          setError(data.error === 'search.timeout' ? tr('berr.search.timeout') : tr('berr.search.failed'));
+          const code = data.error;
+          setError(
+            code === 'search.timeout' ? tr('berr.search.timeout')
+            : code === 'search.no_engine' ? tr('berr.search.no_engine')
+            : tr('berr.search.failed'),
+          );
           setHits([]);
           setLoading(false);
           return;
@@ -74,7 +95,7 @@ export function GlobalSearch({ bubbleId, workspace, onPick }: Props) {
       }
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
-  }, [query, regex, caseSensitive, includePattern, bubbleId, workspace, tr]);
+  }, [query, regex, caseSensitive, wholeWord, includePattern, bubbleId, workspace, tr]);
 
   // Agrupar por path.
   const groups = useMemo(() => {
@@ -110,6 +131,10 @@ export function GlobalSearch({ bubbleId, workspace, onPick }: Props) {
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
             <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)}/>
             {tr('files.search.case_sensitive')}
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={wholeWord} onChange={(e) => setWholeWord(e.target.checked)}/>
+            {tr('files.search.whole_word')}
           </label>
         </div>
         <input
@@ -147,13 +172,19 @@ export function GlobalSearch({ bubbleId, workspace, onPick }: Props) {
       )}
       {/* Resultados agrupados */}
       <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
-        {groups.map(([p, hs]) => (
+        {groups.map(([p, hs]) => {
+          const lastSep = p.lastIndexOf('/');
+          const name = lastSep >= 0 ? p.slice(lastSep + 1) : p;
+          const dir = lastSep >= 0 ? p.slice(0, lastSep) : '';
+          return (
           <div key={p} style={{ marginBottom: 4 }}>
             <div style={{
-              padding: '4px 10px', fontSize: 11, color: t.text1, fontFamily: t.fontMono,
-              fontWeight: 600, background: t.bg2,
+              display: 'flex', alignItems: 'baseline', gap: 6,
+              padding: '4px 10px', fontSize: 11, fontFamily: t.fontMono,
+              background: t.bg2,
             }}>
-              {p}
+              <span style={{ color: t.text1, fontWeight: 600 }}>{name}</span>
+              {dir && <span style={{ color: t.text3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{dir}</span>}
             </div>
             {hs.map((h, idx) => (
               <button
@@ -176,13 +207,44 @@ export function GlobalSearch({ bubbleId, workspace, onPick }: Props) {
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   flex: 1, minWidth: 0,
                 }}>
-                  {h.preview.trim()}
+                  {highlightPreview(h.preview.trim(), query, regex, caseSensitive, t.accent)}
                 </span>
               </button>
             ))}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
+}
+
+// Resalta las coincidencias de la query dentro de la línea de preview. En modo
+// no-regex resalta ocurrencias literales (case-(in)sensitive); en regex intenta
+// compilar la query y resaltar sus matches. Si algo falla, devuelve el texto plano.
+function highlightPreview(
+  preview: string, query: string, regex: boolean, caseSensitive: boolean, accent: string,
+): ReactNode {
+  const q = query.trim();
+  if (!q) return preview;
+  let re: RegExp;
+  try {
+    const flags = caseSensitive ? 'g' : 'gi';
+    re = new RegExp(regex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+  } catch {
+    return preview;
+  }
+  const out: ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let guard = 0;
+  while ((m = re.exec(preview)) !== null && guard < 200) {
+    guard++;
+    if (m.index > last) out.push(preview.slice(last, m.index));
+    out.push(<span key={`${m.index}-${guard}`} style={{ color: accent, fontWeight: 700 }}>{m[0]}</span>);
+    last = m.index + m[0].length;
+    if (m[0].length === 0) re.lastIndex++;  // evita loop infinito en match vacío
+  }
+  if (last < preview.length) out.push(preview.slice(last));
+  return out.length ? out : preview;
 }

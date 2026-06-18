@@ -7,6 +7,7 @@ import { useT } from '@/hooks/useI18n';
 import { IconX } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { baseExtensions, type SelectionInfo } from './cm-extensions';
+import { FileTypeIcon } from './file-icon';
 import { loadLang } from './lang-loader';
 import { openInIde, resolveAbsPath, getExternalIde, ideDisplayLabel } from '@/lib/ide-uri';
 import type { OpenFile } from './types';
@@ -29,11 +30,13 @@ type Props = {
   onSave: (path: string) => void;
   pendingGoto?: { path: string; line: number; column: number } | null;
   onGotoConsumed?: () => void;
+  onRevealDir?: (dirPath: string) => void;
+  onFindUsages?: (word: string) => void;
 };
 
 export function FileEditor({
   file, openFiles, bubbleId, workspace, onActivate, onClose, onContentChange, onSendToClaude, onSave,
-  pendingGoto, onGotoConsumed,
+  pendingGoto, onGotoConsumed, onRevealDir, onFindUsages,
 }: Props) {
   const t = useTokens();
   const { effectiveMode } = useTheme();
@@ -44,8 +47,8 @@ export function FileEditor({
   const langCompartmentRef = useRef<Compartment>(new Compartment());
   const themeCompartmentRef = useRef<Compartment>(new Compartment());
   // Mantener callbacks frescos sin re-crear el editor en cada render.
-  const cbRef = useRef({ onContentChange, onSendToClaude, onSave, file });
-  useEffect(() => { cbRef.current = { onContentChange, onSendToClaude, onSave, file }; }, [onContentChange, onSendToClaude, onSave, file]);
+  const cbRef = useRef({ onContentChange, onSendToClaude, onSave, file, onFindUsages });
+  useEffect(() => { cbRef.current = { onContentChange, onSendToClaude, onSave, file, onFindUsages }; }, [onContentChange, onSendToClaude, onSave, file, onFindUsages]);
 
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const [hostRect, setHostRect] = useState<DOMRect | null>(null);
@@ -77,6 +80,7 @@ export function FileEditor({
             onSelectionChange: (sel) => {
               setSelection(sel.empty ? null : sel);
             },
+            onFindUsages: (word) => cbRef.current.onFindUsages?.(word),
           })),
         ],
       }),
@@ -127,6 +131,7 @@ export function FileEditor({
         onSelectionChange: (sel) => {
           setSelection(sel.empty ? null : sel);
         },
+        onFindUsages: (word) => cbRef.current.onFindUsages?.(word),
       })),
     });
     // Cargar lang pack para este archivo. Async — al volver, reconfiguramos.
@@ -214,6 +219,7 @@ export function FileEditor({
               onClick={() => onActivate(f.path)}
               title={f.path}
             >
+              <FileTypeIcon path={f.path} size={13}/>
               <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {f.path.split('/').pop()}
               </span>
@@ -277,6 +283,10 @@ export function FileEditor({
           );
         })()}
       </div>
+      )}
+      {/* Breadcrumb de ruta del archivo activo — segmentos clickables */}
+      {activeFile && !isImage && (
+        <Breadcrumb path={activeFile.path} onRevealDir={onRevealDir}/>
       )}
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -351,6 +361,49 @@ export function FileEditor({
         )}
       </div>
     </>
+  );
+}
+
+// Breadcrumb de la ruta del archivo activo. Las carpetas son clickables (revelan
+// en el árbol); el último segmento es el archivo con su icono por tipo.
+function Breadcrumb({ path, onRevealDir }: { path: string; onRevealDir?: (dir: string) => void }) {
+  const t = useTokens();
+  const segs = path.split('/').filter(Boolean);
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: 2,
+      padding: '3px 10px', minHeight: 24, overflow: 'auto', flexShrink: 0,
+      borderBottom: `1px solid ${t.glassBorder}`, background: t.bg1,
+      fontFamily: t.fontSans, fontSize: 11, color: t.text2,
+    }}>
+      {segs.map((seg, i) => {
+        const isLast = i === segs.length - 1;
+        const dirPath = segs.slice(0, i + 1).join('/');
+        return (
+          <span key={dirPath} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            {i > 0 && <span style={{ color: t.text3, padding: '0 1px' }}>›</span>}
+            {isLast && <FileTypeIcon path={path} size={12}/>}
+            {isLast ? (
+              <span style={{ color: t.text1, fontWeight: 600 }}>{seg}</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onRevealDir?.(dirPath)}
+                style={{
+                  background: 'transparent', border: 0, padding: '1px 3px', borderRadius: 4,
+                  color: t.text2, cursor: onRevealDir ? 'pointer' : 'default',
+                  fontFamily: t.fontSans, fontSize: 11,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = t.text0; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = t.text2; }}
+              >
+                {seg}
+              </button>
+            )}
+          </span>
+        );
+      })}
+    </div>
   );
 }
 

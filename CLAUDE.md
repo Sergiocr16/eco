@@ -324,9 +324,11 @@ The "Hablar a la terminal" button in the bubble header turns the mic on, accumul
 - Op-in-progress detection: `git rev-parse --git-dir` resolves the real `.git` path (in worktrees it's a file, not a dir), then `existsSync(CHERRY_PICK_HEAD|MERGE_HEAD|REVERT_HEAD)`.
 
 ### FilesPanel
-- `frontend/src/components/FilesPanel/{FilesPanel,FileEditor,FileTree,QuickOpen}.tsx`
-- `backend/src/fs-{tree,search,paths}.ts`
-- Editor: CodeMirror 6.
+- `frontend/src/components/FilesPanel/{FilesPanel,FileEditor,FileTree,FileTreeNode,QuickOpen,GlobalSearch}.tsx`
+- `frontend/src/components/FilesPanel/{cm-extensions,cm-theme,bracket-colors,lang-loader,file-icon}.ts(x)` — editor extensions, fixed IDE syntax palette, rainbow brackets, lazy lang packs, file-type icons.
+- `backend/src/fs-{tree,search,paths}.ts` — `fs-search.ts` resolves the bundled ripgrep via `platform.ts:resolveRipgrepPath()` and supports `wholeWord` (`--word-regexp`).
+- Tree virtualized with `@tanstack/react-virtual`; indent guides via `@replit/codemirror-indentation-markers`.
+- Find usages (Cmd/Ctrl+click, Shift+F12) reuses Global Search with whole-word; scroll-to-path via `eco:files:reveal_path` (eco-bus). Editor: CodeMirror 6.
 
 ### NotesPanel
 - `frontend/src/components/NotesPanel/{NotesPanel,NotesList,NoteEditor}.tsx`
@@ -775,10 +777,15 @@ State persists per bubble in `eco.review.accepted.<bubbleId>` as `{[path]: times
 **Files** tab in each conversation. Mini-VS-Code inside the agent's worktree. Resizable split: tree left, tabbed editor right.
 
 - **Lazy gitignore-aware tree**: backend uses `git ls-files --cached --others --exclude-standard` (fast, respects `.gitignore`) or a manual walker with `EXCLUDED_DIRS` if not a git repo. Cap **5000** entries per bubble (`MAX_ENTRIES` in `fs-tree.ts`). Expands on-demand on dir click. Toolbar: Expand all / Collapse all / Refresh.
-- **CodeMirror 6 editor**: ~138 KB gzip (+1.5 MB in .dmg, vs ~15 MB for Monaco). Eager syntax highlighting for TS/JS/JSON/CSS/HTML/MD; the rest lazy via `@codemirror/language-data`. Theme derived from Eco design tokens with neutral background (pure black/white) so contrast holds across themes.
+  - **Virtualized**: `FileTree.tsx` flattens the expanded tree to a linear `{entry, depth}[]` row list and renders it with `@tanstack/react-virtual` (only viewport rows mount). `FileTreeNode.tsx` is a flat `React.memo` row (no recursion) — fluid with thousands of files. Because off-viewport nodes aren't in the DOM, scroll-to-path goes through the `eco:files:reveal_path` eco-bus event → `virtualizer.scrollToIndex` (not `querySelector`+`scrollIntoView`). File-type icons via `file-icon.tsx:FileTypeIcon`.
+- **CodeMirror 6 editor**: ~138 KB gzip (+1.5 MB in .dmg, vs ~15 MB for Monaco). Eager syntax highlighting for TS/JS/JSON/CSS/HTML/MD; the rest lazy via `@codemirror/language-data`. Neutral background (pure black/white) so contrast holds across themes.
+  - **IDE-style syntax**: `cm-theme.ts` ships a **fixed multi-color palette** (VSCode Dark+/Light+: `PALETTE_DARK`/`PALETTE_LIGHT`) — keywords violet, strings green, numbers orange, functions yellow, types teal — **independent of the theme accent** (the accent only tints the editor "chrome": cursor, selection, active line, brackets). Do NOT revert this to the old accent-tinted monochrome highlight.
+  - **Indent guides** via `@replit/codemirror-indentation-markers` (colors from the accent). **Bracket-pair colorization** (rainbow brackets) via `bracket-colors.ts` — a `ViewPlugin` decorating brackets by nesting depth (classes `.eco-bracket-d0..d5`, palette `BRACKET_COLORS_DARK/LIGHT` in `cm-theme.ts`). Best-effort char-scan (doesn't skip strings/comments), viewport-only with a 150 KB seed cap.
+  - **Breadcrumb** above the editor (`Breadcrumb` in `FileEditor.tsx`): segmented clickable path; folder segments call `onRevealDir` → `revealDir` in FilesPanel; last segment shows the file-type icon. Tabs also show the file-type icon.
 - **Explicit save** with `Cmd+S` + dirty indicator. `POST /file/save` takes `expectedMtime` to detect conflicts. On conflict, the UI opens a Reload / Overwrite dialog.
 - **Unstaged changes visible from the tree**: combines editor dirty + git status. Files in either state show amber; ancestor folders show a dimmed dot. On commit, dots clear.
-- **Find-in-file** (`Cmd+F`, CodeMirror native) + **Quick Open** (`Cmd+P`, fuzzy filter over cached tree, `maxDepth=6` on first open) + **Global Search** (`Cmd+Shift+F`, ripgrep with `grep -rn` fallback, 8 s timeout, 500 hits cap, click navigates to line/column).
+- **Find-in-file** (`Cmd+F`, CodeMirror native) + **Quick Open** (`Cmd+P`, fuzzy filter over cached tree, `maxDepth=6` on first open; matched chars highlighted, file-type icons, recently-opened boost via `recentPaths`) + **Global Search** (`Cmd+Shift+F`, ripgrep with `grep -rn` POSIX fallback, 8 s timeout, 500 hits cap, 200 ms debounce, match highlighted in preview, click navigates to line/column).
+- **Find usages** (textual, NOT semantic — there is no LSP): **Cmd/Ctrl+click** on a symbol, or **Shift+F12** with the cursor on it, grabs the word under cursor (`view.state.wordAt`) and opens Global Search seeded with that word + **whole-word** on (`onFindUsages` in FilesPanel → `searchSeed` → `GlobalSearch` `seed` prop). Whole-word uses ripgrep `--word-regexp` (`-w` for grep) — see the `wholeWord` flag on `/fs/search`. Finds the literal word everywhere (incl. comments/strings/homonyms); good for unique names, noisy for generic ones. Wired in `cm-extensions.ts` (`triggerFindUsages` + `domEventHandlers` mousedown + `Shift-F12` keymap).
 - **Send to Claude**: text-selection floating button → switches to Terminal and types the snippet (path + fenced code) to the agent's PTY without trailing newline.
 - **Image preview**: PNG/JPG/GIF/WEBP/SVG/ICO/BMP rendered inline via `GET /file/raw` (extension whitelist + **`RAW_MAX_SIZE` 5 MB** cap).
 - **Deep-link from Git → Changes**: each row has "Open in Files" → switches tab, expands ancestors, scrolls, opens.
@@ -803,7 +810,7 @@ If you ever consider re-evaluating, the integration points to know:
 
 ```
 POST /fs/tree       {workspace, bubbleId, path, maxDepth}
-POST /fs/search     {workspace, bubbleId, query}
+POST /fs/search     {workspace, bubbleId, query, regex?, caseSensitive?, wholeWord?, includePattern?, maxResults?}
 POST /file/contents {workspace, bubbleId, path}     (cap 512 KB)
 POST /file/save     {workspace, bubbleId, path, content, expectedMtime}
 GET  /file/raw      ?workspace&bubbleId&path        (5 MB cap, whitelist)
@@ -1587,8 +1594,9 @@ The single home for OS-dependent primitives. **Never inline a shell, `lsof`, `pr
 | `killTree(pid, sig)` | `process.kill(-pgid, sig)` (group) | `taskkill /PID <pid> /T /F` (tree) |
 | `killPid(pid, sig)` | `process.kill(pid, sig)` | `taskkill /PID <pid> /F` |
 | `resolveClaudeCli()` | `~/.local/bin/claude` | `$CLAUDE_CLI_PATH` → `~/.local/bin/claude.exe` → `where claude` (prefers `.exe`) |
+| `resolveRipgrepPath()` | bundled `vendor/ripgrep/arm64-darwin/rg` → PATH `rg` | `$ECO_RIPGREP`/`$RG_BIN` → bundled `vendor/ripgrep/x64-win32/rg.exe` → PATH | 
 
-Wired into: `pty-server.ts` (`defaultShell`), `dev-server.ts` (spawn via `shellRun`+`detachForGroup`, ports via `pidsOnPort`, kill via `killTree`/`killPid`, PATH joined with `path.delimiter`), `shell.ts` (`shRun`), `config.ts` (`claudeCliPath = resolveClaudeCli()`).
+Wired into: `pty-server.ts` (`defaultShell`), `dev-server.ts` (spawn via `shellRun`+`detachForGroup`, ports via `pidsOnPort`, kill via `killTree`/`killPid`, PATH joined with `path.delimiter`), `shell.ts` (`shRun`), `config.ts` (`claudeCliPath = resolveClaudeCli()`), `fs-search.ts` (`resolveRipgrepPath()`).
 
 > **Why prefer a real `claude.exe` over the npm `.cmd` shim**: spawning a `.cmd` on Windows needs `shell:true`, which re-parses args — several call sites (`git-ops`, `notes-summary`) pass the prompt as argv, so a shim would break quoting / invite injection. With a real `.exe` no shell is needed and args stay safe. If a user only has the `.cmd` shim, set `CLAUDE_CLI_PATH` to a real exe.
 
@@ -1598,7 +1606,7 @@ Wired into: `pty-server.ts` (`defaultShell`), `dev-server.ts` (spawn via `shellR
 - **`config.ts:isAllowedWorkspace` + `git-ops.ts` worktree-conflict cleanup** — the `~/.eco/worktrees` root was built as `` `${homedir()}/.eco/worktrees` `` (hardcoded `/`), so on Windows it mixed separators (`C:\Users\x/.eco/worktrees`) and never `startsWith`-matched the native-separator realpath → every bubble's Files/`/fs/tree` returned `http.workspace_forbidden` ("no autorizado"). Now built with `resolve(homedir(), '.eco', 'worktrees')`; the git-ops path (git emits `/` even on Windows) normalizes both sides to `path.sep` before comparing.
 - **`security.ts:buildSafeEnv`** — **passthrough + denylist**, not an allowlist: spawned children inherit ALL of `process.env` minus the `ECO_` prefix, so installed toolchains (`JAVA_HOME`, etc.) just work on both OSes (this replaced the old per-OS key allowlist, which silently broke `mvnw`/`gradlew` with "JAVA_HOME not found" and any non-listed tool). `PATH` is split/joined with `path.delimiter` and augmented with `EXTRA_PATH_DIRS`: Homebrew + `~/.local/bin` on POSIX, `%APPDATA%\npm` (npm global) + `%USERPROFILE%\.local\bin` (claude) on Windows — so `claude`/`gh`/`mvn` resolve when the app is launched from the OS launcher with a minimal PATH. The Windows-critical keys (`SystemRoot`, `PATHEXT`, `ComSpec`, …) now flow through automatically as part of the full passthrough.
 - **`mcp-config.ts` + `index.ts`** — module paths via `fileURLToPath(import.meta.url)` (the old `new URL(...).pathname` returns `/C:/…` on Windows and breaks `path.resolve`; it also leaves `%20` for spaces, so this is a latent fix on macOS too).
-- **`fs-search.ts`** — ripgrep detection probes `rg --version` directly instead of `which rg` (no `which` on Windows). No `rg` on PATH → graceful `grep` fallback (which won't exist on Windows → global search just degrades, never crashes).
+- **`fs-search.ts`** — uses **`platform.ts:resolveRipgrepPath()`** to spawn the **bundled** ripgrep by absolute path (`vendor/ripgrep/<arch>-<plat>/rg[.exe]`), NOT a bare `rg` on PATH. This is the Windows fix: the packaged `rg.exe` is in `node_modules`, not on PATH, so the old `spawn('rg')` failed and fell back to `grep` (absent on Windows → search silently dead). Now ripgrep works on both OSes without a global install; the `grep` fallback is POSIX-only, and on Windows-without-ripgrep the endpoint returns `search.no_engine` instead of spawning a missing binary.
 - **`auth.ts`** — `chmodSync` calls wrapped in try/catch (no-op on NTFS).
 - **Voice (`useVoice.ts`)** — terminal dictation STT is **macOS-only** (the Swift `eco-stt` + Apple Speech). `isSupported` is forced `false` on non-darwin Electron via `ecoPlatform()` so `AgentDetail` hides the "Hablar a la terminal" button. The `/voice/transcribe-blob` endpoint already 501s off-darwin. To add Windows dictation you'd need a Windows STT helper (System.Speech / Windows.Media.SpeechRecognition) + re-enable the gate.
 - **`getTopInset()` (`frontend/lib/platform.ts`)** — returns 36px **only on macOS** (traffic-light inset for `titleBarStyle: hiddenInset`). On Windows/Linux it returns 0 — the native frame already owns the top, so reserving 36px left an empty strip ("border") that looked wrong, especially maximized/fullscreen.

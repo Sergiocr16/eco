@@ -46,6 +46,7 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
   // plano). Lo necesitamos para normalizar paths que vengan absolutos desde
   // fuentes externas (ej. useGitChanges devuelve paths con prefijo absoluto).
   const treeRootRef = useRef<string>('');
+  const treeScrollRef = useRef<HTMLDivElement>(null);
 
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => loadExpanded(bubbleId));
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
@@ -203,13 +204,32 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
     }
     setActiveFilePath(relPath);
 
-    // 3. Scrollear el nodo al viewport del tree. Doble rAF para esperar a
-    //    que React renderice los hijos recién expandidos.
+    // 3. Scrollear el nodo al viewport del tree. Doble rAF para esperar a que
+    //    React renderice las filas recién expandidas; FileTree (virtualizado)
+    //    escucha el evento y hace scrollToIndex.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLButtonElement>(`[data-tree-path="${cssEscape(relPath)}"]`);
-      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      emit('eco:files:reveal_path', { path: relPath });
     }));
   }, [openFiles, bubbleId, workspace, loadedDirs, loadDir]);
+
+  // Revela una carpeta en el árbol (expande ancestros + a sí misma, scrollea).
+  // Lo usa el breadcrumb del editor al clickear un segmento de ruta.
+  const revealDir = useCallback((dirPath: string) => {
+    const segs = dirPath.split('/').filter(Boolean);
+    const chain: string[] = [];
+    for (let i = 1; i <= segs.length; i++) chain.push(segs.slice(0, i).join('/'));
+    if (chain.length > 0) {
+      setExpandedDirs((prev) => {
+        const next = new Set(prev);
+        for (const a of chain) next.add(a);
+        return next;
+      });
+      for (const a of chain) { if (!loadedDirs.has(a)) void loadDir(a); }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      emit('eco:files:reveal_path', { path: dirPath });
+    }));
+  }, [loadedDirs, loadDir]);
 
   // Listener para deep-links externos (ej. desde el tab Git → Cambios). El
   // emisor manda eco:switch_tab → 'files' + eco:files:open_path con el path.
@@ -275,6 +295,16 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
     setPendingGoto({ path: relPath, line, column });
     await onOpenFile(relPath);
   }, [onOpenFile]);
+
+  // "Find usages": Cmd/Ctrl+click o Shift+F12 sobre un símbolo en el editor →
+  // abre la búsqueda con esa palabra (palabra-completa) para ver dónde se usa.
+  const findUsagesNonce = useRef(0);
+  const [searchSeed, setSearchSeed] = useState<{ query: string; wholeWord: boolean; nonce: number } | null>(null);
+  const onFindUsages = useCallback((word: string) => {
+    findUsagesNonce.current += 1;
+    setSearchSeed({ query: word, wholeWord: true, nonce: findUsagesNonce.current });
+    setLeftView('search');
+  }, []);
 
   // Keyboard shortcuts: Cmd+P (Quick Open) y Cmd+Shift+F (Global Search).
   useEffect(() => {
@@ -455,7 +485,7 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
                   </svg>
                 </TreeToolbarBtn>
               </div>
-            <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
+            <div ref={treeScrollRef} style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
               {treeLoading ? (
                 <div style={{ padding: 12, color: t.text2, fontSize: 13 }}>{tr('files.tree.loading')}</div>
               ) : treeError ? (
@@ -470,6 +500,7 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
                   dirtyPaths={dirtyPaths}
                   onToggleDir={onToggleDir}
                   onOpenFile={onOpenFile}
+                  scrollRef={treeScrollRef}
                 />
               )}
               {truncated && (
@@ -488,6 +519,7 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
               bubbleId={bubbleId}
               workspace={workspace}
               onPick={onPickSearchResult}
+              seed={searchSeed}
             />
           )}
         </div>
@@ -506,6 +538,8 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
             onSave={saveFile}
             pendingGoto={pendingGoto}
             onGotoConsumed={() => setPendingGoto(null)}
+            onRevealDir={revealDir}
+            onFindUsages={onFindUsages}
           />
           {staleConflict && (
             <StaleConflictDialog
@@ -518,6 +552,7 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
           <QuickOpen
             open={quickOpen}
             entries={fullTreeEntries ?? entries}
+            recentPaths={[activeFilePath, ...openFiles.map((f) => f.path)].filter((p): p is string => !!p)}
             onClose={() => setQuickOpen(false)}
             onPick={(p) => { onOpenFile(p); setQuickOpen(false); }}
           />
@@ -660,15 +695,6 @@ function mergeEntries(prev: TreeEntry[], next: TreeEntry[]): TreeEntry[] {
 function compareEntries(a: TreeEntry, b: TreeEntry): number {
   if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
   return a.path.localeCompare(b.path, undefined, { sensitivity: 'base' });
-}
-
-// Escape para uso en selectores [attr="..."] — los paths pueden tener
-// caracteres que rompen el selector. Si CSS.escape está disponible (browsers
-// modernos), lo usamos; sino fallback a un escape manual de "\\" y comillas.
-function cssEscape(s: string): string {
-  const w = window as unknown as { CSS?: { escape?: (s: string) => string } };
-  if (w.CSS?.escape) return w.CSS.escape(s);
-  return s.replace(/(["\\])/g, '\\$1');
 }
 
 function loadExpanded(bubbleId: string): Set<string> {

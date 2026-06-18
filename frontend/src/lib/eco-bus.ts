@@ -67,6 +67,10 @@ export type EcoBusEvents = {
   // Pone foco en el textarea del chat. Disparado junto con set_chat_draft
   // después de cambiar a la tab chat con switch_tab.
   'eco:focus_chat_input': { bubbleId: string };
+  // Pide al FileTree (virtualizado) scrollear hasta una ruta. Lo emiten los
+  // reveals (abrir archivo, breadcrumb): con virtualización los nodos fuera
+  // de viewport no están en el DOM para un scrollIntoView directo.
+  'eco:files:reveal_path': { path: string };
   // Pide a la tab Archivos que abra un archivo específico. Útil para deep-links
   // desde otras tabs (ej. desde "Cambios" del Git, click en archivo → abrirlo
   // en el editor). El emisor normalmente dispara switch_tab → files antes.
