@@ -37,7 +37,26 @@ const IS_WIN = process.platform === 'win32';
 // Prefijos de variables internas de Eco que NO se filtran a procesos
 // spawneados (config/puertos/ids del backend; el bearer vive en ~/.eco/token,
 // la API key se inyecta explícitamente vía `extras`, no por env del proceso).
-const ENV_DENY_PREFIXES = ['ECO_'];
+// `CLAUDE_CODE_` = identidad de la sesión de Claude Code del backend: si Eco se
+// lanzó desde una sesión `claude`, el process.env del backend trae
+// CLAUDE_CODE_SESSION_ID/ENTRYPOINT/EXECPATH/CHILD_SESSION. Heredarlas hace que
+// el `claude` interactivo del PTY se crea hijo anidado y NO persista su propia
+// sesión -> `/resume` en la terminal queda vacío. El allowlist viejo las
+// filtraba; el passthrough las reintrodujo (regresión).
+const ENV_DENY_PREFIXES = ['ECO_', 'CLAUDE_CODE_'];
+
+// Variables de "identidad ambiental" sueltas que tampoco deben heredarse:
+// - CLAUDECODE/CLAUDE_EFFORT: marcan ejecución anidada de Claude Code.
+// - TERM_SESSION_ID/TERM_PROGRAM*: identidad del terminal anfitrión; en zsh
+//   disparan el restore de sesión de Apple Terminal ("Restored session...")
+//   dentro del PTY de Eco y confunden la detección de TTY.
+const ENV_DENY_EXACT = new Set([
+  'CLAUDECODE',
+  'CLAUDE_EFFORT',
+  'TERM_SESSION_ID',
+  'TERM_PROGRAM',
+  'TERM_PROGRAM_VERSION',
+]);
 
 // Directorios bin que el SO NO siempre incluye en el PATH cuando la app se
 // lanza desde su launcher (Finder/Dock en mac, acceso directo en Windows).
@@ -83,9 +102,14 @@ export function buildSafeEnv(extras: Record<string, string | undefined> = {}): R
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined) continue;
     if (ENV_DENY_PREFIXES.some((p) => k.startsWith(p))) continue;
+    if (ENV_DENY_EXACT.has(k)) continue;
     env[k] = v;
   }
   env.PATH = augmentedPath();
+  // El PTY de Eco no es Apple Terminal — desactivá el guardado/restore de
+  // sesión de zsh para que no escupa "Restored session" ni intente borrar
+  // archivos en ~/.zsh_sessions. Un extras puede pisarlo si hiciera falta.
+  env.SHELL_SESSIONS_DISABLE = '1';
   for (const [k, v] of Object.entries(extras)) {
     if (v) env[k] = v;
   }
