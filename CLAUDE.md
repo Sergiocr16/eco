@@ -1160,6 +1160,18 @@ If any fails, the PR is not ready.
 > generator, install/SmartScreen notes), see **Appendix E**. Both share
 > `npm run build:all`; only the final `electron-builder` target differs.
 
+### Auto-update (electron-updater → GitHub Releases)
+
+The packaged app self-updates against the **public** repo `Sergiocr16/eco` via `electron-updater` (config: `publish` block in `electron-builder.config.cjs`). Wired in `electron/main.cjs` (`setupAutoUpdater`, IPC `eco:check-updates` / `eco:install-update`, gate `UPDATES_ENABLED = app.isPackaged && process.platform === 'win32'`), `electron/preload.cjs` (bridge), `frontend/.../UpdateBanner.tsx` + `Settings.tsx:UpdatesRow`. Public repo → no runtime token needed to download.
+
+- **Windows only** for now. **macOS auto-update is inert**: electron-updater requires a signed + notarized app (`identity:null` today). To enable later: Developer ID cert + `afterSign` with `@electron/notarize`, then flip `UPDATES_ENABLED` to include darwin (the `zip` mac target is already in the config).
+- **Release flow — automated (preferred)**: the GitHub Actions workflow `.github/workflows/release-win.yml` (runner `windows-latest`) builds + publishes on a **tag push `v*`** or manual dispatch. To cut a release: bump the version in `electron/package.json` (keep root `package.json` in sync), commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`. CI runs `npm run release:win` with `GH_TOKEN=${{ secrets.GITHUB_TOKEN }}` → uploads `Eco Setup <v>.exe` + `latest.yml` to the GitHub Release `vX.Y.Z`. The tag version MUST match `electron/package.json` (the updater compares `app.getVersion()` against `latest.yml`).
+- **Release flow — manual (local, on a Windows machine)**: `export GH_TOKEN=<PAT with repo scope>`, then `npm run release:win`.
+- **Behavior**: on launch (8 s delay) + every 6 h it checks, auto-downloads, then shows a native notification + the `UpdateBanner` ("Restart to update"). Manual check from Settings → Acerca de.
+
+> **PROCESS — suggest a Windows release after shipping changes**: whenever a change lands that should reach users (a version bump, a merge to `main`, or any edit to the packaged app — `electron/main.cjs`, `preload.cjs`, `backend/`, `frontend/`), **remind Sergio of the Windows release steps** so the update actually ships through auto-update: bump `electron/package.json` (+ root), commit, `git tag vX.Y.Z && git push origin vX.Y.Z` → the `release-win` workflow publishes it. Do NOT bump/tag/push automatically (no auto-commit rule) — just surface the suggestion. Until a release is cut and published, installed Windows apps stay on the old version. (macOS still ships by hand — auto-update there is inert until signing.)
+- **Bundling gotcha**: `electron-updater` is a **prod** dependency of `electron/package.json` so it lands in `app.asar`. Verify after a build: `npx asar list release/win-unpacked/resources/app.asar | grep electron-updater` (else the main process throws `Cannot find module` at boot). Running `npm install` at root prunes the standalone `backend/node_modules` — re-run `npm run build:all` before packaging.
+
 ### Clean build for the .dmg
 
 ```bash

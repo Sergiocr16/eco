@@ -35,6 +35,7 @@ import { getTopInset } from './lib/platform';
 import { getSoloBubbleId } from './lib/solo';
 import { IconLock } from './design/icons';
 import { WindowZoomController } from './components/WindowZoomController';
+import { UpdateBanner } from './components/UpdateBanner';
 import { bubbleStreamHandlers } from './lib/bubble-socket';
 import { SoloBubbleShell } from './screens/SoloBubbleShell';
 const BACKEND = ecoBackend();
@@ -759,6 +760,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           onClose={() => setShowOnboarding(false)}
         />
       )}
+      <UpdateBanner/>
     </>
   );
 }

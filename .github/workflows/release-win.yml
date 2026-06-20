@@ -1,0 +1,40 @@
+name: release-win
+
+# Publica el instalador NSIS de Windows + latest.yml a un GitHub Release para
+# que electron-updater pueda auto-actualizar. No corre en cada push (respeta
+# "Sergio decide cuándo"): se dispara al empujar un tag vX.Y.Z o a mano desde
+# la pestaña Actions.
+#
+# Requisito: la versión en electron/package.json debe coincidir con el tag
+# (electron-updater compara app.getVersion() contra latest.yml).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write  # crear/actualizar el Release y subir los artefactos
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build + publish (NSIS + latest.yml)
+        env:
+          # electron-builder lo usa para crear el Release y subir los artefactos.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release:win

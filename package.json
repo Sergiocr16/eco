@@ -33,7 +33,9 @@
     "dist": "npm run build:all && npm --workspace electron run build",
     "dist:mac": "npm run build:all && npm --workspace electron run build:mac",
     "dist:win": "npm run build:all && npm --workspace electron run build:win",
-    "dist:linux": "npm run build:all && npm --workspace electron run build:linux"
+    "dist:linux": "npm run build:all && npm --workspace electron run build:linux",
+    "release:win": "npm run build:all && npm --workspace electron run release:win",
+    "release:mac": "npm run build:all && npm --workspace electron run release:mac"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

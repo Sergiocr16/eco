@@ -4,12 +4,19 @@
 // se carga desde file:// y se comunica con el backend igual que en dev.
 
 const { app, BrowserWindow, Menu, Notification, shell, ipcMain, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
 const isDev = !app.isPackaged;
+
+// Auto-update: solo Windows empaquetado por ahora. electron-updater en macOS
+// EXIGE app firmada + notarizada (sin firma checkForUpdates falla con "Could not
+// get code signature"); Eco se buildea sin firma (identity:null), así que en Mac
+// el updater queda inerte hasta tener cuenta Apple Developer. En dev tampoco.
+const UPDATES_ENABLED = app.isPackaged && process.platform === 'win32';
 
 // Mantener vivas las ventanas en segundo plano / ocluidas (satélites en otro
 // monitor). Sin esto Chromium throttlea o SUSPENDE el render de las ventanas
@@ -48,6 +55,9 @@ const bubbleWindows = new Map();
 // preservando el backend y el state. Cuando el user hace Cmd+Q (o el menú
 // → Quit), seteamos isQuitting=true para permitir el close real.
 let isQuitting = false;
+// True una vez que electron-updater terminó de bajar una versión nueva. Lo
+// consulta `eco:get-config` para que la UI pueda ofrecer "instalar y reiniciar".
+let updateDownloaded = false;
 
 function tokenPath() {
   return path.join(os.homedir(), '.eco', 'token');
@@ -618,6 +628,7 @@ ipcMain.handle('eco:get-config', () => ({
   platform: process.platform,
   appVersion: app.getVersion(),
   isPackaged: app.isPackaged,
+  updatesSupported: UPDATES_ENABLED,
 }));
 
 // Rutea el zoom al renderer ENFOCADO (puede ser la principal o una satélite de
@@ -716,6 +727,84 @@ app.on('second-instance', () => {
   }
 });
 
+// Reenvía un evento de update al renderer principal (si está vivo).
+function sendUpdateEvent(channel, payload) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, payload);
+    }
+  } catch { /* renderer no listo */ }
+}
+
+// Configura electron-updater: auto-descarga en background y reenvía el ciclo de
+// vida al renderer. Solo se llama cuando UPDATES_ENABLED.
+let autoUpdaterWired = false;
+function setupAutoUpdater() {
+  if (!UPDATES_ENABLED || autoUpdaterWired) return;
+  autoUpdaterWired = true;
+  autoUpdater.autoDownload = true;
+  // Fallback: si el user simplemente cierra la app sin apretar "reiniciar", el
+  // update igual se aplica en el próximo arranque.
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = console;
+
+  autoUpdater.on('update-available', (info) => {
+    sendUpdateEvent('eco:update-available', { version: info?.version });
+  });
+  autoUpdater.on('download-progress', (p) => {
+    sendUpdateEvent('eco:update-progress', { percent: Math.round(p?.percent || 0) });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    updateDownloaded = true;
+    sendUpdateEvent('eco:update-ready', { version: info?.version });
+    try {
+      if (Notification.isSupported()) {
+        const n = new Notification({
+          title: 'Eco',
+          body: `Nueva versión ${info?.version || ''} lista — reiniciá para actualizar`,
+        });
+        n.on('click', () => {
+          if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+        });
+        n.show();
+      }
+    } catch { /* noop */ }
+  });
+  autoUpdater.on('error', (err) => {
+    sendUpdateEvent('eco:update-error', { message: (err && err.message) || String(err) });
+  });
+
+  // Chequeo inicial diferido (deja respirar al arranque) + periódico cada 6 h.
+  setTimeout(() => { autoUpdater.checkForUpdates().catch(() => { /* noop */ }); }, 8_000);
+  setInterval(() => { autoUpdater.checkForUpdates().catch(() => { /* noop */ }); }, 6 * 60 * 60 * 1000);
+}
+
+ipcMain.handle('eco:check-updates', async () => {
+  if (!UPDATES_ENABLED) return { available: false, error: 'unsupported_platform' };
+  try {
+    const r = await autoUpdater.checkForUpdates();
+    const info = r && r.updateInfo;
+    const available = !!info && info.version !== app.getVersion();
+    return { available, version: info?.version };
+  } catch (e) {
+    return { available: false, error: e instanceof Error ? e.message : 'check_failed' };
+  }
+});
+
+ipcMain.handle('eco:install-update', async () => {
+  if (!UPDATES_ENABLED) return { ok: false, error: 'unsupported_platform' };
+  if (!updateDownloaded) return { ok: false, error: 'not_downloaded' };
+  // Matar el backend ANTES de quitAndInstall: libera el puerto para el relaunch y
+  // evita que el handler de before-quit (preventDefault + killBackend) bloquee el
+  // quit del updater. quitFinishing=true salta esa re-entrada.
+  isQuitting = true;
+  quitFinishing = true;
+  if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }
+  try { await killBackend(); } catch { /* noop */ }
+  autoUpdater.quitAndInstall(false, true);
+  return { ok: true };
+});
+
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
   buildAppMenu();
@@ -729,6 +818,8 @@ app.whenReady().then(async () => {
     else console.warn('[electron] backend no respondió /health en 15s, abriendo igual');
   }
   await createWindow();
+
+  setupAutoUpdater();
 
   app.on('activate', () => {
     // En Mac: si la ventana está oculta (cerrada con botón rojo) la mostramos.

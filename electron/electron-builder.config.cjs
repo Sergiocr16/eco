@@ -111,6 +111,11 @@ module.exports = {
   buildDependenciesFromSource: false,
   asar: true,
   asarUnpack: ['**/node-pty/**'],
+  // Auto-update vía electron-updater contra GitHub Releases (repo público
+  // Sergiocr16/eco → no requiere token en runtime para descargar). El build
+  // genera latest.yml (win) / latest-mac.yml (mac) junto a los instaladores;
+  // el runtime los lee de este mismo provider.
+  publish: [{ provider: 'github', owner: 'Sergiocr16', repo: 'eco' }],
   directories: {
     buildResources: 'build',
     output: '../release',
@@ -119,7 +124,11 @@ module.exports = {
   extraResources,
   mac: {
     category: 'public.app-category.developer-tools',
-    target: [{ target: 'dmg', arch: ['arm64'] }],
+    // zip además del dmg: electron-updater consume el .zip + latest-mac.yml para
+    // actualizar (el dmg es solo instalación inicial). Inerte hasta firmar/notarizar
+    // la app — sin firma el updater de macOS rechaza el paquete (ver UPDATES_ENABLED
+    // en main.cjs).
+    target: [{ target: 'dmg', arch: ['arm64'] }, { target: 'zip', arch: ['arm64'] }],
     icon: 'build/icon.icns',
     hardenedRuntime: false,
     gatekeeperAssess: false,
