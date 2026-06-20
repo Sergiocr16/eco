@@ -2043,6 +2043,19 @@ const server = createServer(app);
 attachWebSocket(server, authToken);
 attachPtyServer(server, authToken);
 
+// Fallo al bindear el puerto (ej. una instancia anterior aún lo ocupa). Sin
+// esto el proceso moría en silencio: el host Electron esperaba /health 15s,
+// no lo veía, y abría una ventana en blanco. Salimos explícito y rápido →
+// Electron lo detecta por el `exit` y re-spawnea (ver electron/main.cjs).
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[eco] puerto ${config.host}:${config.port} ocupado (EADDRINUSE) — ¿otra instancia corriendo?`);
+  } else {
+    console.error('[eco] error del servidor HTTP:', err);
+  }
+  process.exit(1);
+});
+
 server.listen(config.port, config.host, () => {
   console.log(`\n🟢 Eco backend listo`);
   console.log(`   HTTP:      http://${config.host}:${config.port}`);
@@ -2097,8 +2110,14 @@ const pruneTimer = setInterval(() => {
 }, PRUNE_INTERVAL_MS);
 pruneTimer.unref();
 
-// GC al cerrar gracefully (Ctrl-C, kill TERM).
+// GC al cerrar gracefully (Ctrl-C, kill TERM). Cerramos el server para liberar
+// el puerto enseguida (un relaunch inmediato del host no debe chocar con
+// EADDRINUSE) y forzamos la salida con un timeout duro por si algún handle
+// (PTY, dev-server, socket WS) impide que el proceso muera solo.
+let shuttingDown = false;
 function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`\n[eco] recibí ${signal}, limpiando worktrees sin cambios…`);
   try {
     const r = pruneCleanWorktrees();
@@ -2106,7 +2125,21 @@ function shutdown(signal: string) {
       console.log(`[eco] worktrees eliminados: ${r.removed.length}`);
     }
   } catch { /* noop */ }
+  try { server.close(); } catch { /* noop */ }
+  const hard = setTimeout(() => process.exit(0), 1500);
+  hard.unref();
   process.exit(0);
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Fail-fast ante errores no manejados: en vez de quedar medio-vivo (puerto
+// tomado pero sin servir), salimos para que el host Electron re-spawnee limpio.
+process.on('uncaughtException', (err) => {
+  console.error('[eco] uncaughtException:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[eco] unhandledRejection:', reason);
+  process.exit(1);
+});

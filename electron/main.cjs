@@ -30,6 +30,14 @@ const DEV_FRONTEND_URL = 'http://127.0.0.1:5173';
 
 let mainWindow = null;
 let backendProc = null;
+// Guardamos el pid aparte: si el backend sale solo (crash), backendProc queda
+// null y no podríamos matarlo/diagnosticarlo solo con la referencia.
+let backendPid = 0;
+// Re-spawn acotado ante crash (evita bucle infinito si el fallo es permanente,
+// ej. EADDRINUSE crónico). Se resetea cuando el backend vuelve a estar sano.
+let backendRestarts = 0;
+const MAX_BACKEND_RESTARTS = 3;
+let respawnTimer = null;
 // Ventanas "solo bubble" — un BrowserWindow por bubbleId que renderiza UNA
 // sola conversación a pantalla completa (?solo=<id>). Pensado para tirar el
 // bubble a otro monitor y trabajarlo aparte. Map para que re-abrir el mismo
@@ -101,20 +109,99 @@ function spawnBackend() {
     env,
     stdio: ['ignore', 'inherit', 'inherit'],
   });
+  backendPid = backendProc.pid || 0;
   backendProc.on('exit', (code, sig) => {
     console.log(`[electron] backend salió con code=${code} sig=${sig}`);
     backendProc = null;
+    backendPid = 0;
+    // Si murió por su cuenta (no fue un quit nuestro), re-levantarlo: sin esto
+    // la ventana quedaba viva pero sin backend → UI congelada/negra al reabrir.
+    if (!isQuitting && code !== 0) {
+      if (backendRestarts < MAX_BACKEND_RESTARTS) {
+        backendRestarts++;
+        const wait = backendRestarts * 800;
+        console.warn(`[electron] backend murió — re-spawn ${backendRestarts}/${MAX_BACKEND_RESTARTS} en ${wait}ms`);
+        respawnTimer = setTimeout(() => { spawnBackend(); void reloadMainWindowWhenReady(); }, wait);
+      } else {
+        console.error('[electron] backend superó el máximo de reintentos; no re-spawneo más.');
+      }
+    }
   });
 }
 
+// Mata el backend por pid (no por la referencia, que puede ser null si salió
+// solo) y resuelve cuando el proceso realmente murió, con un SIGKILL de
+// respaldo. Awaitarlo en before-quit evita dejar el puerto ocupado para un
+// relaunch inmediato.
 function killBackend() {
-  if (backendProc && !backendProc.killed) {
-    try { backendProc.kill('SIGTERM'); } catch { /* noop */ }
-    setTimeout(() => {
-      if (backendProc && !backendProc.killed) {
-        try { backendProc.kill('SIGKILL'); } catch { /* noop */ }
+  return new Promise((resolve) => {
+    const pid = backendPid;
+    if (!pid) { resolve(); return; }
+    try { process.kill(pid, 'SIGTERM'); } catch { resolve(); return; }
+    const start = Date.now();
+    const iv = setInterval(() => {
+      let alive = true;
+      try { process.kill(pid, 0); } catch { alive = false; }
+      if (!alive) { clearInterval(iv); resolve(); return; }
+      if (Date.now() - start > 1500) {
+        try { process.kill(pid, 'SIGKILL'); } catch { /* noop */ }
+        clearInterval(iv);
+        resolve();
       }
-    }, 1500);
+    }, 100);
+  });
+}
+
+// Best-effort: mata cualquier proceso que ya esté escuchando el puerto del
+// backend ANTES de spawnear (un backend zombie de una corrida anterior que
+// sobrevivió a un quit sucio). Solo se usa en el arranque en frío, nunca
+// después de spawnear el nuestro.
+function killStalePort(port) {
+  return new Promise((resolve) => {
+    const { exec } = require('node:child_process');
+    const isWin = process.platform === 'win32';
+    const cmd = isWin
+      ? `netstat -ano | findstr :${port} | findstr LISTENING`
+      : `lsof -ti tcp:${port} -sTCP:LISTEN`;
+    exec(cmd, (_err, stdout) => {
+      const out = (stdout || '').trim();
+      if (!out) { resolve(false); return; }
+      const lines = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      const pids = isWin ? lines.map((l) => l.split(/\s+/).pop()).filter(Boolean) : lines;
+      for (const pid of pids) {
+        try {
+          if (isWin) exec(`taskkill /PID ${pid} /F /T`);
+          else process.kill(Number(pid), 'SIGKILL');
+        } catch { /* noop */ }
+      }
+      console.warn(`[electron] puerto ${port} ocupado al arrancar — maté ${pids.length} proceso(s) stale`);
+      setTimeout(() => resolve(true), 300);
+    });
+  });
+}
+
+// Tras un re-spawn del backend, espera a que /health responda y recarga el
+// renderer para que reconecte (WS, fetch) en vez de quedar en un estado muerto.
+async function reloadMainWindowWhenReady() {
+  const ok = await waitForBackend(BACKEND_URL);
+  if (!ok) return;
+  backendRestarts = 0;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.reload(); } catch { /* noop */ }
+  }
+}
+
+// Carga el renderer con reintentos: si el backend tarda en levantar, en vez de
+// mostrar una ventana en blanco para siempre reintentamos con backoff corto.
+async function loadWithRetry(win, url, attempts = 6) {
+  for (let i = 0; i < attempts; i++) {
+    try { await win.loadURL(url); return; }
+    catch (e) {
+      console.error(`[electron] loadURL falló (intento ${i + 1}/${attempts}):`, (e && e.message) || e);
+      if (!win.isDestroyed() && !win.isVisible()) win.show();
+      await new Promise((r) => setTimeout(r, 600));
+      if (win.isDestroyed()) return;
+    }
   }
 }
 
@@ -202,13 +289,25 @@ async function createWindow() {
   // Dev: Vite. Packaged: el backend sirve el frontend bundle como static en el
   // mismo origen (127.0.0.1:<port>) → sin CORS, fetch y ws funcionan directo.
   const targetUrl = isDev ? DEV_FRONTEND_URL : BACKEND_URL + '/';
-  try {
-    await mainWindow.loadURL(targetUrl);
-  } catch (e) {
-    console.error('[electron] loadURL falló:', (e && e.message) || e);
-    // Aunque la carga falle, mostramos la ventana (sino queda invisible).
-    if (!mainWindow.isVisible()) mainWindow.show();
-  }
+  await loadWithRetry(mainWindow, targetUrl);
+
+  // Red de seguridad post-carga: si una carga YA exitosa falla después (backend
+  // re-spawneado, asset 404 tras rebuild), recargar solo. `hasLoadedOnce` evita
+  // pisar el reintento de arranque (loadWithRetry); el contador acotado evita un
+  // bucle de recargas si el fallo es permanente.
+  let hasLoadedOnce = false;
+  let loadFailCount = 0;
+  mainWindow.webContents.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return; // -3 = ERR_ABORTED (navegación cancelada)
+    if (!hasLoadedOnce || loadFailCount >= 5) return;
+    loadFailCount++;
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.loadURL(rendererBaseUrl()).catch(() => { /* noop */ });
+      }
+    }, 800);
+  });
+
   if (process.env.ECO_DEVTOOLS === '1') {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
@@ -224,6 +323,8 @@ async function createWindow() {
   mainWindow.on('leave-full-screen', () => sendFullscreen(false));
   // Enviar estado inicial cuando el renderer está listo.
   mainWindow.webContents.on('did-finish-load', () => {
+    hasLoadedOnce = true;
+    loadFailCount = 0;
     sendFullscreen(mainWindow.isFullScreen());
   });
 
@@ -618,10 +719,14 @@ app.on('second-instance', () => {
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
   buildAppMenu();
+  // Antes de spawnear, liberar el puerto si quedó un backend zombie de una
+  // corrida anterior — sino el nuestro choca con EADDRINUSE y muere en silencio.
+  if (!isDev) await killStalePort(BACKEND_PORT);
   spawnBackend();
   if (!isDev) {
     const ok = await waitForBackend(BACKEND_URL);
-    if (!ok) console.warn('[electron] backend no respondió /health en 15s, abriendo igual');
+    if (ok) backendRestarts = 0;
+    else console.warn('[electron] backend no respondió /health en 15s, abriendo igual');
   }
   await createWindow();
 
@@ -631,6 +736,15 @@ app.whenReady().then(async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
+      // Si el backend murió mientras la ventana estaba oculta, re-levantarlo y
+      // recargar — sino la UI vuelve pero sin backend (congelada/negra).
+      if (!isDev && !backendProc) {
+        console.warn('[electron] backend no está corriendo al reactivar — re-spawn');
+        if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }
+        backendRestarts = 0;
+        spawnBackend();
+        void reloadMainWindowWhenReady();
+      }
     } else if (BrowserWindow.getAllWindows().length === 0) {
       void createWindow();
     }
@@ -642,14 +756,22 @@ app.on('window-all-closed', () => {
   // viva en el dock y el user espera que su sesión continue al re-abrir.
   // killBackend solo en Win/Linux donde cerrar la ventana sí quitea la app.
   if (process.platform !== 'darwin') {
-    killBackend();
-    app.quit();
+    isQuitting = true;
+    void killBackend().then(() => app.quit());
   }
 });
 
-app.on('before-quit', () => {
+// El quit espera a que el backend muera de verdad antes de salir: sino el
+// proceso hijo podía sobrevivir ocupando el puerto y romper un relaunch
+// inmediato (EADDRINUSE → ventana negra).
+let quitFinishing = false;
+app.on('before-quit', (event) => {
   // Marca que esto es un quit "de verdad" (Cmd+Q, menú Quit, app.quit()),
   // así el handler de 'close' del mainWindow deja pasar el destroy real.
   isQuitting = true;
-  killBackend();
+  if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }
+  if (quitFinishing || !backendPid) return; // ya esperamos / nada que matar
+  quitFinishing = true;
+  event.preventDefault();
+  killBackend().then(() => app.quit());
 });

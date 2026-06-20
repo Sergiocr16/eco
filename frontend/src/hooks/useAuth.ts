@@ -72,7 +72,21 @@ export function useAuth() {
   useEffect(() => {
     if (!firebaseConfigured()) return;
     const auth = getEcoAuth();
+    // Salida de seguridad: si onAuthStateChanged no dispara (Firebase/IndexedDB
+    // colgado), no nos quedamos en 'loading' → pantalla en blanco para siempre.
+    // A los 10s desbloqueamos hacia 'needs_login' (si el callback llega luego,
+    // su setState manda igual).
+    let fired = false;
+    const loadingFallback = setTimeout(() => {
+      if (fired) return;
+      console.warn('[eco] onAuthStateChanged no disparó en 10s — desbloqueando UI');
+      setState((s) => s.status === 'loading'
+        ? { status: 'needs_login', username: null, userId: null, role: null, error: null }
+        : s);
+    }, 10_000);
     const unsub = onAuthStateChanged(auth, (user) => {
+      fired = true;
+      clearTimeout(loadingFallback);
       roleUnsubRef.current?.();
       roleUnsubRef.current = null;
       if (!user) {
@@ -99,7 +113,7 @@ export function useAuth() {
         setState((s) => s.userId === user.uid ? { ...s, role: (data?.role as Role) ?? 'member' } : s);
       }, () => { /* sin acceso al doc → rol member por defecto */ });
     });
-    return () => { unsub(); roleUnsubRef.current?.(); };
+    return () => { clearTimeout(loadingFallback); unsub(); roleUnsubRef.current?.(); };
   }, []);
 
   useEffect(() => { writeProfileUsername(state.username); }, [state.username]);
