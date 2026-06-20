@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, type CSSProperties } from 'react';
 import { useTheme, useTokens } from '@/design/theme';
 import { ACCENT_HUES, THEME_VARIANTS, defaultHueForTheme } from '@/design/tokens';
 import {
@@ -1950,6 +1950,93 @@ type AboutSectionDef = {
   render: () => ReactNode;
 };
 
+function UpdatesRow() {
+  const t = useTokens();
+  const tr = useT();
+  const [supported, setSupported] = useState<boolean>(false);
+  const [checking, setChecking] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'uptodate' | 'available' | 'ready' | 'error'>('idle');
+  const [version, setVersion] = useState<string>('');
+  const [percent, setPercent] = useState<number>(0);
+  const [errMsg, setErrMsg] = useState<string>('');
+
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (api?.getConfig) {
+      void api.getConfig().then((cfg) => setSupported(!!cfg.updatesSupported)).catch(() => { /* noop */ });
+    }
+    const offs: Array<() => void> = [];
+    if (api?.onUpdateAvailable) offs.push(api.onUpdateAvailable((p) => { setStatus('available'); setVersion(p.version ?? ''); }));
+    if (api?.onUpdateProgress) offs.push(api.onUpdateProgress((p) => { setStatus('available'); setPercent(p.percent); }));
+    if (api?.onUpdateReady) offs.push(api.onUpdateReady((p) => { setStatus('ready'); setVersion(p.version ?? ''); }));
+    if (api?.onUpdateError) offs.push(api.onUpdateError((p) => { setStatus('error'); setErrMsg(p.message); setChecking(false); }));
+    return () => { for (const off of offs) { try { off(); } catch { /* noop */ } } };
+  }, []);
+
+  async function check() {
+    const api = window.electronAPI;
+    if (!api?.checkForUpdates) return;
+    setChecking(true); setStatus('idle'); setErrMsg('');
+    try {
+      const r = await api.checkForUpdates();
+      if (r.error) { setStatus('error'); setErrMsg(r.error); }
+      else if (r.available) { setStatus('available'); setVersion(r.version ?? ''); }
+      else { setStatus('uptodate'); }
+    } catch (e) {
+      setStatus('error'); setErrMsg(e instanceof Error ? e.message : 'error');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function install() {
+    const api = window.electronAPI;
+    if (api?.installAndRestart) await api.installAndRestart();
+  }
+
+  const desc = !supported
+    ? tr('settings.about.updates.only_windows')
+    : checking
+      ? tr('settings.about.updates.checking')
+      : status === 'uptodate'
+        ? tr('settings.about.updates.up_to_date')
+        : status === 'available'
+          ? (percent > 0
+              ? tr('settings.about.updates.progress').replace('{percent}', String(percent))
+              : tr('settings.about.updates.available').replace('{version}', version))
+          : status === 'ready'
+            ? tr('settings.about.updates.ready').replace('{version}', version)
+            : status === 'error'
+              ? `${tr('settings.about.updates.error')}: ${errMsg}`
+              : tr('settings.about.updates.desc');
+
+  const btnStyle: CSSProperties = {
+    padding: '6px 14px', borderRadius: 8,
+    border: `1px solid ${t.glassBorder}`,
+    background: t.bg2, color: t.text0,
+    fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+    cursor: checking ? 'wait' : 'pointer', opacity: !supported ? 0.5 : 1,
+  };
+
+  return (
+    <Row
+      icon={IconBolt}
+      title={tr('settings.about.updates.title')}
+      desc={desc}
+      control={
+        status === 'ready' ? (
+          <button type="button" onClick={() => void install()} style={{ ...btnStyle, borderColor: t.ok, color: t.ok }}>
+            {tr('settings.about.updates.install_restart')}
+          </button>
+        ) : (
+          <button type="button" onClick={() => void check()} disabled={!supported || checking} style={btnStyle}>
+            {tr('settings.about.updates.check')}
+          </button>
+        )
+      }/>
+  );
+}
+
 function SectionAbout() {
   const t = useTokens();
   const tr = useT();
@@ -2102,6 +2189,8 @@ function SectionAbout() {
           )}
         </div>
       </div>
+
+      <UpdatesRow/>
 
       {/* Body */}
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>

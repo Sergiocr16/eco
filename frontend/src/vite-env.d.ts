@@ -16,6 +16,7 @@ interface EcoElectronConfig {
   platform: string;
   appVersion: string;
   isPackaged: boolean;
+  updatesSupported?: boolean;
 }
 
 interface Window {
@@ -37,5 +38,11 @@ interface Window {
     closeBubbleWindow?: (bubbleId: string) => Promise<{ ok: boolean }>;
     listBubbleWindows?: () => Promise<string[]>;
     onBubbleWindowChange?: (cb: (payload: { bubbleId: string; open: boolean }) => void) => () => void;
+    checkForUpdates?: () => Promise<{ available: boolean; version?: string; error?: string }>;
+    installAndRestart?: () => Promise<{ ok: boolean; error?: string }>;
+    onUpdateAvailable?: (cb: (payload: { version?: string }) => void) => () => void;
+    onUpdateProgress?: (cb: (payload: { percent: number }) => void) => () => void;
+    onUpdateReady?: (cb: (payload: { version?: string }) => void) => () => void;
+    onUpdateError?: (cb: (payload: { message: string }) => void) => () => void;
   };
 }

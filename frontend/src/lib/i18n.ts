@@ -1377,6 +1377,25 @@ const DICT = {
   'settings.about.packaged': { es: 'App empaquetada', en: 'Packaged app' },
   'settings.about.dev':      { es: 'Modo dev', en: 'Dev mode' },
 
+  // Auto-update
+  'settings.about.updates.title':           { es: 'Actualizaciones', en: 'Updates' },
+  'settings.about.updates.desc':            { es: 'Eco se actualiza solo desde GitHub Releases.', en: 'Eco updates itself from GitHub Releases.' },
+  'settings.about.updates.check':           { es: 'Buscar actualizaciones', en: 'Check for updates' },
+  'settings.about.updates.checking':        { es: 'Verificando…', en: 'Checking…' },
+  'settings.about.updates.up_to_date':      { es: 'Eco está actualizado.', en: 'Eco is up to date.' },
+  'settings.about.updates.available':       { es: 'Actualización disponible: v{version}', en: 'Update available: v{version}' },
+  'settings.about.updates.progress':        { es: 'Descargando… {percent}%', en: 'Downloading… {percent}%' },
+  'settings.about.updates.ready':           { es: 'Versión v{version} lista para instalar.', en: 'Version v{version} ready to install.' },
+  'settings.about.updates.install_restart': { es: 'Instalar y reiniciar', en: 'Install and restart' },
+  'settings.about.updates.error':           { es: 'Error al buscar actualizaciones', en: 'Update check failed' },
+  'settings.about.updates.only_windows':    { es: 'Auto-update disponible solo en Windows por ahora.', en: 'Auto-update available only on Windows for now.' },
+
+  // Update banner (aviso global)
+  'update.banner.title':           { es: 'Nueva versión v{version} lista', en: 'New version v{version} ready' },
+  'update.banner.title_noversion': { es: 'Nueva versión lista', en: 'New version ready' },
+  'update.banner.restart':         { es: 'Reiniciar para actualizar', en: 'Restart to update' },
+  'update.banner.dismiss':         { es: 'Descartar', en: 'Dismiss' },
+
   // What Eco does
   'settings.about.what.title': { es: '¿Qué hace Eco?', en: 'What does Eco do?' },
   'settings.about.what.body': {

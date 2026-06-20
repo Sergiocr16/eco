@@ -76,4 +76,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('eco:bubble-window-closed', onClose);
     };
   },
+  // Auto-update (electron-updater). checkForUpdates dispara el chequeo manual;
+  // installAndRestart aplica la versión ya descargada y reinicia. Los on* son
+  // suscripciones al ciclo de vida del update (cada uno devuelve unsubscribe).
+  checkForUpdates: () => ipcRenderer.invoke('eco:check-updates'),
+  installAndRestart: () => ipcRenderer.invoke('eco:install-update'),
+  onUpdateAvailable: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload); } catch { /* noop */ } };
+    ipcRenderer.on('eco:update-available', handler);
+    return () => ipcRenderer.removeListener('eco:update-available', handler);
+  },
+  onUpdateProgress: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload); } catch { /* noop */ } };
+    ipcRenderer.on('eco:update-progress', handler);
+    return () => ipcRenderer.removeListener('eco:update-progress', handler);
+  },
+  onUpdateReady: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload); } catch { /* noop */ } };
+    ipcRenderer.on('eco:update-ready', handler);
+    return () => ipcRenderer.removeListener('eco:update-ready', handler);
+  },
+  onUpdateError: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload); } catch { /* noop */ } };
+    ipcRenderer.on('eco:update-error', handler);
+    return () => ipcRenderer.removeListener('eco:update-error', handler);
+  },
 });
