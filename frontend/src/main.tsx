@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { setEcoConfig, readStoredToken } from './lib/eco-config';
+import { RootErrorBoundary, bootReloadOnce } from './components/RootErrorBoundary';
 import './index.css';
 
 async function bootstrap() {
@@ -24,13 +25,21 @@ async function bootstrap() {
 
   // Import dinámico: App.tsx lee BACKEND/TOKEN del módulo eco-config al
   // evaluarse, así que tiene que evaluarse DESPUÉS de setEcoConfig().
-  const { App } = await import('./App');
-
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
+  // En try/catch: si el import o el primer render fallan (asset hash viejo tras
+  // un rebuild, IPC caído), recargamos una vez en vez de quedar sin montar nada.
+  try {
+    const { App } = await import('./App');
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <RootErrorBoundary>
+          <App />
+        </RootErrorBoundary>
+      </StrictMode>,
+    );
+  } catch (e) {
+    console.error('[eco] bootstrap falló:', e);
+    bootReloadOnce();
+  }
 }
 
 void bootstrap();
