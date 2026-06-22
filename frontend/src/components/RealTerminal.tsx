@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { currentIdToken } from '@/lib/firebase';
 import { useTokens } from '@/design/theme';
@@ -59,6 +60,19 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
     term.open(container);
+
+    // Renderer WebGL: descarga el dibujado a la GPU. El renderer DOM por
+    // defecto se atasca cuando el hilo principal está ocupado (renders de
+    // React, animaciones, varias burbujas) → las teclas se encolan y se
+    // vuelcan de golpe. WebGL elimina ese jank. Se carga DESPUÉS de open()
+    // (necesita el canvas) y cae al DOM si WebGL no está disponible o si se
+    // pierde el contexto de GPU (sleep/wake, cambio de display).
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => { try { webgl.dispose(); } catch { /* noop */ } });
+      term.loadAddon(webgl);
+    } catch { /* WebGL no disponible — fallback al renderer DOM */ }
+
     try { fit.fit(); } catch { /* noop */ }
 
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
