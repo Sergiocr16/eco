@@ -667,7 +667,12 @@ function spawnSession(s: Session) {
     // serve lo expone sin chocar) + `forward-headers-strategy=framework` (Spring
     // honra X-Forwarded-Proto del proxy → no hace downgrade https→http en sus
     // redirects, que causaba ERR_TOO_MANY_REDIRECTS).
+    // `style.color=always` (Maven) + `spring.output.ansi.enabled=ALWAYS` (Spring):
+    // a diferencia de gulp/vite/chalk, Maven y Spring NO respetan FORCE_COLOR —
+    // detectan TTY y, como Eco los corre sobre un pipe (no TTY), salen en b/n.
+    // Con estas system properties fuerzan ANSI y el viewer (xterm) los colorea.
     JAVA_TOOL_OPTIONS: `-Dserver.port=${s.port} -Dspring.devtools.restart.enabled=false`
+      + ' -Dstyle.color=always -Dspring.output.ansi.enabled=ALWAYS'
       + (config.publicHost ? ' -Dserver.address=127.0.0.1 -Dserver.forward-headers-strategy=framework' : ''),
     // Si soy frontend en dual: dónde está el backend.
     ...(linkedPort > 0 ? {
