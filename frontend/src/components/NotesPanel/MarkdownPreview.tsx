@@ -108,7 +108,7 @@ function renderMarkdown(src: string): string {
         buf.push(lines[i]!.replace(/^\s*>\s?/, ''));
         i++;
       }
-      const content = inline(escapeHtml(buf.join(' ')));
+      const content = inline(escapeHtml(buf.join('\n'))).replace(/\n/g, '<br/>');
       out.push(`<blockquote>${content}</blockquote>`);
       continue;
     }
@@ -154,7 +154,8 @@ function renderMarkdown(src: string): string {
       i++;
     }
     if (paraBuf.length > 0) {
-      const text = inline(escapeHtml(paraBuf.join(' ')));
+      // Saltos de línea simples → <br/> (estilo GitHub), no se colapsan a espacio.
+      const text = inline(escapeHtml(paraBuf.join('\n'))).replace(/\n/g, '<br/>');
       out.push(`<p>${text}</p>`);
     }
   }
