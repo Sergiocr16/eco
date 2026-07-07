@@ -1126,9 +1126,24 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
   );
 }
 
-// Editor de la config de dev server por workspace (admin). Define single/dual
-// y el/los comando(s). El ServerPanel de cada burbuja la consume read-only:
-// el member solo inicia/detiene.
+// Editor de la config de dev server por workspace (admin). Define single/dual,
+// el/los comando(s) y las variables de entorno. El ServerPanel de cada burbuja
+// la consume read-only: el member solo inicia/detiene.
+type EnvRow = { k: string; v: string };
+const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function envToRows(env: Record<string, string>): EnvRow[] {
+  return Object.entries(env).map(([k, v]) => ({ k, v }));
+}
+function rowsToEnv(rows: EnvRow[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    const k = r.k.trim();
+    if (k) out[k] = r.v;
+  }
+  return out;
+}
+
 function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
   const t = useTokens();
   const tr = useT();
@@ -1138,18 +1153,35 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
   const [main, setMain] = useState(srv.main);
   const [front, setFront] = useState(srv.frontend);
   const [back, setBack] = useState(srv.backend);
+  const [envRows, setEnvRows] = useState<EnvRow[]>(() => envToRows(srv.env));
   const [savedFlash, setSavedFlash] = useState(false);
+  // srv.env es un objeto nuevo en cada hidratación — comparamos por JSON para
+  // no resetear el draft en cada render.
+  const srvEnvJson = JSON.stringify(srv.env);
   useEffect(() => {
     setDual(srv.dual); setMain(srv.main); setFront(srv.frontend); setBack(srv.backend);
-  }, [srv.dual, srv.main, srv.frontend, srv.backend]);
+    setEnvRows(envToRows(srv.env));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srv.dual, srv.main, srv.frontend, srv.backend, srvEnvJson]);
 
-  const dirty = dual !== srv.dual || main !== srv.main || front !== srv.frontend || back !== srv.backend;
+  const envInvalid = envRows.some((r) => r.k.trim() !== '' && !ENV_KEY_RE.test(r.k.trim()));
+  const envDirty = JSON.stringify(rowsToEnv(envRows)) !== srvEnvJson;
+  const dirty = dual !== srv.dual || main !== srv.main || front !== srv.frontend
+    || back !== srv.backend || envDirty;
 
   async function commit() {
+    if (envInvalid) return;
     const ok = await saveWorkspaceConfig(workspace, {
-      server: { dual, main, frontend: front, backend: back },
+      server: { dual, main, frontend: front, backend: back, env: rowsToEnv(envRows) },
     });
     if (ok) { setSavedFlash(true); window.setTimeout(() => setSavedFlash(false), 1200); }
+  }
+
+  function setRow(i: number, patch: Partial<EnvRow>) {
+    setEnvRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+  function removeRow(i: number) {
+    setEnvRows((rows) => rows.filter((_, idx) => idx !== i));
   }
 
   const inputStyle = {
@@ -1195,8 +1227,59 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
         )}
       </div>
 
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
+          {tr('settings.srv.env.label')}
+        </div>
+        {envRows.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
+            {envRows.map((row, i) => {
+              const badKey = row.k.trim() !== '' && !ENV_KEY_RE.test(row.k.trim());
+              return (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input value={row.k} onChange={(e) => setRow(i, { k: e.target.value })}
+                    placeholder={tr('settings.srv.env.key_ph')}
+                    spellCheck={false} autoCorrect="off" autoCapitalize="off"
+                    style={{
+                      ...inputStyle, width: 180, flexShrink: 0,
+                      border: `1px solid ${badKey ? t.err : t.glassBorder}`,
+                    }}/>
+                  <input value={row.v} onChange={(e) => setRow(i, { v: e.target.value })}
+                    placeholder={tr('settings.srv.env.value_ph')}
+                    spellCheck={false} autoCorrect="off" autoCapitalize="off"
+                    style={{ ...inputStyle, flex: 1, minWidth: 0 }}/>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(i)}
+                    title={tr('settings.srv.env.remove')}
+                    style={{
+                      width: 28, height: 28, borderRadius: 8, border: 0, flexShrink: 0,
+                      background: 'transparent', color: t.text2, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                    <IconTrash size={13}/>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <Btn kind="ghost" size="sm" icon={IconPlus}
+          onClick={() => setEnvRows((rows) => [...rows, { k: '', v: '' }])}>
+          {tr('settings.srv.env.add')}
+        </Btn>
+        {envInvalid && (
+          <div style={{ marginTop: 4, fontSize: 10.5, color: t.err }}>
+            {tr('settings.srv.env.invalid')}
+          </div>
+        )}
+        <div style={{ marginTop: 4, fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
+          {tr('settings.srv.env.hint')}
+        </div>
+      </div>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-        <Btn kind="secondary" size="sm" onClick={() => void commit()} disabled={!dirty}>
+        <Btn kind="secondary" size="sm" onClick={() => void commit()} disabled={!dirty || envInvalid}>
           {tr('common.save')}
         </Btn>
         <span style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>

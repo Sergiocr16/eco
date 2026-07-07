@@ -21,7 +21,7 @@ export function useWorkspaceServerDefaults(workspace: string) {
   }, [workspace]);
 
   const clear = useCallback(() => {
-    void saveWorkspaceConfig(workspace, { server: { dual: false, main: '', frontend: '', backend: '' } });
+    void saveWorkspaceConfig(workspace, { server: { dual: false, main: '', frontend: '', backend: '', env: {} } });
   }, [workspace]);
 
   const hasAny = !!(defaults.main || defaults.frontend || defaults.backend);

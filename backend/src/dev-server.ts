@@ -24,6 +24,7 @@ import { dirname, join, delimiter as PATH_DELIMITER } from 'node:path';
 import { homedir } from 'node:os';
 import { config } from './config.js';
 import { buildSafeEnv } from './security.js';
+import * as workspaceConfig from './workspace-config.js';
 import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
 import { serveOn, serveOff } from './tailscale.js';
 import { shellRun, detachForGroup, pidsOnPort, killTree, killPid, IS_WIN } from './platform.js';
@@ -609,6 +610,17 @@ function discoverNodeBins(workspace: string): string[] {
   return bins;
 }
 
+// Variables definidas por el admin para el workspace (Settings → Folders).
+// `s.workspace` es el WORKTREE de la burbuja y la config está keyed por el
+// repo padre — si el lookup directo no trae nada, probamos con el padre.
+// Se leen frescas en cada spawn: un restart toma los cambios del admin.
+function customEnvFor(workspace: string): Record<string, string> {
+  const own = workspaceConfig.getFor(workspace).server.env;
+  if (Object.keys(own).length > 0) return own;
+  const parent = parentRepoOf(workspace);
+  return parent !== workspace ? workspaceConfig.getFor(parent).server.env : {};
+}
+
 function spawnSession(s: Session) {
   s.status = 'starting';
   s.output = '';
@@ -639,7 +651,17 @@ function spawnSession(s: Session) {
     return peer.port;
   })();
 
+  // Env del workspace primero: las vars de Eco (PORT/HOST/etc.) van después en
+  // el literal y ganan sobre cualquier colisión — el auto-port es load-bearing
+  // (tailscale serve, BrowserPanel). Solo listamos los NOMBRES en el log (los
+  // valores pueden ser secretos).
+  const customEnv = customEnvFor(s.workspace);
+  if (Object.keys(customEnv).length > 0) {
+    appendOutput(s, `[eco] Variables de entorno del workspace: ${Object.keys(customEnv).join(', ')}\n`);
+  }
+
   const env = buildSafeEnv({
+    ...customEnv,
     PATH: augmentedPath,
     PORT: String(s.port),
     // Cobertura amplia: distintos frameworks usan distintos nombres de env.

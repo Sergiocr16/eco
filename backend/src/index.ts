@@ -485,6 +485,10 @@ const WorkspaceConfigPostSchema = z.object({
     main: z.string().max(2000).optional(),
     frontend: z.string().max(2000).optional(),
     backend: z.string().max(2000).optional(),
+    // Validación fina (regex de nombre, prefijo ECO_, cap de 50) en normalizeEnv.
+    env: z.record(z.string().max(128), z.string().max(4000))
+      .refine((e) => Object.keys(e).length <= 50, 'demasiadas variables')
+      .optional(),
   }).optional(),
   baseBranches: z.string().max(2000).optional(),
 });

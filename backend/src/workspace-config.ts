@@ -18,16 +18,38 @@ export type WorkspaceServerConfig = {
   main: string;
   frontend: string;
   backend: string;
+  // Variables extra que se inyectan al spawn de cada dev server del workspace.
+  // Las vars propias de Eco (PORT, HOST, etc.) se aplican después y ganan.
+  env: Record<string, string>;
 };
 export type WorkspaceConfig = {
   server: WorkspaceServerConfig;
   baseBranches: string; // CSV
 };
 
-const EMPTY_SERVER: WorkspaceServerConfig = { dual: false, main: '', frontend: '', backend: '' };
+const EMPTY_SERVER: WorkspaceServerConfig = { dual: false, main: '', frontend: '', backend: '', env: {} };
 const EMPTY: WorkspaceConfig = { server: { ...EMPTY_SERVER }, baseBranches: '' };
 
 type Store = Record<string, WorkspaceConfig>;
+
+const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENV_MAX_VARS = 50;
+const ENV_MAX_VALUE = 4000;
+
+function normalizeEnv(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (Object.keys(out).length >= ENV_MAX_VARS) break;
+    if (typeof v !== 'string') continue;
+    const key = k.trim();
+    if (!key || key.length > 64 || !ENV_KEY_RE.test(key)) continue;
+    // ECO_* configura a Eco mismo; como extras de buildSafeEnv bypasearían el denylist.
+    if (key.startsWith('ECO_')) continue;
+    out[key] = v.slice(0, ENV_MAX_VALUE);
+  }
+  return out;
+}
 
 function normalizeServer(raw: unknown): WorkspaceServerConfig {
   const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -36,6 +58,7 @@ function normalizeServer(raw: unknown): WorkspaceServerConfig {
     main: typeof s.main === 'string' ? s.main : '',
     frontend: typeof s.frontend === 'string' ? s.frontend : '',
     backend: typeof s.backend === 'string' ? s.backend : '',
+    env: normalizeEnv(s.env),
   };
 }
 function normalizeConfig(raw: unknown): WorkspaceConfig {
@@ -88,7 +111,7 @@ export function setFor(
     baseBranches: typeof patch.baseBranches === 'string' ? patch.baseBranches.trim() : current.baseBranches,
   };
   const isEmpty = !next.server.dual && !next.server.main && !next.server.frontend
-    && !next.server.backend && !next.baseBranches;
+    && !next.server.backend && Object.keys(next.server.env).length === 0 && !next.baseBranches;
   if (isEmpty) delete store[workspace];
   else store[workspace] = next;
   writeStore(store);

@@ -11,6 +11,9 @@ export type WorkspaceServerConfig = {
   main: string;
   frontend: string;
   backend: string;
+  // Variables extra inyectadas al spawn de cada dev server del workspace.
+  // Las vars propias de Eco (PORT, HOST, etc.) ganan sobre colisiones.
+  env: Record<string, string>;
 };
 export type WorkspaceConfig = {
   server: WorkspaceServerConfig;
@@ -18,13 +21,22 @@ export type WorkspaceConfig = {
 };
 
 const EMPTY: WorkspaceConfig = {
-  server: { dual: false, main: '', frontend: '', backend: '' },
+  server: { dual: false, main: '', frontend: '', backend: '', env: {} },
   baseBranches: '',
 };
 
 let cache: Record<string, WorkspaceConfig> = {};
 const subs = new Set<() => void>();
 function notify() { subs.forEach((f) => f()); }
+
+function normalizeEnv(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (k && typeof v === 'string') out[k] = v;
+  }
+  return out;
+}
 
 function normalizeServer(raw: unknown): WorkspaceServerConfig {
   const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -33,6 +45,7 @@ function normalizeServer(raw: unknown): WorkspaceServerConfig {
     main: typeof s.main === 'string' ? s.main : '',
     frontend: typeof s.frontend === 'string' ? s.frontend : '',
     backend: typeof s.backend === 'string' ? s.backend : '',
+    env: normalizeEnv(s.env),
   };
 }
 function normalizeConfig(raw: unknown): WorkspaceConfig {

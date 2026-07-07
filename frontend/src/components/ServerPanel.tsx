@@ -388,6 +388,22 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
                     <ReadonlyCmd label="Backend" value={cmdBackend}/>
                   </>
                 )}
+                {Object.keys(wsDefaults.defaults.env).length > 0 && (
+                  <div style={{
+                    padding: 10, borderRadius: 10,
+                    background: t.bg2, border: `1px solid ${t.glassBorder}`,
+                  }}>
+                    <div style={{ fontSize: 11, color: t.text2, fontWeight: 600, marginBottom: 4 }}>
+                      {tr('server.cfg.env_label')}
+                    </div>
+                    {Object.entries(wsDefaults.defaults.env).map(([k, v]) => (
+                      <code key={k} style={{
+                        display: 'block', fontFamily: t.fontMono, fontSize: 12,
+                        color: t.text0, wordBreak: 'break-all', lineHeight: 1.6,
+                      }}>{k}={v}</code>
+                    ))}
+                  </div>
+                )}
                 <div style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5, marginTop: 2 }}>
                   {tr('server.cfg.edit_hint')}
                 </div>
