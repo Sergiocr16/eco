@@ -1,44 +1,28 @@
-import { z } from 'zod';
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { ClientAction } from './agent-tools.js';
+// Mensajes del WebSocket `/ws`. Es un canal SOLO server → cliente: el tab de
+// Conversación (que era el único que mandaba `prompt`/`interrupt`) se removió,
+// y con él el Claude Agent SDK. Los agentes ahora viven en el PTY (`/ws/pty`).
 
-export const PromptMessageSchema = z.object({
-  type: z.literal('prompt'),
-  text: z.string().min(1).max(50_000),
-  workspace: z.string().max(4096).optional(),
-  bubbleId: z.string().max(128).optional(),
-  resumeSessionId: z.string().max(128).optional(),
-});
-
-export const InterruptMessageSchema = z.object({
-  type: z.literal('interrupt'),
-});
-
-export const ClientMessageSchema = z.discriminatedUnion('type', [
-  PromptMessageSchema,
-  InterruptMessageSchema,
-]);
-
-export type ClientMessage = z.infer<typeof ClientMessageSchema>;
+// Acción que el backend le pide al frontend. Su único productor es
+// `POST /bubble/create` (MCP server externo) vía `broadcastClientAction`.
+// `rename_bubble`/`close_bubble` murieron con los tools MCP in-process del SDK.
+export type ClientAction = {
+  kind: 'open_bubble';
+  id: string;
+  title: string;
+  focus: boolean;
+  workspace?: string;
+  baseBranch?: string;
+};
 
 export type ServerMessage =
-  | { type: 'sdk_message'; message: SDKMessage }
-  | { type: 'session_started'; sessionId: string }
-  | { type: 'done' }
-  | { type: 'error'; code: string; message: string }
   | { type: 'client_action'; action: ClientAction }
   | { type: 'pty_status'; bubbleId: string; running: boolean; active?: boolean }
-  // Notifica cambios en si Claude (en el PTY) está procesando output o ya
-  // terminó. Basado en inactividad del PTY (1.5 s sin output → idle).
+  // Notifica si el PTY está produciendo output o ya se quedó quieto (1.5 s sin
+  // output → idle). Es POR BURBUJA, no por terminal: cualquier sesión (Claude,
+  // Codex o un shell plano) la marca ocupada.
   | { type: 'pty_busy_change'; bubbleId: string; busy: boolean }
   | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string }
   | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string }
-  // Originado por el MCP server externo vía POST /bubble/create con
-  // initialPrompt. El frontend lo escucha y dispara `sendTo(bubbleId, text)`
-  // como si el user hubiese tipeado el mensaje. `workspace` es opcional —
-  // si está, se usa para resumir/iniciar la sesión; si no, el frontend cae
-  // al workspace de la bubble.
-  | { type: 'inject_prompt'; bubbleId: string; text: string; workspace?: string }
   // Sync cross-device del estado del usuario (bubbles, categorías, notas, etc.).
   // El backend lo empuja a los OTROS dispositivos del mismo usuario cuando uno
   // guarda un doc. `key` es la clave del doc (p.ej. "bubble:b_1", "prefs").

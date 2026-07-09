@@ -10,10 +10,49 @@ import { ensureWorktree } from './worktree-manager.js';
 import { githubEnvOverrides } from './github-runtime.js';
 import { verifyFirebaseIdToken } from './firebase-auth.js';
 import { setMachineUser } from './machine-user.js';
+import { openaiEnvOverrides } from './codex-auth.js';
 import { defaultShell } from './platform.js';
 
 // uid resuelto en verifyClient (verificación async del ID token de Firebase).
 type ReqWithUid = IncomingMessage & { ecoUid?: string };
+
+// Qué CLI de agente auto-arranca el PTY. 'none' = shell pelado (terminales
+// extra del user). El gate global sigue siendo ECO_PTY_AUTOCLAUDE=0.
+export type AgentCli = 'claude' | 'codex' | 'none';
+
+const LAUNCH_COMMAND: Record<AgentCli, string | null> = {
+  claude: 'claude',
+  codex: 'codex',
+  none: null,
+};
+
+function sanitizeAgent(raw: string | null, legacyNoClaude: boolean): AgentCli {
+  if (legacyNoClaude) return 'none';
+  if (raw === 'claude' || raw === 'codex' || raw === 'none') return raw;
+  return 'claude';
+}
+
+// Env del spawn. La OPENAI_API_KEY solo viaja al PTY que corre `codex` — no a
+// shells planos, ni al PTY de Claude (que es OAuth-only), ni a los dev servers.
+function ptyEnv(agent: AgentCli, ownerId?: string): Record<string, string> {
+  return buildSafeEnv({
+    TERM: 'xterm-256color',
+    ...githubEnvOverrides(ownerId),
+    ...(agent === 'codex' ? openaiEnvOverrides() : {}),
+  }) as Record<string, string>;
+}
+
+// Escribe el comando de arranque tras un delay corto: sin él, zsh todavía está
+// imprimiendo su prompt inicial y se come la entrada.
+function scheduleAgentLaunch(session: PtySession): void {
+  if (process.env.ECO_PTY_AUTOCLAUDE === '0') return;
+  const command = LAUNCH_COMMAND[session.agent];
+  if (!command) return;
+  setTimeout(() => {
+    if (session.exited) return;
+    try { session.pty.write(`${command}\r`); } catch { /* noop */ }
+  }, 350);
+}
 
 type PtyInput =
   | { type: 'input'; data: string }
@@ -26,9 +65,11 @@ type PtySession = {
   pty: IPty;
   bubbleId: string;
   // Identificador del terminal dentro de la burbuja. "main" = el terminal
-  // por defecto donde auto-arranca Claude CLI. Cualquier otro id = terminales
-  // extra abiertos por el user (shells planos sin auto-claude).
+  // por defecto donde auto-arranca Claude CLI; "codex" = el CLI de OpenAI.
+  // Cualquier otro id = terminales extra abiertos por el user (shells planos).
   ptyId: string;
+  // Qué CLI se auto-arrancó en este PTY (o 'none' para un shell pelado).
+  agent: AgentCli;
   // Dueño de la bubble (userId). Determina la identidad de git inyectada al
   // PTY y a quién se le emiten los pty_status (filtrado por usuario en F2).
   ownerId?: string;
@@ -141,14 +182,27 @@ export function killBubbleTerminal(bubbleId: string, ptyId: string): boolean {
   return true;
 }
 
+// El PTY headless de cada agente comparte `ptyId` con la pestaña que la UI
+// le dedica. Si Codex naciera en 'main', el usuario lo vería corriendo dentro
+// de la pestaña rotulada "Claude"; así, al abrir la burbuja, cada pestaña
+// reengancha (reattach) a la sesión que le corresponde.
+export function ptyIdForAgent(agent: AgentCli): string {
+  return agent === 'codex' ? 'codex' : 'main';
+}
+
 // Spawn server-side de un PTY para una burbuja sin necesitar cliente WS.
-// Idempotente: si ya existe sesión activa para ese (bubbleId, 'main'), la
+// Idempotente: si ya existe sesión activa para ese (bubbleId, ptyId), la
 // reutiliza. Lo usa /bubble/create cuando viene `initialPrompt` para tener
-// el PTY listo en background y dejar que el user descubra la conversación
+// el PTY listo en background y dejar que el user descubra la sesión
 // ya en marcha al clickear la bubble. broadcastPtyStatus avisa al frontend
 // para que el dot de "PTY activo" se prenda en dock/dashboard.
-export function ensureBubblePty(bubbleId: string, workspace: string, ownerId?: string): PtySession {
-  const ptyId = 'main';
+export function ensureBubblePty(
+  bubbleId: string,
+  workspace: string,
+  ownerId?: string,
+  agent: AgentCli = 'claude',
+): PtySession {
+  const ptyId = ptyIdForAgent(agent);
   const key = sessionKey(bubbleId, ptyId);
   const existing = sessions.get(key);
   if (existing && !existing.exited) return existing;
@@ -164,11 +218,11 @@ export function ensureBubblePty(bubbleId: string, workspace: string, ownerId?: s
     name: 'xterm-256color', cols: 120, rows: 30, cwd,
     // Inyectamos la identidad de git del DUEÑO de la bubble → commits/push
     // desde el terminal usan su PAT/nombre/email (no el del admin).
-    env: buildSafeEnv({ TERM: 'xterm-256color', ...githubEnvOverrides(ownerId) }) as Record<string, string>,
+    env: ptyEnv(agent, ownerId),
   });
 
   const session: PtySession = {
-    pty, bubbleId, ptyId, ownerId, cwd, buffer: '', exited: false,
+    pty, bubbleId, ptyId, agent, ownerId, cwd, buffer: '', exited: false,
     activeWs: null, clients: new Set(),
     lastOutputAt: Date.now(), busy: false,
   };
@@ -195,27 +249,27 @@ export function ensureBubblePty(bubbleId: string, workspace: string, ownerId?: s
   });
 
   broadcastPtyStatus(bubbleId, true);
-
-  if (process.env.ECO_PTY_AUTOCLAUDE !== '0') {
-    setTimeout(() => {
-      if (session.exited) return;
-      try { session.pty.write('claude\r'); } catch { /* noop */ }
-    }, 350);
-  }
+  scheduleAgentLaunch(session);
 
   return session;
 }
 
-// Spawnea (o reusa) el PTY de la burbuja y le inyecta `text` como input del
-// CLI. Si la sesión es fresca, espera `coldStartMs` para que zsh termine de
-// exec'ear claude y claude imprima su prompt; sino, escribe casi inmediato.
+// Spawnea (o reusa) el PTY del agente pedido y le inyecta `text` como input
+// del CLI. Si la sesión es fresca, espera el cold start para que zsh termine
+// de exec'ear el CLI y este imprima su prompt; sino, escribe casi inmediato.
 // Fire-and-forget — para el flujo de /bubble/create con initialPrompt.
-export function injectPromptToBubble(bubbleId: string, ownerId: string | undefined, workspace: string, text: string): void {
-  const beforeKey = sessionKey(bubbleId, 'main');
+export function injectPromptToBubble(
+  bubbleId: string,
+  ownerId: string | undefined,
+  workspace: string,
+  text: string,
+  agent: AgentCli = 'claude',
+): void {
+  const beforeKey = sessionKey(bubbleId, ptyIdForAgent(agent));
   const wasExisting = !!sessions.get(beforeKey) && !sessions.get(beforeKey)!.exited;
-  const session = ensureBubblePty(bubbleId, workspace, ownerId);
-  // claude CLI cold start ~3-4 s desde el spawn (zsh exec + claude init).
-  // Si la sesión ya existía, asumimos que claude está listo y vamos rápido.
+  const session = ensureBubblePty(bubbleId, workspace, ownerId, agent);
+  // Cold start del CLI ~3-4 s desde el spawn (zsh exec + init del agente).
+  // Si la sesión ya existía, asumimos que el CLI está listo y vamos rápido.
   const delay = wasExisting ? 200 : 5000;
   setTimeout(() => {
     if (session.exited) return;
@@ -312,7 +366,8 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
     // shell donde corre Claude.
     const rawPtyId = url.searchParams.get('pty') ?? '';
     const ptyId = sanitizePtyId(rawPtyId) || 'main';
-    const noClaude = url.searchParams.get('noClaude') === '1';
+    // `noClaude=1` es el alias legacy de `agent=none`.
+    const agent = sanitizeAgent(url.searchParams.get('agent'), url.searchParams.get('noClaude') === '1');
     const requestedWs = url.searchParams.get('workspace') ?? '';
     // userId dueño de esta conexión (uid de Firebase, resuelto en verifyClient).
     const ownerId = (req as ReqWithUid).ecoUid;
@@ -366,7 +421,7 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
         cols,
         rows,
         cwd,
-        env: buildSafeEnv({ TERM: 'xterm-256color', ...githubEnvOverrides(ownerId) }) as Record<string, string>,
+        env: ptyEnv(agent, ownerId),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'pty spawn failed';
@@ -379,6 +434,7 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
       pty,
       bubbleId,
       ptyId,
+      agent,
       ownerId,
       cwd,
       buffer: '',
@@ -429,19 +485,9 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
     sendJson(ws, { type: 'ready', cwd, shell: defaultShell(), cols, rows, reattached: false });
     attachWsHandlers(ws, session);
 
-    // Auto-launch de Claude Code en cada PTY nuevo (no en reattaches).
-    // Skip si el cliente pidió noClaude=1 (terminales extra del user) o si
-    // ECO_PTY_AUTOCLAUDE=0 a nivel global.
-    // Escribimos el comando con un pequeño delay para que zsh termine de imprimir
-    // su prompt inicial primero — sino la entrada se pierde.
+    // Auto-launch del CLI de agente en cada PTY nuevo (no en reattaches).
     // El usuario puede salir con `exit` o Ctrl-D y vuelve al shell normal.
-    const autoClaude = !noClaude && process.env.ECO_PTY_AUTOCLAUDE !== '0';
-    if (autoClaude) {
-      setTimeout(() => {
-        if (session.exited) return;
-        try { session.pty.write('claude\r'); } catch { /* noop */ }
-      }, 350);
-    }
+    scheduleAgentLaunch(session);
   });
 
   function attachWsHandlers(ws: WebSocket, session: PtySession) {

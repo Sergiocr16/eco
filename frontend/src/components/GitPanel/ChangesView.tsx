@@ -9,7 +9,6 @@ import { DiscardFileButton } from '@/components/DiscardFileButton';
 import { CommitWithAI } from '@/components/CommitWithAI';
 import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
 import { useT } from '@/hooks/useI18n';
-import type { Bubble } from '@/lib/types';
 import { ResizableSplit } from './ResizableSplit';
 
 export type FileChange = {
@@ -22,7 +21,6 @@ type Props = {
   files: FileChange[];
   workspace: string;
   bubbleId: string;
-  bubble: Bubble;
   loading?: boolean;
 };
 
@@ -31,7 +29,7 @@ type Props = {
 //    seguida del CommitWithAI sticky abajo.
 //  - Columna derecha (resto): diff persistente del archivo seleccionado.
 //    Al cambiar de archivo solo se actualiza el contenido, no se cierra.
-export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Props) {
+export function ChangesView({ files, workspace, bubbleId, loading }: Props) {
   const t = useTokens();
   const tr = useT();
   const review = useReviewState(bubbleId);
@@ -97,27 +95,10 @@ export function ChangesView({ files, workspace, bubbleId, bubble, loading }: Pro
     ecoEmit('eco:git_refresh', { bubbleId });
   }
 
-  // Auto-invalidación del review state cuando el agente vuelve a editar
-  // después de un accept (mismo comportamiento que el FilesPanel viejo).
-  useEffect(() => {
-    let sawNewEdit = false;
-    for (const m of bubble.messages) {
-      for (const tc of m.toolCalls ?? []) {
-        if (tc.status !== 'success') continue;
-        if (tc.name !== 'Write' && tc.name !== 'Edit' && tc.name !== 'MultiEdit' && tc.name !== 'NotebookEdit') continue;
-        const filePath = (tc.input as { file_path?: unknown }).file_path;
-        if (typeof filePath !== 'string' || !filePath) continue;
-        const acceptedAt = review.acceptedAt(filePath);
-        if (acceptedAt === 0) continue;
-        if (m.createdAt > acceptedAt) {
-          review.unaccept(filePath);
-          sawNewEdit = true;
-        }
-      }
-    }
-    if (sawNewEdit) ecoEmit('eco:git_refresh', { bubbleId });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bubble.messages]);
+  // La auto-invalidación por `bubble.messages` (tool-calls Write/Edit del chat)
+  // se removió con el tab de Conversación. No hace falta: el dot verde exige
+  // `accepted ∧ ¬hasUnstaged`, y `git status --porcelain` vuelve a marcar el
+  // archivo como unstaged apenas el agente lo re-edita desde el PTY.
 
   const pending = reviewMode ? files.filter((f) => f.unstaged !== false).length : 0;
 

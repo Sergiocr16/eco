@@ -28,7 +28,7 @@ import { LockScreen } from './screens/LockScreen';
 import { OnboardingWizard, hasOnboarded } from './screens/OnboardingWizard';
 import { useAuth } from './hooks/useAuth';
 import { I18nProvider, useI18n, useT } from './hooks/useI18n';
-import type { Bubble, Message } from './lib/types';
+import type { Bubble } from './lib/types';
 
 import { ecoBackend, ecoToken } from './lib/eco-config';
 import { getTopInset } from './lib/platform';
@@ -275,26 +275,18 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     token: TOKEN,
     handlers: {
       ...bubbleStreamHandlers(bubbles),
-      onError: () => { /* ya manejado en socket.error */ },
-      onClientAction: (sourceBubbleId, action) => {
-        if (action.kind === 'open_bubble') {
-          // El backend (vía MCP externo) puede pasar id/workspace/baseBranch
-          // pre-determinados. El path interno (agent tool open_bubble) los
-          // omite y caemos al default del usuario.
-          bubbles.createBubble({
-            id: action.id,
-            title: action.title,
-            focus: action.focus,
-            workspace: action.workspace,
-            baseBranch: action.baseBranch ?? defaultBaseBranchForWorkspace(),
-          });
-        } else if (action.kind === 'rename_bubble') {
-          if (sourceBubbleId) bubbles.renameBubble(sourceBubbleId, action.title);
-        } else if (action.kind === 'close_bubble') {
-          if (sourceBubbleId) bubbles.removeBubble(sourceBubbleId);
-        }
+      onClientAction: (action) => {
+        // Viene del MCP server externo (POST /bubble/create), que ya trae
+        // id/workspace/baseBranch resueltos. Si omite baseBranch caemos al
+        // default del usuario.
+        bubbles.createBubble({
+          id: action.id,
+          title: action.title,
+          focus: action.focus,
+          workspace: action.workspace,
+          baseBranch: action.baseBranch ?? defaultBaseBranchForWorkspace(),
+        });
       },
-      onInjectPrompt: () => { /* legacy WS path — backend ahora inyecta server-side vía injectPromptToBubble */ },
     },
   });
 
@@ -369,23 +361,9 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     };
   }, []);
 
-  function sendTo(bubbleId: string, text: string) {
-    const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
-    if (!bubble) return;
-    bubbles.appendMessage(bubbleId, {
-      id: `u_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      role: 'user', text, createdAt: Date.now(),
-    });
-    socket.send({
-      bubbleId, text,
-      workspace: bubble.workspace || undefined,
-      resumeSessionId: bubble.sessionId,
-    });
-  }
-
   function handleScreenChange(s: Screen) {
     // NO limpiamos detailBubbleId al cambiar de screen — la AgentDetail se
-    // mantiene montada con display:none para que la terminal, el chat y
+    // mantiene montada con display:none para que la terminal y los
     // demás paneles no se reseteen al ir al dashboard y volver. Solo se
     // limpia cuando se cierra la burbuja (`confirmCloseNow`).
     setScreen(s);
@@ -526,15 +504,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     cancelTerminalDictation();
   }
 
-  function handleDashboardSend(text: string) {
-    if (!bubbles.activeBubble) {
-      const fresh = bubbles.createBubble({ focus: true, baseBranch: defaultBaseBranchForWorkspace() });
-      sendTo(fresh.id, text);
-    } else {
-      sendTo(bubbles.activeBubble.id, text);
-    }
-  }
-
   // Helper compartido: devuelve la rama base por defecto para crear un
   // worktree, basada en el workspace default + favoritos del user. Sin
   // workspace default o sin favoritos → undefined (backend cae a HEAD).
@@ -548,11 +517,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       const first = favRaw.split(',').map((s) => s.trim()).filter(Boolean)[0];
       return first || undefined;
     } catch { return undefined; }
-  }
-
-  function handleAgentDetailSend(text: string) {
-    if (!detailBubbleId) return;
-    sendTo(detailBubbleId, text);
   }
 
   function handleCreateAgent(title?: string, workspace?: string, baseBranch?: string) {
@@ -670,8 +634,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                         bubble={b}
                         workspaces={workspacesHook.list.workspaces}
                         onBack={handleBackFromDetail}
-                        onSend={handleAgentDetailSend}
-                        onInterrupt={socket.interrupt}
                         onRename={(title) => bubbles.renameBubble(b.id, title)}
                         onClose={() => {
                           requestCloseBubble(b.id, { afterClose: handleBackFromDetail });
@@ -698,8 +660,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   <Settings role={auth.state.role}/>
                 ) : screen === 'admin' ? (
                   <AdminScreen currentUserId={auth.state.userId}/>
-                ) : screen === 'history' ? (
-                  <HistoryScreen bubbles={bubbles.bubbles} onOpen={handleOpenAgent}/>
                 ) : screen === 'archived' ? (
                   <ArchivedScreen
                     bubbles={bubbles.bubbles}
@@ -713,7 +673,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                     activeBubbleId={bubbles.activeBubbleId}
                     role={auth.state.role}
                     userId={auth.state.userId}
-                    onSend={handleDashboardSend}
                     onOpenAgent={handleOpenAgent}
                     onCreateAgent={handleCreateAgent}
                     onFocus={(id) => bubbles.focusBubble(id)}
@@ -822,64 +781,6 @@ function ScreenError({ error }: { error: string | null }) {
       fontSize: 12, fontFamily: t.fontSans,
     }}>{error}</div>
   );
-}
-
-function HistoryScreen({ bubbles, onOpen }: { bubbles: Bubble[]; onOpen: (id: string) => void }) {
-  const t = useTokens();
-  const tr = useT();
-  const allMsgs: Array<{ bubble: Bubble; msg: Message }> = [];
-  for (const b of bubbles) {
-    for (const m of b.messages) allMsgs.push({ bubble: b, msg: m });
-  }
-  allMsgs.sort((a, b) => b.msg.createdAt - a.msg.createdAt);
-  return (
-    <div style={{ padding: '28px 32px', overflow: 'auto', height: '100%' }}>
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
-        {tr('history.title')}
-      </h2>
-      <p style={{ margin: '4px 0 22px', fontSize: 13, color: t.text2 }}>
-        {tr('history.sub')}
-      </p>
-      {allMsgs.length === 0 ? (
-        <div style={{ fontSize: 13, color: t.text2, padding: 24 }}>{tr('history.empty')}</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {allMsgs.slice(0, 100).map(({ bubble, msg }) => (
-            <button
-              key={`${bubble.id}-${msg.id}`} type="button"
-              onClick={() => onOpen(bubble.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '12px 14px', background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                borderRadius: 12, cursor: 'pointer', textAlign: 'left',
-              }}>
-              <span style={{
-                fontFamily: t.fontMono, fontSize: 11, color: t.text2,
-                width: 50, flexShrink: 0,
-              }}>{relTime(msg.createdAt)}</span>
-              <span style={{
-                fontFamily: t.fontSans, fontSize: 12.5, color: t.text1, fontWeight: 500,
-                width: 120, flexShrink: 0,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{bubble.title}</span>
-              <span style={{
-                flex: 1, fontFamily: t.fontSans, fontSize: 12.5,
-                color: msg.role === 'user' ? t.text0 : t.text1,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{msg.role === 'user' ? `${tr('detail.chat.you')}: ` : '→ '}{msg.text.slice(0, 120)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function relTime(ts: number): string {
-  const m = Math.max(1, Math.round((Date.now() - ts) / 60000));
-  if (m < 60) return `${m}m`;
-  if (m < 60 * 24) return `${Math.round(m / 60)}h`;
-  return `${Math.round(m / (60 * 24))}d`;
 }
 
 function ConfirmCloseBubble({

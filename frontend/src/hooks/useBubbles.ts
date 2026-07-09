@@ -11,12 +11,6 @@ const ACTIVE_KEY = 'eco.bubbles.active';
 // servidor: clave `bubble:<id>` (LWW por bubble + escrituras incrementales).
 const BUBBLE_DOC_PREFIX = 'bubble:';
 
-// Cap de mensajes que mantenemos EN MEMORIA por bubble. Los más viejos se
-// drop silenciosamente — los muy largos tienden a quedar fuera de pantalla
-// igual, y el costo de renderizar 1000+ mensajes con tool outputs grandes
-// supera el valor de tenerlos accesibles.
-const MAX_MESSAGES_IN_MEMORY = 300;
-
 // Cap más agresivo de mensajes que serializamos a localStorage. Solo se
 // usa en `persist()`. Suficiente para que al recargar la app, el user tenga
 // contexto reciente sin saturar el quota de localStorage (~5-10 MB).
@@ -164,11 +158,6 @@ export type UseBubblesResult = {
   focusBubble: (id: string) => void;
   renameBubble: (id: string, title: string) => void;
   togglePin: (id: string) => void;
-  appendMessage: (bubbleId: string, message: Message) => void;
-  updateMessage: (bubbleId: string, messageId: string, updater: (m: Message) => Message) => void;
-  setBubbleStatus: (id: string, status: Bubble['status']) => void;
-  setBubbleSessionId: (id: string, sessionId: string) => void;
-  setBubbleMessages: (id: string, updater: (messages: Message[]) => Message[]) => void;
   setBubbleWorkspace: (id: string, workspace: string) => void;
   // Toggle de una categoría en la burbuja (agrega/quita). `undefined` limpia todas.
   toggleBubbleCategory: (id: string, categoryId: string | undefined) => void;
@@ -518,49 +507,8 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
     setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, pinned: !b.pinned } : b));
   }, []);
 
-  const setBubbleStatus = useCallback((id: string, status: Bubble['status']) => {
-    setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, status } : b));
-  }, []);
-
   const setBubblePtyOpen = useCallback((id: string, open: boolean) => {
     setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, ptyOpen: open } : b));
-  }, []);
-
-  const setBubbleSessionId = useCallback((id: string, sessionId: string) => {
-    setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, sessionId } : b));
-  }, []);
-
-  const appendMessage = useCallback((bubbleId: string, message: Message) => {
-    setBubbles((prev) => prev.map((b) => {
-      if (b.id !== bubbleId) return b;
-      const isActive = bubbleId === activeBubbleId;
-      const next = [...b.messages, message];
-      // Cap en memoria: drop silencioso de los más viejos cuando crecemos.
-      const trimmed = next.length > MAX_MESSAGES_IN_MEMORY
-        ? next.slice(-MAX_MESSAGES_IN_MEMORY)
-        : next;
-      return {
-        ...b,
-        messages: trimmed,
-        unread: isActive ? 0 : (message.role === 'assistant' ? b.unread + 1 : b.unread),
-        updatedAt: Date.now(),
-      };
-    }));
-  }, [activeBubbleId]);
-
-  const updateMessage = useCallback((bubbleId: string, messageId: string, updater: (m: Message) => Message) => {
-    setBubbles((prev) => prev.map((b) => {
-      if (b.id !== bubbleId) return b;
-      return {
-        ...b,
-        messages: b.messages.map((m) => m.id === messageId ? updater(m) : m),
-        updatedAt: Date.now(),
-      };
-    }));
-  }, []);
-
-  const setBubbleMessages = useCallback((id: string, updater: (messages: Message[]) => Message[]) => {
-    setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, messages: updater(b.messages), updatedAt: Date.now() } : b));
   }, []);
 
   const setBubbleWorkspace = useCallback((id: string, workspace: string) => {
@@ -595,11 +543,6 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
     focusBubble,
     renameBubble,
     togglePin,
-    appendMessage,
-    updateMessage,
-    setBubbleStatus,
-    setBubbleSessionId,
-    setBubbleMessages,
     setBubbleWorkspace,
     toggleBubbleCategory,
     setBubblePtyOpen,

@@ -3,10 +3,10 @@ import { existsSync, realpathSync } from 'node:fs';
 import { resolve, sep, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { readStore as readWorkspaceStore } from './workspaces-store.js';
-import { readApiKey } from './api-key-store.js';
+import { readApiKey, readKey } from './api-key-store.js';
 import { getUser, workspaceGrantsFor } from './users-store.js';
 import { currentUserId } from './request-context.js';
-import { resolveClaudeCli } from './platform.js';
+import { resolveClaudeCli, resolveCodexCli } from './platform.js';
 
 function parseEnvWorkspaces(): string[] {
   // Default: el home del user (existe siempre). Antes era ~/projects/eco-test
@@ -75,12 +75,25 @@ export const config = {
   get workspaces(): string[] { return loadWorkspaces(); },
   port: Number(process.env.ECO_PORT ?? 7000),
   host: process.env.ECO_HOST ?? '127.0.0.1',
-  claudeCliPath: resolveClaudeCli(),
-  model: process.env.ECO_MODEL ?? 'claude-sonnet-4-5-20250929',
+  // Getters, no valores: si el user instala el CLI con Eco abierto, la próxima
+  // lectura lo encuentra sin reiniciar el backend (resolveCli memoiza solo los
+  // aciertos). Es lo que hace funcionar el botón "Reintentar" de la tab Codex.
+  get claudeCliPath(): string { return resolveClaudeCli(); },
+  // Codex es opcional: solo lo usa el PTY con `agent=codex`. Si no está
+  // instalado, este path apunta a un binario inexistente y codex-auth.ts
+  // reporta cliInstalled:false.
+  get codexCliPath(): string { return resolveCodexCli(); },
+  // La API key sigue viva aunque el SDK del chat se fue: la usan los spawns
+  // `claude -p` (notes-summary, commit con IA, inferencia de dev-server).
   get anthropicApiKey(): string | undefined {
     const env = process.env.ANTHROPIC_API_KEY?.trim();
     if (env) return env;
     return readApiKey() ?? undefined;
+  },
+  get openaiApiKey(): string | undefined {
+    const env = process.env.OPENAI_API_KEY?.trim();
+    if (env) return env;
+    return readKey('openai') ?? undefined;
   },
   allowedOrigins: parseAllowedOrigins(),
   // Hostnames extra aceptados en el host check (HTTP + WS), además de
@@ -92,10 +105,7 @@ export const config = {
   // arman con él y los puertos se exponen vía `tailscale serve`. Solo afecta
   // la URL/exposición — NUNCA la asignación de puertos.
   publicHost: process.env.ECO_PUBLIC_HOST?.trim().toLowerCase() || undefined,
-  maxPromptsPerMinute: Number(process.env.ECO_RATE_LIMIT ?? 10),
-  maxPromptBytes: Number(process.env.ECO_MAX_PROMPT_BYTES ?? 50_000),
   maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 12),
-  promptTimeoutMs: Number(process.env.ECO_PROMPT_TIMEOUT_MS ?? 10 * 60 * 1000),
   wsBackpressureBytes: Number(process.env.ECO_WS_BACKPRESSURE ?? 8 * 1024 * 1024),
   skillSources: parseSkillSources(),
 };

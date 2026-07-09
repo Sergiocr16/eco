@@ -1,18 +1,9 @@
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'node:http';
-import { runAgent } from './agent.js';
-import { ClientMessageSchema, type ServerMessage } from './protocol.js';
-import type { ClientAction } from './agent-tools.js';
+import type { ClientAction, ServerMessage } from './protocol.js';
 import { config, hostAllowed } from './config.js';
-import type { Query } from '@anthropic-ai/claude-agent-sdk';
-import { ensureWorktree } from './worktree-manager.js';
 import { verifyFirebaseIdToken } from './firebase-auth.js';
 import { setMachineUser } from './machine-user.js';
-
-// Rate limit POR USUARIO (multi-tenant) — reemplaza el contador global.
-// Map userId → timestamps de prompts en el último minuto. Las conexiones sin
-// userId (legacy / sin sesión) comparten el bucket '_anon'.
-const promptTimestampsByUser = new Map<string, number[]>();
 
 // El ID token de Firebase viaja como subprotocolo `eco.idtoken.<jwt>`. El JWT
 // tiene puntos pero no comas, así que entra como una sola entrada del header.
@@ -133,16 +124,9 @@ export function attachWebSocket(httpServer: Server, _authToken: string) {
       if (!set) { set = new Set(); wsByUser.set(connUserId, set); }
       set.add(ws);
     }
-    let activeAbort: AbortController | null = null;
-    let activeTimeout: NodeJS.Timeout | null = null;
-    let activeQuery: Query | null = null;
-
     const send = (msg: ServerMessage) => {
       if (ws.readyState !== ws.OPEN) return;
-      if (ws.bufferedAmount > config.wsBackpressureBytes) {
-        activeAbort?.abort();
-        return;
-      }
+      if (ws.bufferedAmount > config.wsBackpressureBytes) return;
       ws.send(JSON.stringify(msg));
     };
 
@@ -151,99 +135,9 @@ export function attachWebSocket(httpServer: Server, _authToken: string) {
       try { for (const msg of provider()) send(msg); } catch { /* noop */ }
     }
 
-    const error = (code: string, message: string) =>
-      send({ type: 'error', code, message });
-
-    ws.on('message', async (raw) => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw.toString('utf-8'));
-      } catch {
-        return error('invalid_json', 'JSON inválido');
-      }
-
-      const result = ClientMessageSchema.safeParse(parsed);
-      if (!result.success) {
-        return error('invalid_message', 'Mensaje no cumple el esquema');
-      }
-      const msg = result.data;
-
-      if (msg.type === 'interrupt') {
-        // 1) Pedir al SDK que corte limpio (cancela tool en curso, cierra stream).
-        if (activeQuery?.interrupt) {
-          try { await activeQuery.interrupt(); } catch { /* noop */ }
-        }
-        // 2) Forzar el abort del controller por si el SDK no responde.
-        activeAbort?.abort();
-        return;
-      }
-
-      if (activeAbort) {
-        return error('busy', 'Ya hay un prompt en curso. Enviá interrupt primero.');
-      }
-
-      const now = Date.now();
-      const bucketKey = connUserId ?? '_anon';
-      const bucket = promptTimestampsByUser.get(bucketKey) ?? [];
-      while (bucket.length > 0 && now - bucket[0]! > 60_000) bucket.shift();
-      if (bucket.length > 1000) bucket.splice(0, bucket.length - 1000);
-      if (bucket.length >= config.maxPromptsPerMinute) {
-        promptTimestampsByUser.set(bucketKey, bucket);
-        return error('rate_limit', `Rate limit: ${config.maxPromptsPerMinute} prompts/min`);
-      }
-      bucket.push(now);
-      promptTimestampsByUser.set(bucketKey, bucket);
-
-      const ac = new AbortController();
-      activeAbort = ac;
-      activeTimeout = setTimeout(() => ac.abort(), config.promptTimeoutMs);
-
-      try {
-        // Cada burbuja con un workspace git obtiene su propio worktree. Eso
-        // mantiene aislados los cambios de varias conversaciones sobre el mismo repo.
-        const effectiveWorkspace = (msg.bubbleId && msg.workspace)
-          ? ensureWorktree(msg.bubbleId, msg.workspace)
-          : msg.workspace;
-
-        const q = runAgent({
-          prompt: msg.text,
-          workspace: effectiveWorkspace,
-          abortController: ac,
-          resumeSessionId: msg.resumeSessionId,
-          ownerId: connUserId,
-          onClientAction: (action) => send({ type: 'client_action', action }),
-        });
-        activeQuery = q;
-
-        for await (const sdkMsg of q) {
-          if (
-            sdkMsg.type === 'system' &&
-            'subtype' in sdkMsg &&
-            sdkMsg.subtype === 'init' &&
-            'session_id' in sdkMsg
-          ) {
-            send({ type: 'session_started', sessionId: sdkMsg.session_id as string });
-          }
-          send({ type: 'sdk_message', message: sdkMsg });
-        }
-        send({ type: 'done' });
-      } catch (err) {
-        const internalMessage = err instanceof Error ? err.message : 'desconocido';
-        const code = sanitizeErrorCode(internalMessage);
-        const safeMessage = sanitizeErrorMessage(code);
-        console.error('[agent_failure]', internalMessage);
-        error(code, safeMessage);
-      } finally {
-        if (activeTimeout) clearTimeout(activeTimeout);
-        activeTimeout = null;
-        activeAbort = null;
-        activeQuery = null;
-      }
-    });
+    // `/ws` es solo server → cliente. Cualquier frame entrante se ignora.
 
     ws.on('close', () => {
-      if (activeTimeout) clearTimeout(activeTimeout);
-      activeAbort?.abort();
       if (connUserId) {
         const set = wsByUser.get(connUserId);
         if (set) { set.delete(ws); if (set.size === 0) wsByUser.delete(connUserId); }
@@ -252,24 +146,5 @@ export function attachWebSocket(httpServer: Server, _authToken: string) {
   });
 
   return wss;
-}
-
-// Devuelve un código estable de error para que el frontend lo traduzca.
-function sanitizeErrorCode(internal: string): string {
-  if (/workspace/i.test(internal)) return 'agent.workspace_denied';
-  if (/aborted|abort/i.test(internal)) return 'agent.aborted';
-  if (/permission|denied/i.test(internal)) return 'agent.permission_denied';
-  if (/rate/i.test(internal)) return 'agent.rate_limit';
-  return 'agent.unknown_failure';
-}
-
-function sanitizeErrorMessage(code: string): string {
-  switch (code) {
-    case 'agent.workspace_denied':  return 'Workspace no permitido o inválido.';
-    case 'agent.aborted':           return 'Operación interrumpida o expiró.';
-    case 'agent.permission_denied': return 'Acción denegada por política de seguridad.';
-    case 'agent.rate_limit':        return 'Rate limit alcanzado.';
-    default:                        return 'El agente no pudo completar la operación.';
-  }
 }
 

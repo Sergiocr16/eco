@@ -3,7 +3,6 @@ import { useTokens } from '@/design/theme';
 import { IconGithub, IconLayers, IconBranch } from '@/design/icons';
 import { on as ecoOn } from '@/lib/eco-bus';
 import { useT } from '@/hooks/useI18n';
-import type { Bubble } from '@/lib/types';
 import { ChangesView, type FileChange } from './ChangesView';
 import { HistoryView } from './HistoryView';
 import { PRsView } from './PRsView';
@@ -13,7 +12,6 @@ import { GitTopBar } from './GitTopBar';
 export type GitSubtab = 'changes' | 'history' | 'prs';
 
 type Props = {
-  bubble: Bubble;
   workspace: string;
   bubbleId: string;
   filesChanged: FileChange[];
@@ -37,7 +35,7 @@ function saveSubtab(bubbleId: string, sub: GitSubtab) {
   try { localStorage.setItem(STORAGE_PREFIX + bubbleId, sub); } catch { /* noop */ }
 }
 
-export function GitPanel({ bubble, workspace, bubbleId, filesChanged, gitChangesLoading, onRename }: Props) {
+export function GitPanel({ workspace, bubbleId, filesChanged, gitChangesLoading, onRename }: Props) {
   const t = useTokens();
   const tr = useT();
   const [sub, setSub] = useState<GitSubtab>(() => loadSubtab(bubbleId));
@@ -106,7 +104,6 @@ export function GitPanel({ bubble, workspace, bubbleId, filesChanged, gitChanges
             files={filesChanged}
             workspace={workspace}
             bubbleId={bubbleId}
-            bubble={bubble}
             loading={gitChangesLoading}
           />
         )}

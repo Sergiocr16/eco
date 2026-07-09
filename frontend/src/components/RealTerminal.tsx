@@ -7,6 +7,9 @@ import '@xterm/xterm/css/xterm.css';
 import { currentIdToken } from '@/lib/firebase';
 import { useTokens } from '@/design/theme';
 
+// Debe coincidir con `AgentCli` en backend/src/pty-server.ts.
+export type AgentCli = 'claude' | 'codex' | 'none';
+
 type Props = {
   workspace: string;
   // Identificador estable de la burbuja: permite que el PTY persista en el backend
@@ -15,17 +18,17 @@ type Props = {
   // Cuando este key cambia, se reinicia el terminal (sirve para "Nuevo shell")
   resetKey?: number;
   // Identificador del terminal dentro de la burbuja. "main" (default) = el
-  // terminal con auto-claude. Cualquier otro string = un shell extra plano.
+  // terminal de Claude; "codex" = el de Codex. Cualquier otro string = un
+  // shell extra plano.
   ptyId?: string;
-  // Si false, el backend NO auto-arranca `claude` en el shell. Default true
-  // para mantener el comportamiento del terminal principal.
-  autoClaude?: boolean;
+  // Qué CLI auto-arranca el backend en este PTY. 'none' = shell pelado.
+  agent?: AgentCli;
 };
 
 // TOKEN se resuelve por llamada (no por módulo) para que funcione tanto en
 // dev (env de Vite) como en Electron empaquetado (preload IPC).
 
-export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main', autoClaude = true }: Props) {
+export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main', agent = 'claude' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const t = useTokens();
   const [status, setStatus] = useState<'connecting' | 'open' | 'reconnecting' | 'closed' | 'error'>('connecting');
@@ -81,7 +84,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       if (workspace) url.searchParams.set('workspace', workspace);
       if (bubbleId) url.searchParams.set('bubble', bubbleId);
       if (ptyId) url.searchParams.set('pty', ptyId);
-      if (!autoClaude) url.searchParams.set('noClaude', '1');
+      url.searchParams.set('agent', agent);
       url.searchParams.set('cols', String(term.cols));
       url.searchParams.set('rows', String(term.rows));
       return url.toString();
@@ -227,7 +230,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       term.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, bubbleId, resetKey, ptyId, autoClaude]);
+  }, [workspace, bubbleId, resetKey, ptyId, agent]);
 
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>

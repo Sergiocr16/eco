@@ -6,7 +6,7 @@ import {
 import { useT } from '@/hooks/useI18n';
 import { AccountMenu } from './AccountMenu';
 
-export type Screen = 'dashboard' | 'folders' | 'files' | 'history' | 'archived' | 'settings' | 'admin' | 'detail' | 'login' | 'onboarding';
+export type Screen = 'dashboard' | 'folders' | 'files' | 'archived' | 'settings' | 'admin' | 'detail' | 'login' | 'onboarding';
 
 type Props = {
   screen: Screen;

@@ -2,7 +2,7 @@
 // Los bloqueadores Windows eran: shell hardcodeado a /bin/zsh|/bin/bash, `lsof`
 // para puertos, y `process.kill(-pgid)` (process groups, inexistente en Win).
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
@@ -11,29 +11,121 @@ import { fileURLToPath } from 'node:url';
 
 export const IS_WIN = process.platform === 'win32';
 
-/** Resuelve el path del CLI `claude` cross-platform.
- *  Prioridad: $CLAUDE_CLI_PATH → instalador nativo (~/.local/bin) → PATH.
+// Directorios bin que el SO NO siempre incluye en el PATH cuando la app se
+// lanza desde su launcher (Finder/Dock en mac, acceso directo en Windows).
+// Sin esto, `claude`, `codex`, `gh`, `git`/`mvn` de Homebrew o los binarios de
+// npm global no se resuelven al spawnear desde el backend empaquetado.
+// `security.ts:augmentedPath()` los agrega al PATH de los hijos; `resolveCli`
+// los recorre para encontrar un binario sin depender del PATH heredado.
+export const EXTRA_PATH_DIRS = (IS_WIN
+  ? [
+      process.env.APPDATA ? `${process.env.APPDATA}\\npm` : '', // npm global (claude.cmd, etc.)
+      process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.local\\bin` : '', // claude.exe
+    ]
+  : [
+      '/opt/homebrew/bin',
+      '/opt/homebrew/sbin',
+      '/usr/local/bin',
+      '/usr/local/sbin',
+      process.env.HOME ? `${process.env.HOME}/.local/bin` : '',
+    ]
+).filter(Boolean);
+
+/** Bin dirs de npm-global bajo un manejador de versiones de Node (nvm). Un
+ *  `npm i -g @openai/codex` deja el binario en
+ *  `~/.nvm/versions/node/<v>/bin/`, que NO está en EXTRA_PATH_DIRS y que el
+ *  backend empaquetado tampoco tiene en su PATH.
+ *
+ *  Solo para DESCUBRIR binarios: deliberadamente NO van a EXTRA_PATH_DIRS,
+ *  porque agregarlos al PATH de los hijos metería `node` v6/v7/v10 en el
+ *  PATH de cualquier dev-server. Versiones en orden descendente → gana la
+ *  más nueva, que es donde el user instaló el CLI. */
+function nvmBinDirs(): string[] {
+  if (IS_WIN) return [];
+  const dirs: string[] = [];
+  const active = process.env.NVM_BIN?.trim();
+  if (active) dirs.push(active);
+  const root = join(homedir(), '.nvm', 'versions', 'node');
+  try {
+    const versions = readdirSync(root).filter((v) => v.startsWith('v'));
+    versions.sort(compareNodeVersionsDesc);
+    for (const v of versions) dirs.push(join(root, v, 'bin'));
+  } catch { /* sin nvm */ }
+  return dirs;
+}
+
+function compareNodeVersionsDesc(a: string, b: string): number {
+  const parse = (v: string) => v.slice(1).split('.').map((n) => Number(n) || 0);
+  const [a0, a1, a2] = parse(a);
+  const [b0, b1, b2] = parse(b);
+  return (b0! - a0!) || (b1! - a1!) || (b2! - a2!);
+}
+
+// Memo de resoluciones EXITOSAS. Un fallo no se cachea: si el user instala
+// `codex` con Eco abierto, el botón "Reintentar" tiene que encontrarlo sin
+// reiniciar el backend. El existsSync cubre el caso inverso (lo desinstaló).
+const resolvedClis = new Map<string, string>();
+
+/** Resuelve el path de un CLI de agente (`claude`, `codex`) cross-platform.
+ *  Prioridad: $<envVar> → instalador nativo (~/.local/bin) → bin dirs conocidos
+ *  (Homebrew, npm global) → bins de nvm → PATH → fallback a ~/.local/bin (para
+ *  que el warning de config.ts sea informativo).
+ *
+ *  El paso por los bin dirs conocidos existe porque el backend empaquetado
+ *  hereda un PATH mínimo del launcher del SO: `where`/`which` no encontrarían
+ *  un binario instalado por Homebrew o npm -g.
+ *
  *  En Windows preferimos un ejecutable real (.exe) sobre los shims .cmd de
  *  npm: spawnear un .cmd requiere `shell:true`, que rompe el paso de args
  *  (varios call-sites mandan el prompt como argv → riesgo de quoting/injection). */
-export function resolveClaudeCli(): string {
-  const override = process.env.CLAUDE_CLI_PATH?.trim();
+function resolveCli(binName: string, envVar: string): string {
+  const override = process.env[envVar]?.trim();
   if (override) return override;
-  if (IS_WIN) {
-    const local = join(homedir(), '.local', 'bin', 'claude.exe');
-    if (existsSync(local)) return local;
-    try {
-      const r = spawnSync('where', ['claude'], { encoding: 'utf-8', timeout: 4000 });
-      if (r.status === 0 && r.stdout) {
-        const hits = r.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-        const exe = hits.find((h) => /\.exe$/i.test(h));
-        if (exe) return exe;
-        if (hits[0]) return hits[0];
-      }
-    } catch { /* noop */ }
-    return local;
+
+  const memo = resolvedClis.get(binName);
+  if (memo && existsSync(memo)) return memo;
+
+  const exeName = IS_WIN ? `${binName}.exe` : binName;
+  const localBin = join(homedir(), '.local', 'bin', exeName);
+
+  const hit = firstExisting([localBin, ...EXTRA_PATH_DIRS.map((d) => join(d, exeName))])
+    ?? lookupOnPath(binName)
+    ?? firstExisting(nvmBinDirs().map((d) => join(d, exeName)));
+
+  if (hit) {
+    resolvedClis.set(binName, hit);
+    return hit;
   }
-  return join(homedir(), '.local', 'bin', 'claude');
+  return localBin;
+}
+
+function firstExisting(candidates: string[]): string | null {
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return null;
+}
+
+function lookupOnPath(binName: string): string | null {
+  try {
+    const r = IS_WIN ? spawnSync('where', [binName], { encoding: 'utf-8', timeout: 4000 })
+                     : spawnSync('which', [binName], { encoding: 'utf-8', timeout: 4000 });
+    if (r.status !== 0 || !r.stdout) return null;
+    const hits = r.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    if (IS_WIN) {
+      const exe = hits.find((h) => /\.exe$/i.test(h));
+      if (exe) return exe;
+    }
+    return hits[0] ?? null;
+  } catch { return null; }
+}
+
+export function resolveClaudeCli(): string {
+  return resolveCli('claude', 'CLAUDE_CLI_PATH');
+}
+
+export function resolveCodexCli(): string {
+  return resolveCli('codex', 'CODEX_CLI_PATH');
 }
 
 /** Resuelve el binario de ripgrep (`rg` / `rg.exe`) cross-platform.

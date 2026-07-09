@@ -21,12 +21,16 @@ import * as gitAdv from './git-ops-advanced.js';
 import * as devServer from './dev-server.js';
 import * as obsidian from './obsidian.js';
 import { getClaudeAuthStatus } from './claude-auth.js';
+import { getCodexAuthStatus, invalidateCodexAuthCache } from './codex-auth.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { listSkills } from './skills.js';
 import { addWorkspace, readStore as readWorkspaceStore, removeWorkspace } from './workspaces-store.js';
 import { runShell, ShellRequestSchema } from './shell.js';
 import { fileDiff, DiffRequestSchema } from './file-diff.js';
-import { writeApiKey, deleteApiKey, hasApiKey, maskedApiKey, validateApiKey } from './api-key-store.js';
+import {
+  writeApiKey, deleteApiKey, hasApiKey, maskedApiKey, validateApiKey,
+  writeKey, deleteKey, hasKey, maskedKey, validateKey,
+} from './api-key-store.js';
 import {
   hasGithubCredentials, readGithubCredentials, writeGithubCredentials,
   deleteGithubCredentials, maskedPat as maskedGithubPat, validateGithubPat,
@@ -547,7 +551,6 @@ app.delete('/user/doc', (req: Request, res: Response) => {
 app.get('/info', (req: Request, res: Response) => {
   res.json({
     workspaces: workspacesForUser(req.ecoUser?.id),
-    model: config.model,
   });
 });
 
@@ -624,6 +627,41 @@ app.post('/config/api-key', async (req: Request, res: Response) => {
 
 app.delete('/config/api-key', (_req: Request, res: Response) => {
   deleteApiKey();
+  res.json({ ok: true });
+});
+
+// ─── Codex (CLI de OpenAI) ────────────────────────────────────────────────
+// Espejo de los cuatro handlers de arriba. Endpoints explícitos en vez de un
+// `?provider=`: el onboarding llama a los de Claude directo y no queremos
+// tocarlo.
+
+app.get('/config/codex-auth', (_req: Request, res: Response) => {
+  res.json(getCodexAuthStatus());
+});
+
+app.get('/config/openai-key', (_req: Request, res: Response) => {
+  res.json({ hasKey: hasKey('openai'), masked: maskedKey('openai') });
+});
+
+app.post('/config/openai-key', async (req: Request, res: Response) => {
+  const parsed = ApiKeyRequestSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  try {
+    if (parsed.data.validate !== false) {
+      const result = await validateKey('openai', parsed.data.key);
+      if (!result.ok) return errResponse(res, 400, 'apikey.invalid', result.error ?? 'Key inválida');
+    }
+    writeKey('openai', parsed.data.key);
+    invalidateCodexAuthCache();
+    res.json({ ok: true, masked: maskedKey('openai') });
+  } catch (e) {
+    fromException(res, e, 'apikey.save_failed', 'Error guardando key');
+  }
+});
+
+app.delete('/config/openai-key', (_req: Request, res: Response) => {
+  deleteKey('openai');
+  invalidateCodexAuthCache();
   res.json({ ok: true });
 });
 
@@ -1722,13 +1760,16 @@ const BubbleCreateSchema = z.object({
   workspace: z.string().min(1).max(4096).optional(),
   baseBranch: z.string().min(1).max(256).optional(),
   initialPrompt: z.string().min(1).max(16_000).optional(),
+  // Qué CLI arranca en el PTY headless de la bubble. Omitirlo = 'claude'
+  // (retrocompatible con callers MCP viejos).
+  agent: z.enum(['claude', 'codex']).optional(),
 });
 app.post('/bubble/create', (req: Request, res: Response) => {
   const parsed = BubbleCreateSchema.safeParse(req.body);
   if (!parsed.success) {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
   }
-  const { title, workspace, baseBranch, initialPrompt } = parsed.data;
+  const { title, workspace, baseBranch, initialPrompt, agent } = parsed.data;
   // Dueño: el usuario de la sesión, o el primer admin para callers MCP sin
   // sesión (F4 agrega token MCP por usuario).
   const creatorId = req.ecoUser?.id ?? firstAdminId() ?? undefined;
@@ -1769,7 +1810,7 @@ app.post('/bubble/create', (req: Request, res: Response) => {
   // arriba) o cae al primer workspace permitido. Fire-and-forget.
   if (initialPrompt && workspace) {
     try {
-      injectPromptToBubble(bubbleId, creatorId, workspace, initialPrompt);
+      injectPromptToBubble(bubbleId, creatorId, workspace, initialPrompt, agent ?? 'claude');
     } catch (e) {
       console.error('[bubble/create] injectPromptToBubble failed:', e);
     }
@@ -1791,13 +1832,15 @@ app.post('/bubble/create', (req: Request, res: Response) => {
 const BubbleSendSchema = z.object({
   bubbleId: z.string().min(1).max(128),
   text: z.string().min(1).max(16_000),
+  // A qué terminal de agente se tipea. Omitirlo = 'claude'.
+  agent: z.enum(['claude', 'codex']).optional(),
 });
 app.post('/bubble/send', (req: Request, res: Response) => {
   const parsed = BubbleSendSchema.safeParse(req.body);
   if (!parsed.success) {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
   }
-  const { bubbleId, text } = parsed.data;
+  const { bubbleId, text, agent } = parsed.data;
   if (!isValidBubbleId(bubbleId)) {
     return errResponse(res, 400, 'bubble.invalid_id', 'bubbleId inválido');
   }
@@ -1818,7 +1861,7 @@ app.post('/bubble/send', (req: Request, res: Response) => {
     return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
   }
   try {
-    injectPromptToBubble(bubbleId, bubble.ownerId, bubble.workspace, text);
+    injectPromptToBubble(bubbleId, bubble.ownerId, bubble.workspace, text, agent ?? 'claude');
   } catch (e) {
     console.error('[bubble/send] injectPromptToBubble failed:', e);
     return errResponse(res, 500, 'bubble.send_failed', 'No se pudo inyectar el prompt al PTY');
@@ -2065,7 +2108,6 @@ server.listen(config.port, config.host, () => {
   console.log(`   HTTP:      http://${config.host}:${config.port}`);
   console.log(`   WebSocket: ws://${config.host}:${config.port}/ws`);
   console.log(`   Workspaces: ${config.workspaces.join(', ')}`);
-  console.log(`   Modelo:    ${config.model}`);
   console.log(`   Orígenes:  ${config.allowedOrigins.join(', ')}`);
   console.log(`   Conexiones máx: ${config.maxOpenConnections}`);
   console.log(`   Auth:      Bearer ${authToken.slice(0, 8)}…  (archivo: ~/.eco/token)\n`);

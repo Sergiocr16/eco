@@ -31,8 +31,7 @@ export function isDangerousBash(command: string): { dangerous: boolean; reason?:
 }
 
 import { delimiter as PATH_DELIMITER } from 'node:path';
-
-const IS_WIN = process.platform === 'win32';
+import { EXTRA_PATH_DIRS } from './platform.js';
 
 // Prefijos de variables internas de Eco que NO se filtran a procesos
 // spawneados (config/puertos/ids del backend; el bearer vive en ~/.eco/token,
@@ -57,24 +56,6 @@ const ENV_DENY_EXACT = new Set([
   'TERM_PROGRAM',
   'TERM_PROGRAM_VERSION',
 ]);
-
-// Directorios bin que el SO NO siempre incluye en el PATH cuando la app se
-// lanza desde su launcher (Finder/Dock en mac, acceso directo en Windows).
-// Sin esto, `claude`, `gh`, `git`/`mvn` de Homebrew o los binarios de npm
-// global no se resuelven al spawnear desde el backend empaquetado.
-const EXTRA_PATH_DIRS = (IS_WIN
-  ? [
-      process.env.APPDATA ? `${process.env.APPDATA}\\npm` : '', // npm global (claude.cmd, etc.)
-      process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.local\\bin` : '', // claude.exe
-    ]
-  : [
-      '/opt/homebrew/bin',
-      '/opt/homebrew/sbin',
-      '/usr/local/bin',
-      '/usr/local/sbin',
-      process.env.HOME ? `${process.env.HOME}/.local/bin` : '',
-    ]
-).filter(Boolean);
 
 /** Devuelve un PATH que combina el heredado + los dirs de Homebrew/npm/local,
  *  sin duplicados. Los dirs extra van al FINAL (prioridad al PATH del user

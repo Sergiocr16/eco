@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import http from 'node:http';
+import type { AgentCli } from './host-agent.js';
 
 const TOKEN_PATH = join(homedir(), '.eco', 'token');
 
@@ -150,6 +151,7 @@ export type CreateBubbleInput = {
   workspace?: string;
   baseBranch?: string;
   initialPrompt?: string;
+  agent?: AgentCli;
 };
 
 export type CreateBubbleResult = {
@@ -164,6 +166,7 @@ export async function createBubble(input: CreateBubbleInput): Promise<CreateBubb
   if (input.workspace) body.workspace = input.workspace;
   if (input.baseBranch) body.baseBranch = input.baseBranch;
   if (input.initialPrompt) body.initialPrompt = input.initialPrompt;
+  if (input.agent) body.agent = input.agent;
   return (await call('/bubble/create', { method: 'POST', body })) as CreateBubbleResult;
 }
 
@@ -173,8 +176,10 @@ export type SendToBubbleResult = {
   workspace: string | null;
 };
 
-export async function sendToBubble(bubbleId: string, text: string): Promise<SendToBubbleResult> {
-  return (await call('/bubble/send', { method: 'POST', body: { bubbleId, text } })) as SendToBubbleResult;
+export async function sendToBubble(bubbleId: string, text: string, agent?: AgentCli): Promise<SendToBubbleResult> {
+  const body: Record<string, unknown> = { bubbleId, text };
+  if (agent) body.agent = agent;
+  return (await call('/bubble/send', { method: 'POST', body })) as SendToBubbleResult;
 }
 
 export type BubbleSummary = {

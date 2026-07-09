@@ -320,7 +320,6 @@ const DICT = {
   'dash.rail.folder_bubbles': { es: '{{n}} agentes en la carpeta', en: '{{n}} agents in folder' },
   'dash.bubble.agent': { es: 'Agente', en: 'Agent' },
   'dash.bubble.new': { es: 'Nuevo agente', en: 'New agent' },
-  'dash.bubble.no_msg': { es: 'Sin mensajes aún', en: 'No messages yet' },
   'dash.bubble.name_label': { es: 'Nombre del agente', en: 'Agent name' },
   'dash.bubble.name_placeholder': {
     es: 'Ej: Refactor auth, Investigar bug...',
@@ -457,12 +456,10 @@ const DICT = {
   'detail.dictation.send': { es: 'Enviar a terminal', en: 'Send to terminal' },
   'detail.dictation.cancel': { es: 'Cancelar', en: 'Cancel' },
   'detail.dictation.clear': { es: 'Limpiar', en: 'Clear' },
-  'detail.tab.chat': { es: 'Conversación', en: 'Conversation' },
   'detail.tab.terminal': { es: 'Terminal', en: 'Terminal' },
   'detail.tab.files': { es: 'Archivos', en: 'Files' },
   'detail.menu.rename': { es: 'Renombrar agente', en: 'Rename agent' },
   'detail.menu.change_workspace': { es: 'Cambiar workspace', en: 'Change workspace' },
-  'detail.menu.copy_chat': { es: 'Copiar conversación', en: 'Copy conversation' },
   'detail.menu.open_window': { es: 'Abrir en ventana nueva', en: 'Open in new window' },
   'detail.menu.close': { es: 'Cerrar agente', en: 'Close agent' },
   'detail.menu.archive': { es: 'Archivar agente', en: 'Archive agent' },
@@ -494,84 +491,24 @@ const DICT = {
 
   'cmd.archive': { es: 'Agente archivado', en: 'Agent archived' },
   'cmd.archived_screen': { es: 'Archivados', en: 'Archived' },
-  'detail.chat.you': { es: 'Tú', en: 'You' },
-  'detail.chat.placeholder': {
-    es: 'Escríbele a {{name}}…',
-    en: 'Write to {{name}}…',
-  },
-  'detail.chat.thinking': { es: 'Pensando…', en: 'Thinking…' },
-  'detail.chat.executing': { es: 'Ejecutando…', en: 'Executing…' },
-  'detail.chat.empty_title': { es: 'Iniciá conversación con {{name}}', en: 'Start chatting with {{name}}' },
-  'detail.chat.empty_sub': {
-    es: 'Escribí algo abajo para empezar.',
-    en: 'Type something below to get started.',
-  },
-  'detail.term.command_placeholder': {
-    es: 'escribí un comando',
-    en: 'type a command',
-  },
-  'detail.term.executing': { es: 'ejecutando…', en: 'executing…' },
   'detail.files.empty': {
     es: 'Esta agente todavía no modificó archivos.',
     en: 'This agent has not modified any files yet.',
   },
   'detail.files.modified': { es: 'Archivos modificados', en: 'Modified files' },
   'detail.sidebar.stats': { es: 'Estadísticas', en: 'Stats' },
-  'detail.sidebar.next': { es: 'Acciones rápidas', en: 'Quick actions' },
   'detail.sidebar.suggestion': { es: 'Sugerencia', en: 'Suggestion' },
   'detail.sidebar.safe_mode': { es: 'Modo seguro activo', en: 'Safe mode enabled' },
   'detail.stat.time_active':   { es: 'Tiempo activo', en: 'Time active' },
   'detail.stat.last_activity': { es: 'Última actividad', en: 'Last activity' },
-  'detail.stat.messages':      { es: 'Mensajes', en: 'Messages' },
-  'detail.stat.tool_calls':    { es: 'Tool calls', en: 'Tool calls' },
   'detail.stat.files_changed': { es: 'Archivos tocados', en: 'Files changed' },
   'detail.stat.state':         { es: 'Estado', en: 'State' },
-  'detail.suggestion.idle': {
-    es: 'Continuá la conversación o decile algo más.',
-    en: 'Continue the conversation or say something else.',
-  },
-  'detail.suggestion.thinking': {
-    es: 'Eco está procesando tu última instrucción.',
-    en: 'Eco is processing your last instruction.',
-  },
-  'detail.suggestion.executing': {
-    es: 'Esperá a que termine la ejecución.',
-    en: 'Wait for execution to finish.',
-  },
-  'detail.suggestion.review': {
-    es: 'Revisá los archivos modificados.',
-    en: 'Review the modified files.',
-  },
   'detail.header.bubble': { es: 'Agente', en: 'Agent' },
   'detail.header.id': { es: 'ID', en: 'ID' },
-  'detail.btn.interrupt': { es: 'Detener al agente', en: 'Stop the agent' },
-  'detail.chat.write_to': { es: 'Escríbele a {{name}}…', en: 'Write to {{name}}…' },
   'detail.menu.workspace_empty_picker': {
     es: 'Sin workspaces. Agregalos en Ajustes.',
     en: 'No workspaces. Add them in Settings.',
   },
-  'detail.term.welcome_workspace': {
-    es: 'eco-shell · {{ws}}',
-    en: 'eco-shell · {{ws}}',
-  },
-  'detail.term.welcome_workspace_none': {
-    es: '(sin workspace)',
-    en: '(no workspace)',
-  },
-  'detail.term.welcome_session': {
-    es: '◆ Sesión: {{title}} · escribí "help" para ayuda',
-    en: '◆ Session: {{title}} · type "help" for help',
-  },
-  'detail.term.help_lines': {
-    es: 'Comandos disponibles:\n  clear, cls       — limpia la terminal\n  cd <ruta>        — cambia el directorio (sin salir del workspace)\n  pwd              — muestra el directorio actual\n  help             — esta ayuda\n  <cualquier otro> — se ejecuta en shell con timeout 30s',
-    en: 'Available commands:\n  clear, cls       — clear the terminal\n  cd <path>        — change directory (within workspace)\n  pwd              — show current directory\n  help             — this help\n  <anything else>  — runs in shell with 30s timeout',
-  },
-  'detail.term.cd_outside': {
-    es: 'cd: {{target}}: fuera del workspace',
-    en: 'cd: {{target}}: outside workspace',
-  },
-  'detail.term.exit_code': { es: 'exit {{code}}', en: 'exit {{code}}' },
-  'detail.term.truncated': { es: 'output truncado', en: 'output truncated' },
   'detail.files.created': { es: 'creado', en: 'created' },
   'detail.files.modified_one': { es: 'modificado', en: 'modified' },
   'detail.files.open_editor': { es: 'Abrir en editor', en: 'Open in editor' },
@@ -811,7 +748,7 @@ const DICT = {
   // ─────────────────────────── Settings
   'settings.title': { es: 'Ajustes', en: 'Settings' },
   'settings.section.general': { es: 'General', en: 'General' },
-  'settings.section.claude': { es: 'Claude & API', en: 'Claude & API' },
+  'settings.section.agents': { es: 'Agentes & API', en: 'Agents & API' },
   'settings.section.folders': { es: 'Carpetas', en: 'Folders' },
   'settings.section.security': { es: 'Seguridad', en: 'Security' },
   'settings.section.appearance': { es: 'Apariencia', en: 'Appearance' },
@@ -1117,12 +1054,6 @@ const DICT = {
   'conn.error': { es: 'error', en: 'error' },
 
   // ─────────────────────────── History screen
-  'history.title': { es: 'Historial', en: 'History' },
-  'history.sub': {
-    es: 'Mensajes de todas las agentes, ordenados por fecha.',
-    en: 'Messages from all agents, sorted by date.',
-  },
-  'history.empty': { es: 'Sin historial todavía.', en: 'No history yet.' },
 
   // ─────────────────────────── File Explorer
   'files.active_folders': { es: 'Carpetas activas', en: 'Active folders' },
@@ -1195,12 +1126,16 @@ const DICT = {
   'skill.label_agent': { es: 'agent', en: 'agent' },
   'skill.yours': { es: 'tuyo', en: 'yours' },
 
-  // ─────────────────────────── Settings — Claude
-  'settings.claude.title': { es: 'Claude & API', en: 'Claude & API' },
-  'settings.claude.sub': {
-    es: 'Configura tu acceso a los modelos de Anthropic.',
-    en: 'Configure your access to Anthropic models.',
+  // ─────────────────────────── Settings — Agentes (Claude + Codex)
+  'settings.agents.title': { es: 'Agentes & API', en: 'Agents & API' },
+  'settings.agents.sub': {
+    es: 'Configura el acceso a los CLIs de agente que corren en tus terminales.',
+    en: 'Configure access to the agent CLIs that run in your terminals.',
   },
+  'settings.agents.provider.claude': { es: 'Claude', en: 'Claude' },
+  'settings.agents.provider.codex': { es: 'Codex', en: 'Codex' },
+
+  // ─────────────────────────── Settings — Claude
   // Autenticación con Claude — explica las 2 vías (CLI vs API key)
   'settings.claude.auth.using_cli': {
     es: 'Autenticado con tu sesión de Claude Code',
@@ -1270,6 +1205,62 @@ const DICT = {
   'settings.claude.cli_path_desc': { es: 'Binario que ejecuta cada agente.', en: 'Binary that runs each agent.' },
   'settings.claude.streaming': { es: 'Streaming de respuestas', en: 'Response streaming' },
   'settings.claude.streaming_desc': { es: 'Mostrar texto en tiempo real.', en: 'Show text in real time.' },
+
+  // ─────────────────────────── Settings — Codex (CLI de OpenAI)
+  // Espejo de settings.claude.* — las tarjetas son genéricas y arman la clave
+  // con el prefijo del proveedor (ver AGENT_PROVIDERS en Settings.tsx).
+  'settings.codex.auth.using_cli': {
+    es: 'Autenticado con tu sesión de Codex',
+    en: 'Authenticated via your Codex session',
+  },
+  'settings.codex.auth.using_apikey': {
+    es: 'Autenticado con API key',
+    en: 'Authenticated via API key',
+  },
+  'settings.codex.auth.using_none': {
+    es: 'Sin método de autenticación configurado',
+    en: 'No authentication method configured',
+  },
+  'settings.codex.auth.priority_hint': {
+    es: 'Si tenés ambos, Codex prefiere la sesión del CLI (sin costo extra)',
+    en: 'If both are present, Codex prefers the CLI session (no extra cost)',
+  },
+  'settings.codex.auth.active': { es: 'Activo', en: 'Active' },
+  'settings.codex.auth.or': { es: 'o', en: 'or' },
+  'settings.codex.auth.cli_title': {
+    es: 'Sesión de Codex CLI · recomendado',
+    en: 'Codex CLI session · recommended',
+  },
+  'settings.codex.auth.cli_desc': {
+    es: 'Si tenés ChatGPT Plus o Pro, hacé `codex login` una vez en tu terminal. El consumo va contra tu suscripción — sin costo extra por mensaje.',
+    en: 'If you have ChatGPT Plus or Pro, run `codex login` once in your terminal. Usage counts against your subscription — no extra cost per message.',
+  },
+  'settings.codex.auth.cli_installed':     { es: 'CLI detectado', en: 'CLI detected' },
+  'settings.codex.auth.cli_not_installed': { es: 'CLI no instalado', en: 'CLI not installed' },
+  'settings.codex.auth.cli_loggedin':      { es: 'sesión activa', en: 'session active' },
+  'settings.codex.auth.cli_notloggedin':   { es: 'sin sesión iniciada', en: 'no session' },
+  'settings.codex.auth.apikey_title': {
+    es: 'API Key directa de OpenAI',
+    en: 'Direct OpenAI API key',
+  },
+  'settings.codex.auth.apikey_desc': {
+    es: 'Pegá una key sk-… para uso pay-per-use. Eco la inyecta como OPENAI_API_KEY solo en la terminal donde corre Codex.',
+    en: 'Paste an sk-… key for pay-per-use. Eco injects it as OPENAI_API_KEY only into the terminal running Codex.',
+  },
+  'settings.codex.apikey.title': { es: 'API Key de OpenAI', en: 'OpenAI API Key' },
+  'settings.codex.apikey.desc': {
+    es: 'Se guarda en ~/.eco/openai-api-key con permisos 600.',
+    en: 'Stored at ~/.eco/openai-api-key with mode 600.',
+  },
+  'settings.codex.apikey.saved': { es: 'Guardada', en: 'Saved' },
+  'settings.codex.apikey.save_btn': { es: 'Guardar', en: 'Save' },
+  'settings.codex.apikey.replace_btn': { es: 'Reemplazar', en: 'Replace' },
+  'settings.codex.apikey.validating': { es: 'Validando…', en: 'Validating…' },
+  'settings.codex.apikey.remove_btn': { es: 'Quitar', en: 'Remove' },
+  'settings.codex.apikey.success': {
+    es: 'API key guardada y validada contra OpenAI.',
+    en: 'API key saved and validated against OpenAI.',
+  },
 
   // ─────────────────────────── Settings — Folders
   'settings.folders.title': { es: 'Espacios de trabajo', en: 'Workspaces' },
@@ -1728,7 +1719,6 @@ const DICT = {
   'cmd.scroll.top': { es: 'al inicio', en: 'to start' },
   'cmd.scroll.bottom': { es: 'al final', en: 'to end' },
   'cmd.switch_tab': { es: 'Pestaña', en: 'Tab' },
-  'cmd.tab.chat': { es: 'Conversación', en: 'Conversation' },
   'cmd.tab.terminal': { es: 'Terminal', en: 'Terminal' },
   'cmd.tab.files': { es: 'Archivos', en: 'Files' },
   'cmd.tab.git': { es: 'Git', en: 'Git' },
@@ -1749,7 +1739,6 @@ const DICT = {
   'cmd.dashboard': { es: 'Inicio', en: 'Home' },
   'cmd.settings': { es: 'Ajustes', en: 'Settings' },
   'cmd.files': { es: 'Archivos', en: 'Files' },
-  'cmd.history': { es: 'Historial', en: 'History' },
   'cmd.new_bubble': { es: 'Nuevo agente', en: 'New agent' },
   'cmd.no_title': { es: 'Sin título', en: 'No title' },
   'cmd.bubble_created': { es: 'Agente creado', en: 'Agent created' },
@@ -2303,11 +2292,8 @@ const DICT = {
   'dash.col.error': { es: 'Con error', en: 'With error' },
 
   // ─────────────────────────── AgentDetail (strings nuevos del merge)
-  'detail.action.chat_tooltip': { es: 'Ir al chat', en: 'Go to chat' },
   'detail.action.files_tooltip': { es: 'Ver archivos modificados', en: 'View modified files' },
   'detail.action.terminal_tooltip': { es: 'Abrir terminal del agente', en: 'Open agent terminal' },
-  'detail.action.summary_tooltip': { es: 'Pedirle al agente un resumen', en: 'Ask the agent for a summary' },
-  'detail.action.summary_prompt': { es: 'Hacé un resumen breve de los cambios y decisiones de esta sesión.', en: 'Make a brief summary of the changes and decisions in this session.' },
   'detail.status.active': { es: 'Agente activo', en: 'Agent active' },
   'detail.status.inactive': { es: 'Agente inactivo', en: 'Agent inactive' },
   'detail.remote.activating': { es: 'Activando Claude remote control…', en: 'Enabling Claude remote control…' },
@@ -2316,38 +2302,21 @@ const DICT = {
   'detail.obsidian.saving': { es: 'Guardando…', en: 'Saving…' },
   'detail.obsidian.save_btn': { es: 'Guardar sesión en Obsidian', en: 'Save session to Obsidian' },
   'detail.obsidian.label': { es: 'Obsidian', en: 'Obsidian' },
-  'detail.quick.interrupt_sub': { es: 'interrumpe lo que está corriendo', en: 'interrupts what is running' },
-  'detail.quick.hi_sub': { es: 'rompe el hielo', en: 'breaks the ice' },
-  'detail.quick.commit_sub': { es: 'ver diffs antes de commitear', en: 'see diffs before committing' },
-  'detail.quick.retry_sub': { es: 'el último intento falló', en: 'the last attempt failed' },
-  'detail.quick.retry_prompt': { es: 'Reintentá lo último, por favor.', en: 'Retry the last action, please.' },
-  'detail.quick.continue_sub': { es: 'sigue tu último mensaje', en: 'continues your last message' },
-  'detail.quick.summary_label': { es: 'Pedir resumen', en: 'Ask for summary' },
-  'detail.quick.summary_sub': { es: 'qué hiciste hasta ahora', en: 'what you have done so far' },
-  'detail.quick.summary_prompt': { es: 'Hacé un resumen de los cambios y decisiones de esta sesión.', en: 'Make a summary of the changes and decisions in this session.' },
-  'detail.quick.plan_label': { es: 'Plan próximos pasos', en: 'Plan next steps' },
-  'detail.quick.plan_sub': { es: 'qué falta para terminar', en: 'what is left to finish' },
-  'detail.quick.plan_prompt': { es: 'Listame los próximos pasos que recomendás para avanzar.', en: 'List the next steps you recommend to move forward.' },
-  'detail.terminal.tab.shell': { es: 'Shell', en: 'Shell' },
-  'detail.terminal.tab.agent': { es: 'Agente', en: 'Agent' },
-  'detail.terminal.tab.cmds': { es: 'Comandos', en: 'Commands' },
   'detail.sidebar.show': { es: 'Mostrar panel', en: 'Show panel' },
-  'detail.terminal.new_tooltip': { es: 'Nueva terminal (sin Claude)', en: 'New terminal (no Claude)' },
+  'detail.terminal.new_tooltip': { es: 'Nueva terminal simple (sin agente)', en: 'New plain terminal (no agent)' },
   'detail.terminal.new_btn': { es: '+ Nueva', en: '+ New' },
   'detail.terminal.close_tooltip': { es: 'Cerrar terminal', en: 'Close terminal' },
+  'detail.terminal.codex.missing.title': { es: 'Codex CLI no está instalado', en: 'Codex CLI is not installed' },
+  'detail.terminal.codex.missing.desc': {
+    es: 'Instalá el CLI de OpenAI para usar esta terminal. Después iniciá sesión con `codex login` o guardá una API key en Ajustes → Agentes & API.',
+    en: 'Install the OpenAI CLI to use this terminal. Then sign in with `codex login` or save an API key in Settings → Agents & API.',
+  },
+  'detail.terminal.codex.missing.retry': { es: 'Reintentar', en: 'Retry' },
   'detail.skills.no_favs_title': { es: 'Sin favoritos aún', en: 'No favorites yet' },
   'detail.skills.no_favs_hint_pre': { es: 'Abrí el picker (botón arriba a la derecha) y marcá con', en: 'Open the picker (top-right button) and star with' },
   'detail.skills.no_favs_hint_post': { es: 'los skills que usás seguido.', en: 'the skills you use often.' },
   'detail.skills.unfav_tooltip': { es: 'Quitar de favoritos', en: 'Remove from favorites' },
   'detail.resize_split_tooltip': { es: 'Arrastrar para redimensionar', en: 'Drag to resize' },
-  'detail.quick.stop': { es: 'Detener', en: 'Stop' },
-  'detail.quick.greet': { es: 'Saludar', en: 'Greet' },
-  'detail.quick.greet_prompt': { es: 'Hola — ¿qué podés hacer en este proyecto?', en: 'Hi — what can you do in this project?' },
-  'detail.quick.review_one': { es: 'Revisar {{n}} archivo', en: 'Review {{n}} file' },
-  'detail.quick.review_many': { es: 'Revisar {{n}} archivos', en: 'Review {{n}} files' },
-  'detail.quick.retry': { es: 'Reintentar', en: 'Retry' },
-  'detail.quick.continue': { es: 'Continuar', en: 'Continue' },
-  'detail.quick.continue_prompt': { es: 'continuá', en: 'continue' },
   'detail.remote.running_tooltip': { es: 'Claude remote control corriendo como "{{slug}}". Click para detener.', en: 'Claude remote control running as "{{slug}}". Click to stop.' },
   'detail.remote.err_tooltip': { es: 'Error: {{err}}. Click para reintentar.', en: 'Error: {{err}}. Click to retry.' },
   'detail.remote.start_tooltip': { es: 'Iniciar Claude remote control (corre /remote-control {{slug}} en la terminal por debajo)', en: 'Start Claude remote control (runs /remote-control {{slug}} in the underlying terminal)' },

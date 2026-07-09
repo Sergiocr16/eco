@@ -33,14 +33,12 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
   const workspacesHook = useWorkspaces();
   const bubbles = useBubbles();
 
-  const socket = useEcoSocket({
+  useEcoSocket({
     url: BACKEND,
     token: TOKEN,
     handlers: {
       ...bubbleStreamHandlers(bubbles),
-      onError: () => { /* manejado en socket.error */ },
-      onClientAction: () => { /* la ventana solo no crea/cierra otros bubbles */ },
-      onInjectPrompt: () => { /* server-side, no aplica */ },
+      onClientAction: () => { /* la ventana solo no crea otros bubbles */ },
     },
   });
 
@@ -102,19 +100,6 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
     if (bubble?.title) document.title = bubble.title;
   }, [bubble?.title]);
 
-  function sendTo(text: string) {
-    if (!bubble) return;
-    bubbles.appendMessage(bubble.id, {
-      id: `u_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      role: 'user', text, createdAt: Date.now(),
-    });
-    socket.send({
-      bubbleId: bubble.id, text,
-      workspace: bubble.workspace || undefined,
-      resumeSessionId: bubble.sessionId,
-    });
-  }
-
   return (
     <>
       <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: t.windowBg }}/>
@@ -136,8 +121,6 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
             workspaces={workspacesHook.list.workspaces}
             solo
             onBack={() => closeThisWindow(bubbleId)}
-            onSend={sendTo}
-            onInterrupt={socket.interrupt}
             onRename={(title) => bubbles.renameBubble(bubble.id, title)}
             onClose={() => { bubbles.archiveBubble(bubble.id); closeThisWindow(bubbleId); }}
             onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(bubble.id, ws)}

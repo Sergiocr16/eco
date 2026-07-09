@@ -13,6 +13,7 @@ import {
   type EcoApiError,
 } from './client.js';
 import { resolveWorkspace, getStartupCwd } from './workspace.js';
+import { detectHostAgent, type AgentCli } from './host-agent.js';
 
 export const CreateBubbleSchema = z.object({
   title: z
@@ -37,10 +38,17 @@ export const CreateBubbleSchema = z.object({
     .max(16_000)
     .optional()
     .describe(
-      'Mensaje inicial que el agente Claude interno de la nueva bubble ' +
+      'Mensaje inicial que el agente interno de la nueva bubble ' +
         'procesará automáticamente apenas se crea. Útil para arrancar la ' +
-        'conversación con una tarea concreta sin que el usuario tenga que ' +
-        'escribirla.',
+        'tarea sin que el usuario tenga que escribirla.',
+    ),
+  agent: z
+    .enum(['claude', 'codex'])
+    .optional()
+    .describe(
+      'Qué CLI de agente corre en la terminal de la nueva bubble. Si se omite, '
+        + 'hereda el CLI desde el que se invocó esta tool (Claude o Codex). '
+        + 'Pasalo explícito solo para forzar uno distinto al del caller.',
     ),
 });
 
@@ -95,11 +103,15 @@ export async function handleCreateBubble(args: CreateBubbleArgs) {
     );
   }
   try {
+    // Sin `agent` explícito, la bubble hereda el CLI del caller: una tarea
+    // lanzada desde Codex sigue en Codex.
+    const agent: AgentCli = args.agent ?? detectHostAgent();
     const r = await createBubble({
       title: args.title,
       workspace: wsResolution.workspace || undefined,
       baseBranch: args.base_branch,
       initialPrompt: args.initial_prompt,
+      agent,
     });
     const sourceNote = wsResolution.source === 'cwd_match'
       ? ` (workspace autodetectado desde cwd)`
@@ -107,7 +119,7 @@ export async function handleCreateBubble(args: CreateBubbleArgs) {
         ? ` (workspace explícito)`
         : '';
     const promptNote = args.initial_prompt
-      ? `\n\nPrompt inicial enviado al agente Claude interno de la bubble.`
+      ? `\n\nPrompt inicial enviado al agente ${agent} de la bubble.`
       : '';
     return textResult(
       `Bubble "${args.title}" creada en Eco.\n` +
@@ -131,14 +143,18 @@ export const SendToBubbleSchema = z.object({
     .string()
     .min(1)
     .max(16_000)
-    .describe('Prompt a enviar al agente Claude de esa bubble. Se tipea en su terminal como si lo escribiera el usuario.'),
+    .describe('Prompt a enviar al agente de esa bubble. Se tipea en su terminal como si lo escribiera el usuario.'),
+  agent: z
+    .enum(['claude', 'codex'])
+    .optional()
+    .describe('A qué terminal de agente se tipea. Si se omite, hereda el CLI del caller.'),
 });
 
 export type SendToBubbleArgs = z.infer<typeof SendToBubbleSchema>;
 
 export async function handleSendToBubble(args: SendToBubbleArgs) {
   try {
-    const r = await sendToBubble(args.bubble_id, args.text);
+    const r = await sendToBubble(args.bubble_id, args.text, args.agent ?? detectHostAgent());
     return textResult(
       `Prompt enviado a la bubble ${r.bubbleId}` +
         (r.workspace ? ` (workspace: ${r.workspace})` : '') +

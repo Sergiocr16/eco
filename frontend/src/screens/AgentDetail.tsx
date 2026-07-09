@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '@/lib/api';
 import { useTokens } from '@/design/theme';
-import { RealTerminal } from '@/components/RealTerminal';
+import { RealTerminal, type AgentCli } from '@/components/RealTerminal';
 import { SkillsPicker } from '@/components/SkillsPicker';
 import { useSkills, type SkillInfo } from '@/hooks/useSkills';
 import { useSkillFavorites, skillIdOf } from '@/hooks/useSkillFavorites';
-import { useProfile } from '@/hooks/useProfile';
 import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
+import { useCliAuth } from '@/hooks/useCliAuth';
 import { ecoToken } from '@/lib/eco-config';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
@@ -20,50 +20,30 @@ import { FilesPanel } from '@/components/FilesPanel/FilesPanel';
 import { NotesPanel } from '@/components/NotesPanel/NotesPanel';
 import { GitBusyToast } from '@/components/GitBusyToast';
 import {
-  Glass, Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
+  Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
-import { EcoMark } from '@/design/EcoMark';
 import {
-  IconArrowL, IconStop, IconMore, IconResume,
-  IconCommand, IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconGlobe, IconCpu,
-  IconCheck, IconX, IconBolt, IconGithub, IconEdit, IconTrash,
-  IconAgent, IconFolder, IconCopy, IconArchive, IconNewWindow,
+  IconArrowL, IconStop, IconMore,
+  IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconGlobe, IconCpu,
+  IconCheck, IconX, IconGithub, IconEdit, IconTrash,
+  IconAgent, IconFolder, IconArchive, IconNewWindow,
   type IconProps,
 } from '@/design/icons';
-import type { Bubble, Message, ToolCall } from '@/lib/types';
+import type { Bubble } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
-import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { useT } from '@/hooks/useI18n';
 import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
-import { translateBackendError } from '@/lib/backend-errors';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
-
-function copyTranscriptToClipboard(bubble: Bubble) {
-  const lines: string[] = [`# ${bubble.title}`, ''];
-  for (const m of bubble.messages) {
-    lines.push(`${m.role === 'user' ? 'You' : 'Eco'}: ${m.text}`);
-    for (const tc of m.toolCalls ?? []) {
-      lines.push(`  · ${tc.name} ${typeof tc.input === 'object' ? JSON.stringify(tc.input) : ''}`);
-      if (tc.output) lines.push(`    → ${tc.output.split('\n')[0]}`);
-    }
-    lines.push('');
-  }
-  const text = lines.join('\n');
-  try {
-    navigator.clipboard?.writeText(text);
-  } catch { /* noop */ }
-}
 
 function HeaderMenu({
   workspaces, currentWorkspace, onClose, onRename, onChangeWorkspace,
-  onCopyTranscript, onCloseBubble, onOpenInNewWindow, currentCategoryIds, onToggleCategory,
+  onCloseBubble, onOpenInNewWindow, currentCategoryIds, onToggleCategory,
 }: {
   workspaces: string[];
   currentWorkspace: string;
   onClose: () => void;
   onRename: () => void;
   onChangeWorkspace: (ws: string) => void;
-  onCopyTranscript: () => void;
   onCloseBubble: () => void;
   onOpenInNewWindow?: () => void;
   currentCategoryIds?: string[];
@@ -163,9 +143,6 @@ function HeaderMenu({
           ))}
         </div>
       )}
-      <button type="button" onClick={onCopyTranscript} style={menuItemStyleAt(t)}>
-        <IconCopy size={12}/> {tr('detail.menu.copy_chat')}
-      </button>
       {onOpenInNewWindow && (
         <button type="button" onClick={onOpenInNewWindow} style={menuItemStyleAt(t)}>
           <IconNewWindow size={12}/> {tr('detail.menu.open_window')}
@@ -192,8 +169,6 @@ type Props = {
   bubble: Bubble;
   workspaces: string[];
   onBack: () => void;
-  onSend: (text: string) => void;
-  onInterrupt: () => void;
   onRename: (title: string) => void;
   onClose: () => void;
   onChangeWorkspace: (workspace: string) => void;
@@ -217,9 +192,9 @@ type Props = {
   solo?: boolean;
 };
 
-type Tab = 'chat' | 'terminal' | 'git' | 'browser' | 'server' | 'files' | 'notes';
+type Tab = 'terminal' | 'git' | 'browser' | 'server' | 'files' | 'notes';
 
-const ALL_TABS: ReadonlyArray<Tab> = ['chat', 'terminal', 'files', 'notes', 'browser', 'server', 'git'];
+const ALL_TABS: ReadonlyArray<Tab> = ['terminal', 'files', 'notes', 'browser', 'server', 'git'];
 const TAB_ORDER_KEY = 'eco.detail.tab.order';
 
 function loadTabOrder(): Tab[] {
@@ -244,7 +219,6 @@ function saveTabOrder(order: Tab[]): void {
 // Metadata estática de cada tab — icono + key de i18n para el label.
 // 'git' es 'Git' literal (sin traducción) por convención existente.
 const TAB_DEFS: Record<Tab, { labelKey: string; icon: (p: IconProps) => JSX.Element }> = {
-  chat:     { labelKey: 'detail.tab.chat',    icon: IconCommand },
   terminal: { labelKey: 'detail.tab.terminal', icon: IconTerminal },
   files:    { labelKey: 'files.tab.label',     icon: IconFolder },
   notes:    { labelKey: 'notes.tab.label',     icon: IconEdit },
@@ -311,7 +285,7 @@ function DictationBar({
 }
 
 export function AgentDetail({
-  bubble, workspaces, onBack, onSend, onInterrupt, onRename, onClose, onChangeWorkspace,
+  bubble, workspaces, onBack, onRename, onClose, onChangeWorkspace,
   onToggleCategory,
   dictationSupported = false, dictationActive = false, dictationText = '',
   onStartDictation, onSendDictation, onCancelDictation, onClearDictation,
@@ -334,22 +308,16 @@ export function AgentDetail({
     thinking: tr('state.thinking'),
     executing: tr('state.executing'),
   };
-  // Tab activo persistido por agente — al volver a entrar al detalle de
-  // la misma conversación, recuperamos el último tab que vimos en lugar
-  // de saltar siempre a 'chat'.
+  // Tab activo persistido por agente — al volver a entrar al detalle del
+  // mismo agente, recuperamos el último tab que vimos. Las entradas viejas
+  // con 'chat' (tab removido) caen al default.
   const tabStorageKey = `eco.detail.tab.${bubble.id}`;
   const [tab, setTabState] = useState<Tab>(() => {
     try {
       const saved = window.localStorage.getItem(tabStorageKey);
-      // 'files' volvió a ser un tab válido (explorador de archivos). Las
-      // entradas viejas con ese valor pasan directo al nuevo tab.
-      if (saved === 'chat' || saved === 'terminal' || saved === 'git'
-        || saved === 'browser' || saved === 'server'
-        || saved === 'files' || saved === 'notes') {
-        return saved as Tab;
-      }
+      if (saved && (ALL_TABS as ReadonlyArray<string>).includes(saved)) return saved as Tab;
     } catch { /* noop */ }
-    return 'chat';
+    return 'terminal';
   });
   const setTab = (next: Tab) => {
     setTabState(next);
@@ -382,11 +350,6 @@ export function AgentDetail({
     setRenaming(false);
   }
 
-  // agentFiles depende SOLO de los messages — memoizamos para no romper la
-  // identidad del array en cada render del AgentDetail (sin esto, el
-  // useMemo de filesChanged abajo nunca hit-ea y todo el árbol se
-  // recomputa por cualquier setState).
-  const agentFiles = useMemo(() => collectFilesChanged(bubble), [bubble.messages]); // eslint-disable-line react-hooks/exhaustive-deps
   // Polling cada 6s — los eventos `eco:git_refresh` que dispara cada acción
   // (accept/discard/revert) refrescan al instante, así que el poll es solo
   // catch-all para cambios externos (commits CLI, etc.). 4s era overkill.
@@ -398,23 +361,10 @@ export function AgentDetail({
     // de commit en el worktree. Si un archivo NO aparece acá, no tiene
     // cambios revisables (fue commiteado, descartado, o nunca existió).
     // Filtramos los `deleted` porque no hay diff que mostrar.
-    const gitSet = new Map<string, FileChange>();
-    for (const g of gitChanges) {
-      if (g.change === 'deleted') continue;
-      gitSet.set(g.path, { path: g.path, change: g.change, agent: 'git', unstaged: g.unstaged });
-    }
-    // Sólo agregamos archivos del agente que TAMBIÉN están en git status
-    // (con cambios pendientes). Si el agente editó algo pero ya no aparece
-    // en git status (commiteado/descartado), no debe mostrarse.
-    for (const f of agentFiles) {
-      const gitEntry = gitSet.get(f.path);
-      if (gitEntry) {
-        // Override con el agent attribution pero preservar `unstaged` de git.
-        gitSet.set(f.path, { ...f, unstaged: gitEntry.unstaged });
-      }
-    }
-    return [...gitSet.values()];
-  }, [agentFiles, gitChanges]);
+    return gitChanges
+      .filter((g) => g.change !== 'deleted')
+      .map((g): FileChange => ({ path: g.path, change: g.change, agent: 'git', unstaged: g.unstaged }));
+  }, [gitChanges]);
 
   // Comandos por voz: cambiar tab desde fuera del componente.
   // Solo reaccionamos al `eco:switch_tab` si es para ESTA burbuja (o si el
@@ -521,7 +471,6 @@ export function AgentDetail({
               onClose={() => setMenuOpen(false)}
               onRename={() => { setMenuOpen(false); setDraft(bubble.title); setRenaming(true); }}
               onChangeWorkspace={(ws) => { setMenuOpen(false); onChangeWorkspace(ws); }}
-              onCopyTranscript={() => { setMenuOpen(false); copyTranscriptToClipboard(bubble); }}
               onCloseBubble={() => { setMenuOpen(false); onClose(); }}
               onOpenInNewWindow={onOpenInNewWindow ? () => { setMenuOpen(false); onOpenInNewWindow(); } : undefined}
               currentCategoryIds={bubble.categoryIds}
@@ -548,9 +497,7 @@ export function AgentDetail({
       }}>
         {tabOrder.map((id) => {
           const def = TAB_DEFS[id];
-          const badge = id === 'chat' ? bubble.messages.length
-            : id === 'git' ? filesChanged.length
-            : undefined;
+          const badge = id === 'git' ? filesChanged.length : undefined;
           return (
             <TabBtn
               key={id}
@@ -589,17 +536,9 @@ export function AgentDetail({
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {tab === 'chat' && (
-            <ChatPanel
-              bubble={bubble}
-              onSend={onSend}
-              onInterrupt={onInterrupt}
-            />
-          )}
-          {tab === 'terminal' && <TerminalPanel bubble={bubble}/>}
+          {tab === 'terminal' && <TerminalTabs bubble={bubble}/>}
           {tab === 'git' && (
             <GitPanel
-              bubble={bubble}
               workspace={bubble.workspace}
               bubbleId={bubble.id}
               filesChanged={filesChanged}
@@ -618,8 +557,6 @@ export function AgentDetail({
         <AgentSidebar
           bubble={bubble}
           filesChangedCount={filesChanged.length}
-          onSend={onSend}
-          onInterrupt={onInterrupt}
           onGoTab={(target) => setTab(target)}
           onRename={onRename}
         />
@@ -629,20 +566,6 @@ export function AgentDetail({
 }
 
 type FileChange = { path: string; change: string; agent: string; unstaged?: boolean };
-
-function collectFilesChanged(bubble: Bubble): FileChange[] {
-  const out: FileChange[] = [];
-  for (const m of bubble.messages) {
-    for (const tc of m.toolCalls ?? []) {
-      if (tc.status !== 'success') continue;
-      if (tc.name === 'Write' || tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'NotebookEdit') {
-        const filePath = String((tc.input as { file_path?: unknown }).file_path ?? '');
-        if (filePath) out.push({ path: filePath, change: tc.name === 'Write' ? 'created' : 'modified', agent: bubble.title });
-      }
-    }
-  }
-  return out;
-}
 
 function TabBtn({
   active, onClick, label, icon: Icon, badge,
@@ -709,401 +632,6 @@ function TabBtn({
   );
 }
 
-function ChatPanel({
-  bubble, onSend, onInterrupt,
-}: {
-  bubble: Bubble;
-  onSend: (text: string) => void;
-  onInterrupt: () => void;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [draft, setDraft] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const suggestions = useQuickSuggestions();
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [bubble.messages.length, bubble.status]);
-
-  useEffect(() => ecoOn('eco:scroll', ({ dir }) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const step = el.clientHeight * 0.85;
-    if (dir === 'top') el.scrollTo({ top: 0, behavior: 'smooth' });
-    else if (dir === 'bottom') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    else if (dir === 'up') el.scrollBy({ top: -step, behavior: 'smooth' });
-    else if (dir === 'down') el.scrollBy({ top: step, behavior: 'smooth' });
-  }), []);
-
-  // Inserción de contexto desde la tab Archivos: el FilesPanel emite
-  // eco:set_chat_draft con un snippet (path + bloque de código) cuando el
-  // user selecciona texto y pulsa "Enviar a Claude". Lo appendemos al
-  // textarea para que pueda agregar la pregunta antes de mandar.
-  useEffect(() => {
-    const offDraft = ecoOn('eco:set_chat_draft', (d) => {
-      if (d.bubbleId !== bubble.id) return;
-      setDraft((prev) => prev + d.append);
-    });
-    const offFocus = ecoOn('eco:focus_chat_input', (d) => {
-      if (d.bubbleId !== bubble.id) return;
-      // Doble rAF: el switch_tab → 'chat' que viene antes monta este panel,
-      // así que esperamos un frame para que el textarea exista, y otro por
-      // si motion/animation lo monta diferido.
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        const ta = textareaRef.current;
-        if (ta) {
-          ta.focus();
-          ta.setSelectionRange(ta.value.length, ta.value.length);
-        }
-      }));
-    });
-    return () => { offDraft(); offFocus(); };
-  }, [bubble.id]);
-
-  const submit = () => {
-    const v = draft.trim();
-    if (!v) return;
-    onSend(v);
-    setDraft('');
-  };
-
-  return (
-    <>
-      <div ref={scrollRef} style={{
-        flex: 1, overflow: 'auto', padding: '24px 32px',
-        display: 'flex', flexDirection: 'column', gap: 16,
-      }}>
-        {bubble.messages.length === 0 ? (
-          <EmptyChat title={bubble.title}/>
-        ) : bubble.messages.map((m, i) => (
-          <ChatBubble key={m.id} msg={m} agent={bubble.title} index={i}/>
-        ))}
-        {bubble.status === 'thinking' && <ThinkingBubble label={tr('detail.chat.thinking')}/>}
-        {bubble.status === 'executing' && <ThinkingBubble label={tr('detail.chat.executing')}/>}
-      </div>
-
-      <div style={{ padding: '12px 24px 18px', borderTop: `1px solid ${t.glassBorder}` }}>
-        <Glass radius={16} style={{ padding: 6, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
-            }}
-            placeholder={tr('detail.chat.write_to', { name: bubble.title })}
-            rows={1}
-            style={{
-              flex: 1, background: 'transparent', border: 0, outline: 'none', resize: 'none',
-              fontFamily: t.fontSans, fontSize: 13.5, color: t.text0,
-              padding: '10px 12px', minHeight: 22, maxHeight: 120,
-              lineHeight: 1.5,
-            }}
-          />
-          {bubble.status === 'thinking' || bubble.status === 'executing' || bubble.status === 'running' ? (
-            <button
-              type="button"
-              onClick={onInterrupt}
-              title={tr('detail.btn.interrupt')}
-              style={{
-                width: 32, height: 32, borderRadius: 10,
-                background: t.err,
-                color: t.accentOn,
-                border: 0, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: `0 0 12px color-mix(in oklch, ${t.err} 35%, transparent)`,
-              }}>
-              <IconStop size={14}/>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!draft.trim()}
-              style={{
-                width: 32, height: 32, borderRadius: 10,
-                background: draft.trim() ? t.accent : t.bg3,
-                color: draft.trim() ? t.accentOn : t.text3,
-                border: 0, cursor: draft.trim() ? 'pointer' : 'not-allowed',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-              <IconSend size={14}/>
-            </button>
-          )}
-        </Glass>
-        {suggestions.suggestions.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-            {suggestions.suggestions.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setDraft(s)}
-                style={{
-                  padding: '5px 11px', borderRadius: 999,
-                  background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                  color: t.text1, fontSize: 11.5, cursor: 'pointer',
-                  fontFamily: t.fontSans,
-                }}>{s}</button>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
-function ChatBubble({ msg, agent }: { msg: Message; agent: string; index: number }) {
-  const t = useTokens();
-  const tr = useT();
-  const profile = useProfile();
-  const isUser = msg.role === 'user';
-
-  const avatar = isUser ? (
-    profile.photo ? (
-      <img
-        src={profile.photo}
-        alt={profile.username ?? tr('detail.chat.you')}
-        style={{
-          width: 28, height: 28, borderRadius: '50%',
-          objectFit: 'cover', flexShrink: 0,
-          border: `0.5px solid ${t.glassBorder}`,
-        }}
-      />
-    ) : (
-      <div style={{
-        width: 28, height: 28, borderRadius: '50%',
-        background: t.accent,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: t.accentOn, fontWeight: 500, fontSize: 12, flexShrink: 0,
-        letterSpacing: -0.3,
-      }}>{profile.username ? profile.initial : tr('detail.chat.you')}</div>
-    )
-  ) : (
-    <div style={{
-      width: 28, height: 28, borderRadius: '50%',
-      background: t.bg3,
-      border: `0.5px solid ${t.glassBorder}`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexShrink: 0,
-    }}>
-      <EcoMark size={18}/>
-    </div>
-  );
-
-  // Estilo de la burbuja. Sutil: ambas usan fondos del tema (no fills sólidos
-  // de accent). Diferenciamos al user con un tinte accent muy bajo + borde
-  // accent suave y al agente con bg2 + borde neutro.
-  const bubbleStyle: React.CSSProperties = isUser
-    ? {
-        background: t.accentFaint,
-        color: t.text0,
-        border: `1px solid color-mix(in oklch, ${t.accent} 28%, transparent)`,
-        borderRadius: '18px 18px 6px 18px',
-        padding: '10px 14px',
-      }
-    : {
-        background: t.bg2,
-        color: t.text0,
-        border: `1px solid ${t.glassBorder}`,
-        borderRadius: '18px 18px 18px 6px',
-        padding: '10px 14px',
-      };
-
-  return (
-    <div style={{
-      display: 'flex',
-      gap: 8,
-      alignItems: 'flex-end',
-      justifyContent: isUser ? 'flex-end' : 'flex-start',
-    }}>
-      {!isUser && avatar}
-      {/* Contenedor del mensaje — el maxWidth se aplica acá UNA SOLA VEZ.
-          flex-column con alignItems controla si la burbuja queda alineada
-          a la der/izq dentro de ese 80%. */}
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: isUser ? 'flex-end' : 'flex-start',
-        gap: 4,
-        minWidth: 0,
-        maxWidth: '80%',
-      }}>
-        <div style={{
-          fontFamily: t.fontSans, fontSize: 10.5, color: t.text3,
-          paddingLeft: isUser ? 0 : 4, paddingRight: isUser ? 4 : 0,
-        }}>
-          {isUser ? tr('detail.chat.you') : agent}
-        </div>
-        {msg.text && (
-          <div style={{
-            ...bubbleStyle,
-            fontFamily: t.fontSans, fontSize: 13.5,
-            lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-            // La burbuja se adapta al contenido pero no excede el container
-            // (que ya tiene maxWidth: 80%). Sin maxWidth propio se ve natural.
-            width: 'fit-content',
-          }}>{msg.text}</div>
-        )}
-        {msg.toolCalls && msg.toolCalls.length > 0 && (
-          <div style={{
-            marginTop: 2, display: 'flex', flexDirection: 'column', gap: 6,
-            width: '100%',
-          }}>
-            {msg.toolCalls.map((tc) => <ToolCallRow key={tc.id} tc={tc}/>)}
-          </div>
-        )}
-      </div>
-      {isUser && avatar}
-    </div>
-  );
-}
-
-function ToolCallRow({ tc }: { tc: ToolCall }) {
-  const t = useTokens();
-  const [open, setOpen] = useState(false);
-  const summary = summarizeInput(tc.input);
-  const sColor = tc.status === 'success' ? t.ok : tc.status === 'denied' ? t.warn : tc.status === 'error' ? t.err : t.accent;
-
-  return (
-    <div style={{
-      background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      borderRadius: 12, overflow: 'hidden',
-    }}>
-      <button
-        type="button"
-        onClick={() => tc.output && setOpen((o) => !o)}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-          padding: '8px 12px', background: 'transparent', border: 0,
-          cursor: tc.output ? 'pointer' : 'default', textAlign: 'left',
-        }}>
-        <div style={{ width: 6, height: 6, borderRadius: '50%', background: sColor, flexShrink: 0 }}/>
-        <span style={{ fontFamily: t.fontMono, fontSize: 11.5, color: t.text0, fontWeight: 500 }}>{tc.name}</span>
-        <span style={{
-          flex: 1, fontFamily: t.fontMono, fontSize: 11, color: t.text2,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{summary}</span>
-        {tc.status === 'running' && <span style={{
-          width: 10, height: 10, borderRadius: '50%', background: t.accent,
-          animation: 'eco-shimmer 1.1s ease-in-out infinite',
-        }}/>}
-      </button>
-      {open && tc.output && (
-        <pre style={{
-          margin: 0, padding: '8px 12px 12px',
-          fontFamily: t.fontMono, fontSize: 11, color: t.text1,
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          borderTop: `1px solid ${t.glassBorder}`,
-          maxHeight: 240, overflow: 'auto',
-        }}>{tc.output}</pre>
-      )}
-    </div>
-  );
-}
-
-function summarizeInput(input: Record<string, unknown>): string {
-  if (typeof input.file_path === 'string') return input.file_path;
-  if (typeof input.path === 'string') return input.path;
-  if (typeof input.pattern === 'string') return input.pattern;
-  if (typeof input.command === 'string') return String(input.command).slice(0, 70);
-  if (typeof input.query === 'string') return input.query;
-  return '';
-}
-
-function ThinkingBubble({ label }: { label: string }) {
-  const t = useTokens();
-  return (
-    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-      <div style={{
-        width: 32, height: 32, borderRadius: '50%',
-        background: t.accentFaint,
-        border: `0.5px solid color-mix(in oklch, ${t.accent} 30%, transparent)`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
-      }}>
-        <EcoMark size={20}/>
-      </div>
-      <div style={{ paddingTop: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
-        {[0, 1, 2].map((i) => (
-          <span key={i} style={{
-            width: 7, height: 7, borderRadius: '50%', background: t.text2,
-            animation: 'eco-typing 1.4s ease-in-out infinite',
-            animationDelay: `${i * 0.2}s`,
-          }}/>
-        ))}
-        <span style={{ marginLeft: 8, color: t.text2, fontSize: 12, fontStyle: 'italic' }}>{label}</span>
-      </div>
-    </div>
-  );
-}
-
-function EmptyChat({ title }: { title: string }) {
-  const t = useTokens();
-  const tr = useT();
-  return (
-    <div style={{
-      flex: 1, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32,
-    }}>
-      <EcoMark size={64}/>
-      <div style={{ textAlign: 'center', maxWidth: 360 }}>
-        <h3 style={{ margin: 0, fontSize: 16, color: t.text0, fontWeight: 600, letterSpacing: -0.2 }}>
-          {tr('detail.chat.empty_title', { name: title })}
-        </h3>
-        <p style={{ margin: '8px 0 0', fontSize: 13, color: t.text2, lineHeight: 1.55 }}>
-          {tr('detail.chat.empty_sub')}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-type TermLine =
-  | { kind: 'system'; text: string; color?: string }
-  | { kind: 'prompt'; cwd: string; command: string }
-  | { kind: 'stdout'; text: string }
-  | { kind: 'stderr'; text: string }
-  | { kind: 'meta'; text: string };
-
-function TerminalPanel({ bubble }: { bubble: Bubble }) {
-  const t = useTokens();
-  const tr = useT();
-  const [subTab, setSubTab] = useState<'shell' | 'agent' | 'cmds'>('shell');
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{
-        display: 'flex', gap: 4, padding: '8px 10px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        background: t.bg1,
-      }}>
-        <SubTabBtn active={subTab === 'shell'} onClick={() => setSubTab('shell')}>{tr('detail.terminal.tab.shell')}</SubTabBtn>
-        <SubTabBtn active={subTab === 'agent'} onClick={() => setSubTab('agent')}>{tr('detail.terminal.tab.agent')}</SubTabBtn>
-        <SubTabBtn active={subTab === 'cmds'} onClick={() => setSubTab('cmds')}>{tr('detail.terminal.tab.cmds')}</SubTabBtn>
-      </div>
-      <div style={{
-        flex: 1, minHeight: 0, position: 'relative',
-        display: 'flex', flexDirection: 'column',
-      }}>
-        {/* TerminalTabs (y por dentro cada RealTerminal) se mantienen MONTADAS
-            aunque cambies de sub-tab: xterm + WebSocket sobreviven, así no
-            perdés state ni hay reconnect al volver a "Shell". Solo se oculta
-            con display:none. */}
-        <div style={{
-          display: subTab === 'shell' ? 'flex' : 'none',
-          flexDirection: 'column',
-          flex: 1, minHeight: 0,
-        }}>
-          <TerminalTabs bubble={bubble}/>
-        </div>
-        {subTab === 'agent' && <AgentBashLog bubble={bubble}/>}
-        {subTab === 'cmds' && <SimulatedTerminal bubble={bubble}/>}
-      </div>
-    </div>
-  );
-}
-
 type ExtraTerm = { id: string; label: string };
 
 function readExtraTerms(bubbleId: string): ExtraTerm[] {
@@ -1129,26 +657,40 @@ function writeExtraTerms(bubbleId: string, terms: ExtraTerm[]) {
   } catch { /* noop */ }
 }
 
+// Terminal activa por burbuja, SOLO en memoria. TerminalTabs se desmonta al
+// cambiar de tab (Terminal → Git → Terminal), y sin esto perderías la pestaña
+// que estabas mirando. Deliberadamente NO se persiste: al abrir una burbuja
+// (app fresca) siempre caés en Claude, nunca en Codex ni en un shell suelto.
+const activeTermByBubble = new Map<string, string>();
+
 function TerminalTabs({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
   const tr = useT();
   const [extras, setExtras] = useState<ExtraTerm[]>(() => readExtraTerms(bubble.id));
-  // Default = "main" (el de Claude). Persistimos cuál estaba activo así al
-  // volver a la pestaña Shell no se pierde el foco.
-  const [activeId, setActiveId] = useState<string>(() => {
-    try { return window.localStorage.getItem(`eco.terminals.active.${bubble.id}`) || 'main'; }
-    catch { return 'main'; }
-  });
+  const [activeId, setActiveId] = useState<string>(() => activeTermByBubble.get(bubble.id) ?? 'main');
 
   useEffect(() => { writeExtraTerms(bubble.id, extras); }, [bubble.id, extras]);
+  useEffect(() => { activeTermByBubble.set(bubble.id, activeId); }, [bubble.id, activeId]);
+
+  // Migración: la clave persistida hacía que una burbuja donde habías usado
+  // Codex reabriera en Codex tras reiniciar. Ya no se lee; la borramos.
   useEffect(() => {
-    try { window.localStorage.setItem(`eco.terminals.active.${bubble.id}`, activeId); }
+    try { window.localStorage.removeItem(`eco.terminals.active.${bubble.id}`); }
     catch { /* noop */ }
-  }, [bubble.id, activeId]);
+  }, [bubble.id]);
+
+  // Montaje perezoso: sin esto, tener una pestaña Codex fija spawnearía un
+  // proceso `codex` en cada burbuja apenas se abre la pestaña Shell. Una vez
+  // montada, la terminal queda viva (oculta con display:none) para que xterm
+  // y la WS sobrevivan el cambio de pestaña.
+  const [mounted, setMounted] = useState<Set<string>>(() => new Set([activeId]));
+  useEffect(() => {
+    setMounted((prev) => (prev.has(activeId) ? prev : new Set(prev).add(activeId)));
+  }, [activeId]);
 
   // Si el active apunta a un extra que ya no existe, caer a main.
   useEffect(() => {
-    if (activeId === 'main') return;
+    if (activeId === 'main' || activeId === 'codex') return;
     if (!extras.some((x) => x.id === activeId)) setActiveId('main');
   }, [activeId, extras]);
 
@@ -1174,9 +716,11 @@ function TerminalTabs({ bubble }: { bubble: Bubble }) {
     setActiveId((prev) => (prev === id ? 'main' : prev));
   }, [bubble.id]);
 
-  const tabs: Array<{ id: string; label: string; closable: boolean; autoClaude: boolean }> = [
-    { id: 'main', label: 'Claude', closable: false, autoClaude: true },
-    ...extras.map((x) => ({ id: x.id, label: x.label, closable: true, autoClaude: false })),
+  // 'Claude' y 'Codex' son nombres de producto: no pasan por i18n.
+  const tabs: Array<{ id: string; label: string; closable: boolean; agent: AgentCli }> = [
+    { id: 'main', label: 'Claude', closable: false, agent: 'claude' },
+    { id: 'codex', label: 'Codex', closable: false, agent: 'codex' },
+    ...extras.map((x) => ({ id: x.id, label: x.label, closable: true, agent: 'none' as const })),
   ];
 
   return (
@@ -1217,16 +761,79 @@ function TerminalTabs({ bubble }: { bubble: Bubble }) {
               flexDirection: 'column',
             }}
           >
-            <RealTerminal
-              workspace={bubble.workspace}
-              bubbleId={bubble.id}
-              ptyId={tab.id}
-              autoClaude={tab.autoClaude}
-            />
+            {tab.agent === 'codex'
+              ? <CodexPane bubble={bubble} mounted={mounted.has(tab.id)}/>
+              : mounted.has(tab.id) && (
+                  <RealTerminal
+                    workspace={bubble.workspace}
+                    bubbleId={bubble.id}
+                    ptyId={tab.id}
+                    agent={tab.agent}
+                  />
+                )}
           </div>
         ))}
       </div>
     </div>
+  );
+}
+
+// Si el CLI de Codex no está instalado no spawneamos PTY: un `command not
+// found` crudo en una pestaña fija es peor que decir cómo instalarlo.
+function CodexPane({ bubble, mounted }: { bubble: Bubble; mounted: boolean }) {
+  const t = useTokens();
+  const tr = useT();
+  const codex = useCliAuth('codex');
+  const [retrying, setRetrying] = useState(false);
+
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    await codex.refresh();
+    setRetrying(false);
+  }, [codex]);
+
+  if (!mounted) return null;
+  if (codex.loading && !codex.status) return null;
+
+  if (codex.status && !codex.status.cliInstalled) {
+    return (
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 12,
+        padding: 24, background: '#0c0e14', color: '#e5e7eb',
+      }}>
+        <div style={{ fontFamily: t.fontSans, fontSize: 14, fontWeight: 600 }}>
+          {tr('detail.terminal.codex.missing.title')}
+        </div>
+        <div style={{ fontFamily: t.fontSans, fontSize: 12.5, color: '#9ca3af', textAlign: 'center', maxWidth: 420, lineHeight: 1.6 }}>
+          {tr('detail.terminal.codex.missing.desc')}
+        </div>
+        <code style={{
+          fontFamily: t.fontMono, fontSize: 12, padding: '8px 12px', borderRadius: 7,
+          background: '#161923', color: '#e5e7eb', border: '1px solid #262a36',
+        }}>npm i -g @openai/codex</code>
+        <button
+          type="button"
+          onClick={retry}
+          disabled={retrying}
+          style={{
+            marginTop: 4, padding: '6px 14px', borderRadius: 7,
+            border: `1px solid ${t.accent}`, background: 'transparent', color: t.accent,
+            cursor: retrying ? 'default' : 'pointer', opacity: retrying ? 0.6 : 1,
+            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
+          }}
+        >{tr('detail.terminal.codex.missing.retry')}</button>
+      </div>
+    );
+  }
+
+  return (
+    <RealTerminal
+      workspace={bubble.workspace}
+      bubbleId={bubble.id}
+      ptyId="codex"
+      agent="codex"
+    />
   );
 }
 
@@ -1272,311 +879,6 @@ function TermTabBtn({
   );
 }
 
-function SubTabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  const t = useTokens();
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        padding: '6px 12px', borderRadius: 8, border: 0, cursor: 'pointer',
-        background: active ? t.bg3 : 'transparent',
-        color: active ? t.accent : t.text2,
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-        transition: 'background 140ms, color 140ms',
-      }}>{children}</button>
-  );
-}
-
-function AgentBashLog({ bubble }: { bubble: Bubble }) {
-  const t = useTokens();
-  const calls = bubble.messages.flatMap((m) => (m.toolCalls ?? []).filter((tc) => tc.name === 'Bash'));
-  const scrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [calls.length]);
-  if (calls.length === 0) {
-    return (
-      <div style={{
-        padding: 24, color: t.text3, fontSize: 12.5,
-        fontFamily: t.fontSans,
-      }}>
-        El agente no ha ejecutado comandos de Bash todavía en esta conversación.
-      </div>
-    );
-  }
-  return (
-    <div ref={scrollRef} style={{
-      height: '100%', overflow: 'auto', padding: '14px 20px',
-      fontFamily: t.fontMono, fontSize: 12.5, lineHeight: 1.55,
-      background: t.bg0,
-    }}>
-      {calls.map((tc) => {
-        const cmd = typeof tc.input.command === 'string' ? tc.input.command : '';
-        const desc = typeof tc.input.description === 'string' ? tc.input.description : '';
-        const out = tc.output ?? '';
-        const statusColor =
-          tc.status === 'success' ? t.ok :
-          tc.status === 'error' ? t.err :
-          tc.status === 'denied' ? t.text3 :
-          t.accent;
-        return (
-          <div key={tc.id} style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%', background: statusColor,
-                animation: tc.status === 'running' ? 'eco-shimmer 0.9s ease-in-out infinite' : 'none',
-              }}/>
-              <span style={{ color: t.accent }}>$</span>
-              <span style={{ color: t.text0, whiteSpace: 'pre-wrap' }}>{cmd}</span>
-            </div>
-            {desc && <div style={{ color: t.text3, fontSize: 11, marginLeft: 14 }}>{desc}</div>}
-            {out && (
-              <pre style={{
-                margin: '4px 0 0 14px', padding: 0,
-                color: t.text1, whiteSpace: 'pre-wrap',
-                fontFamily: 'inherit', fontSize: 'inherit',
-              }}>{out}</pre>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function SimulatedTerminal({ bubble }: { bubble: Bubble }) {
-  const t = useTokens();
-  const tr = useT();
-  const [lines, setLines] = useState<TermLine[]>(() => [
-    { kind: 'system', text: tr('detail.term.welcome_workspace', { ws: bubble.workspace || tr('detail.term.welcome_workspace_none') }) },
-    { kind: 'system', text: tr('detail.term.welcome_session', { title: bubble.title }) },
-  ]);
-  const [cwd, setCwd] = useState(bubble.workspace || '');
-  const [command, setCommand] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIdx, setHistoryIdx] = useState(-1);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [lines]);
-
-  useEffect(() => {
-    if (bubble.workspace && !cwd) setCwd(bubble.workspace);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bubble.workspace]);
-
-  const cwdLabel = useMemo(() => {
-    if (!bubble.workspace) return cwd;
-    if (cwd === bubble.workspace) return '.';
-    if (cwd.startsWith(bubble.workspace + '/')) return cwd.slice(bubble.workspace.length + 1);
-    return cwd;
-  }, [cwd, bubble.workspace]);
-
-  async function exec(rawCmd: string) {
-    const trimmed = rawCmd.trim();
-    if (!trimmed) return;
-
-    // history
-    setHistory((h) => [...h, trimmed].slice(-100));
-    setHistoryIdx(-1);
-
-    // builtins
-    if (trimmed === 'clear' || trimmed === 'cls') {
-      setLines([]);
-      return;
-    }
-    if (trimmed === 'help') {
-      pushLines([
-        { kind: 'prompt', cwd: cwdLabel, command: trimmed },
-        { kind: 'stdout', text: tr('detail.term.help_lines') },
-      ]);
-      return;
-    }
-    if (trimmed === 'pwd') {
-      pushLines([
-        { kind: 'prompt', cwd: cwdLabel, command: trimmed },
-        { kind: 'stdout', text: cwd },
-      ]);
-      return;
-    }
-    if (trimmed.startsWith('cd ') || trimmed === 'cd') {
-      const target = trimmed === 'cd' ? bubble.workspace : trimmed.slice(3).trim();
-      if (!target) return;
-      const newCwd = resolveLikePosix(cwd, target);
-      if (!bubble.workspace || (newCwd !== bubble.workspace && !newCwd.startsWith(bubble.workspace + '/'))) {
-        pushLines([
-          { kind: 'prompt', cwd: cwdLabel, command: trimmed },
-          { kind: 'stderr', text: tr('detail.term.cd_outside', { target }) },
-        ]);
-        return;
-      }
-      setCwd(newCwd);
-      pushLines([{ kind: 'prompt', cwd: cwdLabel, command: trimmed }]);
-      return;
-    }
-
-    pushLines([{ kind: 'prompt', cwd: cwdLabel, command: trimmed }]);
-    setBusy(true);
-    try {
-      const res = await apiFetch('/shell', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: trimmed, cwd, workspace: bubble.workspace }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        pushLines([{ kind: 'stderr', text: translateBackendError(data, `HTTP ${res.status}`) }]);
-        return;
-      }
-      const result = data as { stdout: string; stderr: string; exitCode: number | null; truncated: boolean; durationMs: number };
-      if (result.stdout) pushLines([{ kind: 'stdout', text: result.stdout.replace(/\n$/, '') }]);
-      if (result.stderr) pushLines([{ kind: 'stderr', text: result.stderr.replace(/\n$/, '') }]);
-      const meta: string[] = [];
-      if (result.exitCode !== 0 && result.exitCode !== null) meta.push(tr('detail.term.exit_code', { code: result.exitCode }));
-      if (result.truncated) meta.push(tr('detail.term.truncated'));
-      meta.push(`${result.durationMs}ms`);
-      pushLines([{ kind: 'meta', text: meta.join(' · ') }]);
-    } catch (e) {
-      pushLines([{ kind: 'stderr', text: e instanceof Error ? e.message : 'Error' }]);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function pushLines(more: TermLine[]) {
-    setLines((prev) => [...prev, ...more]);
-  }
-
-  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && !busy) {
-      e.preventDefault();
-      const v = command;
-      setCommand('');
-      void exec(v);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (history.length === 0) return;
-      const next = historyIdx === -1 ? history.length - 1 : Math.max(0, historyIdx - 1);
-      setHistoryIdx(next);
-      setCommand(history[next] ?? '');
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (historyIdx === -1) return;
-      const next = historyIdx + 1;
-      if (next >= history.length) {
-        setHistoryIdx(-1);
-        setCommand('');
-      } else {
-        setHistoryIdx(next);
-        setCommand(history[next] ?? '');
-      }
-    } else if (e.key === 'l' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      setLines([]);
-    }
-  }
-
-  return (
-    <div style={{
-      flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      background: t.bg0,
-    }}>
-      <div
-        ref={scrollRef}
-        onClick={() => inputRef.current?.focus()}
-        style={{
-          flex: 1, overflow: 'auto', padding: '20px 24px',
-          fontFamily: t.fontMono, fontSize: 12.5, lineHeight: 1.65,
-          cursor: 'text',
-        }}>
-        {lines.map((l, i) => <TermLineRow key={i} line={l}/>)}
-        {busy && (
-          <div style={{ color: t.accent, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%', background: t.accent,
-              animation: 'eco-shimmer 0.9s ease-in-out infinite',
-            }}/>
-            {tr('detail.term.executing')}
-          </div>
-        )}
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (busy) return;
-          const v = command; setCommand('');
-          void exec(v);
-        }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '10px 24px', borderTop: `1px solid ${t.glassBorder}`,
-          background: t.bg1,
-          fontFamily: t.fontMono, fontSize: 13,
-        }}>
-        <span style={{ color: t.accent, flexShrink: 0 }}>{cwdLabel} ›</span>
-        <input
-          ref={inputRef}
-          autoFocus
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
-          onKeyDown={onKey}
-          disabled={busy}
-          placeholder={busy ? tr('detail.term.executing') : tr('detail.term.command_placeholder')}
-          spellCheck={false}
-          autoCorrect="off"
-          autoCapitalize="off"
-          style={{
-            flex: 1, background: 'transparent', border: 0, outline: 'none',
-            fontFamily: 'inherit', fontSize: 'inherit', color: t.text0,
-            padding: '4px 0', caretColor: t.accent,
-          }}/>
-      </form>
-    </div>
-  );
-}
-
-function TermLineRow({ line }: { line: TermLine }) {
-  const t = useTokens();
-  if (line.kind === 'prompt') {
-    return (
-      <div style={{ display: 'flex', gap: 6 }}>
-        <span style={{ color: t.accent }}>{line.cwd} ›</span>
-        <span style={{ color: t.text0 }}>{line.command}</span>
-      </div>
-    );
-  }
-  if (line.kind === 'stderr') {
-    return <div style={{ color: t.err, whiteSpace: 'pre-wrap' }}>{line.text}</div>;
-  }
-  if (line.kind === 'meta') {
-    return <div style={{ color: t.text3, fontSize: 11, marginBottom: 6 }}>{line.text}</div>;
-  }
-  if (line.kind === 'system') {
-    return <div style={{ color: t.text3, whiteSpace: 'pre-wrap' }}>{line.text}</div>;
-  }
-  return <div style={{ color: t.text1, whiteSpace: 'pre-wrap' }}>{line.text || ' '}</div>;
-}
-
-function resolveLikePosix(cwd: string, target: string): string {
-  if (target.startsWith('/')) return normalizePosixPath(target);
-  return normalizePosixPath(cwd + '/' + target);
-}
-
-function normalizePosixPath(p: string): string {
-  const parts = p.split('/');
-  const out: string[] = [];
-  for (const s of parts) {
-    if (s === '' || s === '.') continue;
-    if (s === '..') out.pop();
-    else out.push(s);
-  }
-  return '/' + out.join('/');
-}
-
 // Helper: corre un skill mandando "/<skill>\r" directo al PTY del agente
 // (donde corre Claude CLI). Después switcheamos al tab Terminal para que
 // el user vea la salida en vivo.
@@ -1598,11 +900,10 @@ async function runSkillInTerminal(opts: {
 }
 
 function SkillsCard({
-  bubbleId, workspace, onSend,
+  bubbleId, workspace,
 }: {
   bubbleId: string;
   workspace: string;
-  onSend: (text: string) => void;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -1641,7 +942,6 @@ function SkillsCard({
     setBusy(null);
     if (!r.ok) setErr(r.error);
   }
-  void onSend; // prop conservada por si en el futuro hay flow chat-based
 
   return (
     <div>
@@ -1821,7 +1121,7 @@ const SIDEBAR_WIDTH_MIN = 280;
 const SIDEBAR_WIDTH_MAX = 520;
 const SIDEBAR_WIDTH_DEFAULT = 360;
 
-type SectionId = 'skills' | 'quick' | 'git' | 'next' | 'stats' | 'obsidian';
+type SectionId = 'skills' | 'quick' | 'git' | 'stats' | 'obsidian';
 
 function sectionCollapseStorageKey(bubbleId: string): string {
   return `eco.detail.sidebar.sections.${bubbleId}`;
@@ -1914,56 +1214,13 @@ function CollapsibleSection({
   );
 }
 
-// Sparkline mini para visualizar actividad (mensajes/min en últimos 30 min).
-function Sparkline({
-  points, color, height = 22,
-}: {
-  points: number[];
-  color: string;
-  height?: number;
-}) {
-  if (points.length === 0) return null;
-  const max = Math.max(...points, 1);
-  const w = 80;
-  const stepX = points.length > 1 ? w / (points.length - 1) : w;
-  const path = points.map((p, i) => {
-    const x = i * stepX;
-    const y = height - (p / max) * (height - 2) - 1;
-    return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  // Última barra resaltada
-  const lastX = (points.length - 1) * stepX;
-  const lastY = height - (points[points.length - 1]! / max) * (height - 2) - 1;
-  return (
-    <svg viewBox={`0 0 ${w} ${height}`} style={{ width: '100%', height, display: 'block' }} preserveAspectRatio="none">
-      <path d={path} stroke={color} strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-      <circle cx={lastX} cy={lastY} r={1.5} fill={color}/>
-    </svg>
-  );
-}
-
-function computeActivityBuckets(messages: Message[], windowMin = 30, buckets = 8): number[] {
-  const now = Date.now();
-  const start = now - windowMin * 60_000;
-  const bucketMs = (windowMin * 60_000) / buckets;
-  const result = new Array(buckets).fill(0) as number[];
-  for (const m of messages) {
-    if (m.createdAt < start) continue;
-    const idx = Math.min(buckets - 1, Math.max(0, Math.floor((m.createdAt - start) / bucketMs)));
-    result[idx] = (result[idx] ?? 0) + 1;
-  }
-  return result;
-}
-
 // Quick actions inline (sin SectionLabel ni footer fijo). Va como una
 // "sección" más del flow del sidebar.
 function QuickActions({
-  bubble, filesChangedCount, onGoTab, onSend,
+  filesChangedCount, onGoTab,
 }: {
-  bubble: Bubble;
   filesChangedCount: number;
   onGoTab: (tab: Tab) => void;
-  onSend: (text: string) => void;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -1972,12 +1229,6 @@ function QuickActions({
     badge?: number; disabled?: boolean; tooltip?: string;
   };
   const actions: QA[] = [
-    {
-      label: tr('cmd.tab.chat'), icon: <IconCommand size={12}/>,
-      onClick: () => onGoTab('chat'),
-      badge: bubble.unread > 0 ? bubble.unread : undefined,
-      tooltip: tr('detail.action.chat_tooltip'),
-    },
     {
       label: tr('cmd.tab.files'), icon: <IconFile size={12}/>,
       onClick: () => onGoTab('git'),
@@ -1988,11 +1239,6 @@ function QuickActions({
       label: tr('cmd.tab.terminal'), icon: <IconTerminal size={12}/>,
       onClick: () => onGoTab('terminal'),
       tooltip: tr('detail.action.terminal_tooltip'),
-    },
-    {
-      label: tr('detail.quick.summary_label'), icon: <IconLayers size={12}/>,
-      onClick: () => onSend(tr('detail.action.summary_prompt')),
-      tooltip: tr('detail.action.summary_tooltip'),
     },
   ];
   return (
@@ -2084,12 +1330,10 @@ function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubb
 }
 
 function AgentSidebar({
-  bubble, filesChangedCount, onSend, onInterrupt, onGoTab,
+  bubble, filesChangedCount, onGoTab,
 }: {
   bubble: Bubble;
   filesChangedCount: number;
-  onSend: (text: string) => void;
-  onInterrupt: () => void;
   onGoTab: (tab: Tab) => void;
   onRename: (title: string) => void;
 }) {
@@ -2163,7 +1407,6 @@ function AgentSidebar({
   }, [collapsed, toggleCollapsed]);
 
   const min = Math.max(1, Math.round((Date.now() - bubble.createdAt) / 60_000));
-  const toolCallCount = bubble.messages.reduce((acc, m) => acc + (m.toolCalls?.length ?? 0), 0);
 
   // Detecta "novedades" comparando el último count con el anterior — usado
   // por las secciones para parpadear el accentDot cuando algo cambió.
@@ -2178,24 +1421,9 @@ function AgentSidebar({
     prevFilesRef.current = filesChangedCount;
   }, [filesChangedCount]);
 
-  // Reordenamiento por contexto: si el agente está corriendo o hay archivos
-  // sin commitear, "Próxima acción" pasa arriba para que el user lo vea sin
-  // scrollear. Skills y QuickActions van siempre arriba (en ese orden).
-  const running = bubble.status === 'thinking' || bubble.status === 'executing'
-    || bubble.status === 'running' || bubble.status === 'pending';
   // Git va FIJO arriba para que la rama actual sea siempre lo primero
-  // que se ve del agente — independiente de si está corriendo o tiene
-  // archivos modificados.
-  const sectionOrder = useMemo<SectionId[]>(() => {
-    if (running || filesChangedCount > 0) {
-      return ['git', 'skills', 'quick', 'next', 'stats', 'obsidian'];
-    }
-    return ['git', 'skills', 'quick', 'next', 'stats', 'obsidian'];
-  }, [running, filesChangedCount]);
-
-  // Datos para sparkline.
-  const activity = useMemo(() => computeActivityBuckets(bubble.messages), [bubble.messages]);
-  const hasActivity = activity.some((n) => n > 0);
+  // que se ve del agente.
+  const sectionOrder: SectionId[] = ['git', 'skills', 'quick', 'stats', 'obsidian'];
 
   if (collapsed) {
     return <CollapsedBar onExpand={toggleCollapsed} bubble={bubble}/>;
@@ -2209,17 +1437,15 @@ function AgentSidebar({
             title="Skills"
             collapsed={sectionCollapse.isCollapsed('skills')}
             onToggle={() => sectionCollapse.toggle('skills')}>
-            <SkillsCard bubbleId={bubble.id} workspace={bubble.workspace} onSend={onSend}/>
+            <SkillsCard bubbleId={bubble.id} workspace={bubble.workspace}/>
           </CollapsibleSection>
         );
 
       case 'quick':
         return (
           <QuickActions key="quick"
-            bubble={bubble}
             filesChangedCount={filesChangedCount}
-            onGoTab={onGoTab}
-            onSend={onSend}/>
+            onGoTab={onGoTab}/>
         );
 
       case 'git':
@@ -2243,67 +1469,22 @@ function AgentSidebar({
           </div>
         );
 
-      case 'next':
-        return (
-          <CollapsibleSection key="next" id="next"
-            title={tr('detail.sidebar.next')}
-            collapsed={sectionCollapse.isCollapsed('next')}
-            onToggle={() => sectionCollapse.toggle('next')}
-            accentDot={filesNovel}>
-            <NextActionsPanel
-              bubble={bubble}
-              filesChangedCount={filesChangedCount}
-              onSend={onSend}
-              onInterrupt={onInterrupt}
-              onGoTab={onGoTab}
-              hideHeader
-            />
-          </CollapsibleSection>
-        );
-
       case 'stats':
         return (
           <CollapsibleSection key="stats" id="stats"
             title={tr('detail.sidebar.stats')}
             collapsed={sectionCollapse.isCollapsed('stats')}
-            onToggle={() => sectionCollapse.toggle('stats')}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {hasActivity && (
-                <div style={{
-                  padding: '8px 10px', borderRadius: 8,
-                  background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                }}>
-                  <div style={{
-                    fontSize: 10, color: t.text3, letterSpacing: 0.4,
-                    textTransform: 'uppercase', marginBottom: 4,
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
-                    <span>Actividad · 30 min</span>
-                    <span style={{ flex: 1 }}/>
-                    <span style={{ fontFamily: t.fontMono, color: t.text2 }}>
-                      {activity.reduce((a, b) => a + b, 0)} msg
-                    </span>
-                  </div>
-                  <Sparkline points={activity} color={t.accent} height={24}/>
-                </div>
-              )}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <StatBox
-                  label={tr('detail.stat.last_activity')}
-                  value={fmtAgo(bubble.updatedAt)}
-                  sub={`activo ${min}m`}/>
-                <StatBox
-                  label={tr('detail.stat.messages')}
-                  value={String(bubble.messages.length)}
-                  onClick={() => onGoTab('chat')}/>
-                <StatBox
-                  label={tr('detail.stat.files_changed')}
-                  value={String(filesChangedCount)}
-                  onClick={filesChangedCount > 0 ? () => onGoTab('git') : undefined}/>
-                <StatBox
-                  label={tr('detail.stat.tool_calls')}
-                  value={String(toolCallCount)}/>
-              </div>
+            onToggle={() => sectionCollapse.toggle('stats')}
+            accentDot={filesNovel}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <StatBox
+                label={tr('detail.stat.last_activity')}
+                value={fmtAgo(bubble.updatedAt)}
+                sub={`activo ${min}m`}/>
+              <StatBox
+                label={tr('detail.stat.files_changed')}
+                value={String(filesChangedCount)}
+                onClick={filesChangedCount > 0 ? () => onGoTab('git') : undefined}/>
             </div>
           </CollapsibleSection>
         );
@@ -2642,144 +1823,6 @@ function fmtAgo(ts: number): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
-}
-
-function NextActionsPanel({
-  bubble, filesChangedCount, onSend, onInterrupt, onGoTab, hideHeader,
-}: {
-  bubble: Bubble;
-  filesChangedCount: number;
-  onSend: (text: string) => void;
-  onInterrupt: () => void;
-  onGoTab: (tab: Tab) => void;
-  hideHeader?: boolean;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const status = bubble.status;
-  const lastMsg = bubble.messages[bubble.messages.length - 1] ?? null;
-  const lastIsUser = lastMsg?.role === 'user';
-  const lastIsError = !!lastMsg && lastMsg.role === 'assistant' && /error|fail|no pude|sorry|disculpá/i.test(lastMsg.text);
-  const noMessages = bubble.messages.length === 0;
-  const running = status === 'thinking' || status === 'executing' || status === 'running' || status === 'pending';
-
-  type Action = {
-    label: string;
-    sub?: string;
-    icon: React.ReactNode;
-    tone: 'primary' | 'normal' | 'danger';
-    onClick: () => void;
-  };
-
-  const actions: Action[] = [];
-
-  if (running) {
-    actions.push({
-      label: tr('detail.quick.stop'),
-      sub: tr('detail.quick.interrupt_sub'),
-      icon: <IconStop size={12}/>,
-      tone: 'danger',
-      onClick: () => onInterrupt(),
-    });
-  } else if (noMessages) {
-    actions.push({
-      label: tr('detail.quick.greet'),
-      sub: tr('detail.quick.hi_sub'),
-      icon: <IconCommand size={12}/>,
-      tone: 'primary',
-      onClick: () => onSend(tr('detail.quick.greet_prompt')),
-    });
-  } else {
-    if (filesChangedCount > 0) {
-      actions.push({
-        label: filesChangedCount === 1 ? tr('detail.quick.review_one', { n: filesChangedCount }) : tr('detail.quick.review_many', { n: filesChangedCount }),
-        sub: tr('detail.quick.commit_sub'),
-        icon: <IconFile size={12}/>,
-        tone: 'primary',
-        onClick: () => onGoTab('git'),
-      });
-    }
-    if (lastIsError) {
-      actions.push({
-        label: tr('detail.quick.retry'),
-        sub: tr('detail.quick.retry_sub'),
-        icon: <IconResume size={12}/>,
-        tone: 'primary',
-        onClick: () => onSend(tr('detail.quick.retry_prompt')),
-      });
-    }
-    if (lastIsUser) {
-      actions.push({
-        label: tr('detail.quick.continue'),
-        sub: tr('detail.quick.continue_sub'),
-        icon: <IconResume size={12}/>,
-        tone: 'normal',
-        onClick: () => onSend(tr('detail.quick.continue_prompt')),
-      });
-    } else {
-      actions.push({
-        label: tr('detail.quick.summary_label'),
-        sub: tr('detail.quick.summary_sub'),
-        icon: <IconLayers size={12}/>,
-        tone: 'normal',
-        onClick: () => onSend(tr('detail.quick.summary_prompt')),
-      });
-      actions.push({
-        label: tr('detail.quick.plan_label'),
-        sub: tr('detail.quick.plan_sub'),
-        icon: <IconBolt size={12}/>,
-        tone: 'normal',
-        onClick: () => onSend(tr('detail.quick.plan_prompt')),
-      });
-    }
-  }
-
-  // Tomamos hasta 3 acciones para no saturar.
-  const visible = actions.slice(0, 3);
-
-  return (
-    <div>
-      {!hideHeader && <SectionLabel>{tr('detail.sidebar.next')}</SectionLabel>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {visible.map((a, i) => {
-          const color = a.tone === 'danger' ? t.err : a.tone === 'primary' ? t.accent : t.text1;
-          const bg = a.tone === 'primary' ? `color-mix(in oklch, ${t.accent} 10%, transparent)` : t.bg2;
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={a.onClick}
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10,
-                width: '100%', padding: '10px 12px',
-                borderRadius: 10, border: `1px solid ${a.tone === 'primary' ? t.accent : t.glassBorder}`,
-                background: bg,
-                cursor: 'pointer', textAlign: 'left',
-                fontFamily: t.fontSans,
-                transition: 'background 140ms, border-color 140ms',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}>
-              <span style={{
-                width: 24, height: 24, flexShrink: 0,
-                borderRadius: 7,
-                background: a.tone === 'primary' ? t.accent : t.bg3,
-                color: a.tone === 'primary' ? t.accentOn : color,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                marginTop: 1,
-              }}>{a.icon}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{a.label}</div>
-                {a.sub && (
-                  <div style={{ fontSize: 10.5, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>{a.sub}</div>
-                )}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 // Wrapper que mantiene el BrowserPanel montado entre cambios de pestaña.

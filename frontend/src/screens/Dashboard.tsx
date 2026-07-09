@@ -28,7 +28,6 @@ import { useTeamBubbles } from '@/components/AdminGraph';
 type Props = {
   bubbles: Bubble[];
   activeBubbleId: string | null;
-  onSend: (text: string) => void;
   onOpenAgent: (id: string) => void;
   onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
   onFocus: (id: string) => void;
@@ -647,8 +646,6 @@ function AgentBubble({
     thinking: tr('state.thinking'),
     executing: tr('state.executing'),
   };
-  const lastMsg = bubble.messages[bubble.messages.length - 1];
-  const lastText = lastMsg?.text || bubble.lastMsgPreview || tr('dash.bubble.no_msg');
   const minutesAgo = Math.max(1, Math.round((Date.now() - bubble.updatedAt) / 60000));
   const tStr = minutesAgo < 60 ? `${minutesAgo}m` : `${Math.round(minutesAgo / 60)}h`;
 
@@ -787,13 +784,6 @@ function AgentBubble({
           </span>
         )}
       </div>
-
-      <div style={{
-        fontFamily: t.fontSans, fontSize: 12.5, color: t.text1,
-        lineHeight: 1.5, marginBottom: 14,
-        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-        overflow: 'hidden',
-      }}>{lastText}</div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto' }}>
         {readOnly ? (
@@ -1948,7 +1938,6 @@ function KanbanView({
 // Paths SVG (24x24 viewBox) de los íconos que mostramos en cada satélite.
 // Inline acá para no importar componentes que envuelven con <svg> propio.
 const SAT_ICONS = {
-  chat: <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>,
   pty: <path d="M4 17l5-5-5-5M12 19h8"/>,
   // Icono tipo base de datos — cilindro con dos elipses (tapa + base parcial)
   // que da idea de "almacenamiento corriendo". Coincide más con el modelo
@@ -1982,9 +1971,8 @@ const SAT_ICONS = {
 } as const;
 
 // Mapeo de cada satélite a la tab que se abre en AgentDetail.
-type SatKey = 'chat' | 'pty' | 'server' | 'browser' | 'remote' | 'files';
-const SAT_TO_TAB: Record<SatKey, 'chat' | 'terminal' | 'server' | 'browser' | 'git'> = {
-  chat: 'chat',
+type SatKey = 'pty' | 'server' | 'browser' | 'remote' | 'files';
+const SAT_TO_TAB: Record<SatKey, 'terminal' | 'server' | 'browser' | 'git'> = {
   pty: 'terminal',
   server: 'server',
   browser: 'browser',
@@ -2001,7 +1989,7 @@ function SatellitesLocal({
 }: {
   n: {
     id: string; size: number;
-    hasChat: boolean; hasPty: boolean; hasServer: boolean; hasBrowser: boolean; hasRemote: boolean; hasFiles: boolean;
+    hasPty: boolean; hasServer: boolean; hasBrowser: boolean; hasRemote: boolean; hasFiles: boolean;
   };
   t: ReturnType<typeof useTokens>;
   onItemClick?: (subsystem: SatKey) => void;
@@ -2009,7 +1997,6 @@ function SatellitesLocal({
   const [hoverKey, setHoverKey] = useState<SatKey | null>(null);
   const busy = useBubbleBusy(n.id);
   const items: { key: SatKey; on: boolean; color: string; label: string; icon: JSX.Element; pulse?: boolean }[] = [
-    { key: 'chat',    on: n.hasChat,    color: '#3b82f6', label: 'Conversación',          icon: SAT_ICONS.chat },
     { key: 'pty',     on: n.hasPty,     color: t.ok,     label: busy ? 'Procesando…' : 'Terminal', icon: SAT_ICONS.pty, pulse: busy },
     // Color morado para diferenciarlo del satélite Server (busy=naranja/amber).
     { key: 'files',   on: n.hasFiles,   color: '#a855f7', label: 'Cambios sin commitear', icon: SAT_ICONS.files, pulse: true },
@@ -2160,9 +2147,7 @@ function KanbanCard({ bubble, onOpen, ownerLabel }: { bubble: Bubble; onOpen: ()
   // "Activo" = Claude procesando, dev server arriba, o página web abierta.
   // Un PTY abierto solo no cuenta (shell idle no es trabajo).
   const isActive = useBubbleActive(bubble) || busy;
-  const lastMsg = bubble.messages[bubble.messages.length - 1];
   // Para bubbles ajenas (sin messages) caemos al preview sintetizado.
-  const previewText = lastMsg ? `${lastMsg.role === 'user' ? '› ' : '← '}${lastMsg.text.slice(0, 120)}` : (bubble.lastMsgPreview ?? '');
   return (
     <button
       type="button"
@@ -2208,15 +2193,6 @@ function KanbanCard({ bubble, onOpen, ownerLabel }: { bubble: Bubble; onOpen: ()
           fontFamily: t.fontSans, fontSize: 10.5, color: t.accent, fontWeight: 500,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }} title={tr('dash.bubble.owner')}>{ownerLabel}</div>
-      )}
-      {previewText && (
-        <div style={{
-          fontSize: 11, color: t.text2, lineHeight: 1.4,
-          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-          overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>
-          {previewText}
-        </div>
       )}
       {bubble.workspace && (
         <div style={{
@@ -2377,7 +2353,6 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   // Flags de estado/recursos de un agente — compartido por ambos layouts.
   function nodeFlags(b: Bubble) {
     const state = (b.status as AgentState) || 'idle';
-    const hasChat = b.messages.length > 0;
     const hasPty = !!b.ptyOpen;
     const hasServer = anyServerRunning(b.id);
     const hasBrowser = !!browsersByBubble[b.id];
@@ -2390,7 +2365,7 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
     const claudeBusy = state === 'thinking' || state === 'executing' || state === 'running' || state === 'pending';
     const ptyBusy = busyIds.has(b.id);
     const isActive = claudeBusy || ptyBusy;
-    return { state, hasChat, hasPty, hasServer, hasBrowser, hasRemote, hasFiles, isActive };
+    return { state, hasPty, hasServer, hasBrowser, hasRemote, hasFiles, isActive };
   }
   type GraphNode = Bubble & ReturnType<typeof nodeFlags> & {
     x: number; y: number; size: number;
@@ -3530,7 +3505,6 @@ function DashboardRail({
 function RecentRow({ bubble, active, onClick }: { bubble: Bubble; active: boolean; onClick: () => void }) {
   const t = useTokens();
   const [h, setH] = useState(false);
-  const lastMsg = bubble.messages[bubble.messages.length - 1];
   return (
     <div
       onClick={onClick}
@@ -3552,12 +3526,6 @@ function RecentRow({ bubble, active, onClick }: { bubble: Bubble; active: boolea
           fontFamily: t.fontSans, fontSize: 12, color: t.text1,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{bubble.title}</div>
-        {lastMsg && (
-          <div style={{
-            fontFamily: t.fontSans, fontSize: 10.5, color: t.text3,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>{lastMsg.text.slice(0, 60)}</div>
-        )}
       </div>
     </div>
   );

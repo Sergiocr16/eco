@@ -14,7 +14,8 @@ import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useQuickSuggestions } from '@/hooks/useQuickSuggestions';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { apiFetch } from '@/lib/api';
-import { useApiKey } from '@/hooks/useApiKey';
+import { useApiKey, type KeyProvider } from '@/hooks/useApiKey';
+import { useCliAuth, type CliProvider } from '@/hooks/useCliAuth';
 import { useGithubCredentials } from '@/hooks/useGithubCredentials';
 import { GithubTokenHelp } from '@/components/GithubTokenHelp';
 import { GhStatusBanner } from '@/components/GhStatusBanner';
@@ -26,19 +27,19 @@ import { useIsAdmin } from '@/lib/auth-role';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { getExternalIde, setExternalIde, ideDisplayLabel, type ExternalIde } from '@/lib/ide-uri';
 
-type Section = 'general' | 'claude' | 'github' | 'security' | 'appearance' | 'integrations' | 'about';
+type Section = 'general' | 'agents' | 'github' | 'security' | 'appearance' | 'integrations' | 'about';
 
 export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | null }) {
   const t = useTokens();
   const tr = useT();
   const [sec, setSec] = useState<Section>('general');
   // Modelo local: cada usuario corre su propio Eco, así que todas las secciones
-  // (Claude & API, Folders/proyectos, Integraciones) son locales de su máquina y
+  // (Agentes & API, Folders/proyectos, Integraciones) son locales de su máquina y
   // visibles para todos. El backup se removió (el estado vive en Firestore).
   const sections: { id: Section; label: string; icon: (p: IconProps) => JSX.Element }[] = [
     { id: 'general', label: tr('settings.section.general'), icon: IconSettings },
-    // Claude & API corre local en cada máquina → visible para cada usuario.
-    { id: 'claude', label: tr('settings.section.claude'), icon: IconKey },
+    // Los CLIs de agente corren local en cada máquina → visible para cada usuario.
+    { id: 'agents', label: tr('settings.section.agents'), icon: IconKey },
     { id: 'github', label: tr('settings.section.github'), icon: IconGithub },
     { id: 'security', label: tr('settings.section.security'), icon: IconShield },
     { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
@@ -77,7 +78,7 @@ export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | n
 
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
         {sec === 'general' && <SectionGeneral/>}
-        {sec === 'claude' && <SectionClaude/>}
+        {sec === 'agents' && <SectionAgents/>}
         {sec === 'github' && <SectionGithub/>}
         {sec === 'security' && <SectionSecurity/>}
         {sec === 'appearance' && <SectionAppearance/>}
@@ -353,14 +354,75 @@ function SuggestionsEditor() {
   );
 }
 
-function SectionClaude() {
+// Cada proveedor tiene el mismo par de caminos de auth (sesión del CLI o API
+// key), así que las tarjetas son genéricas y este map las parametriza.
+const AGENT_PROVIDERS = {
+  claude: {
+    keyProvider: 'anthropic',
+    keyPlaceholder: 'sk-ant-api03-...',
+    loginCmd: 'claude login',
+    installCmd: 'npm i -g @anthropic-ai/claude-code',
+    i18n: 'settings.claude',
+  },
+  codex: {
+    keyProvider: 'openai',
+    keyPlaceholder: 'sk-proj-...',
+    loginCmd: 'codex login',
+    installCmd: 'npm i -g @openai/codex',
+    i18n: 'settings.codex',
+  },
+} as const satisfies Record<CliProvider, {
+  keyProvider: KeyProvider;
+  keyPlaceholder: string;
+  loginCmd: string;
+  installCmd: string;
+  i18n: string;
+}>;
+
+const PROVIDER_STORAGE_KEY = 'eco.settings.agent_provider';
+
+function SectionAgents() {
+  const t = useTokens();
   const tr = useT();
+  const [provider, setProvider] = useState<CliProvider>(() => {
+    try { return localStorage.getItem(PROVIDER_STORAGE_KEY) === 'codex' ? 'codex' : 'claude'; }
+    catch { return 'claude'; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(PROVIDER_STORAGE_KEY, provider); } catch { /* noop */ }
+  }, [provider]);
+
+  const cfg = AGENT_PROVIDERS[provider];
+
   return (
     <div style={{ width: '100%' }}>
-      <Header title={tr('settings.claude.title')} sub={tr('settings.claude.sub')}/>
-      <ClaudeAuthStatusCard/>
-      <ApiKeyEditor/>
-      <ModelInfoRow/>
+      <Header title={tr('settings.agents.title')} sub={tr('settings.agents.sub')}/>
+
+      <div style={{
+        display: 'inline-flex', gap: 2, padding: 3, marginBottom: 16,
+        borderRadius: 9, background: t.bg2, border: `1px solid ${t.glassBorder}`,
+      }}>
+        {(['claude', 'codex'] as const).map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setProvider(p)}
+            style={{
+              padding: '5px 16px', borderRadius: 7, border: 0, cursor: 'pointer',
+              background: provider === p ? t.bg0 : 'transparent',
+              color: provider === p ? t.accent : t.text2,
+              fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+              transition: 'background 140ms, color 140ms',
+            }}
+          >{tr(`settings.agents.provider.${p}`)}</button>
+        ))}
+      </div>
+
+      <CliAuthStatusCard key={provider} provider={provider} cfg={cfg}/>
+      <ApiKeyEditor key={`key-${provider}`} provider={provider} cfg={cfg}/>
+      {/* ECO_MODEL gobierna el SDK del tab Chat, que es Claude-only. */}
+      {provider === 'claude' && <ModelInfoRow/>}
     </div>
   );
 }
@@ -408,57 +470,40 @@ function ModelInfoRow() {
   );
 }
 
-type ClaudeAuthStatus = {
-  cliInstalled: boolean;
-  cliPath: string;
-  cliVersion: string | null;
-  cliLoggedIn: boolean;
-  cliLoginHint: string;
-  apiKeyConfigured: boolean;
-  apiKeyMasked: string | null;
-  effectiveMethod: 'cli' | 'apikey' | 'none';
-};
+type ProviderCfg = typeof AGENT_PROVIDERS[CliProvider];
 
-function ClaudeAuthStatusCard() {
+function CliAuthStatusCard({ provider, cfg }: { provider: CliProvider; cfg: ProviderCfg }) {
   const t = useTokens();
   const tr = useT();
-  const [status, setStatus] = useState<ClaudeAuthStatus | null>(null);
+  const { status, refresh } = useCliAuth(provider);
 
   useEffect(() => {
-    let cancel = false;
-    const fetch = () => {
+    const poll = () => {
       // No pollear cuando la ventana no está visible — el focus event ya
       // dispara fetch al volver al frente.
       if (document.visibilityState !== 'visible') return;
-      void apiFetch('/config/claude-auth').then(async (r) => {
-        if (cancel || !r.ok) return;
-        const data = await r.json().catch(() => null);
-        if (data) setStatus(data as ClaudeAuthStatus);
-      });
+      void refresh();
     };
-    fetch();
     // Refrescamos cuando vuelve el foco — útil si el user corre `claude login`
     // en una terminal aparte y vuelve a Eco.
-    const onFocus = () => fetch();
-    window.addEventListener('focus', onFocus);
+    window.addEventListener('focus', poll);
     // Intervalo más relajado (30s); con el listener de focus el user igual ve
     // el estado fresco apenas vuelve a Eco.
-    const iv = window.setInterval(fetch, 30_000);
+    const iv = window.setInterval(poll, 30_000);
     return () => {
-      cancel = true;
-      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('focus', poll);
       window.clearInterval(iv);
     };
-  }, []);
+  }, [refresh]);
 
   if (!status) return null;
 
   const method = status.effectiveMethod;
   const headerColor = method === 'none' ? t.warn : t.ok;
   const headerText =
-    method === 'cli' ? tr('settings.claude.auth.using_cli')
-    : method === 'apikey' ? tr('settings.claude.auth.using_apikey')
-    : tr('settings.claude.auth.using_none');
+    method === 'cli' ? tr(`${cfg.i18n}.auth.using_cli`)
+    : method === 'apikey' ? tr(`${cfg.i18n}.auth.using_apikey`)
+    : tr(`${cfg.i18n}.auth.using_none`);
 
   return (
     <Glass radius={12} style={{ padding: 14, marginBottom: 16 }}>
@@ -477,7 +522,7 @@ function ClaudeAuthStatusCard() {
             {headerText}
           </div>
           <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>
-            {tr('settings.claude.auth.priority_hint')}
+            {tr(`${cfg.i18n}.auth.priority_hint`)}
           </div>
         </div>
       </div>
@@ -496,7 +541,7 @@ function ClaudeAuthStatusCard() {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
-              {tr('settings.claude.auth.cli_title')}
+              {tr(`${cfg.i18n}.auth.cli_title`)}
             </span>
             {method === 'cli' && (
               <span style={{
@@ -504,30 +549,22 @@ function ClaudeAuthStatusCard() {
                 background: t.accentFaint, color: t.accent,
                 fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase',
                 letterSpacing: 0.4,
-              }}>{tr('settings.claude.auth.active')}</span>
+              }}>{tr(`${cfg.i18n}.auth.active`)}</span>
             )}
           </div>
           <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5, marginBottom: 4 }}>
-            {tr('settings.claude.auth.cli_desc')}
+            {tr(`${cfg.i18n}.auth.cli_desc`)}
           </div>
           <div style={{ fontSize: 10.5, color: t.text3, fontFamily: t.fontMono }}>
             {status.cliInstalled
-              ? `${tr('settings.claude.auth.cli_installed')} ${status.cliVersion ?? ''}`
-              : tr('settings.claude.auth.cli_not_installed')}
+              ? `${tr(`${cfg.i18n}.auth.cli_installed`)} ${status.cliVersion ?? ''}`
+              : tr(`${cfg.i18n}.auth.cli_not_installed`)}
             {' · '}
             {status.cliLoggedIn
-              ? `${tr('settings.claude.auth.cli_loggedin')} (${status.cliLoginHint})`
-              : tr('settings.claude.auth.cli_notloggedin')}
+              ? `${tr(`${cfg.i18n}.auth.cli_loggedin`)} (${status.cliLoginHint})`
+              : tr(`${cfg.i18n}.auth.cli_notloggedin`)}
           </div>
-          {!status.cliLoggedIn && status.cliInstalled && (
-            <div style={{
-              marginTop: 8, padding: '6px 10px', borderRadius: 6,
-              background: t.bg2, fontSize: 11, color: t.text1,
-              fontFamily: t.fontMono,
-            }}>
-              <span style={{ color: t.text3 }}>$ </span>claude login
-            </div>
-          )}
+          <CommandHint cmd={status.cliInstalled ? (status.cliLoggedIn ? null : cfg.loginCmd) : cfg.installCmd}/>
         </div>
       </div>
 
@@ -538,7 +575,7 @@ function ClaudeAuthStatusCard() {
         textTransform: 'uppercase', fontWeight: 500, letterSpacing: 1,
       }}>
         <div style={{ flex: 1, height: 1, background: t.glassBorder }}/>
-        {tr('settings.claude.auth.or')}
+        {tr(`${cfg.i18n}.auth.or`)}
         <div style={{ flex: 1, height: 1, background: t.glassBorder }}/>
       </div>
 
@@ -556,7 +593,7 @@ function ClaudeAuthStatusCard() {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
-              {tr('settings.claude.auth.apikey_title')}
+              {tr(`${cfg.i18n}.auth.apikey_title`)}
             </span>
             {method === 'apikey' && (
               <span style={{
@@ -564,11 +601,11 @@ function ClaudeAuthStatusCard() {
                 background: t.accentFaint, color: t.accent,
                 fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase',
                 letterSpacing: 0.4,
-              }}>{tr('settings.claude.auth.active')}</span>
+              }}>{tr(`${cfg.i18n}.auth.active`)}</span>
             )}
           </div>
           <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>
-            {tr('settings.claude.auth.apikey_desc')}
+            {tr(`${cfg.i18n}.auth.apikey_desc`)}
           </div>
         </div>
       </div>
@@ -576,10 +613,26 @@ function ClaudeAuthStatusCard() {
   );
 }
 
-function ApiKeyEditor() {
+function CommandHint({ cmd }: { cmd: string | null }) {
+  const t = useTokens();
+  if (!cmd) return null;
+  return (
+    <div style={{
+      marginTop: 8, padding: '6px 10px', borderRadius: 6,
+      background: t.bg2, fontSize: 11, color: t.text1,
+      fontFamily: t.fontMono,
+    }}>
+      <span style={{ color: t.text3 }}>$ </span>{cmd}
+    </div>
+  );
+}
+
+function ApiKeyEditor({ provider, cfg }: { provider: CliProvider; cfg: ProviderCfg }) {
   const t = useTokens();
   const tr = useT();
-  const apiKey = useApiKey();
+  const apiKey = useApiKey(cfg.keyProvider);
+  // Guardar/borrar la key cambia `effectiveMethod` de la tarjeta de arriba.
+  const { refresh: refreshAuth } = useCliAuth(provider);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -596,6 +649,7 @@ function ApiKeyEditor() {
     if (r.ok) {
       setDraft('');
       setSuccess(true);
+      void refreshAuth();
       setTimeout(() => setSuccess(false), 2500);
     } else {
       setError(r.error);
@@ -605,6 +659,7 @@ function ApiKeyEditor() {
   async function handleDelete() {
     setBusy(true);
     await apiKey.remove();
+    void refreshAuth();
     setBusy(false);
   }
 
@@ -624,10 +679,10 @@ function ApiKeyEditor() {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13.5, color: t.text0, fontWeight: 500 }}>
-            {tr('settings.claude.apikey.title')}
+            {tr(`${cfg.i18n}.apikey.title`)}
           </div>
           <div style={{ fontSize: 12, color: t.text2, marginTop: 3, lineHeight: 1.5 }}>
-            {tr('settings.claude.apikey.desc')}
+            {tr(`${cfg.i18n}.apikey.desc`)}
           </div>
         </div>
         {apiKey.hasKey && (
@@ -638,7 +693,7 @@ function ApiKeyEditor() {
             color: t.ok, fontSize: 11, fontWeight: 500,
             border: `1px solid color-mix(in oklch, ${t.ok} 30%, transparent)`,
           }}>
-            <IconCheck size={11}/> {tr('settings.claude.apikey.saved')} · {apiKey.masked}
+            <IconCheck size={11}/> {tr(`${cfg.i18n}.apikey.saved`)} · {apiKey.masked}
           </span>
         )}
       </div>
@@ -649,17 +704,17 @@ function ApiKeyEditor() {
           value={draft}
           onChange={(e) => { setDraft(e.target.value); setError(null); }}
           onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
-          placeholder="sk-ant-api03-..."
+          placeholder={cfg.keyPlaceholder}
           style={{
             flex: 1, background: 'transparent', border: 0, outline: 'none',
             fontFamily: t.fontMono, fontSize: 12.5, color: t.text0, padding: '6px 10px',
           }}
         />
         <Btn kind="primary" size="sm" onClick={handleSave} disabled={busy || !draft.trim()} icon={IconCheck}>
-          {busy ? tr('settings.claude.apikey.validating') : apiKey.hasKey ? tr('settings.claude.apikey.replace_btn') : tr('settings.claude.apikey.save_btn')}
+          {busy ? tr(`${cfg.i18n}.apikey.validating`) : apiKey.hasKey ? tr(`${cfg.i18n}.apikey.replace_btn`) : tr(`${cfg.i18n}.apikey.save_btn`)}
         </Btn>
         {apiKey.hasKey && (
-          <Btn kind="danger" size="sm" onClick={handleDelete} disabled={busy} icon={IconTrash}>{tr('settings.claude.apikey.remove_btn')}</Btn>
+          <Btn kind="danger" size="sm" onClick={handleDelete} disabled={busy} icon={IconTrash}>{tr(`${cfg.i18n}.apikey.remove_btn`)}</Btn>
         )}
       </Glass>
 
@@ -668,7 +723,7 @@ function ApiKeyEditor() {
       )}
       {success && (
         <div style={{ fontSize: 11.5, color: t.ok, paddingLeft: 4 }}>
-          {tr('settings.claude.apikey.success')}
+          {tr(`${cfg.i18n}.apikey.success`)}
         </div>
       )}
     </div>

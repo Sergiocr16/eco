@@ -112,6 +112,8 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 | `listener/` (sidecar Python: openWakeWord + faster-whisper) + scripts `npm run listener*` | Nada | El dictado usa Apple Speech (.dmg) / Web Speech (browser), sin Python. |
 | `POST /voice/transcribed` + mensaje WS `voice_transcribed` | Nada | Solo lo usaba el listener Python. |
 | Paso "Voice" del OnboardingWizard | Nada | No hay preferencia de voz que configurar. |
+| Sub-tabs `Shell \| Agente \| Comandos` del tab Terminal (`TerminalPanel`, `SubTabBtn`, `AgentBashLog`, `SimulatedTerminal`, `TermLineRow`, `TermLine`, claves `detail.term.*` + `detail.terminal.tab.*`) | `TerminalTabs` directo (Claude \| Codex \| Shell N) | Nadie los usaba. La terminal real (xterm+PTY) reemplaza a la simulada. **`POST /shell` + `backend/src/shell.ts` quedaron sin caller** — candidatos a borrar. |
+| **Tab "Conversación" + todo el Claude Agent SDK**: `backend/src/{agent,agent-tools}.ts`, el handler `prompt`/`interrupt` de `ws-server.ts`, `ClientMessageSchema`, los `ServerMessage` `sdk_message`/`session_started`/`done`/`error`/`inject_prompt`, `client_action` `rename_bubble`/`close_bubble`; `ChatPanel`/`ChatBubble`/`ToolCallRow`/`ThinkingBubble`/`EmptyChat`, `HistoryScreen` + screen `history`, `NextActionsPanel`, `Sparkline`, `copyTranscriptToClipboard`, `collectFilesChanged`, `useEcoSocket.send`/`.interrupt`, `useBubbles.{appendMessage,updateMessage,setBubbleMessages,setBubbleSessionId,setBubbleStatus}`, eventos `eco:set_chat_draft`/`eco:focus_chat_input`, env `ECO_MODEL`/`ECO_RATE_LIMIT`/`ECO_PROMPT_TIMEOUT_MS`/`ECO_MAX_PROMPT_BYTES`, `config.model` + campo `model` de `/info` | Los agentes viven en el **PTY** (tabs Claude/Codex) | No se usaba. El SDK era la única razón del canal cliente→servidor de `/ws`. **Se conservan**: el campo `bubble.messages` (para que los docs viejos de Firestore sigan parseando), `config.anthropicApiKey` (la usan los `claude -p` de notes-summary / commit con IA / dev-server) y la dependencia `@anthropic-ai/claude-agent-sdk` (de ahí sale el ripgrep bundleado). |
 
 If you spot any of these in live code, it's residue to clean.
 
@@ -194,12 +196,11 @@ VITE_FIREBASE_APP_ID=
 | `ECO_HOST` | `127.0.0.1` | Bind interface — do not change. |
 | `ECO_PORT` | `7000` (overridden: 7050 dev, 7100 packaged) | HTTP/WS port. |
 | `ECO_ALLOWED_ORIGINS` | (defaults + auto-include own origin) | WS origin whitelist. |
-| `ECO_MODEL` | `claude-sonnet-4-5-20250929` | Claude model. |
 | `ECO_FIREBASE_PROJECT_ID` | (none; dev script sets `aditum-eco`) | Firebase project id used to verify ID tokens (`firebase-auth.ts`; falls back to `FIREBASE_PROJECT_ID`/`GCLOUD_PROJECT`). Without it, `verifyFirebaseIdToken` returns null → every request 401s. |
-| `ECO_RATE_LIMIT` | `10` | Prompts per minute. |
-| `ECO_PROMPT_TIMEOUT_MS` | `600000` | Absolute prompt timeout. |
-| `ECO_PTY_AUTOCLAUDE` | `1` | Auto-launch `claude` in each new PTY. |
-| `CLAUDE_CLI_PATH` | `~/.local/bin/claude` | Claude binary path. |
+| `ECO_PTY_AUTOCLAUDE` | `1` | Auto-launch the agent CLI (`claude`/`codex`) in each new PTY. `0` disables it for every agent. |
+| `CLAUDE_CLI_PATH` | resolved (see §E) | Claude binary path override. |
+| `CODEX_CLI_PATH` | resolved (see §E) | Codex binary path override. Codex is optional — if absent, the Codex terminal tab shows an install notice. |
+| `CODEX_HOME` | `~/.codex` | Read (not set) by Eco to locate `auth.json` when probing Codex login. |
 | `ECO_DEVTOOLS` | (empty) | `1` to auto-open Electron DevTools. |
 | `ECO_FRONTEND_DIST` | (empty) | Path to `frontend/dist` — when set and existing, the backend serves the static frontend (`index.html` = `Cache-Control: no-cache`, hashed assets = immutable) + SPA fallback. Packaged .app and server mode. |
 | `ECO_EXTRA_HOSTS` | (empty) | CSV of extra hostnames accepted by the host check (`config.hostAllowed`, HTTP + both WS). Server mode sets the `.ts.net` name here. |
@@ -276,6 +277,20 @@ The "Hablar a la terminal" button in the bubble header turns the mic on, accumul
 - `frontend/src/components/BrowserPanel.tsx` — UI + DevTools + persisted zoom
 - `frontend/src/components/SmartBrowserView.tsx` — `<webview>` (Electron) / `<iframe>` (web) wrapper
 
+### Agent CLIs (Claude + Codex)
+Cada burbuja tiene DOS terminales de agente: `main` (auto-arranca `claude`) y `codex` (auto-arranca `codex`), más los shells planos que agregue el user. El PTY es el único lugar donde corre Codex — el tab Chat (SDK), "Commit con IA" y el resumidor de Notes siguen siendo Claude-only.
+- `backend/src/platform.ts` — `resolveCli(bin, envVar)` + `resolveClaudeCli()` / `resolveCodexCli()`; `EXTRA_PATH_DIRS` (bin dirs de Homebrew/npm-global, compartidos con `security.ts:augmentedPath`).
+- `backend/src/pty-server.ts` — `AgentCli` (`claude|codex|none`), `LAUNCH_COMMAND`, `sanitizeAgent`, `ptyEnv` (inyecta `OPENAI_API_KEY` **solo** si `agent==='codex'`), `scheduleAgentLaunch`.
+- `backend/src/codex-auth.ts` — `getCodexAuthStatus()` (cache 5 s), `invalidateCodexAuthCache()`, `openaiEnvOverrides()`. Login = `codex login status` (exit code **autoritativo**, cubre el keyring); `~/.codex/auth.json` solo como fallback cuando el binario no responde.
+- `backend/src/claude-auth.ts` — el equivalente para Claude (Keychain / `~/.claude/.credentials.json`).
+- `backend/src/api-key-store.ts` — parametrizado por `KeyProvider` (`anthropic` → `~/.eco/api-key`, `openai` → `~/.eco/openai-api-key`). Los exports viejos (`readApiKey`, …) son wrappers ligados a `anthropic`.
+- `backend/src/index.ts` — `GET /config/{claude-auth,codex-auth}`, `GET/POST/DELETE /config/{api-key,openai-key}`.
+- `frontend/src/hooks/useCliAuth.ts` — store módulo + subscribers por proveedor (la tab bar y Settings comparten cache).
+- `frontend/src/hooks/useApiKey.ts` — `useApiKey(provider = 'anthropic')`.
+- `frontend/src/components/RealTerminal.tsx` — prop `agent` → query param `agent=`.
+- `frontend/src/screens/AgentDetail.tsx` — `TerminalTabs` (tabs Claude/Codex fijas + shells extra), **montaje perezoso** (sin él, abrir el tab Terminal spawnearía `codex` en cada burbuja) y `CodexPane` (aviso de instalación, sin PTY, si el CLI falta). Es lo único que renderiza el tab Terminal — las sub-tabs `Shell|Agente|Comandos` se removieron (ver §2).
+- `frontend/src/screens/Settings.tsx` — `SectionAgents` + `AGENT_PROVIDERS` + `CliAuthStatusCard`/`ApiKeyEditor` parametrizadas.
+
 ### Auth (Firebase — ver Appendix D)
 - `backend/src/firebase-auth.ts` — **verificación stateless del ID token** contra el JWKS de Google (`jose`, `createRemoteJWKSet`); valida issuer `securetoken.google.com/<pid>` + audience `<pid>`; devuelve `{uid, email}`. Project id de `ECO_FIREBASE_PROJECT_ID`.
 - `backend/src/index.ts` (middleware ~280-320) — setea `req.ecoUser = {id: uid, role: 'member', username: email}` desde el Bearer (Firebase) o el token de máquina (MCP). `requireAdmin` = solo exige `req.ecoUser` (la autorización real es Firestore). `/auth/*` legacy inertes.
@@ -345,11 +360,12 @@ The "Hablar a la terminal" button in the bubble header turns the mic on, accumul
 - `frontend/src/hooks/useGithubCredentials.ts`
 - `backend/src/index.ts` `GET/POST/DELETE /config/github`
 
-### Claude SDK
-- `backend/src/agent.ts` — Claude Agent SDK wrapper
-- `backend/src/agent-tools.ts` — own MCP tools (open_bubble, rename_bubble, close_bubble)
-- `backend/src/ws-server.ts` — `/ws` with snapshot providers
-- `frontend/src/hooks/useEcoSocket.ts` — WS client with reconnect backoff
+### WebSocket de estado (`/ws`)
+El Claude Agent SDK se removió con el tab de Conversación (§2). `/ws` quedó como canal **solo server → cliente**: PTY, dev servers, sync cross-device y `client_action`.
+- `backend/src/ws-server.ts` — `/ws` con snapshot providers, `broadcastServerMessage`/`broadcastToUser`/`broadcastClientAction`. Sin `ws.on('message')`.
+- `backend/src/protocol.ts` — `ServerMessage` + `ClientAction` (que vive acá desde que murió `agent-tools.ts`).
+- `frontend/src/hooks/useEcoSocket.ts` — cliente WS con reconnect backoff. No expone `send`/`interrupt`.
+- El paquete `@anthropic-ai/claude-agent-sdk` sigue siendo dependencia: `platform.ts:resolveRipgrepPath()` usa el ripgrep que trae bundleado.
 
 ### PTY (real terminal)
 - `backend/src/pty-server.ts` — `/ws/pty`, persistent sessions with 128 KB replay
@@ -400,6 +416,7 @@ Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources
 | `~/.eco/users/<uid>/github.json` | GitHub PAT por usuario (indexado por uid de Firebase) |
 | `~/.eco/workspace-config.json` | Config por workspace (admin): `{ [ws]: { server, baseBranches } }` |
 | `~/.eco/api-key` | Optional Anthropic API key (global, compartida) |
+| `~/.eco/openai-api-key` | Optional OpenAI API key (global, compartida). Inyectada como `OPENAI_API_KEY` **solo** en el PTY con `agent=codex`. |
 | `~/.eco/dev-sessions.<port>.json` | `[{bubbleId, role, pgid, port, command, ...}]` — namespaced by backend port (7050/7100/7200) so parallel backends don't clobber each other. |
 | `~/.eco/obsidian.json` | `{vaultPath, enabled}` |
 | `~/.eco/backup.json` | `{enabled, folder?, retention, lastBackup?, lastError?}` — config del auto-backup (cada 2h, retención 30) |
@@ -419,11 +436,13 @@ eco.lock.pin.<uid>                       ← hash SHA-256 del PIN de lock por us
 eco.lockedUser                           ← uid/email recordado por el lock screen (pide solo PIN)
 eco.onboarded                            ← '1' once the wizard finished
 # Firebase maneja la sesión (ID token en IndexedDB del SDK); NO hay eco.session/eco.token/eco.refresh.
-eco.detail.tab.<bubbleId>                ← last active tab (chat|terminal|git|plan|browser|server|files|notes). 'files' legacy maps to 'git' on read.
+eco.detail.tab.<bubbleId>                ← last active tab (terminal|git|browser|server|files|notes). Valores legacy ('chat', 'plan') caen al default 'terminal'.
 eco.git.subtab.<bubbleId>                ← Git sub-tab (changes|history|prs); legacy 'branches' auto-migrates to 'changes'.
 eco.git.splitter.{changes,history}.<bubbleId>  ← left column width
 eco.terminals.<bubbleId>                 ← extra terminals (no Claude) [{id,label}]
-eco.terminals.active.<bubbleId>          ← active terminal id in Shell tab
+# eco.terminals.active.<bubbleId> se removió: la terminal activa vive solo en memoria
+#   (AgentDetail.tsx:activeTermByBubble). Abrir una burbuja siempre cae en Claude ('main').
+eco.settings.agent_provider              ← 'claude' | 'codex' — proveedor activo en Settings → Agentes & API
 eco.browser.url.<bubbleId>               ← BrowserPanel URL
 eco.browser.zoom.<bubbleId>              ← zoom (0.25..3)
 eco.dev.config_collapsed.<bubbleId>      ← '1' collapsed (default true)
@@ -458,8 +477,7 @@ These were tuned in 2026-05-12/13 after observing renderer growth to 1–2 GB wi
 
 | Structure | Cap | File | Why |
 |---|---|---|---|
-| `bubble.messages` in memory | **300** msgs | `useBubbles.ts:appendMessage` | Renderer doesn't accumulate history forever. |
-| `bubble.messages` in localStorage | **100** msgs | `useBubbles.ts:persist` | Quota ~5–10 MB. |
+| `bubble.messages` in localStorage | **100** msgs | `useBubbles.ts:persist` | Quota ~5–10 MB. Nada appendea mensajes desde que se removió el chat: el campo solo sobrevive para parsear docs viejos. |
 | `toolCall.output` in localStorage | **10 KB** + marker | `useBubbles.ts:thinMessageForStorage` | A single Read tool can be megabytes. |
 | `serverLogs` (BrowserPanel) | **200 KB** | `BrowserPanel.tsx:SERVER_LOGS_MAX` | Noisy frameworks generate MBs. |
 | `devLog` (DevTools console) | **200** entries | `BrowserPanel.tsx:DEVLOG_MAX` | Grows infinite otherwise. |
@@ -501,28 +519,25 @@ If you add a new `eco.*.${bubbleId}` key, add its prefix to the cleanup list in 
 <a id="ws"></a>
 ## 6. WebSocket protocol
 
-### `/ws` (Claude SDK + dev status)
+### `/ws` (estado: PTY + dev servers + sync)
 
 Auth via subprotocol: **`eco.idtoken.<jwt>`** (Firebase ID token). `verifyClient` (`ws-server.ts`) verifica el token con `verifyFirebaseIdToken`, rechaza con 401 si falla, y deja el uid en `req.ecoUid` (la identidad de la conexión). El viejo `eco.token.<bearer>`/`eco.session.<id>` es legacy.
 
-**Client → server** (`ClientMessageSchema` in `backend/src/protocol.ts`):
-- `{type:'prompt', bubbleId, workspace, text, resumeSessionId?}` — send prompt
-- `{type:'interrupt'}` — cancel stream + tool in flight
+**Client → server**: nada. Es un canal **unidireccional** desde que se removió el tab de Conversación (era el único emisor de `prompt`/`interrupt`). Los frames entrantes se ignoran; no hay `ClientMessageSchema`.
 
 **Server → client**:
-- `{type:'sdk_message', message}` — passthrough from Claude Agent SDK
-- `{type:'session_started', sessionId}` — first SDK response
-- `{type:'done'}` — agent finished this turn
-- `{type:'error', code, message}` — typed error
+- `{type:'client_action', action}` — solo `open_bubble`, emitido por `POST /bubble/create` (MCP server externo)
 - `{type:'pty_status', bubbleId, running}` — PTY open/closed
+- `{type:'pty_busy_change', bubbleId, busy}` — inactividad del output del PTY. **Es por-burbuja, no por-terminal**: cualquier sesión (Claude, Codex o un shell plano) marca la burbuja como ocupada, así que la notificación de "terminó" no significa estrictamente "Claude terminó".
 - `{type:'dev_status', bubbleId, role, status, port, url, command, exitCode, skill?}` — dev server state change
 - `{type:'dev_log', bubbleId, role, chunk}` — dev server stdout/stderr batched every 80 ms
-- `{type:'client_action', action}` — own MCP tool asking the client to act
 - **legacy** `{type:'doc_updated', key, value, updatedAt}` / `{type:'doc_deleted', key}` — push del doc-store local a otros dispositivos (`broadcastToUser`). Reemplazado por la sincronización directa de Firestore; solo sobrevive para la migración one-time.
 
 ### `/ws/pty` (interactive terminal)
 
 Auth same (`eco.idtoken.<jwt>`). Subprotocol with `bubbleId` + `workspace` query.
+
+Query params: `bubble`, `workspace`, `pty` (terminal id within the bubble, default `main`), `cols`, `rows`, and **`agent=claude|codex|none`** — which agent CLI the backend auto-launches in the fresh PTY (`none` = plain shell). Default `claude`. `noClaude=1` is the legacy alias of `agent=none`. Session key is `${bubbleId}:${ptyId}`, so `main` (Claude) and `codex` are two independent PTYs in the same bubble. `ECO_PTY_AUTOCLAUDE=0` suppresses the launch for all of them.
 
 - Client → server: `{type:'data', data}` (input), `{type:'resize', cols, rows}`
 - Server → client: `{type:'data', data}`, `{type:'snapshot', data}` (128 KB replay on reconnect), `{type:'closed', exitCode}`
@@ -1139,6 +1154,7 @@ If any fails, the PR is not ready.
 3. `npm run check:i18n` → 0 hits
 4. `npm run web` boots; frontend loads; login works
 5. Terminal dictation in browser (Web Speech): open a bubble → "Hablar a la terminal" → speak → text appears in the `DictationBar` → "Enviar a terminal" → text lands in the PTY (not executed)
+5b. Terminales de agente: abrir el tab Terminal → arranca directo en la barra Claude | Codex | (+ Nueva), sin sub-tabs. **Solo** spawnea el PTY `main` (`ps aux | grep "[c]odex"` → vacío; el montaje es perezoso). Click en la tab **Codex** → si `codex` no está instalado, aviso de instalación **sin** PTY; si lo está, arranca `codex` dentro del worktree. `+ Nueva` sigue dando un shell pelado. En el tab Claude, `/resume` lista sesiones (denylist `CLAUDE_CODE_*` intacto).
 6. ServerPanel single: `echo hola` → starts → idle (echo exits) → no crash
 7. ServerPanel dual: toggle on, valid commands → backend boots first, frontend follows with correct `API_PORT`
 8. Browser panel: navigate to `localhost:7100/health` → JSON → switch tab → return → no reload
@@ -1366,7 +1382,6 @@ open /Applications/Eco.app
 To understand features without flailing:
 
 - **Persistent PTY**: `backend/src/pty-server.ts` (ring buffer + reattach)
-- **Own MCP tools**: `backend/src/agent-tools.ts` + `agent.ts`
 - **Commit with AI**: `backend/src/git-ops.ts:commitSuggest` (calls `claude -p`)
 - **Terminal dictation**: `frontend/src/hooks/useVoice.ts` (STT capture) + `App.tsx:startTerminalDictation` + `pty-bridge.ts:writeToBubblePty`
 - **WS reconnect**: `frontend/src/hooks/useEcoSocket.ts` — backoff + activeBubbleId tracking
@@ -1385,14 +1400,19 @@ cualquier terminal o sesión.
 
 ### Tools v1
 
-- `create_bubble({ title, workspace?, base_branch?, initial_prompt? })` —
+- `create_bubble({ title, workspace?, base_branch?, initial_prompt?, agent? })` —
   Crea una bubble en Eco. Si viene `initial_prompt`, el backend spawnea el
-  PTY de la bubble + `claude` CLI server-side y tipea el prompt en el
-  terminal (no en el chat SDK). Si `workspace` se omite, el server detecta
-  el cwd con el que arrancó y busca un workspace permitido que lo contenga.
+  PTY de la bubble + el CLI del agente server-side y tipea el prompt en el
+  terminal. Si `workspace` se omite, el server detecta el cwd con el que
+  arrancó y busca un workspace permitido que lo contenga.
+  `agent` (`claude` | `codex`, default heredado del caller — ver "Herencia de
+  agente" abajo) elige qué CLI arranca. El PTY headless usa el **mismo `ptyId`
+  que la pestaña de la UI** (`ptyIdForAgent`: `claude`→`main`, `codex`→`codex`),
+  así al abrir la bubble cada pestaña reengancha a su sesión y Codex nunca
+  aparece corriendo dentro de la pestaña rotulada "Claude".
 - `list_bubbles()` — Lista las bubbles activas (id, título, workspace,
   status). Requiere que el frontend haya sincronizado al menos una vez.
-- `send_to_bubble({ bubble_id, text })` — Envía un prompt al agente Claude
+- `send_to_bubble({ bubble_id, text, agent? })` — Envía un prompt al agente
   de una bubble existente: el backend lo tipea en el PTY de la bubble vía
   `injectPromptToBubble` (mismo camino que `initial_prompt`; si el PTY no
   estaba corriendo lo spawnea). Fire-and-forget — no devuelve la respuesta
@@ -1418,6 +1438,30 @@ claude mcp add eco -s user -- node /Users/sergiocastro/Documents/GitHub/aditum-a
 
 Reiniciá Claude Code. Las tools quedan disponibles como
 `mcp__eco__create_bubble` y `mcp__eco__list_bubbles`.
+
+### Herencia de agente (Claude ↔ Codex)
+
+Una bubble creada desde Codex debe seguir en Codex. Sin `agent` explícito, el
+MCP server resuelve el default con `mcp-server/src/host-agent.ts:detectHostAgent()`:
+
+1. `$ECO_MCP_AGENT` (`claude` | `codex`) — gana siempre.
+2. Marcadores de Claude Code en el env (`CLAUDECODE`, `CLAUDE_CODE_*`) → `claude`.
+3. Default → `claude` (retrocompatible: los callers viejos no cambian).
+
+> **Por qué Codex necesita el env var y Claude no** (verificado contra codex-cli
+> 0.144.0): Claude Code exporta `CLAUDECODE=1` + `CLAUDE_CODE_*` a sus MCP
+> servers. Codex les pasa un env **mínimo** — `HOME`, `PATH`, `SHELL`, `TERM`,
+> `USER`, `LOGNAME`, `LANG`, `TMPDIR`, `__CF_USER_TEXT_ENCODING` — y **ningún**
+> marcador `CODEX_*`. La ausencia de marcadores no prueba "es Codex" (un `node
+> dist/index.js` suelto luce igual), así que no se puede autodetectar. Sí propaga
+> el bloque `env` de `~/.codex/config.toml`, que es de donde sale el marcador.
+> (`HOME` está presente, así que el MCP puede leer `~/.eco/token` sin problema.)
+
+Registro en Codex:
+
+```bash
+codex mcp add eco --env ECO_MCP_AGENT=codex -- node /Applications/Eco.app/Contents/Resources/mcp-server/dist/index.js
+```
 
 ### Files (Eco-side)
 
@@ -1476,7 +1520,7 @@ Porque las bubbles viven en `localStorage` del frontend (autoridad). El
 backend no tiene un registry de bubbles — solo de worktrees y dev sessions.
 Para crear una bubble "visualmente" hay que avisarle al frontend; el camino
 es `client_action: open_bubble` por WS, que ya existía para el tool MCP
-interno (`agent-tools.ts`). El endpoint nuevo reusa ese mismo path.
+interno del SDK (removido). Hoy `/bubble/create` es su único productor.
 
 #### "¿Por qué `initialPrompt` se ejecuta server-side y no por WS al frontend?"
 Probamos primero el path por WS (`inject_prompt` → frontend abre PTY ephemeral
@@ -1580,7 +1624,7 @@ Todos los spawns corren como el MISMO usuario del SO y comparten el CLI de Claud
 
 ### Hardening pendiente (diferido — defense-in-depth bajo aislamiento lógico)
 - **Backend local sin authz fina**: `requireAdmin` solo exige sesión válida; los endpoints de cómputo (`/dev/*`, `/file/*`, `/git/*`) confían en `isAllowedWorkspace` + bounds de worktree, no en el rol. La autorización del estado la cubre Firestore, pero el cómputo no distingue admin/member más allá del workspace gate.
-- **Filtrado de broadcasts por usuario**: `dev_status`/`pty_status`/`dev_log`/`client_action` se emiten a todos los clientes WS (un usuario ve el estado/logs de dev-servers y PTYs de otros). La respuesta del agente (`sdk_message`) SÍ va por-conexión.
+- **Filtrado de broadcasts por usuario**: `dev_status`/`pty_status`/`dev_log`/`client_action` se emiten a todos los clientes WS (un usuario ve el estado/logs de dev-servers y PTYs de otros). Ya no hay stream por-conexión: el agente vive en el PTY (`/ws/pty`), que sí es por-conexión.
 - **Namespacing de worktree/localStorage por usuario**: `~/.eco/worktrees/<bubbleId>` es plano y `eco.bubbles.v1` es global por navegador. No hacer login de dos usuarios distintos en el MISMO navegador.
 - **Token MCP por usuario**: el MCP server atribuye al "machine user" (último login) cuando entra con el token de máquina. Falta un token MCP por usuario.
 
@@ -1605,12 +1649,16 @@ The single home for OS-dependent primitives. **Never inline a shell, `lsof`, `pr
 | `pidsOnPort(port)` | `lsof -ti :<port> -sTCP:LISTEN` | parse `netstat -ano` LISTENING rows |
 | `killTree(pid, sig)` | `process.kill(-pgid, sig)` (group) | `taskkill /PID <pid> /T /F` (tree) |
 | `killPid(pid, sig)` | `process.kill(pid, sig)` | `taskkill /PID <pid> /F` |
-| `resolveClaudeCli()` | `~/.local/bin/claude` | `$CLAUDE_CLI_PATH` → `~/.local/bin/claude.exe` → `where claude` (prefers `.exe`) |
+| `resolveCli(bin, envVar)` | `$<envVar>` → `~/.local/bin/<bin>` → `EXTRA_PATH_DIRS` → `which <bin>` → fallback `~/.local/bin/<bin>` | idem con `<bin>.exe`, `where` en vez de `which` (prefers `.exe`) |
+| `resolveClaudeCli()` / `resolveCodexCli()` | `resolveCli('claude','CLAUDE_CLI_PATH')` / `resolveCli('codex','CODEX_CLI_PATH')` | idem |
+| `EXTRA_PATH_DIRS` | Homebrew + `/usr/local` + `~/.local/bin` | `%APPDATA%\npm` + `%USERPROFILE%\.local\bin` |
 | `resolveRipgrepPath()` | bundled `vendor/ripgrep/arm64-darwin/rg` → PATH `rg` | `$ECO_RIPGREP`/`$RG_BIN` → bundled `vendor/ripgrep/x64-win32/rg.exe` → PATH | 
 
-Wired into: `pty-server.ts` (`defaultShell`), `dev-server.ts` (spawn via `shellRun`+`detachForGroup`, ports via `pidsOnPort`, kill via `killTree`/`killPid`, PATH joined with `path.delimiter`), `shell.ts` (`shRun`), `config.ts` (`claudeCliPath = resolveClaudeCli()`), `fs-search.ts` (`resolveRipgrepPath()`).
+Wired into: `pty-server.ts` (`defaultShell`), `dev-server.ts` (spawn via `shellRun`+`detachForGroup`, ports via `pidsOnPort`, kill via `killTree`/`killPid`, PATH joined with `path.delimiter`), `shell.ts` (`shRun`), `config.ts` (`claudeCliPath`/`codexCliPath`), `fs-search.ts` (`resolveRipgrepPath()`), `security.ts` (`EXTRA_PATH_DIRS` → `augmentedPath()`).
 
-> **Why prefer a real `claude.exe` over the npm `.cmd` shim**: spawning a `.cmd` on Windows needs `shell:true`, which re-parses args — several call sites (`git-ops`, `notes-summary`) pass the prompt as argv, so a shim would break quoting / invite injection. With a real `.exe` no shell is needed and args stay safe. If a user only has the `.cmd` shim, set `CLAUDE_CLI_PATH` to a real exe.
+> **Why `resolveCli` walks `EXTRA_PATH_DIRS` before `which`**: the packaged backend inherits a minimal PATH from the OS launcher, so `which codex` misses a Homebrew or `npm -g` install. Scanning the known bin dirs first makes resolution deterministic and spawn-free.
+
+> **Why prefer a real `claude.exe`/`codex.exe` over the npm `.cmd` shim**: spawning a `.cmd` on Windows needs `shell:true`, which re-parses args — several call sites (`git-ops`, `notes-summary`) pass the prompt as argv, so a shim would break quoting / invite injection. With a real `.exe` no shell is needed and args stay safe. If a user only has the `.cmd` shim, set `CLAUDE_CLI_PATH` / `CODEX_CLI_PATH` to a real exe.
 
 ### Other cross-platform code changes
 
