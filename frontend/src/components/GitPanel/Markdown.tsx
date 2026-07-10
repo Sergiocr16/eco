@@ -14,13 +14,13 @@ import { useTokens } from '@/design/theme';
 //  - #123 issue/PR ref (sin link)
 //  - HR ---
 //  - Imágenes ![alt](url) (renderizadas inline con max-width)
+//  - Tablas GFM | a | b | con alineación :---: y scroll horizontal
 //
 // Decisiones explícitas:
 //  - Sin sanitización pesada: dependemos de React (escapa HTML por default).
 //  - URLs de imagen: solo http(s) o data:image. Cualquier otra URL se
 //    renderiza como link de texto en lugar.
-//  - No soportamos tablas (raro en comentarios PR, mucho código por poco
-//    valor). Tampoco HTML embebido (peligroso sin sanitizer).
+//  - No soportamos HTML embebido (peligroso sin sanitizer).
 
 // Pre-procesa el source antes de parsear. GitHub permite HTML embebido en
 // comentarios (los links de Notion, integraciones tipo Linear, etc. lo usan
@@ -65,13 +65,43 @@ function htmlToMd(input: string): string {
   return s;
 }
 
+type TableAlign = 'left' | 'center' | 'right' | null;
+
 type Block =
   | { type: 'heading'; level: number; text: string }
   | { type: 'code'; lang: string; body: string }
   | { type: 'quote'; text: string }
   | { type: 'list'; ordered: boolean; items: string[] }
+  | { type: 'table'; align: TableAlign[]; header: string[]; rows: string[][] }
   | { type: 'para'; text: string }
   | { type: 'hr' };
+
+// Fila delimitadora GFM: solo guiones/colones separados por pipes.
+const TABLE_SEP_RE = /^\s*\|?(\s*:?-+:?\s*\|)*\s*:?-+:?\s*\|?\s*$/;
+
+function splitTableRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  const cells: string[] = [];
+  let cur = '';
+  for (let j = 0; j < s.length; j++) {
+    const ch = s[j];
+    if (ch === '\\' && s[j + 1] === '|') { cur += '|'; j++; continue; }
+    if (ch === '|') { cells.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+// Header + delimitador con el mismo número de celdas (regla GFM — evita
+// falsos positivos en prosa que contenga pipes).
+function isTableStart(line: string, next: string): boolean {
+  if (!line.includes('|') || !next.includes('|')) return false;
+  if (!TABLE_SEP_RE.test(next)) return false;
+  return splitTableRow(line).length === splitTableRow(next).length;
+}
 
 function parseBlocks(src: string): Block[] {
   const lines = src.replace(/\r\n/g, '\n').split('\n');
@@ -120,6 +150,26 @@ function parseBlocks(src: string): Block[] {
       continue;
     }
 
+    // Table (header | delimitador | filas)
+    if (isTableStart(line, lines[i + 1] ?? '')) {
+      const header = splitTableRow(line);
+      const align: TableAlign[] = splitTableRow(lines[i + 1] ?? '').map((c) => {
+        const l = c.startsWith(':');
+        const r = c.endsWith(':');
+        return l && r ? 'center' : r ? 'right' : l ? 'left' : null;
+      });
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length) {
+        const l = lines[i] ?? '';
+        if (!l.trim() || !l.includes('|')) break;
+        rows.push(splitTableRow(l));
+        i++;
+      }
+      blocks.push({ type: 'table', align, header, rows });
+      continue;
+    }
+
     // List
     const ulMatch = /^(\s*)[-*+]\s+(.*)$/.exec(line);
     const olMatch = /^(\s*)\d+\.\s+(.*)$/.exec(line);
@@ -150,6 +200,7 @@ function parseBlocks(src: string): Block[] {
       if (l.startsWith('>')) break;
       if (/^\s*[-*+]\s+/.test(l) || /^\s*\d+\.\s+/.test(l)) break;
       if (/^(?:---|\*\*\*|___)\s*$/.test(l)) break;
+      if (isTableStart(l, lines[i + 1] ?? '')) break;
       para.push(l);
       i++;
     }
@@ -315,6 +366,44 @@ export function Markdown({ source }: { source: string }) {
               </Tag>
             );
           }
+          case 'table':
+            return (
+              <div key={i} style={{
+                margin: '8px 0', overflowX: 'auto',
+                border: `1px solid ${t.glassBorder}`, borderRadius: 8,
+              }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5 }}>
+                  <thead>
+                    <tr>
+                      {b.header.map((h, k) => (
+                        <th key={k} style={{
+                          textAlign: b.align[k] ?? 'left',
+                          padding: '6px 12px',
+                          background: t.bg2, color: t.text0,
+                          fontWeight: 700, whiteSpace: 'nowrap',
+                          borderBottom: `1px solid ${t.glassBorder}`,
+                          borderRight: k < b.header.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
+                        }}>{renderInline(h, t, `th${i}-${k}-`)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {b.rows.map((row, r) => (
+                      <tr key={r}>
+                        {b.header.map((_, k) => (
+                          <td key={k} style={{
+                            textAlign: b.align[k] ?? 'left',
+                            padding: '5px 12px', verticalAlign: 'top',
+                            borderBottom: r < b.rows.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
+                            borderRight: k < b.header.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
+                          }}>{renderInline(row[k] ?? '', t, `td${i}-${r}-${k}-`)}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
           case 'hr':
             return <hr key={i} style={{ border: 0, borderTop: `1px solid ${t.glassBorder}`, margin: '12px 0' }}/>;
           case 'para':
