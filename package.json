@@ -1,6 +1,6 @@
 {
   "name": "eco",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Asistente local de voz para Mac con Claude",
   "private": true,
   "workspaces": [

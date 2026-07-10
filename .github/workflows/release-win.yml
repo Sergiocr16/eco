@@ -37,4 +37,19 @@ jobs:
         env:
           # electron-builder lo usa para crear el Release y subir los artefactos.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Config web de Firebase. Se hornea en el bundle en build-time: el .exe
+          # llega a una máquina sin `.env.local`, así que si falta acá, el usuario
+          # ve "Firebase no está configurado" y no puede loguearse. Desde v1.0.5
+          # el build FALLA si faltan (guard en frontend/vite.config.ts) en vez de
+          # publicar un instalador roto en silencio, como pasó de v1.0.1 a v1.0.4.
+          #
+          # Son identificadores públicos (viajan en cualquier cliente), no
+          # credenciales: la autorización real son las Firestore Security Rules.
+          # Igual van como secrets para no dejarlos en un repo público.
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run release:win

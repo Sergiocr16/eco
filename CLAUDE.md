@@ -1181,6 +1181,15 @@ If any fails, the PR is not ready.
 The packaged app self-updates against the **public** repo `Sergiocr16/eco` via `electron-updater` (config: `publish` block in `electron-builder.config.cjs`). Wired in `electron/main.cjs` (`setupAutoUpdater`, IPC `eco:check-updates` / `eco:install-update`, gate `UPDATES_ENABLED = app.isPackaged && process.platform === 'win32'`), `electron/preload.cjs` (bridge), `frontend/.../UpdateBanner.tsx` + `Settings.tsx:UpdatesRow`. Public repo → no runtime token needed to download.
 
 - **Windows only** for now. **macOS auto-update is inert**: electron-updater requires a signed + notarized app (`identity:null` today). To enable later: Developer ID cert + `afterSign` with `@electron/notarize`, then flip `UPDATES_ENABLED` to include darwin (the `zip` mac target is already in the config).
+> **Los releases de CI necesitan los secrets `VITE_FIREBASE_*`.** La config web de
+> Firebase se hornea en el bundle en build-time; el `.exe` llega a una máquina sin
+> `frontend/.env.local`. Sin los secrets, el bundle sale sin Firebase y el usuario
+> ve "Firebase no está configurado" al abrir. **Pasó de v1.0.1 a v1.0.4** (el
+> workflow nunca las tuvo y el build no se quejaba). Desde v1.0.5 el guard de
+> `frontend/vite.config.ts:assertFirebaseConfigured` valida **forma** (no solo
+> presencia — un secret cargado como `-` pasaba el check de "no vacío") y hace
+> fallar el build. Los 6 secrets viven en Settings → Secrets → Actions.
+
 - **Release flow — automated (preferred)**: the GitHub Actions workflow `.github/workflows/release-win.yml` (runner `windows-latest`) builds + publishes on a **tag push `v*`** or manual dispatch. To cut a release: bump the version in `electron/package.json` (keep root `package.json` in sync), commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`. CI runs `npm run release:win` with `GH_TOKEN=${{ secrets.GITHUB_TOKEN }}` → uploads `Eco Setup <v>.exe` + `latest.yml` to the GitHub Release `vX.Y.Z`. The tag version MUST match `electron/package.json` (the updater compares `app.getVersion()` against `latest.yml`).
 - **Release flow — manual (local, on a Windows machine)**: `export GH_TOKEN=<PAT with repo scope>`, then `npm run release:win`.
 - **Behavior**: on launch (8 s delay) + every 6 h it checks, auto-downloads, then shows a native notification + the `UpdateBanner` ("Restart to update"). Manual check from Settings → Acerca de.
