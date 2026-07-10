@@ -1,14 +1,14 @@
 # Eco
 
-Local-first desktop app for orchestrating parallel Claude agents on **macOS Apple Silicon**, **Windows x64**, and **Linux** (experimental). Each conversation is an isolated "bubble" with its own git worktree, real terminal, file editor, dev server, and embedded browser. Your code and compute stay on your machine; identity and conversation state sync through Firebase. Distributed as a native `.dmg` (~112 MB) on macOS and an NSIS `.exe` (~96 MB) on Windows, built with Electron 33.
+Local-first desktop app for orchestrating parallel coding agents — **Claude Code** and **OpenAI Codex** — on **macOS Apple Silicon**, **Windows x64**, and **Linux** (experimental). Each agent is an isolated "bubble" with its own git worktree, real terminal, file editor, dev server, and embedded browser. Your code and compute stay on your machine; identity and agent state sync through Firebase. Distributed as a native `.dmg` (~112 MB) on macOS and an NSIS `.exe` (~96 MB) on Windows, built with Electron 33; the Windows build auto-updates via `electron-updater`.
 
 ```
         ┌───────────────────────────────────────┐
         │                                       │
-        │   Each conversation is a "bubble":    │
+        │   Each agent is a "bubble":           │
         │                                       │
         │     · isolated git worktree           │
-        │     · real terminal (PTY)             │
+        │     · terminals: Claude + Codex CLIs   │
         │     · file editor + dev server        │
         │     · embedded browser                │
         │                                       │
@@ -45,26 +45,26 @@ Local-first desktop app for orchestrating parallel Claude agents on **macOS Appl
 <a id="what-is-eco"></a>
 ## 1. What is Eco
 
-Eco is a Claude Agent SDK orchestrator. Each conversation is a self-contained **"bubble"** with its own session, isolated git **worktree**, real terminal (PTY), file editor, dev server with auto-port, embedded Chromium browser with its own partition, and Claude-summarized notes.
+Eco is a **terminal-first** orchestrator for coding-agent CLIs. Each agent is a self-contained **"bubble"** with an isolated git **worktree**, real terminals where you run **Claude Code** and **OpenAI Codex** side by side (each in its own fixed tab, plus any number of plain shells), a file editor, a dev server with auto-port, an embedded Chromium browser with its own partition, and Claude-summarized notes. There is no in-app chat panel — you drive the agents in their real terminals, exactly as you would from your own shell, with the panels (files, git, browser, dev server) wrapped around them.
 
-When you work on a git repo, each bubble auto-creates a worktree at `~/.eco/worktrees/<bubbleId>` on its own `eco/<short>` branch (base branch chosen at creation, with per-workspace favourites). Two bubbles on the same repo never collide — separate dev server ports (race-free auto-assignment), isolated browser session, separate terminal. Closing the bubble wipes the worktree; the branch survives in the parent repo for review or merge.
+When you work on a git repo, each bubble auto-creates a worktree at `~/.eco/worktrees/<bubbleId>` on its own `eco/<short>` branch (base branch chosen at creation, with per-workspace favourites). Two bubbles on the same repo never collide — separate dev server ports (race-free auto-assignment), isolated browser session, separate terminals. Closing the bubble wipes the worktree; the branch survives in the parent repo for review or merge.
 
-Switching between bubbles A → B → A reloads nothing — each open bubble keeps its panel tree alive (webview, PTY, chat, files, notes, server). Cleanup only fires on explicit close.
+Switching between bubbles A → B → A reloads nothing — each open bubble keeps its panel tree alive (webview, PTYs, files, notes, server). Cleanup only fires on explicit close.
 
-Eco is **multi-user**: one machine runs the local backend, and team members sign in with their own Firebase account. Each user's agents, conversations and preferences sync across their devices and are isolated from everyone else's by Firestore Security Rules.
+Eco is **multi-user**: one machine runs the local backend, and team members sign in with their own Firebase account. Each user's agents and preferences sync across their devices and are isolated from everyone else's by Firestore Security Rules.
 
 ---
 
 <a id="architecture"></a>
 ## 2. Architecture at a glance
 
-Eco runs on two planes. The **local plane** does all the heavy lifting and never sends your code anywhere; the **cloud plane** holds only identity and the metadata of your conversations so the experience is multi-user and cross-device.
+Eco runs on two planes. The **local plane** does all the heavy lifting and never sends your code anywhere; the **cloud plane** holds only identity and agent metadata so the experience is multi-user and cross-device.
 
 ```
    ┌──────────────────────── CLOUD (Firebase) ────────────────────────┐
    │  Firebase Auth (email + password) ── issues ID token (JWT)        │
    │  Firestore  ── source of truth for multi-tenant app state:        │
-   │     users/role · bubbles + messages · categories · notes ·        │
+   │     users/role · bubbles · categories · notes ·                   │
    │     review · prefs · auditLog   ── gated by firestore.rules       │
    └───────────────────────────────┬──────────────────────────────────┘
                   ID token (Bearer) │  client SDK (rules-gated)
@@ -81,23 +81,24 @@ Eco runs on two planes. The **local plane** does all the heavy lifting and never
 
 - **Identity is cloud.** You log in with Firebase Auth. The frontend attaches the resulting ID token to every request to the local backend (`Authorization: Bearer <jwt>`) and to WebSocket connections (subprotocol `eco.idtoken.<jwt>`).
 - **Authorization is Firestore.** The local backend verifies the ID token against Google's public keys (stateless, no service account) but does **not** make authorization decisions — it serves a single machine. Who can read or write which document is enforced entirely by `firestore.rules`.
-- **State is cloud, compute is local.** Your bubbles, messages, categories, notes, review state and preferences live in Firestore and sync live across your devices. Your **code, files, terminals, dev servers and git operations are local** — they run in the backend on `127.0.0.1` and never leave the host.
-- **The only external calls** are the Anthropic API (when an agent needs it) and Firebase (Auth + Firestore).
+- **State is cloud, compute is local.** Your bubbles, categories, notes, review state and preferences live in Firestore and sync live across your devices. Your **code, files, terminals, dev servers and git operations are local** — they run in the backend on `127.0.0.1` and never leave the host.
+- **The only external calls** are Firebase (Auth + Firestore), plus whatever the agent CLIs talk to (Anthropic for `claude`, OpenAI for `codex`) — those run in the terminals as their own processes.
 
 ---
 
 <a id="highlights"></a>
 ## 3. Highlights
 
-- **Bubbles + worktrees** — every conversation gets an isolated git worktree, PTY, and dev server. Branch lives in the parent repo after close.
+- **Claude + Codex side by side** — every bubble has two fixed terminal tabs, one running the **Claude Code** CLI and one running **OpenAI Codex**, plus any number of plain shells. Each is a real PTY inside the worktree. Codex is optional: if the CLI isn't installed the tab shows the install command instead of a crash, and each provider has its own auth in Settings → **Agents & API** (CLI session or API key).
+- **Bubbles + worktrees** — every agent gets an isolated git worktree, PTY, and dev server. Branch lives in the parent repo after close.
 - **Multi-user via Firebase** — sign in with email + password. The admin creates teammates in-app; Firestore Security Rules isolate each user's data. Roles (admin/member) live in Firestore, not in the client.
-- **Cross-device state** — bubbles, conversations, categories, notes, review state and theme live in Firestore and sync live across your devices. Log in from any machine and find your work, with offline persistence for the first paint.
+- **Cross-device state** — bubbles, categories, notes, review state and theme live in Firestore and sync live across your devices. Log in from any machine and find your work, with offline persistence for the first paint.
 - **Local PIN lock** — an optional quick-unlock PIN that locks/unlocks an existing Firebase session on the device (it is a convenience lock, not account auth).
 - **Terminal dictation** — optional "Hablar a la terminal" button dictates into the PTY. On-device STT in the packaged macOS app (Apple Speech), Web Speech in the browser. The mic only runs while you're dictating.
 - **Cursor-style review** — agent edits freely; you review diffs after with amber/green dots, accept/revert by hunk or by file. Opt-in toggle.
 - **Diff viewer with merge view** — full file shown side-by-side with diffs highlighted (`@codemirror/merge`), sync scroll, collapse unchanged regions on/off, per-chunk navigation + Accept/Reject in review mode.
 - **FilesPanel** — mini-VS-Code per bubble: lazy gitignore-aware tree (**virtualized** for large repos), CodeMirror 6 editor with a **fixed multi-color IDE syntax palette**, indent guides, rainbow bracket pairs, a clickable path breadcrumb, and file-type icons. `Cmd+P` Quick Open (fuzzy, match-highlighted), `Cmd+Shift+F` global search (ripgrep, match-highlighted), **find usages** (Cmd/Ctrl+click or Shift+F12 — textual whole-word search of the symbol), save with conflict detection, image preview, and an **"↗ IDE" button** to open the current file at the exact line in VSCode / IntelliJ / WebStorm / Cursor. Eco has no built-in debugger or LSP — set breakpoints in the external IDE; find-usages is textual, not semantic.
-- **NotesPanel + summarizer** — markdown notes per bubble. One click runs Claude (`claude -p`) on the recent messages + last 60 KB of the PTY buffer and produces a 3-section summary (what we were doing / where we left off / next steps).
+- **NotesPanel + summarizer** — markdown notes per bubble. One click runs Claude (`claude -p`) on the last 60 KB of the PTY buffer and produces a 3-section summary (what we were doing / where we left off / next steps).
 - **Dual dev server** — frontend + backend in parallel with auto-port. Eco assigns ports via `PORT` / `SERVER_PORT` / `JAVA_TOOL_OPTIONS=-Dserver.port=…` / `API_PORT` / `BACKEND_URL` env vars covering most frameworks. Backend boots first, frontend follows.
 - **Browser per agent** — real Chromium `<webview>` with persisted cookies (per-bubble partition), DevTools, persisted zoom and URL.
 - **Git tab** — GitHub Desktop-style layout: branch dropdown + sync, sub-tabs Changes / History / PRs. Cherry-pick, revert, hard-reset with safety prompt, op-in-progress banner with Continue/Abort.
@@ -106,7 +107,7 @@ Eco runs on two planes. The **local plane** does all the heavy lifting and never
 - **GitHub PAT** — store a Personal Access Token once, validated against GitHub; auto-injected as `GH_TOKEN` + git author env into every spawned process.
 - **Remote team access (Tailscale)** — `npm run serve:web` exposes Eco to the tailnet over HTTPS (`tailscale serve`); teammates connect from a browser (even an iPad). Dev-server previews are exposed per-port over the tailnet too.
 - **Admin console** — manage users (create / role / enable-disable / password reset) and watch who is working on which bubble, plus an append-only audit log. Server commands + favorite base branches are defined **by the admin per workspace**; members only start/stop.
-- **Obsidian integration** — save the current conversation as a `.md` note in your vault.
+- **Obsidian integration** — save the current bubble as a `.md` note in your vault.
 - **Onboarding wizard** — multi-step setup on first run (language, theme, Claude auth, GitHub, workspace, Obsidian).
 - **Bilingual** — Spanish ⇄ English UI. Detects system language; switch from Settings. Backend errors come with stable codes; the frontend translates.
 - **Themes** — 14 curated themes (9 dark + 5 light) plus "follow system", each with a signature accent hue. `glassEffect` helper for Liquid Glass styling.
@@ -118,7 +119,8 @@ Eco runs on two planes. The **local plane** does all the heavy lifting and never
 
 - **macOS Apple Silicon** (arm64), **Windows x64**, or **Linux x64** (AppImage target is experimental/untested). macOS Intel is not packaged.
 - **Node 20** (`nvm use 20.20.2` works). Vite 6 doesn't support Node 16.
-- **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated (`claude login` or an API key saved from Settings). On Windows, the native installer's `claude.exe` is auto-resolved; otherwise set `CLAUDE_CLI_PATH` to a real `.exe`.
+- **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated (`claude login` or an API key saved from Settings → Agents & API). This is the default agent. On Windows the native installer's `claude.exe` is auto-resolved; otherwise set `CLAUDE_CLI_PATH` to a real `.exe`.
+- **`codex` CLI** from `@openai/codex` (optional) — `npm i -g @openai/codex` (Node 22+) or `brew install codex`, authenticated with `codex login` or an OpenAI API key saved from Settings → Agents & API. Eco resolves the binary from the usual bin dirs including nvm's, so a `which codex` miss (nvm PATH) is fine; override with `CODEX_CLI_PATH`. Without it, the Codex terminal tab just shows the install command.
 - **A Firebase project** (Auth with Email/Password enabled + Firestore). The default project id used by the dev scripts is `aditum-eco`. The web config values go into `frontend/.env.local`; the backend only needs the project id to verify ID tokens. See [Configuration](#configuration).
 - **git** (worktrees, branches).
 - **`gh` (GitHub CLI)** — required for the **PRs sub-tab** of the Git panel. Without `gh`, the Changes/History sub-tabs work fine but `PRs` shows `pr.gh_missing`. Install with `brew install gh` (macOS) or `winget install GitHub.cli` (Windows). The GitHub PAT you save in Settings is injected as `GH_TOKEN` — it does NOT replace the `gh` binary.
@@ -157,9 +159,8 @@ VITE_FIREBASE_APP_ID=
 ECO_WORKSPACES=/path/to/your/repo      # comma-separated; also editable from Settings
 ECO_HOST=127.0.0.1                     # bind interface — never change
 ECO_PORT=7000                          # overridden to 7050 (dev) / 7100 (packaged)
-ECO_MODEL=claude-sonnet-4-5-20250929
-ECO_RATE_LIMIT=10                      # prompts per minute
-# CLAUDE_CLI_PATH=/Users/you/.local/bin/claude   # optional; autodetected
+# CLAUDE_CLI_PATH=/Users/you/.local/bin/claude   # optional; autodetected (incl. nvm)
+# CODEX_CLI_PATH=/Users/you/.local/bin/codex     # optional; autodetected (incl. nvm)
 ECO_FIREBASE_PROJECT_ID=aditum-eco     # used to verify Firebase ID tokens
 ```
 
@@ -234,6 +235,25 @@ npm run dist:linux
 
 The build config (`electron/electron-builder.config.cjs`) filters native prebuilds (node-pty, ripgrep) per target, and the OS-dependent backend lives in `backend/src/platform.ts`. For the full Windows reference (build, prepare scripts, icon generation, gotchas) see [CLAUDE.md Appendix E](./CLAUDE.md#windows); for the macOS reinstall recipe see [CLAUDE.md Appendix B](./CLAUDE.md#debug).
 
+### Shipping a Windows release (auto-update)
+
+The packaged Windows app self-updates via `electron-updater` against GitHub Releases. Cutting a release is **tag-driven**:
+
+```bash
+# 1) Bump the version in BOTH package.json and electron/package.json (must match the tag).
+# 2) Commit, then:
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+The tag push triggers `.github/workflows/release-win.yml` (runner `windows-latest`): it builds the NSIS `.exe` + `latest.yml` and publishes them to the `vX.Y.Z` GitHub Release. Installed apps check on launch + every 6 h, download in the background, and prompt to restart.
+
+Two things that make this actually reach users — both were once broken and now guarded:
+
+- **The build needs the `VITE_FIREBASE_*` secrets.** The Firebase web config is baked into the bundle at build time (the `.exe` ships to a machine that has no `frontend/.env.local`). CI reads them from **GitHub → Settings → Secrets → Actions** (`VITE_FIREBASE_API_KEY`, `…_AUTH_DOMAIN`, `…_PROJECT_ID`, `…_STORAGE_BUCKET`, `…_MESSAGING_SENDER_ID`, `…_APP_ID`). If any is missing, `frontend/vite.config.ts` **fails the build** instead of shipping an installer where nobody can log in ("Firebase no está configurado").
+- **Releases publish, not draft.** `electron-builder.config.cjs` sets `releaseType: 'release'` explicitly — the default is `draft`, and `electron-updater` only sees *published* releases. After tagging, confirm `gh release list` shows the new version as `Latest`, not `Draft`.
+
+macOS auto-update is inert until the `.dmg` is signed + notarized. Full release detail (and the history of how these broke) in [CLAUDE.md §19](./CLAUDE.md#build).
+
 ---
 
 <a id="structure"></a>
@@ -245,10 +265,11 @@ eco/
 ├── CLAUDE.md                  ← operational manual (rules, gotchas, endpoints, debug)
 ├── package.json               ← workspace root + parallel scripts
 │
-├── backend/                   ← Node + Express + Claude SDK + node-pty (OS seam: src/platform.ts)
+├── backend/                   ← Node + Express + node-pty + git/dev-server/files ops (OS seam: src/platform.ts)
 ├── frontend/                  ← Vite + React + TS + Motion + Tailwind v4 (Firebase client SDK)
 ├── electron/                  ← Electron 33 wrapper + electron-builder.config.cjs + Swift dictation CLI (eco-stt, macOS)
-├── mcp-server/                ← standalone MCP stdio server (create/list bubbles from Claude Code)
+├── mcp-server/                ← standalone MCP stdio server (create/list bubbles from Claude Code or Codex)
+├── .github/workflows/         ← release-win.yml (tag-driven NSIS build + GitHub Release for auto-update)
 │
 ├── firestore.rules            ← Firestore Security Rules (the authorization boundary)
 ├── firestore.indexes.json     ← composite indexes (bubbles, categories, auditLog)
@@ -269,11 +290,17 @@ For the per-feature file map (which file does what, which hook drives which UI),
 
 ### Bubbles + worktrees
 
-Every conversation is a bubble. When you create one in a git workspace, a worktree is checked out at `~/.eco/worktrees/<bubbleId>` on its own branch `eco/<short>`. The agent edits there. Two bubbles on the same repo never collide. On close, the worktree is removed (with a confirmation modal if it's dirty); the branch survives in the parent repo.
+Every agent is a bubble. When you create one in a git workspace, a worktree is checked out at `~/.eco/worktrees/<bubbleId>` on its own branch `eco/<short>`. The agent edits there. Two bubbles on the same repo never collide. On close, the worktree is removed (with a confirmation modal if it's dirty); the branch survives in the parent repo.
 
-### Terminal (PTY)
+### Terminal (Claude + Codex + shells)
 
-Real shell PTY per bubble (via `node-pty`), with `claude` auto-launched on open (configurable). Survives leaving the bubble — reconnect with a 128 KB replay buffer. The "Hablar a la terminal" button lets you dictate text into the terminal (you review before running).
+Real shell PTYs per bubble (via `node-pty`), inside the worktree. The Terminal tab opens straight onto a tab bar:
+
+- **Claude** — auto-launches the `claude` CLI on first open. This is where you land when you enter a bubble.
+- **Codex** — auto-launches the `codex` CLI. Mounted lazily (opening the Terminal tab doesn't spawn `codex` in every bubble); if the CLI isn't installed it shows the install command instead of a crash.
+- **+ Nueva** — extra plain shells (no agent), as many as you want.
+
+Each PTY survives leaving the bubble — reconnect with a 128 KB replay buffer. `ECO_PTY_AUTOCLAUDE=0` disables the auto-launch for all of them. The "Hablar a la terminal" button dictates text into the Claude terminal (the main PTY; you review before running). Both agent CLIs get the owner's GitHub identity injected; the Codex terminal also gets `OPENAI_API_KEY` when you've saved one (scoped to that PTY only — it never reaches plain shells or the Claude terminal).
 
 ### FilesPanel
 
@@ -281,7 +308,7 @@ A mini-VS-Code inside the bubble's worktree: lazy gitignore-aware tree, CodeMirr
 
 ### NotesPanel
 
-Markdown notes per bubble with debounced autosave. The "Summarize" button runs Claude (`claude -p`) over the recent messages and the last 60 KB of the PTY buffer (90 s timeout) and writes back a 3-section summary: what we were doing / where we left off / next steps. Useful before a `/clear` or when handing off.
+Markdown notes per bubble with debounced autosave. The "Summarize" button runs Claude (`claude -p`) over the last 60 KB of the PTY buffer (90 s timeout) and writes back a 3-section summary: what we were doing / where we left off / next steps. Useful before a `/clear` or when handing off.
 
 ### Git tab
 
@@ -321,7 +348,7 @@ Three views: **Grid** (Liquid Glass cards), **Kanban** (by state: Active / Waiti
 
 The first registered user becomes the **admin owner** after the one-time `bootstrap:admin` promotion. From the in-app **Admin** console, the admin creates teammates with an email + display name (Eco creates their Firebase account in the background and writes their `users/<uid>` doc with `role: member`), promotes/demotes roles, disables accounts, and triggers Firebase password-reset emails. Members never see anyone else's data — isolation is enforced by `firestore.rules`.
 
-Run `npm run serve:web` to expose Eco to your **Tailscale** tailnet over HTTPS. A teammate (laptop or iPad) opens the share URL and logs in with their Firebase account. Their bubbles, conversations, categories, notes, review state and theme are **server-authoritative in Firestore** and sync live across all their devices — start on the Mac, continue on the iPad. (Logical, trusted-team isolation — see [CLAUDE.md Appendix D](./CLAUDE.md#multitenant).)
+Run `npm run serve:web` to expose Eco to your **Tailscale** tailnet over HTTPS. A teammate (laptop or iPad) opens the share URL and logs in with their Firebase account. Their bubbles, categories, notes, review state and theme are **server-authoritative in Firestore** and sync live across all their devices — start on the Mac, continue on the iPad. (Logical, trusted-team isolation — see [CLAUDE.md Appendix D](./CLAUDE.md#multitenant).)
 
 The **Admin** console has three tabs: **Users** (create / enable-disable, roles, password reset), **Activity** (who is working on what right now, live PTY/dev indicators), and **Audit log** — an append-only record of session and agent events (login / logout, agent created / archived / deleted), filterable by user and type. The audit log is an append-only Firestore collection that never stores PINs, tokens or message text.
 
@@ -357,16 +384,25 @@ Eco scans for Claude skills, commands, and sub-agents at:
 - `~/.claude/plugins/marketplaces/<m>/plugins/<p>/{skills,commands,agents}`
 - `~/.claude/plugins/cache/<m>/<p>/<version>/{skills,commands,agents}` (active plugins)
 
-The **Skills** picker next to the Plan tab shows the count and lets you click a skill to send `/<name>` to the agent.
+The **Skills** picker in the bubble sidebar shows the count and lets you click a skill to type `/<name>` into the agent's terminal.
 
-Eco also ships an **MCP server** (`mcp-server/`) that lets Claude Code create and list bubbles from any terminal. Install it from Settings → Integrations, or with `claude mcp add eco -- node <path>/mcp-server/dist/index.js`. See [CLAUDE.md Appendix C](./CLAUDE.md#mcp-appendix).
+Eco also ships an **MCP server** (`mcp-server/`) that lets an agent create, list and message Eco bubbles from any terminal — from **Claude Code** or from **Codex**. A bubble **inherits the agent of whoever created it**: launched from Codex it starts on Codex, from Claude it starts on Claude (override with the tool's `agent` argument). Claude Code is detected automatically; Codex is declared at registration because it exposes no env marker to its MCP servers:
+
+```bash
+# Claude Code
+claude mcp add eco -- node <path>/mcp-server/dist/index.js
+# Codex (the ECO_MCP_AGENT marker is what makes new bubbles start on Codex)
+codex mcp add eco --env ECO_MCP_AGENT=codex -- node <path>/mcp-server/dist/index.js
+```
+
+Install the Claude registration from Settings → Integrations too. See [CLAUDE.md Appendix C](./CLAUDE.md#mcp-appendix).
 
 ---
 
 <a id="privacy"></a>
 ## 12. Privacy & security
 
-- **Your code never leaves your machine.** Worktrees, terminals, dev servers, file edits and git operations run in the local backend on `127.0.0.1`. The cloud only holds identity and conversation metadata.
+- **Your code never leaves your machine.** Worktrees, terminals, dev servers, file edits and git operations run in the local backend on `127.0.0.1`. The cloud only holds identity and agent metadata.
 - **Audio never leaves your machine.** Terminal dictation STT is on-device (Apple Speech in the `.dmg`, Web Speech in browser dev). The mic only runs while you're actively dictating.
 - **Identity via Firebase Auth.** Login is email + password. The frontend sends the Firebase **ID token** as a Bearer header to the local backend and as the `eco.idtoken.<jwt>` WebSocket subprotocol. The backend verifies it **statelessly** against Google's public JWKS (no service account) and never trusts a client-supplied user id.
 - **Authorization lives in Firestore Security Rules** (`firestore.rules`): each document carries an `ownerId`; members read/write only their own data; admins (role stored in `users/<uid>.role`, never a self-set field) get global read; the audit log is append-only. The local backend deliberately makes no authorization decisions — it serves one machine.
@@ -393,7 +429,9 @@ Run the backend security suite with `npm run test:security` and the Firestore ru
 | Terminal | xterm.js 6 + addon-fit + addon-web-links + node-pty (real PTY) |
 | Terminal dictation | Swift CLI (`eco-stt`) + Apple `SFSpeechRecognizer` on-device · PCM capture via Web Audio API → WAV PCM16 (.dmg) · Web Speech API (browser) |
 | Editor | CodeMirror 6 with lazy `@codemirror/language-data` packs + `@codemirror/merge` diff view |
-| Backend | Node 20, Express 4, ws 8, node-pty 1.1, Zod 3, helmet 8, `jose` 5 (Firebase ID-token verification), Claude Agent SDK |
+| Agents | `claude` (Claude Code) + `codex` (OpenAI Codex) CLIs, run as real processes in per-bubble PTYs; provider auth (CLI session or API key) in Settings → Agents & API |
+| Backend | Node 20, Express 4, ws 8, node-pty 1.1, Zod 3, helmet 8, `jose` 5 (Firebase ID-token verification). `@anthropic-ai/claude-agent-sdk` stays as a dep only for its bundled ripgrep |
+| Auto-update | `electron-updater` → GitHub Releases (Windows); tag-driven CI (`release-win.yml`) |
 | i18n | Custom TS dictionary, bilingual ES/EN, no external lib |
 | Theme | 14 themes (9 dark + 5 light) + system, `oklch()` accents + `glassEffect` helper |
 
@@ -406,8 +444,11 @@ Run the backend security suite with `npm run test:security` and the Firestore ru
 
 ### Done
 
-- Claude Agent SDK integration with auto-mode (`acceptEdits`)
-- **Firebase Auth + Firestore migration** — identity via Firebase email/password; multi-tenant state (users/role, bubbles + messages, categories, notes, review, prefs, audit log) in Firestore, gated by Security Rules; the local backend verifies the ID token statelessly and handles compute only
+- **Claude + Codex terminals** — every bubble runs the `claude` and `codex` CLIs side by side in real PTYs (fixed tabs + extra shells); per-provider auth (CLI session or API key) in Settings → Agents & API; `OPENAI_API_KEY` scoped to the Codex PTY only
+- **Terminal-first model** — the old in-app chat panel and its Claude Agent SDK were removed; you drive the agents in their real terminals
+- **MCP agent inheritance** — bubbles created from the MCP server start on the CLI of whoever called it (Codex → Codex, Claude → Claude), overridable per call
+- **Windows auto-update** — `electron-updater` + GitHub Releases, tag-driven CI (`release-win.yml`); build-time guard fails the build if the `VITE_FIREBASE_*` bundle config is missing
+- **Firebase Auth + Firestore migration** — identity via Firebase email/password; multi-tenant state (users/role, bubbles, categories, notes, review, prefs, audit log) in Firestore, gated by Security Rules; the local backend verifies the ID token statelessly and handles compute only
 - Per-agent git worktrees with auto-recovery on conflict
 - Skills / commands / agents discovery (user + project + plugins/cache) + standalone MCP server
 - Persistent PTY (128 KB replay buffer) + auto-launch of `claude`
@@ -434,11 +475,9 @@ Run the backend security suite with `npm run test:security` and the Firestore ru
 ### Pending
 
 - Complete the migration so Firestore is the sole source of truth, deprecating the local doc-store fallback
-- Code signing (Apple notarization for the `.dmg` / Authenticode for the `.exe`) for distributable installers
+- Code signing (Apple notarization for the `.dmg` / Authenticode for the `.exe`) — required to enable macOS auto-update (Windows already updates)
 - Windows terminal dictation (would need a Windows STT helper to replace the macOS-only `eco-stt`)
 - Linux packaging hardening (the AppImage target is currently untested)
-- Long-form chat history with pagination / lazy load
-- Auto-update via `electron-updater` + S3/GitHub Releases
 
 ---
 
