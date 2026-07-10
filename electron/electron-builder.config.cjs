@@ -115,7 +115,11 @@ module.exports = {
   // Sergiocr16/eco → no requiere token en runtime para descargar). El build
   // genera latest.yml (win) / latest-mac.yml (mac) junto a los instaladores;
   // el runtime los lee de este mismo provider.
-  publish: [{ provider: 'github', owner: 'Sergiocr16', repo: 'eco' }],
+  // `releaseType: 'release'` es explícito a propósito: el default de
+  // electron-builder es 'draft', y un draft NO lo ve electron-updater (lee la
+  // última release PUBLICADA). Eso hizo que v1.0.4 y v1.0.5 se subieran en
+  // borrador y los usuarios de Windows siguieran en v1.0.3 sin enterarse.
+  publish: [{ provider: 'github', owner: 'Sergiocr16', repo: 'eco', releaseType: 'release' }],
   directories: {
     buildResources: 'build',
     output: '../release',

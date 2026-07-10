@@ -1181,6 +1181,13 @@ If any fails, the PR is not ready.
 The packaged app self-updates against the **public** repo `Sergiocr16/eco` via `electron-updater` (config: `publish` block in `electron-builder.config.cjs`). Wired in `electron/main.cjs` (`setupAutoUpdater`, IPC `eco:check-updates` / `eco:install-update`, gate `UPDATES_ENABLED = app.isPackaged && process.platform === 'win32'`), `electron/preload.cjs` (bridge), `frontend/.../UpdateBanner.tsx` + `Settings.tsx:UpdatesRow`. Public repo → no runtime token needed to download.
 
 - **Windows only** for now. **macOS auto-update is inert**: electron-updater requires a signed + notarized app (`identity:null` today). To enable later: Developer ID cert + `afterSign` with `@electron/notarize`, then flip `UPDATES_ENABLED` to include darwin (the `zip` mac target is already in the config).
+> **Un tag no publica solo si el provider queda en `draft`.** El default de
+> electron-builder es `releaseType: 'draft'`, y `electron-updater` lee la última
+> release **publicada**. v1.0.4 y v1.0.5 se subieron en borrador y los usuarios
+> siguieron en v1.0.3 sin señal de error. Ahora `electron-builder.config.cjs`
+> fija `releaseType: 'release'` explícito. Chequeo post-tag: `gh release list`
+> debe mostrar la versión nueva como `Latest`, no como `Draft`.
+
 > **Los releases de CI necesitan los secrets `VITE_FIREBASE_*`.** La config web de
 > Firebase se hornea en el bundle en build-time; el `.exe` llega a una máquina sin
 > `frontend/.env.local`. Sin los secrets, el bundle sale sin Firebase y el usuario
