@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync, realpathSync } from 'node:fs';
-import { resolve, isAbsolute } from 'node:path';
+import { resolve, isAbsolute, sep } from 'node:path';
 import { z } from 'zod';
 import { isAllowedWorkspace, isInsideWorkspace } from './config.js';
+import { toGitPath } from './platform.js';
 import { buildSafeEnv } from './security.js';
 import { getWorktree } from './worktree-manager.js';
 
@@ -161,7 +162,7 @@ function realpathSafe(p: string): string | null {
 function relativeTo(workspace: string, fullPath: string): string {
   const ws = realpathSafe(workspace) ?? workspace;
   if (fullPath === ws) return '.';
-  if (fullPath.startsWith(ws + '/')) return fullPath.slice(ws.length + 1);
+  if (fullPath.startsWith(ws + sep)) return toGitPath(fullPath.slice(ws.length + 1));
   return fullPath;
 }
 

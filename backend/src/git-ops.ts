@@ -8,6 +8,7 @@ import { resolve as pathResolve, sep as pathSep, join as pathJoin } from 'node:p
 import { buildSafeEnv } from './security.js';
 import { config } from './config.js';
 import { githubEnvOverrides, gitIdentityArgs } from './github-runtime.js';
+import { toGitPath } from './platform.js';
 
 const GIT_TIMEOUT = 10_000;
 
@@ -376,7 +377,7 @@ export function discardFile(workspace: string, inputPath: string): GitActionResu
     return { ok: false, error: `Path fuera del workspace (${inputPath})` };
   }
   // Path relativo al workspace (lo que git espera).
-  const relPath = abs.slice(wsNorm.length + 1) || abs;
+  const relPath = toGitPath(abs.slice(wsNorm.length + 1) || abs);
 
   // Detectar el estado del archivo:
   //  - en HEAD       → modified tracked, restauramos con checkout HEAD.
@@ -436,7 +437,7 @@ export function revertHunk(
   const wsNorm = pathResolve(workspace);
   const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
   if (!inside) return { ok: false, error: `Path fuera del workspace (${inputPath})` };
-  const relPath = abs.slice(wsNorm.length + 1) || abs;
+  const relPath = toGitPath(abs.slice(wsNorm.length + 1) || abs);
 
   // Si el archivo es untracked (nuevo creado por el agente), su "diff" es
   // un solo hunk con todo el contenido — rechazarlo equivale a borrar el
@@ -506,7 +507,7 @@ export function acceptHunk(
   const wsNorm = pathResolve(workspace);
   const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
   if (!inside) return { ok: false, error: `Path fuera del workspace (${inputPath})` };
-  const relPath = abs.slice(wsNorm.length + 1) || abs;
+  const relPath = toGitPath(abs.slice(wsNorm.length + 1) || abs);
 
   // Si el archivo no está en el index (archivo nuevo / untracked),
   // `git apply --cached` falla con "does not exist in index". Para nuevos
@@ -606,7 +607,7 @@ export function acceptFile(workspace: string, inputPath: string): GitActionResul
   const wsNorm = pathResolve(workspace);
   const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
   if (!inside) return { ok: false, error: `Path fuera del workspace (${inputPath})` };
-  const relPath = abs.slice(wsNorm.length + 1) || abs;
+  const relPath = toGitPath(abs.slice(wsNorm.length + 1) || abs);
   const r = git(['add', '--', relPath], workspace);
   if (!r.ok) {
     return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 600) || 'git add falló' };

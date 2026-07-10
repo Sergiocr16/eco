@@ -6,10 +6,18 @@ import { existsSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const IS_WIN = process.platform === 'win32';
+
+// Path repo-relativo → formato que git acepta en TODO contexto (rev:path,
+// pathspec, headers de patch): separador '/'. Git para Windows normaliza
+// backslashes en pathspecs pero NO en `HEAD:path`, así que un rel con `\`
+// funciona a medias y rompe `git show`/`cat-file`. Identidad en POSIX.
+export function toGitPath(rel: string): string {
+  return sep === '/' ? rel : rel.split(sep).join('/');
+}
 
 // Directorios bin que el SO NO siempre incluye en el PATH cuando la app se
 // lanza desde su launcher (Finder/Dock en mac, acceso directo en Windows).

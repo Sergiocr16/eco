@@ -3,6 +3,7 @@
 
 import { resolve as pathResolve, sep as pathSep } from 'node:path';
 import { git, isRepo, isValidSha } from './git-ops.js';
+import { toGitPath } from './platform.js';
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
@@ -80,7 +81,7 @@ export function gitLog(workspace: string, opts: LogOpts = {}): LogResult {
     const wsNorm = pathResolve(workspace);
     const inside = abs === wsNorm || abs.startsWith(wsNorm + pathSep);
     if (!inside) return { ok: false, error: 'Path fuera del workspace' };
-    const rel = abs.slice(wsNorm.length + 1) || abs;
+    const rel = toGitPath(abs.slice(wsNorm.length + 1) || abs);
     args.push('--', rel);
   }
 
