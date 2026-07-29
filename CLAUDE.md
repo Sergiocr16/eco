@@ -414,7 +414,7 @@ Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources
 |---|---|
 | `~/.eco/token` | 32 B token de máquina (solo para procesos MCP stdio; ver Appendix C/D) |
 | `~/.eco/users/<uid>/github.json` | GitHub PAT por usuario (indexado por uid de Firebase) |
-| `~/.eco/workspace-config.json` | Config por workspace (admin): `{ [ws]: { server, baseBranches } }` |
+| `~/.eco/workspace-config.json` | Config por workspace (admin): `{ [ws]: { server, baseBranches } }`. `server.env` = vars de entorno del workspace (cap 50 vars / 4000 chars, sin prefijo `ECO_`), inyectadas al spawn de cada dev server. |
 | `~/.eco/api-key` | Optional Anthropic API key (global, compartida) |
 | `~/.eco/openai-api-key` | Optional OpenAI API key (global, compartida). Inyectada como `OPENAI_API_KEY` **solo** en el PTY con `agent=codex`. |
 | `~/.eco/dev-sessions.<port>.json` | `[{bubbleId, role, pgid, port, command, ...}]` — namespaced by backend port (7050/7100/7200) so parallel backends don't clobber each other. |
@@ -673,7 +673,9 @@ Avoids ECONNREFUSED of the frontend proxy while the backend is still binding. `d
 
 ### Config por workspace (server-authoritative)
 
-`useWorkspaceServerDefaults(workspace)` ahora lee del store server-side (`lib/workspace-config.ts` → `GET /workspace-config`), NO de localStorage. La define el **admin** en Settings → Folders (`WorkspaceServerConfigField`): single/dual + comando(s), guardado vía `POST /workspace-config` (`requireAdmin`). Todas las burbujas de ese workspace heredan esos comandos. Ver Appendix D.
+`useWorkspaceServerDefaults(workspace)` ahora lee del store server-side (`lib/workspace-config.ts` → `GET /workspace-config`), NO de localStorage. La define el **admin** en Settings → Folders (`WorkspaceServerConfigField`): single/dual + comando(s) + **variables de entorno**, guardado vía `POST /workspace-config` (`requireAdmin`). Todas las burbujas de ese workspace heredan esos comandos. Ver Appendix D.
+
+**Variables de entorno por workspace**: editor key/value en `WorkspaceServerConfigField` + botón **"Importar .env"** (`parseDotenv` en `Settings.tsx`; formato dotenv: `KEY=VALOR` por línea, `#` comenta, prefijo `export` opcional, comillas envolventes se quitan, ` #` inline comenta solo valores sin comillas). El import solo llena el draft — el admin revisa y guarda. Caps espejados del backend (`workspace-config.ts:normalizeEnv`): 50 vars, 4000 chars/valor, claves `[A-Za-z_][A-Za-z0-9_]*` sin prefijo `ECO_` (bypasearían el denylist de `buildSafeEnv`). Inyección en `dev-server.ts:customEnvFor` (se lee fresca en cada spawn — un restart toma cambios; el worktree cae al repo padre si no tiene config propia) y las vars de Eco (PORT/HOST/puertos) se aplican después y ganan. Solo los NOMBRES se listan en el log del server (los valores pueden ser secretos). El PTY NO las recibe — son solo para dev servers.
 
 ### Persistence + re-adopt
 

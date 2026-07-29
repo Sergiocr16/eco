@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { useTheme, useTokens } from '@/design/theme';
 import { ACCENT_HUES, THEME_VARIANTS, defaultHueForTheme } from '@/design/tokens';
 import {
@@ -7,7 +7,7 @@ import {
 import {
   IconSettings, IconKey, IconFolder, IconShield, IconLayers,
   IconInfo, IconCheck, IconCpu, IconTerminal, IconGlobe, IconAlert,
-  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, IconSearch, type IconProps,
+  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, IconSearch, IconFile, IconExt, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
@@ -26,6 +26,7 @@ import { useWorkspaceConfig, saveWorkspaceConfig } from '@/lib/workspace-config'
 import { useIsAdmin } from '@/lib/auth-role';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { getExternalIde, setExternalIde, ideDisplayLabel, type ExternalIde } from '@/lib/ide-uri';
+import { getElectronBackupAPI, u8ToBase64 } from '@/lib/backup';
 
 type Section = 'general' | 'agents' | 'github' | 'security' | 'appearance' | 'integrations' | 'about';
 
@@ -1186,6 +1187,68 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
 // la consume read-only: el member solo inicia/detiene.
 type EnvRow = { k: string; v: string };
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+// Espejo de los caps del backend (workspace-config.ts:normalizeEnv) para
+// avisar acá en vez de fallar silencioso en el POST.
+const ENV_MAX_VARS = 50;
+const ENV_MAX_VALUE = 4000;
+
+// Formato dotenv: KEY=VALOR por línea, # comenta, prefijo `export` opcional,
+// comillas simples/dobles envolventes se quitan. En valores sin comillas,
+// ` #` inicia comentario inline (un valor con # debe ir entre comillas).
+function parseDotenv(text: string): { env: Record<string, string>; skipped: number } {
+  const env: Record<string, string> = {};
+  let skipped = 0;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!m || m[1].startsWith('ECO_')) { skipped++; continue; }
+    let value = m[2].trim();
+    const quoted = value.length >= 2
+      && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")));
+    if (quoted) {
+      value = value.slice(1, -1);
+    } else {
+      const hash = value.search(/\s#/);
+      if (hash >= 0) value = value.slice(0, hash).trimEnd();
+    }
+    env[m[1]] = value;
+  }
+  return { env, skipped };
+}
+
+// Inversa de parseDotenv: comilla los valores que el parser malinterpretaría
+// (# de comentario inline, espacios en los bordes, comillas envolventes).
+function serializeDotenv(rows: EnvRow[]): string {
+  return rows
+    .filter((r) => r.k.trim())
+    .map((r) => {
+      const v = r.v;
+      const needsQuotes = v.includes('#') || v !== v.trim() || /^["']/.test(v);
+      return `${r.k.trim()}=${needsQuotes ? `"${v}"` : v}`;
+    })
+    .join('\n') + '\n';
+}
+
+// Merge del import sobre el draft: claves existentes se actualizan en su fila,
+// las nuevas se agregan al final respetando el cap de 50.
+function mergeImportedEnv(
+  rows: EnvRow[], env: Record<string, string>,
+): { rows: EnvRow[]; dropped: number } {
+  const next = rows.map((r) => {
+    const k = r.k.trim();
+    return k && k in env ? { k, v: env[k] } : r;
+  });
+  const existing = new Set(next.map((r) => r.k.trim()).filter(Boolean));
+  let dropped = 0;
+  for (const [k, v] of Object.entries(env)) {
+    if (existing.has(k)) continue;
+    if (existing.size >= ENV_MAX_VARS) { dropped++; continue; }
+    next.push({ k, v });
+    existing.add(k);
+  }
+  return { rows: next, dropped };
+}
 
 function envToRows(env: Record<string, string>): EnvRow[] {
   return Object.entries(env).map(([k, v]) => ({ k, v }));
@@ -1219,13 +1282,18 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srv.dual, srv.main, srv.frontend, srv.backend, srvEnvJson]);
 
+  const fileRef = useRef<HTMLInputElement>(null);
+  const importTimer = useRef(0);
+  const [importMsg, setImportMsg] = useState<{ ok: number; skipped: number } | null>(null);
+
   const envInvalid = envRows.some((r) => r.k.trim() !== '' && !ENV_KEY_RE.test(r.k.trim()));
+  const envTooLong = envRows.some((r) => r.v.length > ENV_MAX_VALUE);
   const envDirty = JSON.stringify(rowsToEnv(envRows)) !== srvEnvJson;
   const dirty = dual !== srv.dual || main !== srv.main || front !== srv.frontend
     || back !== srv.backend || envDirty;
 
   async function commit() {
-    if (envInvalid) return;
+    if (envInvalid || envTooLong) return;
     const ok = await saveWorkspaceConfig(workspace, {
       server: { dual, main, frontend: front, backend: back, env: rowsToEnv(envRows) },
     });
@@ -1237,6 +1305,45 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
   }
   function removeRow(i: number) {
     setEnvRows((rows) => rows.filter((_, idx) => idx !== i));
+  }
+
+  async function importEnvFile(file: File) {
+    const text = await file.text();
+    const { env, skipped } = parseDotenv(text);
+    const { rows, dropped } = mergeImportedEnv(envRows, env);
+    const ok = Object.keys(env).length - dropped;
+    if (ok > 0) setEnvRows(rows);
+    setImportMsg({ ok, skipped: skipped + dropped });
+    window.clearTimeout(importTimer.current);
+    importTimer.current = window.setTimeout(() => setImportMsg(null), 8000);
+  }
+  useEffect(() => () => window.clearTimeout(importTimer.current), []);
+
+  // Exporta el draft actual (incluye ediciones sin guardar): save-dialog nativo
+  // en Electron, download de blob en browser.
+  async function exportEnvFile() {
+    const rows = envRows.filter((r) => r.k.trim());
+    if (rows.length === 0) return;
+    const wsName = workspace.split(/[\\/]/).filter(Boolean).pop() || 'workspace';
+    const filename = `${wsName}.env`;
+    const text = `${tr('settings.srv.env.export_header', { ws: workspace })}\n${serializeDotenv(rows)}`;
+    const api = getElectronBackupAPI();
+    if (api?.saveDialog && api.writeBinaryFile) {
+      const r = await api.saveDialog({
+        title: tr('settings.srv.env.export'),
+        defaultPath: filename,
+        filters: [{ name: '.env', extensions: ['env'] }],
+      });
+      if (r.canceled || !r.path) return;
+      await api.writeBinaryFile({ path: r.path, base64: u8ToBase64(new TextEncoder().encode(text)) });
+    } else {
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   }
 
   const inputStyle = {
@@ -1319,22 +1426,65 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
             })}
           </div>
         )}
-        <Btn kind="ghost" size="sm" icon={IconPlus}
-          onClick={() => setEnvRows((rows) => [...rows, { k: '', v: '' }])}>
-          {tr('settings.srv.env.add')}
-        </Btn>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Btn kind="ghost" size="sm" icon={IconPlus}
+            onClick={() => setEnvRows((rows) => [...rows, { k: '', v: '' }])}>
+            {tr('settings.srv.env.add')}
+          </Btn>
+          <Btn kind="ghost" size="sm" icon={IconFile}
+            title={tr('settings.srv.env.import_tip')}
+            onClick={() => fileRef.current?.click()}>
+            {tr('settings.srv.env.import')}
+          </Btn>
+          <Btn kind="ghost" size="sm" icon={IconExt}
+            title={tr('settings.srv.env.export_tip')}
+            disabled={!envRows.some((r) => r.k.trim())}
+            onClick={() => void exportEnvFile()}>
+            {tr('settings.srv.env.export')}
+          </Btn>
+          <input ref={fileRef} type="file" style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void importEnvFile(f);
+              e.target.value = '';
+            }}/>
+        </div>
+        {importMsg && (
+          <div style={{ marginTop: 4, fontSize: 10.5, color: importMsg.ok > 0 ? t.ok : t.warn }}>
+            {importMsg.ok > 0
+              ? tr('settings.srv.env.import_ok', { n: importMsg.ok })
+              : tr('settings.srv.env.import_empty')}
+            {importMsg.skipped > 0 && ` ${tr('settings.srv.env.import_skipped', { n: importMsg.skipped })}`}
+          </div>
+        )}
         {envInvalid && (
           <div style={{ marginTop: 4, fontSize: 10.5, color: t.err }}>
             {tr('settings.srv.env.invalid')}
           </div>
         )}
+        {envTooLong && (
+          <div style={{ marginTop: 4, fontSize: 10.5, color: t.err }}>
+            {tr('settings.srv.env.too_long')}
+          </div>
+        )}
         <div style={{ marginTop: 4, fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
           {tr('settings.srv.env.hint')}
+        </div>
+        <div style={{ marginTop: 8, fontSize: 10.5, color: t.text3 }}>
+          {tr('settings.srv.env.format_label')}
+        </div>
+        <div style={{
+          marginTop: 4, padding: '8px 10px', borderRadius: 8,
+          background: t.bg2, border: `1px solid ${t.glassBorder}`,
+          fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
+          whiteSpace: 'pre', overflowX: 'auto', lineHeight: 1.7,
+        }}>
+          {tr('settings.srv.env.format_example')}
         </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-        <Btn kind="secondary" size="sm" onClick={() => void commit()} disabled={!dirty || envInvalid}>
+        <Btn kind="secondary" size="sm" onClick={() => void commit()} disabled={!dirty || envInvalid || envTooLong}>
           {tr('common.save')}
         </Btn>
         <span style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
