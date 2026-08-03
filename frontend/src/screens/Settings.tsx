@@ -2165,10 +2165,17 @@ function SectionIntegrations() {
         </div>
       </Glass>
 
-      <SectionLabel>{tr('settings.tailnet.label')}</SectionLabel>
+      {/* SectionLabel solo trae padding INFERIOR, así que dos secciones
+          seguidas quedan pegadas: la tarjeta de una termina contra el rótulo
+          de la siguiente. El aire va acá, en el separador entre secciones. */}
+      <div style={{ marginTop: 26 }}>
+        <SectionLabel>{tr('settings.tailnet.label')}</SectionLabel>
+      </div>
       <TailnetCard/>
 
-      <SectionLabel>{tr('settings.mcp.label')}</SectionLabel>
+      <div style={{ marginTop: 26 }}>
+        <SectionLabel>{tr('settings.mcp.label')}</SectionLabel>
+      </div>
       <McpCard/>
     </div>
   );
