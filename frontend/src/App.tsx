@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider, useTokens } from './design/theme';
-import { AppSidebar, type Screen } from './components/AppSidebar';
+import { AppSidebar, MOBILE_NAV_HEIGHT, type Screen } from './components/AppSidebar';
 import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
@@ -31,7 +31,9 @@ import { I18nProvider, useI18n, useT } from './hooks/useI18n';
 import type { Bubble } from './lib/types';
 
 import { ecoBackend, ecoToken } from './lib/eco-config';
-import { getTopInset } from './lib/platform';
+import { getTopInset, SAFE_TOP } from './lib/platform';
+import { useIsPhone } from './hooks/useMediaQuery';
+import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { getSoloBubbleId } from './lib/solo';
 import { IconLock } from './design/icons';
 import { WindowZoomController } from './components/WindowZoomController';
@@ -555,11 +557,25 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   }, []);
   const topInset = isFullscreen ? 0 : getTopInset();
 
+  // Este useIsPhone() es el que hace reactivo a TODO el árbol: al cruzar el
+  // breakpoint re-renderiza el Shell entero, así los helpers que no son hooks
+  // (fieldStyle, glassEffect y demás de design/primitives.tsx) recalculan con
+  // isPhoneNow() actualizado.
+  const isPhone = useIsPhone();
+  const keyboardInset = useKeyboardInset();
+
   // Inset inferior cuando el dock está activo y hay agentes — reserva ~76px
   // (alto del dock + margen) para que el contenido no quede tapado.
+  // En móvil el dock no se dibuja: `left:64` hardcodeado, resize solo-mouse y
+  // tooltips por hover son affordances de escritorio. El cambio de agente en
+  // el teléfono es el Dashboard, a un toque en la barra inferior.
   const dockEnabled = useDockPref();
-  const dockVisible = dockEnabled && bubbles.bubbles.length > 0;
+  const dockVisible = dockEnabled && bubbles.bubbles.length > 0 && !isPhone;
   const bottomInset = dockVisible ? 76 : 0;
+
+  // Patrón iOS: entrar al detalle de un agente esconde la barra inferior. En
+  // el terminal cada píxel vertical cuenta y el header ya tiene "volver".
+  const showMobileNav = isPhone && screen !== 'detail';
 
   return (
     <>
@@ -584,22 +600,33 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           lights de mac y el frame del sistema viven en el área superior libre. */}
       <div style={{
         position: 'fixed',
-        top: topInset, left: 0, right: 0, bottom: bottomInset,
+        top: isPhone ? SAFE_TOP : topInset,
+        left: 0, right: 0,
+        bottom: bottomInset + keyboardInset,
         zIndex: 1,
         display: 'flex',
+        // En móvil la barra de navegación NO va en el flujo: se dibuja
+        // `position: fixed` contra el borde de la pantalla (ver AppSidebar), y
+        // acá solo se reserva su alto como padding del contenido.
+        flexDirection: 'row',
         transition: 'bottom 200ms ease',
       }}>
-        <AppSidebar
-          screen={screen === 'detail' ? 'dashboard' : screen}
-          onScreenChange={handleScreenChange}
-          agentCount={activeCount}
-          username={auth.state.username}
-          role={auth.state.role}
-          onLock={auth.lock}
-          onSignOut={auth.signOut}
-          onChangePassword={auth.changePassword}
-        />
-        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
+        {!isPhone && (
+          <AppSidebar
+            screen={screen === 'detail' ? 'dashboard' : screen}
+            onScreenChange={handleScreenChange}
+            agentCount={activeCount}
+            username={auth.state.username}
+            role={auth.state.role}
+            onLock={auth.lock}
+            onSignOut={auth.signOut}
+            onChangePassword={auth.changePassword}
+          />
+        )}
+        <div style={{
+          flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', position: 'relative',
+          ...(showMobileNav ? { paddingBottom: MOBILE_NAV_HEIGHT } : null),
+        }}>
           <ScreenError error={socket.error}/>
                 {/* Una AgentDetail por bubble visitada. Cada una mantiene
                     su propio state (webview, PTY, chat, server, files, etc.)
@@ -703,6 +730,21 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         onClose={() => setWsPickerForBubble(null)}
         canAddFolders
       />
+      {/* Barra de navegación móvil: fuera del shell a propósito, anclada al
+          borde real del viewport. Ver el comentario en AppSidebar. */}
+      {showMobileNav && (
+        <AppSidebar
+          // showMobileNav ya excluye 'detail', así que no hace falta mapearlo.
+          screen={screen}
+          onScreenChange={handleScreenChange}
+          agentCount={activeCount}
+          username={auth.state.username}
+          role={auth.state.role}
+          onLock={auth.lock}
+          onSignOut={auth.signOut}
+          onChangePassword={auth.changePassword}
+        />
+      )}
       <FloatingBubbleDock
         bubbles={bubbles.bubbles}
         // En dashboard ningún agente está "activo" en el dock — el dot
@@ -756,7 +798,11 @@ function FloatingBubbleDock({
   atHome: boolean;
 }) {
   const enabled = useDockPref();
-  if (!enabled) return null;
+  const isPhone = useIsPhone();
+  // El dock es un affordance de escritorio: `left: 64` asume el rail lateral,
+  // el resize es solo-mouse y los tooltips son por hover. En el teléfono el
+  // cambio de agente es el Dashboard, a un toque en la barra inferior.
+  if (!enabled || isPhone) return null;
   const visible = bubbles.filter((b) => !b.archived);
   return (
     <BubbleDock

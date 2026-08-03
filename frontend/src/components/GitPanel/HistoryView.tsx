@@ -87,6 +87,7 @@ export function HistoryView({ workspace, bubbleId }: Props) {
       storageKey={`eco.git.splitter.history.${bubbleId}`}
       defaultLeft={380}
       minLeft={260}
+      mobileShow={selectedSha ? 'right' : 'left'}
       left={
         <div style={{
           display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,

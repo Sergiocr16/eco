@@ -4,6 +4,8 @@ import { IconLock, IconArrowR, IconKey } from '@/design/icons';
 import { Btn } from '@/design/primitives';
 import { useT } from '@/hooks/useI18n';
 import { useProfile } from '@/hooks/useProfile';
+import { useIsPhone } from '@/hooks/useMediaQuery';
+import { SAFE_BOTTOM } from '@/lib/platform';
 
 type AuthActionResult = { ok: true } | { ok: false; error: string };
 
@@ -25,6 +27,7 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
   const t = useTokens();
   const tr = useT();
   const profile = useProfile();
+  const isPhone = useIsPhone();
   const [open, setOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
@@ -32,7 +35,10 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    const onDown = (e: MouseEvent) => {
+    // pointerdown y no mousedown: en iOS el mousedown sintético para taps es
+    // inconsistente, así que el menú quedaba sin forma de cerrarse en el
+    // teléfono (tampoco hay Escape). pointerdown cubre mouse y touch igual.
+    const onDown = (e: PointerEvent) => {
       if (!anchorRef.current) return;
       if (!(e.target instanceof Node)) return;
       if (anchorRef.current.contains(e.target)) return;
@@ -41,10 +47,10 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
       setOpen(false);
     };
     window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
+    window.addEventListener('pointerdown', onDown);
     return () => {
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('pointerdown', onDown);
     };
   }, [open]);
 
@@ -89,8 +95,13 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
         <div
           id="eco-account-popover"
           style={{
-            position: 'fixed', left: 70, bottom: 16, zIndex: 200,
-            width: 240,
+            position: 'fixed', zIndex: 200,
+            // El ancla cambia con el sidebar: al costado del rail de 64px en
+            // escritorio, arriba de la barra inferior en móvil.
+            ...(isPhone
+              ? { right: 8, bottom: `calc(64px + ${SAFE_BOTTOM})` }
+              : { left: 70, bottom: 16 }),
+            width: 'min(240px, calc(100vw - 16px))',
             background: t.glassBg,
             backdropFilter: 'blur(40px) saturate(180%)',
             WebkitBackdropFilter: 'blur(40px) saturate(180%)',

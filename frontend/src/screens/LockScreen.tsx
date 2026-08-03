@@ -136,7 +136,11 @@ function PinDots({ value, onChange, placeholder, autoFocus, onEnter }: {
           width: '100%', boxSizing: 'border-box', height: 56, padding: 0,
           border: 0, outline: 'none', background: 'transparent',
           color: 'transparent', caretColor: 'transparent', textAlign: 'center',
-          fontSize: 1, cursor: 'text',
+          // 16px y no 1px: iOS hace auto-zoom al enfocar cualquier input por
+          // debajo de 16, y de ese zoom no vuelve solo. Acá no se ve nada
+          // igual (color y caret transparentes, los puntos se dibujan aparte),
+          // así que el tamaño es puramente para el navegador.
+          fontSize: 16, cursor: 'text',
         }}
       />
     </div>

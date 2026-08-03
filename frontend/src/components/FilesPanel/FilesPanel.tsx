@@ -434,6 +434,9 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
       defaultLeft={280}
       minLeft={180}
       maxLeftPercent={0.5}
+      mobileShow={activeFilePath ? 'right' : 'left'}
+      mobileLeftLabel={tr('files.mobile.tree')}
+      mobileRightLabel={tr('files.mobile.editor')}
       left={(
         <div style={{
           display: 'flex', flexDirection: 'column', height: '100%',
@@ -460,6 +463,17 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
                 padding: '4px 6px', borderBottom: `1px solid ${t.glassBorder}`,
               }}>
                 <span style={{ flex: 1 }}/>
+                {/* Quick Open solo se abría con Cmd+P, o sea que sin teclado
+                    físico era inalcanzable. */}
+                <TreeToolbarBtn
+                  title={tr('files.quickopen.title')}
+                  onClick={() => setQuickOpen(true)}
+                >
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="7" cy="7" r="4.5"/>
+                    <path d="M10.5 10.5L14 14"/>
+                  </svg>
+                </TreeToolbarBtn>
                 <TreeToolbarBtn
                   title={tr('files.tree.expand_all')}
                   onClick={handleExpandAll}

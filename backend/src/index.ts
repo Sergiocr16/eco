@@ -20,6 +20,7 @@ import * as gitHistory from './git-history.js';
 import * as gitAdv from './git-ops-advanced.js';
 import * as devServer from './dev-server.js';
 import * as obsidian from './obsidian.js';
+import * as tailnet from './tailnet.js';
 import { getClaudeAuthStatus } from './claude-auth.js';
 import { getCodexAuthStatus, invalidateCodexAuthCache } from './codex-auth.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
@@ -254,8 +255,13 @@ if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
     // → caché agresiva. Pero `index.html` NO debe cachearse: es quien apunta al
     // bundle actual, y si el browser lo retiene, un rebuild no llega nunca al
     // cliente (quedaba pegado en un bundle viejo → bugs ya arreglados persistían).
+    // `sw.js` y `manifest.webmanifest` NO llevan hash en el nombre, así que
+    // caen en la misma trampa que index.html: con `immutable` de un año el
+    // service worker quedaría clavado para siempre y no habría forma de
+    // publicarle una corrección a un cliente que ya lo instaló.
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith('index.html')) {
+      const base = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
+      if (base === 'index.html' || base === 'sw.js' || base === 'manifest.webmanifest') {
         res.setHeader('Cache-Control', 'no-cache, must-revalidate');
       } else {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -663,6 +669,33 @@ app.delete('/config/openai-key', (_req: Request, res: Response) => {
   deleteKey('openai');
   invalidateCodexAuthCache();
   res.json({ ok: true });
+});
+
+// ─── Acceso remoto por Tailscale ──────────────────────────────────────────
+// Publica ESTE backend (el mismo que sirve el frontend) en la tailnet, para
+// entrar desde el celular sin levantar `serve:web` a mano. Recurso del
+// anfitrión, así que va con requireAdmin como Folders o Integraciones.
+
+app.get('/config/tailnet', requireAdmin, (_req: Request, res: Response) => {
+  res.json(tailnet.tailnetStatus());
+});
+
+const TailnetConfigSchema = z.object({ enabled: z.boolean() });
+app.post('/config/tailnet', requireAdmin, async (req: Request, res: Response) => {
+  const parsed = TailnetConfigSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.bad_request', 'Body inválido');
+  }
+  const { enabled } = parsed.data;
+  tailnet.saveTailnetConfig({ enabled });
+  if (enabled) {
+    const st = await tailnet.startTailnet(config.port);
+    // El toggle queda guardado igual: si Tailscale está apagado ahora, al
+    // volver a abrir Eco con Tailscale corriendo se publica solo.
+    return res.json(st);
+  }
+  tailnet.stopTailnet();
+  res.json(tailnet.tailnetStatus());
 });
 
 // ─── GitHub credentials (PAT) ─────────────────────────────────────────────
@@ -2111,6 +2144,11 @@ server.listen(config.port, config.host, () => {
   console.log(`   Orígenes:  ${config.allowedOrigins.join(', ')}`);
   console.log(`   Conexiones máx: ${config.maxOpenConnections}`);
   console.log(`   Auth:      Bearer ${authToken.slice(0, 8)}…  (archivo: ~/.eco/token)\n`);
+
+  // Acceso remoto: si el toggle quedó activado, se republica en la tailnet
+  // sin que el user tenga que hacer nada. Best-effort — si Tailscale está
+  // apagado solo queda el warning y la app sigue funcionando local.
+  void tailnet.restoreTailnet(config.port);
 
   // GC de worktrees: limpia los que no tienen cambios al startup.
   try {

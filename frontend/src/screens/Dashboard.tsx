@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '@/lib/api';
 import { motion, AnimatePresence } from 'motion/react';
@@ -24,6 +24,9 @@ import { getWorkspaceConfig } from '@/lib/workspace-config';
 import { useBubbleHasFilesMap, useBubbleChangeCountMap } from '@/hooks/useGitChanges';
 import { workspaceName } from '@/lib/workspace-name';
 import { useTeamBubbles } from '@/components/AdminGraph';
+import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
+import { useKeyboardInset } from '@/hooks/useKeyboardInset';
+import { SAFE_BOTTOM } from '@/lib/platform';
 
 type Props = {
   bubbles: Bubble[];
@@ -66,6 +69,11 @@ export function Dashboard(props: Props) {
     setViewState(v);
     try { window.localStorage.setItem('eco.dashboard.view', v); } catch { /* noop */ }
   };
+  const isPhone = useIsPhone();
+  // El grafo se dibuja en todos lados: el pan y el arrastre de nodos pasaron
+  // a Pointer Events, así que funcionan con el dedo igual que con el mouse, y
+  // el zoom tiene botones propios (la rueda no existe en táctil).
+  const effectiveView: DashView = view;
 
   // Alcance del dashboard (solo admin): "mine" = mis agentes, "all" = todos los
   // usuarios. Persistido. Un member (o admin degradado) siempre queda en "mine".
@@ -84,7 +92,11 @@ export function Dashboard(props: Props) {
   const showAll = isAdmin && scope === 'all';
   // En modo "todos" usamos las bubbles de equipo (propias reales + ajenas
   // sintetizadas, ya sin archivadas y con ownerId). El grafo de admin ya lo hacía.
-  const viewBubbles = showAll ? teamBubbles : bubbles;
+  // Más recientes arriba. `updatedAt` ya refleja el último uso real del
+  // agente, así que no hace falta un orden manual persistido: los que estás
+  // usando suben solos y los viejos se hunden.
+  const viewBubbles = [...(showAll ? teamBubbles : bubbles)]
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   // Clic inerte sobre agentes ajenos: el admin solo abre los que realmente posee.
   const openGuarded = (id: string) => { if (!showAll || bubbles.some((b) => b.id === id)) onOpenAgent(id); };
 
@@ -111,30 +123,42 @@ export function Dashboard(props: Props) {
 
   return (
     <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
-      <DashboardRail
-        bubbles={bubbles}
-        activeBubbleId={activeBubbleId}
-        availableWorkspaces={availableWorkspaces}
-        onFocus={onFocus}
-        onOpenAgent={onOpenAgent}
-      />
+      {/* El rail de 280px es lo que hace que en 390px el ancho disponible ya
+          arranque en negativo (64 sidebar + 280 rail + 64 padding > 390). */}
+      {!isPhone && (
+        <DashboardRail
+          bubbles={bubbles}
+          activeBubbleId={activeBubbleId}
+          availableWorkspaces={availableWorkspaces}
+          onFocus={onFocus}
+          onOpenAgent={onOpenAgent}
+        />
+      )}
 
       <div ref={mainScrollRef} style={{
         flex: 1, display: 'flex', flexDirection: 'column',
-        padding: '28px 32px 110px', overflowY: 'auto', overflowX: 'hidden', position: 'relative',
+        // El padding inferior solo separa del final de la lista: el safe area
+        // ya lo cubre la barra de navegación, que va debajo de este scroll.
+        padding: isPhone ? '12px 12px 16px' : '28px 32px 110px',
+        overflowY: 'auto', overflowX: 'hidden', position: 'relative',
       }}>
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 280, damping: 28 }}
-          style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '12px 8px 32px', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 280px', maxWidth: 380, minWidth: 240 }}>
+          style={{
+            display: 'flex', alignItems: 'center', gap: isPhone ? 14 : 24,
+            padding: isPhone ? '4px 2px 18px' : '12px 8px 32px', flexWrap: 'wrap',
+          }}>
+          <div style={isPhone
+            ? { flex: '1 1 100%', minWidth: 0 }
+            : { flex: '1 1 280px', maxWidth: 380, minWidth: 240 }}>
             <div style={{
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
               color: t.accent, letterSpacing: 1.5, textTransform: 'uppercase',
             }}>{greetingFor(new Date(), tr)}{username ? `, ${username}` : ''}</div>
             <h1 style={{
-              margin: '6px 0 14px', fontFamily: t.fontSans, fontSize: 30,
+              margin: '6px 0 14px', fontFamily: t.fontSans, fontSize: isPhone ? 22 : 30,
               fontWeight: 600, color: t.text0, letterSpacing: -0.8,
               lineHeight: 1.15,
             }}>
@@ -155,7 +179,7 @@ export function Dashboard(props: Props) {
             </div>
           </div>
 
-          <DashboardCards bubbles={bubbles} onOpenAgent={onOpenAgent}/>
+          <DashboardCards bubbles={bubbles} onOpenAgent={onOpenAgent} compact={isPhone}/>
         </motion.div>
 
         <SectionLabel count={viewBubbles.length} action={
@@ -167,15 +191,15 @@ export function Dashboard(props: Props) {
               </div>
             )}
             <div style={{ display: 'flex', gap: 4 }}>
-              <IconBtn icon={IconGrid} size={28} active={view === 'grid'} onClick={() => setView('grid')}/>
-              <IconBtn icon={IconColumns} size={28} active={view === 'kanban'} onClick={() => setView('kanban')}/>
-              <IconBtn icon={IconGraph} size={28} active={view === 'graph'} onClick={() => setView('graph')}/>
+              <IconBtn icon={IconGrid} size={28} active={effectiveView === 'grid'} onClick={() => setView('grid')}/>
+              <IconBtn icon={IconColumns} size={28} active={effectiveView === 'kanban'} onClick={() => setView('kanban')}/>
+              <IconBtn icon={IconGraph} size={28} active={effectiveView === 'graph'} onClick={() => setView('graph')}/>
             </div>
             <CreateAgentButton onCreate={onCreateAgent} workspaces={availableWorkspaces}/>
           </div>
         }>{tr('dash.section.agents')}</SectionLabel>
 
-        {view === 'grid' ? (
+        {effectiveView === 'grid' ? (
           <GridView
             bubbles={viewBubbles}
             workspaces={availableWorkspaces}
@@ -189,7 +213,7 @@ export function Dashboard(props: Props) {
             ownerNames={showAll ? ownerNames : undefined}
             readOnlyOwnerId={showAll ? (userId ?? null) : null}
           />
-        ) : view === 'kanban' ? (
+        ) : effectiveView === 'kanban' ? (
           <KanbanView
             bubbles={viewBubbles}
             onOpenAgent={openGuarded}
@@ -257,30 +281,36 @@ function greetingFor(d: Date, tr: (k: string, v?: Record<string, string | number
 // grande + sub-label.
 
 function DashboardCards({
-  bubbles,
+  bubbles, compact = false,
 }: {
   bubbles: Bubble[];
   onOpenAgent: (id: string) => void;
+  compact?: boolean;
 }) {
+  // Con `nowrap` + minWidth 180 las tres cards exigen 540px antes de poder
+  // acomodarse: en el teléfono envuelven y quedan a mitad de ancho cada una.
+  const slot: CSSProperties = compact
+    ? { flex: '1 1 140px', minWidth: 140, display: 'flex' }
+    : { flex: '1 1 180px', minWidth: 180, display: 'flex' };
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'row',
-      flexWrap: 'nowrap',
+      flexWrap: compact ? 'wrap' : 'nowrap',
       alignItems: 'stretch',
-      gap: 14,
+      gap: compact ? 10 : 14,
       marginBottom: 8,
       // Las cards viven en el lado DERECHO del header — usamos marginLeft
       // auto para empujarlas al borde derecho dentro del flex padre.
-      marginLeft: 'auto',
+      marginLeft: compact ? undefined : 'auto',
       // Cards encogibles: cada una mínimo 180px, crecen equitativamente.
       // Si no entran en una fila, el flex-wrap del padre las envía abajo.
       flex: '1 1 auto',
-      maxWidth: 760, // 3 × 240 + 2 × gap; tope para no estirarse demás
+      ...(compact ? { width: '100%' } : { maxWidth: 760 }), // 3 × 240 + 2 × gap; tope para no estirarse demás
     }}>
-      <div style={{ flex: '1 1 180px', minWidth: 180, display: 'flex' }}><LiveAgentsCard bubbles={bubbles}/></div>
-      <div style={{ flex: '1 1 180px', minWidth: 180, display: 'flex' }}><ResourcesCard bubbles={bubbles}/></div>
-      <div style={{ flex: '1 1 180px', minWidth: 180, display: 'flex' }}><SystemStatusCard/></div>
+      <div style={slot}><LiveAgentsCard bubbles={bubbles}/></div>
+      <div style={slot}><ResourcesCard bubbles={bubbles}/></div>
+      <div style={slot}><SystemStatusCard/></div>
     </div>
   );
 }
@@ -628,6 +658,7 @@ function AgentBubble({
   const [draft, setDraft] = useState(bubble.title);
   const menuAnchorRef = useRef<HTMLDivElement>(null);
   const tr = useT();
+  const isPhone = useIsPhone();
   const state = (bubble.status as AgentState) || 'idle';
   const sColor = stateColor(state, t);
   const busy = useBubbleBusy(bubble.id);
@@ -673,12 +704,15 @@ function AgentBubble({
         position: 'relative',
         ...glassEffect(t, { hovered: hover, intensity: 'normal' }),
         borderRadius: 18,
-        padding: '18px 18px 14px',
+        padding: isPhone ? '12px 12px 10px' : '18px 18px 14px',
         cursor: renaming ? 'default' : 'pointer',
         transition: 'border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease',
         transform: hover ? 'translateY(-1px)' : 'translateY(0)',
         overflow: 'visible',
-        minHeight: 200,
+        // El minHeight de 200 cuadra las tarjetas en una grilla de varias
+        // columnas. En una sola columna solo estira cada tarjeta con aire
+        // muerto y hace que entren menos en pantalla.
+        ...(isPhone ? null : { minHeight: 200 }),
         display: 'flex', flexDirection: 'column',
         ...(busy ? {
           borderColor: t.ok,
@@ -686,8 +720,11 @@ function AgentBubble({
         } : null),
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-        <AgentGlyph size={38} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
+      <div style={{
+        display: 'flex', alignItems: 'flex-start',
+        gap: isPhone ? 10 : 12, marginBottom: isPhone ? 8 : 12,
+      }}>
+        <AgentGlyph size={isPhone ? 32 : 38} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           {renaming ? (
             <input
@@ -755,7 +792,9 @@ function AgentBubble({
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6, marginBottom: isPhone ? 6 : 10,
+      }}>
         <StatusDot color={busy ? t.ok : sColor} pulse={busy || state === 'running' || state === 'thinking' || state === 'executing'} size={7}/>
         <span style={{ fontSize: 11.5, color: busy ? t.ok : sColor, fontWeight: 500 }}>
           {busy ? tr('state.executing') : (STATE_LABELS_I18N[state] || tr('state.idle'))}
@@ -763,11 +802,24 @@ function AgentBubble({
         {/* Chips de categorías — solo si la burbuja tiene asignadas. */}
         {bubbleCategories.length > 0 && (
           <span style={{
-            marginLeft: 'auto', minWidth: 0,
+            minWidth: 0, marginLeft: 'auto',
             display: 'inline-flex', alignItems: 'center', gap: 4,
             flexWrap: 'wrap', justifyContent: 'flex-end',
           }}>
-            {bubbleCategories.map((category) => (
+            {/* En el teléfono el chip se reduce al punto de color: el nombre
+                completo no entraba al lado del estado, y el color ya es el
+                identificador — el nombre sigue en el tooltip y en el menú. */}
+            {bubbleCategories.map((category) => (isPhone ? (
+              <span
+                key={category.id}
+                title={category.name}
+                aria-label={category.name}
+                style={{
+                  width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
+                  background: `color-mix(in oklch, ${category.color} 55%, transparent)`,
+                  border: `1.5px solid ${category.color}`,
+                }}/>
+            ) : (
               <span key={category.id} style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 padding: '1px 7px', borderRadius: 999,
@@ -780,7 +832,7 @@ function AgentBubble({
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: category.color, flexShrink: 0 }}/>
                 {category.name}
               </span>
-            ))}
+            )))}
           </span>
         )}
       </div>
@@ -863,6 +915,8 @@ function NameAgentDialog({
 }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
+  const keyboardInset = useKeyboardInset();
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -948,21 +1002,35 @@ function NameAgentDialog({
     <div
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 200,
+        position: 'fixed', top: 0, left: 0, right: 0,
+        // El overlay es fixed, así que el teclado de iOS lo taparía por abajo.
+        // Cortarlo en la altura del teclado deja la sheet completa a la vista.
+        bottom: keyboardInset,
+        zIndex: 200,
         background: 'rgba(0,0,0,0.5)',
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
+        display: 'flex', justifyContent: 'center',
+        alignItems: isPhone ? 'flex-end' : 'center',
+        padding: isPhone ? 0 : 24,
       }}>
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(440px, 100%)',
           background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
-          borderRadius: 16, boxShadow: t.shadowLg,
-          padding: 20,
+          boxShadow: t.shadowLg,
           display: 'flex', flexDirection: 'column', gap: 12,
+          ...(isPhone ? {
+            // Sheet anclada abajo: el pulgar llega a los botones sin estirarse,
+            // que es el patrón de cualquier modal de iOS.
+            borderRadius: '18px 18px 0 0',
+            padding: `18px 16px calc(18px + ${keyboardInset > 0 ? '0px' : SAFE_BOTTOM})`,
+            maxHeight: '85dvh', overflowY: 'auto',
+          } : {
+            borderRadius: 16,
+            padding: 20,
+          }),
         }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
@@ -1016,8 +1084,9 @@ function NameAgentDialog({
           style={{
             width: '100%', boxSizing: 'border-box',
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            borderRadius: 10, padding: '10px 12px',
-            fontFamily: t.fontSans, fontSize: 13.5, color: t.text0,
+            borderRadius: 10, padding: isPhone ? '13px 14px' : '10px 12px',
+            // 16px: por debajo de eso iOS hace auto-zoom al enfocar.
+            fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13.5, color: t.text0,
             outline: 'none',
           }}
         />
@@ -1044,7 +1113,7 @@ function NameAgentDialog({
                     title={ws}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '8px 10px', borderRadius: 8,
+                      padding: isPhone ? '12px' : '8px 10px', borderRadius: 8,
                       border: `1px solid ${active ? t.accent : t.glassBorder}`,
                       background: active ? t.accentFaint : t.bg2,
                       color: active ? t.accent : t.text1,
@@ -1097,11 +1166,11 @@ function NameAgentDialog({
                     type="button"
                     onClick={() => { setCustomMode(false); setBaseBranch(b); }}
                     style={{
-                      padding: '5px 10px', borderRadius: 999,
+                      padding: isPhone ? '11px 14px' : '5px 10px', borderRadius: 999,
                       border: `1px solid ${active ? t.accent : t.glassBorder}`,
                       background: active ? t.accentFaint : t.bg2,
                       color: active ? t.accent : t.text1,
-                      fontFamily: t.fontMono, fontSize: 11, cursor: 'pointer',
+                      fontFamily: t.fontMono, fontSize: isPhone ? 13 : 11, cursor: 'pointer',
                     }}>{b}</button>
                 );
               })}
@@ -1109,11 +1178,11 @@ function NameAgentDialog({
                 type="button"
                 onClick={() => setCustomMode(true)}
                 style={{
-                  padding: '5px 10px', borderRadius: 999,
+                  padding: isPhone ? '11px 14px' : '5px 10px', borderRadius: 999,
                   border: `1px solid ${customMode ? t.accent : t.glassBorder}`,
                   background: customMode ? t.accentFaint : t.bg2,
                   color: customMode ? t.accent : t.text2,
-                  fontFamily: t.fontSans, fontSize: 11, cursor: 'pointer',
+                  fontFamily: t.fontSans, fontSize: isPhone ? 13 : 11, cursor: 'pointer',
                 }}>otra…</button>
             </div>
           {customMode && (
@@ -1141,10 +1210,10 @@ function NameAgentDialog({
             type="button"
             onClick={onClose}
             style={{
-              flex: 1, height: 36, borderRadius: 999,
+              flex: 1, height: isPhone ? 48 : 36, borderRadius: 999,
               border: `1px solid ${t.glassBorder}`,
               background: 'transparent', color: t.text1,
-              fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+              fontFamily: t.fontSans, fontSize: isPhone ? 15 : 12.5, cursor: 'pointer',
             }}>
             {tr('common.cancel')}
           </button>
@@ -1152,9 +1221,9 @@ function NameAgentDialog({
             type="button"
             onClick={submit}
             style={{
-              flex: 1, height: 36, borderRadius: 999, border: 0,
+              flex: 1, height: isPhone ? 48 : 36, borderRadius: 999, border: 0,
               background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+              fontFamily: t.fontSans, fontSize: isPhone ? 15 : 12.5, fontWeight: 500,
               cursor: 'pointer',
             }}>
             {tr('common.create')}
@@ -1207,6 +1276,7 @@ function NewAgentCard({
 }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const [h, setH] = useState(false);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState('');
@@ -1277,9 +1347,9 @@ function NewAgentCard({
           ...glassEffect(t, { intensity: 'normal' }),
           border: `1px solid ${t.accentDim}`,
           background: `linear-gradient(135deg, ${t.accentFaint}, ${t.glassBg})`,
-          borderRadius: 18, minHeight: 200,
-          padding: 22,
-          display: 'flex', flexDirection: 'column', gap: 14,
+          borderRadius: 18, minHeight: isPhone ? undefined : 200,
+          padding: isPhone ? 14 : 22,
+          display: 'flex', flexDirection: 'column', gap: isPhone ? 10 : 14,
         }}
       >
         <div style={{
@@ -1328,7 +1398,7 @@ function NewAgentCard({
                     title={ws}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '8px 10px', borderRadius: 8,
+                      padding: isPhone ? '12px' : '8px 10px', borderRadius: 8,
                       border: `1px solid ${active ? t.accent : t.glassBorder}`,
                       background: active ? t.accentFaint : t.bg2,
                       color: active ? t.accent : t.text1,
@@ -1446,7 +1516,7 @@ function NewAgentCard({
         ...glassEffect(t, { hovered: h, intensity: 'subtle' }),
         border: `1px dashed ${h ? t.accentDim : t.glassBorder}`,
         background: h ? t.accentFaint : t.glassBg,
-        borderRadius: 18, minHeight: 200,
+        borderRadius: 18, minHeight: isPhone ? 84 : 200,
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', gap: 10, cursor: 'pointer',
         color: h ? t.accent : t.text2,
@@ -1508,7 +1578,11 @@ function WorkspaceChip({
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute', bottom: '110%', left: 0, zIndex: 30,
-            minWidth: 240, maxWidth: 320, padding: 4,
+            // El minWidth fijo desbordaba la card en el teléfono; el clamp
+            // contra el viewport es el mismo patrón que ya usan los otros
+            // popovers del Dashboard.
+            minWidth: 'min(240px, calc(100vw - 32px))',
+            maxWidth: 'min(320px, calc(100vw - 32px))', padding: 4,
             background: t.bg1, border: `1px solid ${t.glassBorder}`,
             borderRadius: 12, boxShadow: t.shadowLg,
             display: 'flex', flexDirection: 'column',
@@ -1678,9 +1752,13 @@ function GridView({
   const ownerLabelFor = (b: Bubble): string | undefined =>
     ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
 
+  // El `min(280px, 100%)` es lo que colapsa a una sola columna cuando el
+  // contenedor es más angosto que una card: sin él, `minmax(280px, …)` fuerza
+  // 280px de ancho y el grid desborda (el padre tiene overflowX hidden, así
+  // que se cortaba sin aviso).
   const gridStyle: CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))',
     gap: 14,
   };
 
@@ -1782,6 +1860,7 @@ function KanbanView({
 }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const { open: openNameDialog, dialog: nameDialog } = useNameAgentDialog(onCreateAgent, workspaces);
   const ownerLabelFor = (b: Bubble): string | undefined =>
     ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
@@ -1862,7 +1941,11 @@ function KanbanView({
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 280, damping: 28 }}
             style={{
-              flex: '0 0 280px',
+              // En el teléfono una columna de 280px deja ver ~46px de la
+              // siguiente y ninguna entera. Con 85vw la columna activa llena
+              // la pantalla y asoma la que sigue, que es la señal de que hay
+              // más para scrollear al costado.
+              flex: isPhone ? '0 0 85vw' : '0 0 280px',
               background: t.bg2,
               border: `1px solid ${t.glassBorder}`,
               borderRadius: 14,
@@ -2329,8 +2412,8 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
     if (!el) return;
     const measure = () => {
       const rect = el.getBoundingClientRect();
-      const w = Math.max(400, Math.round(rect.width));
-      const h = Math.max(400, Math.round(rect.height));
+      const w = Math.max(280, Math.round(rect.width));
+      const h = Math.max(280, Math.round(rect.height));
       setSize((prev) => (prev.W === w && prev.H === h ? prev : { W: w, H: h }));
     };
     measure();
@@ -2650,7 +2733,7 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   viewScaleRef.current = viewScale;
 
   useEffect(() => {
-    function onMove(e: MouseEvent) {
+    function onMove(e: PointerEvent) {
       const d = dragRef.current;
       if (d) {
         setPan({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) });
@@ -2690,24 +2773,28 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
         }
       }
     }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    // Pointer Events y no Mouse Events: el mismo codigo cubre mouse y dedo,
+    // que es lo que hacia falta para que el grafo se pueda mover en tactil.
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
   }, []);
-  function startPan(e: ReactMouseEvent) {
+  function startPan(e: ReactPointerEvent) {
     dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
     setDragging(true);
   }
-  function startWsDrag(key: string, e: ReactMouseEvent) {
+  function startWsDrag(key: string, e: ReactPointerEvent) {
     e.stopPropagation();
     const cur = wsOffsets[key] ?? { dx: 0, dy: 0 };
     wsDragRef.current = { key, sx: e.clientX, sy: e.clientY, dx0: cur.dx, dy0: cur.dy };
     setWsDragging(key);
   }
-  function startAgentDrag(id: string, e: ReactMouseEvent) {
+  function startAgentDrag(id: string, e: ReactPointerEvent) {
     e.stopPropagation();
     const cur = agentOffsets[id] ?? { dx: 0, dy: 0 };
     agentDragRef.current = { id, sx: e.clientX, sy: e.clientY, dx0: cur.dx, dy0: cur.dy, moved: false };
@@ -2780,13 +2867,15 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
       position: isFull ? 'fixed' : 'relative',
       ...(isFull
         ? { inset: 0, height: '100vh', width: '100vw', zIndex: 9000 }
-        : { height: 'min(92vh, 1600px)', minHeight: 520 }),
+        // En el teléfono 520px de alto mínimo dejan el grafo fuera de pantalla
+        // y obligan a scrollear para verlo entero; 380 entra completo.
+        : { height: 'min(92vh, 1600px)', minHeight: isPhoneNow() ? 380 : 520 }),
       padding: 0, overflow: 'hidden',
     }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }}/>
       <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMidYMid meet"
-        style={{ position: 'absolute', inset: 0 }}>
+        style={{ position: 'absolute', inset: 0, touchAction: 'none' }}>
         <defs>
           <pattern id="eco-grid" width="32" height="32" patternUnits="userSpaceOnUse">
             <circle cx="16" cy="16" r="0.6" fill={t.text3} opacity="0.3"/>
@@ -2803,9 +2892,12 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
             <feBlend in="SourceGraphic" in2="goo"/>
           </filter>
         </defs>
+        {/* touchAction:'none' es lo que hace que el pan funcione con el dedo:
+            sin esto el navegador se queda con el gesto para scrollear la
+            página y el pointermove nunca llega. */}
         <rect width={W} height={H} fill="url(#eco-grid)"
-          onMouseDown={startPan}
-          style={{ cursor: dragging ? 'grabbing' : 'grab', pointerEvents: 'all' }}/>
+          onPointerDown={startPan}
+          style={{ cursor: dragging ? 'grabbing' : 'grab', pointerEvents: 'all', touchAction: 'none' }}/>
 
         {/* Partículas tipo "estrellas" en el fondo. Twinkleando (opacity + r)
             y drifteando muy lentamente en un loop pequeño para que se sientan
@@ -3054,7 +3146,7 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
         {/* Nodos de usuario (modo owner / admin) — inicial + nombre. */}
         {ownerMode && ownerNodes.map((o) => (
           <g key={'owner-node-' + o.id} transform={`translate(${o.x},${o.y})`}
-            onMouseDown={(e) => startWsDrag(o.key, e)}
+            onPointerDown={(e) => startWsDrag(o.key, e)}
             style={{ cursor: wsDragging === o.key ? 'grabbing' : 'grab' }}>
             {o.active && (
               <motion.circle cx={0} cy={0} r={OWNER_NODE_R}
@@ -3082,7 +3174,7 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
             y el nombre de la carpeta. Solo en modo jerárquico (2+ proyectos). */}
         {hierarchical && wsNodes.map((ws) => (
           <g key={'ws-node-' + ws.key} transform={`translate(${ws.x},${ws.y})`}
-            onMouseDown={(e) => startWsDrag(ws.key, e)}
+            onPointerDown={(e) => startWsDrag(ws.key, e)}
             style={{ cursor: wsDragging === ws.key ? 'grabbing' : 'grab' }}>
             {ws.active && (
               <motion.circle cx={0} cy={0} r={WS_NODE_R}
@@ -3148,7 +3240,7 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
               style={{ cursor: agentDragging === n.id ? 'grabbing' : 'pointer' }}
               onMouseEnter={() => setHover(n.id)}
               onMouseLeave={() => setHover(null)}
-              onMouseDown={(e) => startAgentDrag(n.id, e)}
+              onPointerDown={(e) => startAgentDrag(n.id, e)}
               onClick={() => {
                 // Si venimos de un drag real, no abrimos el agente.
                 if (agentClickSuppressedRef.current) {

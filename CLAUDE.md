@@ -29,6 +29,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 22. [Appendix C: External MCP server](#mcp-appendix)
 23. [Appendix D: Multi-tenant](#multitenant)
 24. [Appendix E: Windows & cross-platform packaging](#windows)
+25. [Appendix F: Mobile layout & PWA install](#mobile)
 
 ---
 
@@ -207,7 +208,22 @@ VITE_FIREBASE_APP_ID=
 | `ECO_PUBLIC_HOST` | (empty) | Public tailnet hostname (`<machine>.ts.net`). When set, dev-server URLs become `https://<host>:<port>` and each port is exposed via `tailscale serve`. |
 | `ECO_TAILSCALE_BIN` | auto | Tailscale CLI path override. macOS bundles it at `/Applications/Tailscale.app/Contents/MacOS/Tailscale` (not in PATH); the backend auto-detects. |
 
+### Remote access from the desktop app (the normal path)
+
+Settings → Integraciones → **"Publicar Eco en la tailnet"** (admin-only toggle). When on, the app's OWN backend — the same one already serving the static frontend — is published at `https://<machine>.ts.net`. **One backend, two ingresses**: Electron locally and the tailnet remotely. This replaces having to run `serve:web` in a terminal.
+
+- **Default is OFF.** `~/.eco/tailnet.json` (`{enabled}`); absent file → `{enabled:false}`, and `restoreTailnet()` early-returns.
+- **Persists across launches.** `restoreTailnet(config.port)` runs from the `server.listen` callback in `index.ts`, so if the toggle was left on the app republishes itself with no user action.
+- `backend/src/tailnet.ts` — store + `startTailnet`/`stopTailnet`/`restoreTailnet`/`tailnetStatus`. `backend/src/tailscale.ts` — `servePublic(targetPort)` (`--https=443 → 127.0.0.1:<port>`, note the public and target ports DIFFER, unlike the dev-server `serveOn`), `servePublicOff`, `tailnetHostname()`.
+- Endpoints `GET/POST /config/tailnet` (`requireAdmin` — it's a host resource, like Folders). Hook `frontend/src/hooks/useTailnet.ts`, UI `Settings.tsx:TailnetCard`.
+- **`startTailnet` mutates `config.extraHosts` / `allowedOrigins` / `publicHost` at runtime.** Those are plain data properties on the `config` object literal, and they're the same fields `ECO_EXTRA_HOSTS`/`ECO_ALLOWED_ORIGINS`/`ECO_PUBLIC_HOST` fill in server mode. Without mutating them the host check rejects every remote request before it ever looks at the token. Setting `publicHost` also switches dev-server previews to tailnet URLs (`urlFor`/`syncServe`).
+- **The `:443` mapping is NOT removed when the app quits** — only when the toggle is turned off. Tailscale Serve config is persistent, so leaving it avoids re-provisioning the TLS cert on every launch. The cost is a 502 for remote clients while Eco is closed, which is the honest answer anyway.
+- **Conflicts with `npm run serve:web`**: both want `:443`, pointing at different ports (7100 vs 7200). Last one wins. Use one or the other, not both.
+- Only meaningful in the packaged app, which sets `ECO_FRONTEND_DIST`. In `npm run dev:app` the backend serves no static frontend, so a remote client reaches the API but gets no HTML — use `serve:web` for remote testing during development.
+
 ### Server mode (remote web via Tailscale)
+
+> Still the path for **development** (it builds + serves `frontend/dist` from a standalone backend). For everyday remote use from the installed app, prefer the toggle above.
 
 `npm run serve:web` (script `scripts/eco-server.mjs`) runs Eco as a web server for the fase-0 thin-client experiment: backend on `127.0.0.1:7200` serving the built frontend, exposed to the tailnet as `https://<machine>.ts.net` via `tailscale serve` (HTTPS = secure context → mic/Web Speech work in remote Chrome). The script derives the hostname from `tailscale status --json`, builds missing dists (`--rebuild` to force), sets `ECO_ALLOWED_ORIGINS`/`ECO_EXTRA_HOSTS`, and prints the share URL. The backend keeps binding 127.0.0.1 — Tailscale Serve is the only ingress.
 
@@ -1739,3 +1755,86 @@ npm --workspace electron run build:win-dir   # → release/win-unpacked/
 ### Verification done on a real Windows machine
 
 Backend boots via `ELECTRON_RUN_AS_NODE` and serves `/health` 200; MCP auto-registers (`claude mcp get eco` → Connected); node-pty opens `cmd.exe` and round-trips output; `pidsOnPort` + `taskkill /T /F` free a held port with no orphans; the NSIS installer builds; the app launches with a visible window. PTY/`taskkill`/ports CANNOT be validated from macOS — test on Windows.
+
+---
+
+<a id="mobile"></a>
+## Appendix F: Mobile layout & PWA install
+
+Eco is usable from an iPhone over Tailscale (`npm run serve:web` → `https://<machine>.ts.net`) and installable to the home screen. The work is **presentational only** — no architecture, protocol, state or auth changes. Read this before touching any layout code.
+
+### The constraint that shapes everything
+
+**Eco has no CSS framework.** `tailwindcss` is wired in `vite.config.ts` but `index.css` never does `@import "tailwindcss"`, so it generates nothing (`lib/cn.ts` has zero importers). The UI is ~1900 inline `style={{}}` objects against 3 `className` usages. **Media queries cannot reach almost anything.**
+
+So the responsive mechanism is a **JS breakpoint hook whose boolean is spread into the existing style objects** — the same pattern `design/theme.tsx` already uses for `prefers-color-scheme`.
+
+- `hooks/useMediaQuery.ts` — `useIsMobile()` (hook, reactive) + `isMobileNow()` (sync getter, for non-hook helpers like `fieldStyle`/`navBtnStyle`).
+- Query: `MOBILE_QUERY = '(pointer: coarse), (max-width: 820px)'`. The `pointer: coarse` half is what keeps the **iPhone in landscape** (932px on a 16 Pro Max) on the mobile layout; the `max-width` half lets you test everything by narrowing a desktop window.
+- **`isMobileNow()` is not reactive on its own.** It relies on an ancestor having called `useIsMobile()` to re-render. `App.tsx:Shell` does, which covers the whole tree. Screens rendered *outside* Shell (`AuthScreen`, `LockScreen`) won't re-evaluate on a live breakpoint change — irrelevant on a real phone, cosmetic on desktop resize.
+
+**If you add a mobile branch, use `useIsMobile()` in components and `isMobileNow()` only inside plain functions.**
+
+### Safe area and the iOS keyboard
+
+- `index.html` already had `viewport-fit=cover`; **nothing consumed it** until now. `lib/platform.ts` exports `SAFE_TOP` / `SAFE_BOTTOM` (`env(safe-area-inset-*)` strings — inline styles accept any CSS value, including `calc()`).
+- **`SAFE_TOP` is not `getTopInset()`.** The latter reserves 36px for macOS traffic lights in Electron; the former compensates for phone hardware. Orthogonal — don't merge them.
+- `hooks/useKeyboardInset.ts` — the iOS soft keyboard draws *over* the layout viewport, and with `body { overflow: hidden }` + a `position: fixed` shell nothing scrolls the prompt back into view. The hook reads `visualViewport` and its value is subtracted from the shell's `bottom` in `App.tsx`. The 120px threshold exists because Safari's collapsing URL bar also moves `visualViewport` by 50-90px; a real keyboard is never under ~250px.
+
+### Where the 44pt touch targets come from
+
+`design/primitives.tsx` is the single leverage point — one branch there fixes hundreds of call sites: `Btn` (26/32/40 → 36/44/48), `IconBtn` (grows the **hit area** to ≥40 while keeping the glyph at its original size, so dense toolbars don't balloon), `Toggle` (38×22 → 51×31, the iOS switch), `fieldStyle` (13.5px → **16px**).
+
+> **The 16px is load-bearing, not cosmetic: iOS Safari auto-zooms on focus for any input under 16px and does not zoom back.** Same reason `cm-theme.ts` bumps `.cm-content` to 16px (CodeMirror is contenteditable, which also triggers it) and why the URL bar, diff search, rename and new-agent inputs each got the same treatment.
+
+### Mobile layout decisions worth knowing
+
+| Surface | What happens on mobile | Why |
+|---|---|---|
+| Shell (`App.tsx:585`) | `flexDirection: 'column-reverse'` | Puts the nav at the bottom without reordering JSX. |
+| `AppSidebar` | 64px vertical rail → horizontal bottom bar; **hidden when `screen === 'detail'`** | iOS pattern: pushing to a detail hides the tab bar. In the terminal every vertical pixel counts. |
+| `BubbleDock` | Not rendered | `left: 64` hardcoded, mouse-only resize, hover tooltips. Agent switching is the Dashboard, one tap away. |
+| `DashboardRail` | Not rendered | 64 + 280 + 64 padding > 390 → the grid started at **−18px** and `overflowX: hidden` clipped it silently. |
+| Dashboard graph view | Toggle hidden; a persisted `'graph'` falls back to grid | Pan/zoom/drag are `ReactMouseEvent` only; container floors at 400px. |
+| `NameAgentDialog` | Bottom sheet (`85dvh`, rounded top, safe-area padding) | Thumb reach. The overlay's `bottom` tracks the keyboard inset. |
+| `AgentSidebar` (360px rail) | Full-screen sheet (`position:absolute; inset:0`) over the active panel; **collapse state lifted to `AgentDetail`** so the header button can drive it | A 360px rail beside 326px of content cannot work. Collapsed on mobile renders *nothing* — not even the 36px `CollapsedBar`, which is 11% of the usable width. |
+| Detail tab bar | Icons-only + `overflowX: auto` (`.eco-dock-scroll`) | 6 labelled tabs need ~600px against 326px available, and the bar had no overflow at all. |
+| `ResizableSplit` | One pane at a time with a segmented toggle | See below. |
+| `DiffViewer` | Falls back to the existing single-column `DiffRender` | `MergeView` is `orientation: 'a-b'`; two ~160px editors with 35px gutters each. |
+| `ServerPanel` dual logs | Stacked instead of side-by-side | ~160px per pane otherwise. |
+| `BrowserPanel` | URL bar wraps; path chip / viewport presets / zoom cluster hidden; device viewport boxes forced fluid | The row demanded ~600px. Pinch-zoom already covers the zoom cluster; emulating a 768×1024 box inside a 390px screen is pointless. |
+
+### `ResizableSplit` — the highest-leverage file
+
+`components/GitPanel/ResizableSplit.tsx` (102 lines) backs **five** panels: ChangesView (300px), HistoryView (380px), PRsView (360px), FilesPanel (280px), NotesPanel (260px). At 326px of content the right pane went to 20px or **negative**.
+
+- Mobile: single pane + segmented toggle. Both panes stay **mounted** behind `display:none` — unmounting would drop the diff's scroll position and force the file tree to refetch on every switch.
+- Optional `mobileShow?: 'left' | 'right'` lets consumers that track a selection drive the switch automatically. **The first render is deliberately skipped** (`firstSyncRef`): every consumer persists its last selection, and opening straight into the detail of something chosen three sessions ago is disorienting.
+- **Two real bugs fixed here.** (1) The drag clamp was inverted: when `rect.width * maxLeftPercent` fell below `minLeft`, the trailing `Math.max(minLeft, …)` made the left pane *wider than its own maximum*. Now the ceiling wins. (2) The restore guard only checked `n >= minLeft`, so **a 380px width persisted on a wide window was restored verbatim on a narrow one**; `maxWidth: calc(100% - 160px)` is the CSS backstop.
+
+### Terminal on a phone
+
+326px at 12.5px monospace is **~40 columns**; the Claude and Codex TUIs assume 80. In landscape (844-932px) it's ~90 and genuinely comfortable. **Tell users to rotate for terminal sessions.** Three mitigations in `RealTerminal.tsx`:
+
+1. `eco.term.fontsize` (**global**, not per-bubble — deliberately, so it never has to join the `useBubbles.removeBubble` cleanup list). Defaults to 10 on mobile (~54 cols), 12.5 on desktop. Applied in a **separate effect** from the main one: putting `fontSize` in the big effect's deps would recreate the terminal and reconnect the PTY on every A+ tap. The container doesn't resize, so that effect re-emits the resize by hand.
+2. `components/TerminalKeyBar.tsx` — iOS has no Esc, Ctrl, Tab or arrows, which are exactly what the agent TUIs need. Sends raw sequences through the existing `sendInput` (exposed via a ref); **no protocol or backend change**. Buttons use `onPointerDown` + `preventDefault` so the terminal keeps focus and the system keyboard stays up.
+3. Tap-to-focus on the container — otherwise the keyboard only appears if your finger happens to land on xterm's hidden textarea.
+
+### PWA install
+
+Already in Eco's favour before any of this: `tailscale serve --https=443` gives a real Let's Encrypt cert (secure context), `express.static` is mounted **before** the `X-Eco-Client` guard so `/manifest.webmanifest` and `/sw.js` are served unauthenticated (which is mandatory — the browser's manifest fetch and the SW script request carry no custom headers), and `helmet` runs with `contentSecurityPolicy: false`.
+
+- `frontend/public/manifest.webmanifest` + `frontend/public/icons/*` (180 apple-touch, 192, 512, 512-maskable). Generated from `electron/build/icon{,-opaque}.png` with `sips` (ships with macOS, no new dependency). **iOS ignores SVG apple-touch-icons** — `index.html` pointed at one, which is why the home-screen icon would have been a screenshot of the page.
+- `frontend/public/sw.js` — cache-first for `/assets/`, `/icons/`, `/brand/` (content-hashed → an old entry can never serve wrong content), passthrough for everything else. Registered from `main.tsx` **only** when not Electron and `protocol === 'https:'`. It exists so iOS treats Eco as an app; **it deliberately does not provide offline mode** — Eco needs the local backend and a Firebase token refresh, so a shell that boots and then fails at everything is worse than not booting.
+- **`backend/src/index.ts` static `setHeaders` exempts `sw.js` and `manifest.webmanifest`** from `Cache-Control: immutable, max-age=1y` alongside `index.html`. Without this the service worker is pinned for a year and can never be corrected on a client that already installed it. This is the only backend line the whole mobile effort touches.
+
+**Three ways this fails silently:**
+1. `scripts/eco-server.mjs:73-74` skips the frontend build when `dist/index.html` exists → after touching the manifest or icons you must run `npm run serve:web -- --rebuild`.
+2. The SPA fallback (`app.get('*')`) returns `index.html` with **200** for any unmatched path, so a misnamed icon or manifest yields HTML-with-200 instead of a 404 and iOS rejects the manifest without saying why.
+3. Vite's `base: './'` rewrites the `public/` URLs in the built HTML to relative form. Fine at the root, and there is no path router, but don't assume absolute `/foo` survives the build.
+
+**First-install friction to expect:** iOS gives a home-screen app its **own storage container**, separate from Safari. Logging in through Safari and then opening the installed icon lands in an empty context — the Firebase session and the lock PIN must be redone once. It reads as "the app forgot everything". The upside is that installed web apps are exempt from the 7-day ITP purge that applies to Safari, so after that first login the session lasts *longer* installed than in the browser.
+
+### Testing
+
+Narrow a desktop Chrome window below 820px (or use the device toolbar) — the entire mobile layout activates without a phone. For the real device: `npm run serve:web -- --rebuild`, then `https://<machine>.ts.net` in iPhone Safari. Vite binds `127.0.0.1` (`vite.config.ts:80`) so the dev server is **not** reachable from the phone; for hot reload there, `npm run dev:frontend -- --host` plus a `tailscale serve --https=5173`.

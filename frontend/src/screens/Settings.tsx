@@ -21,18 +21,21 @@ import { GithubTokenHelp } from '@/components/GithubTokenHelp';
 import { GhStatusBanner } from '@/components/GhStatusBanner';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useMcpConfig } from '@/hooks/useMcpConfig';
+import { useTailnet } from '@/hooks/useTailnet';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useWorkspaceConfig, saveWorkspaceConfig } from '@/lib/workspace-config';
 import { useIsAdmin } from '@/lib/auth-role';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { getExternalIde, setExternalIde, ideDisplayLabel, type ExternalIde } from '@/lib/ide-uri';
 import { getElectronBackupAPI, u8ToBase64 } from '@/lib/backup';
+import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 
 type Section = 'general' | 'agents' | 'github' | 'security' | 'appearance' | 'integrations' | 'about';
 
 export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | null }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const [sec, setSec] = useState<Section>('general');
   // Modelo local: cada usuario corre su propio Eco, así que todas las secciones
   // (Agentes & API, Folders/proyectos, Integraciones) son locales de su máquina y
@@ -48,28 +51,48 @@ export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | n
     { id: 'integrations', label: tr('settings.section.integrations'), icon: IconBolt },
     { id: 'about', label: tr('settings.section.about'), icon: IconInfo },
   ];
+  // En móvil el rail de 220px dejaría ~170px de contenido: se acuesta como una
+  // tira de chips scrolleable arriba, con el mismo estado y los mismos ítems.
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
-      <div style={{
-        width: 220, flexShrink: 0, padding: '20px 12px',
-        borderRight: `1px solid ${t.glassBorder}`,
-        display: 'flex', flexDirection: 'column', gap: 2,
-      }}>
-        <div style={{
-          padding: '8px 12px 12px', fontSize: 15, fontWeight: 600,
-          color: t.text0, letterSpacing: -0.2,
-        }}>{tr('settings.title')}</div>
+    <div style={{
+      display: 'flex', height: '100%',
+      flexDirection: isPhone ? 'column' : 'row',
+    }}>
+      <div
+        className={isPhone ? 'eco-dock-scroll' : undefined}
+        style={isPhone ? {
+          flexShrink: 0,
+          display: 'flex', flexDirection: 'row', gap: 6,
+          padding: '10px 12px',
+          borderBottom: `1px solid ${t.glassBorder}`,
+          overflowX: 'auto',
+        } : {
+          width: 220, flexShrink: 0, padding: '20px 12px',
+          borderRight: `1px solid ${t.glassBorder}`,
+          display: 'flex', flexDirection: 'column', gap: 2,
+        }}>
+        {!isPhone && (
+          <div style={{
+            padding: '8px 12px 12px', fontSize: 15, fontWeight: 600,
+            color: t.text0, letterSpacing: -0.2,
+          }}>{tr('settings.title')}</div>
+        )}
         {sections.map((s) => (
           <button
             key={s.id} type="button"
             onClick={() => setSec(s.id)}
             style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 12px', borderRadius: 8, border: 0,
-              background: sec === s.id ? t.bg3 : 'transparent',
-              color: sec === s.id ? t.text0 : t.text1,
+              display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 10,
+              padding: isPhone ? '9px 14px' : '8px 12px',
+              borderRadius: isPhone ? 999 : 8,
+              border: isPhone
+                ? `1px solid ${sec === s.id ? t.accentDim : t.glassBorder}`
+                : 0,
+              background: sec === s.id ? (isPhone ? t.accentFaint : t.bg3) : 'transparent',
+              color: sec === s.id ? (isPhone ? t.accent : t.text0) : t.text1,
               fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
               cursor: 'pointer', textAlign: 'left',
+              ...(isPhone ? { flexShrink: 0, whiteSpace: 'nowrap' as const } : {}),
             }}>
             <s.icon size={14}/>
             {s.label}
@@ -77,7 +100,10 @@ export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | n
         ))}
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+      <div style={{
+        flex: 1, minHeight: 0, overflow: 'auto',
+        padding: isPhone ? '16px 12px 24px' : '24px 32px',
+      }}>
         {sec === 'general' && <SectionGeneral/>}
         {sec === 'agents' && <SectionAgents/>}
         {sec === 'github' && <SectionGithub/>}
@@ -104,14 +130,20 @@ function Row({ icon: Icon, title, desc, control, danger }: {
   icon?: (p: IconProps) => JSX.Element; title: string; desc?: string; control?: ReactNode; danger?: boolean;
 }) {
   const t = useTokens();
+  // En móvil el control baja a su propia línea: un select o un input al lado
+  // de un título y su descripción deja las dos cosas ilegibles en 350px.
+  // `flexWrap` + `flex-basis: 100%` en el control lo empuja abajo sin cambiar
+  // el orden del JSX ni el layout de escritorio.
+  const mob = isPhoneNow();
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 14,
+      display: 'flex', alignItems: mob ? 'flex-start' : 'center', gap: mob ? 10 : 14,
       padding: '14px 0', borderBottom: `1px solid ${t.glassBorder}`,
+      ...(mob ? { flexWrap: 'wrap' as const } : {}),
     }}>
       {Icon && (
         <div style={{
-          width: 32, height: 32, borderRadius: 9,
+          width: 32, height: 32, borderRadius: 9, flexShrink: 0,
           background: t.bg3, color: danger ? t.err : t.text1,
           border: `1px solid ${t.glassBorder}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -121,7 +153,7 @@ function Row({ icon: Icon, title, desc, control, danger }: {
         <div style={{ fontSize: 13.5, color: danger ? t.err : t.text0, fontWeight: 500 }}>{title}</div>
         {desc && <div style={{ fontSize: 12, color: t.text2, marginTop: 3, lineHeight: 1.5 }}>{desc}</div>}
       </div>
-      <div>{control}</div>
+      <div style={mob ? { flexBasis: '100%', minWidth: 0 } : undefined}>{control}</div>
     </div>
   );
 }
@@ -158,7 +190,7 @@ function SectionGeneral() {
         desc={tr('settings.general.default_folder_desc')}
         control={
           <select value={def.value} onChange={(e) => def.set(e.target.value)}
-            style={{ ...fieldStyle(t), width: 220 }}>
+            style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 220 }}>
             <option value="">{tr('settings.general.ask_each_time')}</option>
             {ws.list.workspaces.map((p) => (
               <option key={p} value={p}>{p}</option>
@@ -246,7 +278,7 @@ function ExternalIdeRow() {
       desc={tr('settings.general.external_ide_desc')}
       control={
         <select value={ide} onChange={(e) => onChange(e.target.value as ExternalIde)}
-          style={{ ...fieldStyle(t), width: 220 }}>
+          style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 220 }}>
           {options.map((o) => (
             <option key={o} value={o}>{ideDisplayLabel(o)}</option>
           ))}
@@ -263,7 +295,7 @@ function LanguageRow() {
     <Row icon={IconGlobe} title={tr('settings.general.app_language')}
       control={
         <select value={lang} onChange={(e) => setLang(e.target.value as 'es' | 'en')}
-          style={{ ...fieldStyle(t), width: 180 }}>
+          style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 180 }}>
           <option value="es">Español</option>
           <option value="en">English</option>
         </select>
@@ -976,6 +1008,7 @@ function SectionGithub() {
 export function FoldersManager() {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const ws = useWorkspaces();
   const [draft, setDraft] = useState('');
   const [adding, setAdding] = useState(false);
@@ -1021,7 +1054,10 @@ export function FoldersManager() {
   const hasNativePicker = typeof window !== 'undefined' && !!window.electronAPI?.pickFolder;
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', padding: '28px 32px 80px', boxSizing: 'border-box' }}>
+    <div style={{
+      height: '100%', overflowY: 'auto', boxSizing: 'border-box',
+      padding: isPhone ? '16px 12px 32px' : '28px 32px 80px',
+    }}>
       <Header title={tr('settings.folders.title')} sub={tr('settings.folders.sub')}/>
 
       <Glass radius={14} style={{ padding: 12, marginBottom: 18 }}>
@@ -1038,7 +1074,12 @@ export function FoldersManager() {
           </Btn>
         )}
         {/* Input manual + botón "Agregar" debajo, para casos avanzados */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* Icono + input + "Agregar" en una fila dejan el input en nada al
+            escribir un path largo en el teléfono: ahí el botón baja. */}
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'center',
+          ...(isPhone ? { flexWrap: 'wrap' as const } : {}),
+        }}>
           <div style={{ color: t.text2 }}><IconFolder size={16}/></div>
           <input
             data-folder-input
@@ -1047,11 +1088,15 @@ export function FoldersManager() {
             onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd(); }}
             placeholder={tr('settings.folders.add_placeholder')}
             style={{
-              flex: 1, background: 'transparent', border: 0, outline: 'none',
-              fontFamily: t.fontMono, fontSize: 13, color: t.text0, padding: '8px 4px',
+              flex: 1, minWidth: 0,
+              background: 'transparent', border: 0, outline: 'none',
+              fontFamily: t.fontMono, color: t.text0, padding: '8px 4px',
+              // 16px evita el auto-zoom de iOS al enfocar.
+              fontSize: isPhone ? 16 : 13,
             }}
           />
-          <Btn kind={hasNativePicker ? 'ghost' : 'primary'} size="sm" icon={IconPlus} onClick={() => void handleAdd()} disabled={adding || !draft.trim()}>
+          <Btn kind={hasNativePicker ? 'ghost' : 'primary'} size="sm" icon={IconPlus} onClick={() => void handleAdd()} disabled={adding || !draft.trim()}
+            style={isPhone ? { flexBasis: '100%', justifyContent: 'center' } : undefined}>
             {adding ? tr('settings.folders.adding') : tr('settings.folders.add_btn')}
           </Btn>
         </div>
@@ -1077,8 +1122,8 @@ export function FoldersManager() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={tr('settings.folders.search')}
-            style={{ flex: 1, background: 'transparent', border: 0, outline: 'none',
-              fontFamily: t.fontSans, fontSize: 13, color: t.text0 }}
+            style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none',
+              fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13, color: t.text0 }}
           />
         </div>
       )}
@@ -1096,14 +1141,19 @@ export function FoldersManager() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {filtered.map((p) => (
-              <Glass key={p} radius={12} style={{ padding: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ color: t.accent }}><IconFolder size={18}/></div>
+              <Glass key={p} radius={12} style={{ padding: isPhone ? 10 : 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 8 : 12 }}>
+                  <div style={{ color: t.accent, flexShrink: 0 }}><IconFolder size={18}/></div>
                   <div style={{
                     flex: 1, minWidth: 0,
-                    fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>{p}</div>
+                    fontFamily: t.fontMono, fontSize: isPhone ? 11.5 : 13, color: t.text0,
+                    // En el teléfono un path largo con ellipsis deja ver solo
+                    // el principio, que es la parte que menos identifica la
+                    // carpeta. Cortado por el final se lee el nombre real.
+                    ...(isPhone
+                      ? { direction: 'rtl' as const, textAlign: 'left' as const, overflow: 'hidden', whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' }
+                      : { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }),
+                  }} title={p}>{p}</div>
                   <button
                     type="button"
                     onClick={() => ws.remove(p)}
@@ -1116,8 +1166,7 @@ export function FoldersManager() {
                     <IconTrash size={14}/>
                   </button>
                 </div>
-                <WorkspaceServerConfigField workspace={p}/>
-                <WorktreeFavoritesField workspace={p}/>
+                <FolderCardConfig workspace={p} collapsible={isPhone}/>
               </Glass>
           ))}
         </div>
@@ -1126,6 +1175,50 @@ export function FoldersManager() {
         <div style={{ marginTop: 14, fontSize: 12, color: t.err }}>{ws.error}</div>
       )}
     </div>
+  );
+}
+
+// Config por carpeta (dev server + ramas base). En escritorio va siempre
+// desplegada; en móvil arranca colapsada porque cada carpeta trae un editor
+// completo —toggle single/dual, comandos, variables de entorno, ramas— y con
+// tres o cuatro carpetas la pantalla es un muro imposible de escanear.
+function FolderCardConfig({ workspace, collapsible }: { workspace: string; collapsible: boolean }) {
+  const t = useTokens();
+  const tr = useT();
+  const [open, setOpen] = useState(false);
+
+  if (!collapsible) {
+    return (
+      <>
+        <WorkspaceServerConfigField workspace={workspace}/>
+        <WorktreeFavoritesField workspace={workspace}/>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          marginTop: 10, width: '100%', height: 40,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          borderRadius: 8, cursor: 'pointer',
+          border: `1px solid ${t.glassBorder}`,
+          background: open ? t.bg3 : 'transparent',
+          color: t.text1, fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+        }}>
+        <IconCpu size={13}/>
+        {open ? tr('settings.folders.config_hide') : tr('settings.folders.config_show')}
+      </button>
+      {open && (
+        <>
+          <WorkspaceServerConfigField workspace={workspace}/>
+          <WorktreeFavoritesField workspace={workspace}/>
+        </>
+      )}
+    </>
   );
 }
 
@@ -1170,8 +1263,11 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
         style={{
           width: '100%', boxSizing: 'border-box',
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          borderRadius: 8, padding: '7px 10px',
-          fontFamily: t.fontMono, fontSize: 12, color: t.text0,
+          borderRadius: 8, padding: isPhoneNow() ? '10px' : '7px 10px',
+          fontFamily: t.fontMono,
+          // 16px evita el auto-zoom de iOS al enfocar.
+          fontSize: isPhoneNow() ? 16 : 12,
+          color: t.text0,
           outline: 'none',
         }}
       />
@@ -1349,8 +1445,11 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
   const inputStyle = {
     width: '100%', boxSizing: 'border-box' as const,
     background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    borderRadius: 8, padding: '7px 10px',
-    fontFamily: t.fontMono, fontSize: 12, color: t.text0, outline: 'none',
+    borderRadius: 8, padding: isPhoneNow() ? '10px 10px' : '7px 10px',
+    fontFamily: t.fontMono,
+    // 16px evita el auto-zoom de iOS al enfocar cualquiera de estos campos.
+    fontSize: isPhoneNow() ? 16 : 12,
+    color: t.text0, outline: 'none',
   };
 
   return (
@@ -1398,12 +1497,20 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
             {envRows.map((row, i) => {
               const badKey = row.k.trim() !== '' && !ENV_KEY_RE.test(row.k.trim());
               return (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  // KEY + VALOR + borrar en una fila piden ~400px. En el
+                  // teléfono la clave toma la fila entera y el valor baja.
+                  ...(isPhoneNow() ? { flexWrap: 'wrap' as const } : {}),
+                }}>
                   <input value={row.k} onChange={(e) => setRow(i, { k: e.target.value })}
                     placeholder={tr('settings.srv.env.key_ph')}
                     spellCheck={false} autoCorrect="off" autoCapitalize="off"
                     style={{
-                      ...inputStyle, width: 180, flexShrink: 0,
+                      ...inputStyle,
+                      ...(isPhoneNow()
+                        ? { flexBasis: '100%', minWidth: 0 }
+                        : { width: 180, flexShrink: 0 }),
                       border: `1px solid ${badKey ? t.err : t.glassBorder}`,
                     }}/>
                   <input value={row.v} onChange={(e) => setRow(i, { v: e.target.value })}
@@ -1426,7 +1533,12 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
             })}
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Agregar / Importar / Exportar: tres botones con rótulo en una fila
+            piden ~330px. En el teléfono envuelven. */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          ...(isPhoneNow() ? { flexWrap: 'wrap' as const } : {}),
+        }}>
           <Btn kind="ghost" size="sm" icon={IconPlus}
             onClick={() => setEnvRows((rows) => [...rows, { k: '', v: '' }])}>
             {tr('settings.srv.env.add')}
@@ -1525,7 +1637,7 @@ function SectionSecurity() {
         desc={tr('settings.security.lock_inactivity_desc')}
         control={
           <select value={lockMinutes} onChange={(e) => saveLock(e.target.value)}
-            style={{ ...fieldStyle(t), width: 160 }}>
+            style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 160 }}>
             <option value="never">{tr('settings.security.never')}</option>
             <option value="5">{tr('settings.security.minutes', { n: 5 })}</option>
             <option value="15">{tr('settings.security.minutes', { n: 15 })}</option>
@@ -2053,9 +2165,79 @@ function SectionIntegrations() {
         </div>
       </Glass>
 
+      <SectionLabel>{tr('settings.tailnet.label')}</SectionLabel>
+      <TailnetCard/>
+
       <SectionLabel>{tr('settings.mcp.label')}</SectionLabel>
       <McpCard/>
     </div>
+  );
+}
+
+// Acceso remoto por Tailscale. Reemplaza al `npm run serve:web` manual: si el
+// toggle queda activado, cada vez que abrís Eco el backend se vuelve a
+// publicar solo en https://<maquina>.ts.net.
+function TailnetCard() {
+  const t = useTokens();
+  const tr = useT();
+  const { status, saving, setEnabled } = useTailnet();
+  const [copied, setCopied] = useState(false);
+
+  async function copyUrl() {
+    if (!status.url) return;
+    try {
+      await navigator.clipboard.writeText(status.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch { /* noop */ }
+  }
+
+  return (
+    <Glass radius={14} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: t.text0 }}>
+            {tr('settings.tailnet.title')}
+          </div>
+          <div style={{ fontSize: 12, color: t.text2, marginTop: 3, lineHeight: 1.5 }}>
+            {tr('settings.tailnet.desc')}
+          </div>
+        </div>
+        <Toggle on={status.enabled} disabled={saving} onChange={(v) => { void setEnabled(v); }}/>
+      </div>
+
+      {status.enabled && status.active && status.url && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '10px 12px', borderRadius: 10,
+          background: t.bg2, border: `1px solid ${t.glassBorder}`,
+        }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: t.ok, flexShrink: 0 }}/>
+          <code style={{
+            flex: 1, minWidth: 0, fontFamily: t.fontMono, fontSize: 12, color: t.text0,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{status.url}</code>
+          <Btn size="sm" kind="secondary" onClick={() => { void copyUrl(); }}>
+            {copied ? tr('common.copied') : tr('common.copy')}
+          </Btn>
+        </div>
+      )}
+
+      {status.enabled && !status.active && (
+        <div style={{
+          padding: '10px 12px', borderRadius: 10,
+          background: `color-mix(in oklch, ${t.warn} 12%, transparent)`,
+          border: `1px solid color-mix(in oklch, ${t.warn} 30%, transparent)`,
+          fontSize: 12, color: t.warn, lineHeight: 1.5,
+        }}>
+          {tr('settings.tailnet.unavailable')}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11.5, color: t.text3, lineHeight: 1.5 }}>
+        {tr('settings.tailnet.hint')}
+      </div>
+    </Glass>
   );
 }
 
@@ -2440,7 +2622,8 @@ function SectionAbout() {
         </div>
         {/* Search */}
         <div style={{
-          position: 'relative', width: 280, flexShrink: 0,
+          position: 'relative',
+          ...(isPhoneNow() ? { width: '100%' } : { width: 280, flexShrink: 0 }),
         }}>
           <span style={{
             position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
@@ -2481,12 +2664,18 @@ function SectionAbout() {
       <UpdatesRow/>
 
       {/* Body */}
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+      <div style={{
+        display: 'flex', gap: 20, alignItems: 'flex-start',
+        // El índice interno de "Acerca de" es otro rail de 240px: en el
+        // teléfono se apila arriba del contenido en vez de robarle el ancho.
+        ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 12 } : {}),
+      }}>
         {/* Inner sidebar */}
         <aside style={{
-          width: 240, flexShrink: 0,
+          ...(isPhoneNow()
+            ? { width: '100%' }
+            : { width: 240, flexShrink: 0, position: 'sticky' as const, top: 0 }),
           display: 'flex', flexDirection: 'column', gap: 2,
-          position: 'sticky', top: 0,
         }}>
           {isSearching && (
             <div style={{
@@ -2942,10 +3131,13 @@ function FilesList() {
         <div key={i} style={{
           display: 'flex', gap: 12, padding: '7px 10px', borderRadius: 6,
           background: t.bg1, border: `1px solid ${t.glassBorder}`,
+          // Path fijo de 200px + descripción no entran: en móvil se apilan.
+          ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 4 } : {}),
         }}>
           <code style={{
             fontFamily: t.fontMono, fontSize: 11, color: t.text1,
-            width: 200, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            ...(isPhoneNow() ? { width: '100%' } : { width: 200, flexShrink: 0 }),
           }}>{r.path}</code>
           <span style={{ flex: 1, fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{r.desc}</span>
         </div>
@@ -2977,8 +3169,8 @@ function DevList() {
         <div style={{ fontSize: 10.5, color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>{tr('settings.about.dev.env.title')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {envs.map((e) => (
-            <div key={e.k} style={{ display: 'flex', gap: 10, padding: '4px 0' }}>
-              <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, width: 170, flexShrink: 0 }}>{e.k}</code>
+            <div key={e.k} style={{ display: 'flex', gap: 10, padding: '4px 0', ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 2 } : {}) }}>
+              <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, ...(isPhoneNow() ? { width: '100%' } : { width: 170, flexShrink: 0 }) }}>{e.k}</code>
               <span style={{ flex: 1, fontSize: 11.5, color: t.text2 }}>{e.d}</span>
             </div>
           ))}
@@ -2988,8 +3180,8 @@ function DevList() {
         <div style={{ fontSize: 10.5, color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>{tr('settings.about.dev.scripts.title')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {scripts.map((s) => (
-            <div key={s.k} style={{ display: 'flex', gap: 10, padding: '4px 0' }}>
-              <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, width: 170, flexShrink: 0 }}>{s.k}</code>
+            <div key={s.k} style={{ display: 'flex', gap: 10, padding: '4px 0', ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 2 } : {}) }}>
+              <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, ...(isPhoneNow() ? { width: '100%' } : { width: 170, flexShrink: 0 }) }}>{s.k}</code>
               <span style={{ flex: 1, fontSize: 11.5, color: t.text2 }}>{s.d}</span>
             </div>
           ))}

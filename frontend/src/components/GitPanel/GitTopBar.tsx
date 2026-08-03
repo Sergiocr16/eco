@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useBranches, type BranchInfo } from '@/hooks/useBranches';
 import { useT } from '@/hooks/useI18n';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 
 type Props = {
   workspace: string;
@@ -25,6 +26,7 @@ type Props = {
 export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Props) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const { data, refresh: refreshBranches } = useBranches(workspace, bubbleId);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -110,7 +112,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8,
-      padding: '10px 16px',
+      padding: isPhone ? '8px 10px' : '10px 16px',
       borderBottom: `1px solid ${t.glassBorder}`,
       background: t.bg1,
       flexShrink: 0,
@@ -148,8 +150,10 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
         }} title={msg.text}>{msg.text}</div>
       )}
 
-      {/* Botón dedicado: renombrar agente con el nombre de la rama actual */}
-      {onRenameAgent && branchName && !detached && (
+      {/* Botón dedicado: renombrar agente con el nombre de la rama actual.
+          En móvil se esconde: la misma acción está en el menú "⋯" y la fila
+          solo tiene lugar para chip de rama + sync + menú. */}
+      {!isPhone && onRenameAgent && branchName && !detached && (
         <button type="button"
           onClick={() => onRenameAgent(branchName)}
           title={tr('git.topbar.rename_agent_tooltip', { name: branchName })}

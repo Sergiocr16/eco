@@ -4,9 +4,16 @@ import {
   IconCommand, IconFolderOpen, IconGrid, IconArchive, IconSettings, IconShield, type IconProps,
 } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
+import { useIsPhone } from '@/hooks/useMediaQuery';
+import { SAFE_BOTTOM } from '@/lib/platform';
 import { AccountMenu } from './AccountMenu';
 
 export type Screen = 'dashboard' | 'folders' | 'files' | 'archived' | 'settings' | 'admin' | 'detail' | 'login' | 'onboarding';
+
+// Alto de la barra inferior en móvil: 4 + 40 (botón) + 4, más el inset del
+// indicador de home capado. App.tsx reserva exactamente esto como padding del
+// contenido, ya que la barra va `position: fixed` y sale del flujo.
+export const MOBILE_NAV_HEIGHT = `calc(48px + min(${SAFE_BOTTOM}, 14px))`;
 
 type Props = {
   screen: Screen;
@@ -33,20 +40,43 @@ export function AppSidebar({
 }: Props) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const ITEMS = role === 'admin' ? [...BASE_ITEMS, ADMIN_ITEM] : BASE_ITEMS;
 
+  // Móvil: el mismo rail se acuesta como barra inferior. Mismos ítems, mismos
+  // props — solo cambia la orientación y el ancla del indicador de activo.
   return (
     <div style={{
-      width: 64, flexShrink: 0,
-      borderRight: `1px solid ${t.glassBorder}`,
-      padding: '14px 0 16px',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-      background: 'transparent',
+      flexShrink: 0,
+      display: 'flex', alignItems: 'center', gap: 4,
       overflow: 'visible',
+      ...(isPhone ? {
+        // `fixed` al borde real de la pantalla, fuera del flujo del shell.
+        // Anclarla al flex del shell la dejaba flotando sobre una franja gris
+        // de ~60px que no correspondía a ningún padding: así, haya lo que
+        // haya debajo, la barra se apoya en el fondo del viewport.
+        position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 40,
+        width: '100%',
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        borderTop: `1px solid ${t.glassBorder}`,
+        background: t.windowBg,
+        // El inset completo de iOS (34px) es más aire del que necesita el
+        // indicador de home, que mide ~5px y vive a ~8px del borde.
+        padding: `4px 6px calc(4px + min(${SAFE_BOTTOM}, 14px))`,
+      } : {
+        width: 64,
+        flexDirection: 'column',
+        borderRight: `1px solid ${t.glassBorder}`,
+        padding: '14px 0 16px',
+        background: 'transparent',
+      }),
     }}>
-      <div style={{ marginBottom: 10, color: 'currentColor' }}>
-        <EcoMarkStacked size={32}/>
-      </div>
+      {!isPhone && (
+        <div style={{ marginBottom: 10, color: 'currentColor' }}>
+          <EcoMarkStacked size={32}/>
+        </div>
+      )}
       {ITEMS.map((it) => {
         const active = screen === it.id || (it.id === 'dashboard' && screen === 'detail');
         return (
@@ -56,7 +86,7 @@ export function AppSidebar({
             onClick={() => onScreenChange(it.id)}
             title={tr(it.labelKey)}
             style={{
-              width: 44, height: 44, borderRadius: 12, border: 0, cursor: 'pointer',
+              width: 44, height: isPhone ? 40 : 44, borderRadius: 12, border: 0, cursor: 'pointer',
               background: active ? t.bg3 : 'transparent',
               color: active ? t.accent : t.text2,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -65,8 +95,10 @@ export function AppSidebar({
           >
             {active && (
               <span style={{
-                position: 'absolute', left: -8, top: '50%', transform: 'translateY(-50%)',
-                width: 3, height: 20, borderRadius: 999, background: t.accent,
+                position: 'absolute', borderRadius: 999, background: t.accent,
+                ...(isPhone
+                  ? { top: -6, left: '50%', transform: 'translateX(-50%)', height: 3, width: 20 }
+                  : { left: -8, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20 }),
               }}/>
             )}
             <it.icon size={19}/>
@@ -83,7 +115,7 @@ export function AppSidebar({
         );
       })}
 
-      <div style={{ flex: 1 }}/>
+      {!isPhone && <div style={{ flex: 1 }}/>}
 
       <AccountMenu
         username={username}

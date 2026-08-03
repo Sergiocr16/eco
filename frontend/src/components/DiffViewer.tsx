@@ -7,6 +7,7 @@ import { useT } from '@/hooks/useI18n';
 import { translateBackendError } from '@/lib/backend-errors';
 import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
 import { emit as ecoEmit } from '@/lib/eco-bus';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import { MergeView } from '@codemirror/merge';
 import { EditorState, Compartment, StateField } from '@codemirror/state';
 import { EditorView, lineNumbers, Decoration, WidgetType, type DecorationSet } from '@codemirror/view';
@@ -46,6 +47,7 @@ type PaneProps = {
 export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChangePath, hideHeader }: PaneProps) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const review = useReviewState(bubbleId);
   const reviewMode = isReviewModeEnabled();
   const [result, setResult] = useState<DiffResult | null>(null);
@@ -310,8 +312,12 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
     }}>
       {!hideHeader && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '12px 18px', borderBottom: `1px solid ${t.glassBorder}`,
+          display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 10,
+          padding: isPhone ? '8px 10px' : '12px 18px',
+          borderBottom: `1px solid ${t.glassBorder}`,
+          // En el teléfono el header del diff (icono, ruta, dos toggles,
+          // búsqueda y cerrar) no entra en una fila: envuelve en dos.
+          flexWrap: isPhone ? 'wrap' : 'nowrap',
         }}>
           <div style={{
             width: 28, height: 28, borderRadius: '50%',
@@ -394,8 +400,11 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
               autoCorrect="off"
               style={{
                 background: 'transparent', border: 0, outline: 'none',
-                fontFamily: t.fontMono, fontSize: 12, color: t.text0,
-                width: 180,
+                fontFamily: t.fontMono, color: t.text0,
+                // 16px evita el auto-zoom de iOS; el ancho fijo de 180 sumado
+                // al resto del header pedía ~500px de fila.
+                fontSize: isPhone ? 16 : 12,
+                width: isPhone ? 110 : 180,
               }}
             />
             {query && (
@@ -502,7 +511,12 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
           {result?.hasChanges && (
             // Merge view nueva cuando el backend devolvió before/after.
             // Fallback al renderer custom (hunks-only) si no.
-            result.before !== undefined && result.after !== undefined ? (
+            //
+            // En táctil siempre el fallback: el MergeView es side-by-side
+            // (orientation 'a-b') y en 390px quedan dos editores de ~160px con
+            // un gutter de 35px cada uno, o sea ~125px de código envuelto por
+            // lado. El renderer de hunks ya es de una sola columna.
+            !isPhone && result.before !== undefined && result.after !== undefined ? (
               <DiffMergeView
                 before={result.before}
                 after={result.after}

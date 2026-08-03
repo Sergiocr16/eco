@@ -84,7 +84,7 @@ export function SkillsPicker({ workspace, onRun }: Props) {
           id="eco-skills-popover"
           style={{
             position: 'absolute', top: 44, right: 12, zIndex: 80,
-            width: 380, maxHeight: 'min(520px, 70vh)',
+            width: 'min(380px, calc(100vw - 24px))', maxHeight: 'min(520px, 70vh)',
             display: 'flex', flexDirection: 'column',
             background: t.glassBg,
             backdropFilter: 'blur(40px) saturate(180%)',

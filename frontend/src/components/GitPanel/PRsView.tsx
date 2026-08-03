@@ -109,6 +109,7 @@ export function PRsView({ workspace, bubbleId }: Props) {
       storageKey={`eco.git.splitter.prs.${bubbleId}`}
       defaultLeft={360}
       minLeft={260}
+      mobileShow={selected !== null ? 'right' : 'left'}
       left={
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: t.bg0 }}>
           <div style={{

@@ -6,9 +6,32 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { currentIdToken } from '@/lib/firebase';
 import { useTokens } from '@/design/theme';
+import { useIsMobile, isMobileNow } from '@/hooks/useMediaQuery';
+import { TerminalKeyBar } from './TerminalKeyBar';
 
 // Debe coincidir con `AgentCli` en backend/src/pty-server.ts.
 export type AgentCli = 'claude' | 'codex' | 'none';
+
+// Tamaño de fuente del terminal. Global (no por burbuja) a propósito: así no
+// hay que sumarlo a la limpieza de claves de useBubbles.removeBubble.
+const FONT_SIZE_KEY = 'eco.term.fontsize';
+const FONT_MIN = 8;
+const FONT_MAX = 18;
+// 326px de ancho útil con fuente 12.5 dan ~40 columnas, y los TUI de Claude y
+// Codex asumen 80. Con 10 se llega a ~54, que sigue siendo poco pero hace la
+// diferencia entre leerlo y no leerlo. En horizontal el default ya alcanza.
+const FONT_DEFAULT_MOBILE = 10;
+const FONT_DEFAULT_DESKTOP = 12.5;
+
+function readFontSize(): number {
+  const fallback = isMobileNow() ? FONT_DEFAULT_MOBILE : FONT_DEFAULT_DESKTOP;
+  try {
+    const raw = window.localStorage.getItem(FONT_SIZE_KEY);
+    const n = raw ? Number(raw) : NaN;
+    if (Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX) return n;
+  } catch { /* noop */ }
+  return fallback;
+}
 
 type Props = {
   workspace: string;
@@ -31,8 +54,18 @@ type Props = {
 export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main', agent = 'claude' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const t = useTokens();
+  const isMobile = useIsMobile();
   const [status, setStatus] = useState<'connecting' | 'open' | 'reconnecting' | 'closed' | 'error'>('connecting');
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [fontSize, setFontSizeState] = useState<number>(readFontSize);
+
+  // Refs para que la barra de teclas y el stepper de fuente lleguen al term y
+  // al socket sin re-crearlos: meter `fontSize` en las deps del efecto grande
+  // reconectaría el PTY en cada toque de A+.
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const sendInputRef = useRef<(data: string) => void>(() => { /* noop */ });
+  const doResizeRef = useRef<() => void>(() => { /* noop */ });
 
   useEffect(() => {
     const container = containerRef.current;
@@ -47,7 +80,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-      fontSize: 12.5,
+      fontSize: readFontSize(),
       lineHeight: 1.25,
       scrollback: 2000,
       allowTransparency: false,
@@ -63,6 +96,76 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
     term.open(container);
+    termRef.current = term;
+    fitRef.current = fit;
+
+    // Scroll táctil propio.
+    //
+    // xterm v6 no scrollea solo con el dedo: el `xterm-scroll-area` que le
+    // daba altura al viewport desapareció (el scroll dejó de ser nativo) y el
+    // servicio de touch que trae la librería es opt-in — su `addTarget` está
+    // definido pero NUNCA se llama adentro del lib. Así que en táctil el
+    // scrollback era sencillamente inalcanzable, y ningún CSS lo arreglaba.
+    //
+    // Lo resolvemos con `scrollLines()`, que sí es API pública: convertimos el
+    // arrastre a líneas y le agregamos inercia para que se sienta como iOS.
+    const cellHeight = () => Math.max(1, term.element
+      ? (term.element.querySelector('.xterm-rows')?.firstElementChild as HTMLElement | null)?.offsetHeight || 0
+      : 0) || Math.round(readFontSize() * 1.25);
+
+    let touchY: number | null = null;
+    let touchRest = 0;          // píxeles sobrantes que aún no llegan a una línea
+    let lastMoveAt = 0;
+    let velocity = 0;           // líneas por ms, para la inercia
+    let inertia = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      cancelAnimationFrame(inertia);
+      touchY = e.touches[0]!.clientY;
+      touchRest = 0;
+      velocity = 0;
+      lastMoveAt = e.timeStamp;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (touchY === null || e.touches.length !== 1) return;
+      const y = e.touches[0]!.clientY;
+      const dy = touchY - y;
+      touchY = y;
+      // Arrastrar hacia arriba muestra contenido más nuevo, como en cualquier
+      // lista: por eso el delta va con el signo del gesto, no invertido.
+      const px = dy + touchRest;
+      const lines = Math.trunc(px / cellHeight());
+      touchRest = px - lines * cellHeight();
+      if (lines !== 0) {
+        term.scrollLines(lines);
+        const dt = Math.max(1, e.timeStamp - lastMoveAt);
+        velocity = lines / dt;
+        lastMoveAt = e.timeStamp;
+      }
+      // Sin esto iOS se queda con el gesto y arrastra la página entera.
+      e.preventDefault();
+    };
+    const onTouchEnd = () => {
+      touchY = null;
+      // Inercia: seguimos scrolleando con decaimiento hasta que se apaga.
+      if (Math.abs(velocity) < 0.002) return;
+      let v = velocity * 16;   // líneas por frame
+      const step = () => {
+        v *= 0.94;
+        if (Math.abs(v) < 0.05) return;
+        term.scrollLines(v > 0 ? Math.ceil(v) : Math.floor(v));
+        inertia = requestAnimationFrame(step);
+      };
+      inertia = requestAnimationFrame(step);
+    };
+
+    // passive:false en touchmove porque hacemos preventDefault.
+    container.addEventListener('touchstart', onTouchStart, { passive: true });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
 
     // Renderer WebGL: descarga el dibujado a la GPU. El renderer DOM por
     // defecto se atasca cuando el hilo principal está ocupado (renders de
@@ -188,6 +291,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
         }
       };
       disposeInputRef.current = term.onData(sendInput);
+      sendInputRef.current = sendInput;
     }
 
     const doResize = () => {
@@ -196,6 +300,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
         ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
       }
     };
+    doResizeRef.current = doResize;
 
     resizeObs = new ResizeObserver(() => doResize());
     resizeObs.observe(container);
@@ -226,19 +331,46 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       window.clearInterval(wakeTimer);
       resizeObs?.disconnect();
+      cancelAnimationFrame(inertia);
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
+      container.removeEventListener('touchcancel', onTouchEnd);
       try { ws?.close(1000, 'unmount'); } catch { /* noop */ }
       term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace, bubbleId, resetKey, ptyId, agent]);
+
+  // Efecto aparte del grande: cambiar la fuente no debe recrear el terminal
+  // ni reconectar el socket. El contenedor no cambia de tamaño, así que el
+  // ResizeObserver no dispara y hay que reemitir el resize a mano.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = fontSize;
+    doResizeRef.current();
+  }, [fontSize]);
+
+  const setFontSize = (next: number) => {
+    const clamped = Math.min(FONT_MAX, Math.max(FONT_MIN, next));
+    setFontSizeState(clamped);
+    try { window.localStorage.setItem(FONT_SIZE_KEY, String(clamped)); } catch { /* noop */ }
+  };
 
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div
         ref={containerRef}
+        // En iOS el teclado solo sube si el foco cae en el textarea oculto de
+        // xterm, y acertarle con el dedo es casualidad. Un tap en cualquier
+        // parte del terminal lo enfoca.
+        onClick={() => { try { termRef.current?.focus(); } catch { /* noop */ } }}
         style={{
           flex: 1, minHeight: 0,
-          padding: 10,
+          padding: isMobile ? 6 : 10,
           // Mismo color que el background del Terminal — así no se ve un marco
           // de otro color alrededor cuando hay padding o cuando el shell aún
           // no se conectó.
@@ -247,12 +379,33 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
           overflow: 'hidden',
         }}
       />
+      {isMobile && (
+        <TerminalKeyBar
+          onKey={(seq) => {
+            sendInputRef.current(seq);
+            try { termRef.current?.focus(); } catch { /* noop */ }
+          }}
+          fontSize={fontSize}
+          onFontSize={setFontSize}
+        />
+      )}
       {(status !== 'open') && (
         <div style={{
-          position: 'absolute', top: 8, right: 12,
-          fontFamily: t.fontMono, fontSize: 10.5,
+          position: 'absolute',
+          fontFamily: t.fontMono,
           color: status === 'error' ? t.err : t.text3,
           pointerEvents: 'none',
+          // En el teléfono un rótulo de 10.5px en la esquina es ilegible, y es
+          // justo el que dice por qué el terminal no conectó.
+          ...(isMobile ? {
+            top: 10, left: 10, right: 10,
+            padding: '8px 10px', borderRadius: 8,
+            background: 'rgba(0,0,0,0.55)',
+            border: `1px solid ${status === 'error' ? t.err : t.glassBorder}`,
+            fontSize: 12.5, textAlign: 'center',
+          } : {
+            top: 8, right: 12, fontSize: 10.5,
+          }),
         }}>
           {status === 'connecting' && 'conectando…'}
           {status === 'reconnecting' && 'reconectando…'}

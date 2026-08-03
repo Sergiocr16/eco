@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type ReactNode, type MouseEvent } from 'r
 import { useTokens } from './theme';
 import type { Tokens } from './tokens';
 import { AGENT_TYPES, type AgentType, type AgentState, stateColor } from './tokens';
+import { isMobileNow } from '@/hooks/useMediaQuery';
 
 type GlassProps = {
   children?: ReactNode;
@@ -84,11 +85,17 @@ type BtnProps = {
 export function Btn({ children, kind = 'ghost', size = 'md', icon: Icon, onClick, style = {}, disabled, title, type = 'button' }: BtnProps) {
   const t = useTokens();
   const [h, setH] = useState(false);
-  const sizes = {
+  // Los tamaños de escritorio (26/32/40) quedan por debajo del mínimo táctil
+  // de 44pt de iOS. Subirlos acá arregla los cientos de call sites de un saque.
+  const sizes = (isMobileNow() ? {
+    sm: { h: 36, px: 12, fs: 13, gap: 6, ic: 14 },
+    md: { h: 44, px: 16, fs: 14, gap: 8, ic: 16 },
+    lg: { h: 48, px: 20, fs: 15, gap: 10, ic: 18 },
+  } : {
     sm: { h: 26, px: 10, fs: 12, gap: 6, ic: 13 },
     md: { h: 32, px: 14, fs: 13, gap: 8, ic: 14 },
     lg: { h: 40, px: 18, fs: 14, gap: 10, ic: 16 },
-  }[size];
+  })[size];
   const styles: Record<BtnKind, CSSProperties> = {
     primary: {
       background: h ? t.accent : t.accentDim,
@@ -149,6 +156,10 @@ type IconBtnProps = {
 export function IconBtn({ icon: Icon, onClick, title, active, size = 32, style = {} }: IconBtnProps) {
   const t = useTokens();
   const [h, setH] = useState(false);
+  // En táctil crece el área de toque, no el glyph: muchas toolbars pasan
+  // size={26} y agrandar el icono las desbalancearía. El dibujo queda igual,
+  // lo que cambia es dónde se puede pegar el dedo.
+  const box = isMobileNow() ? Math.max(size, 40) : size;
   return (
     <button
       type="button"
@@ -157,12 +168,12 @@ export function IconBtn({ icon: Icon, onClick, title, active, size = 32, style =
       onMouseEnter={() => setH(true)}
       onMouseLeave={() => setH(false)}
       style={{
-        width: size, height: size,
+        width: box, height: box, flexShrink: 0,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         background: active ? t.accentFaint : (h ? t.bg3 : 'transparent'),
         color: active ? t.accent : (h ? t.text0 : t.text1),
         border: `1px solid ${active ? t.accentDim : 'transparent'}`,
-        borderRadius: size >= 32 ? 10 : 8,
+        borderRadius: box >= 32 ? 10 : 8,
         cursor: 'pointer', transition: 'all 140ms',
         ...style,
       }}
@@ -309,13 +320,19 @@ export function SectionLabel({ children, count, action }: SectionLabelProps) {
 
 export function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   const t = useTokens();
+  // Medidas del switch nativo de iOS en móvil (51x31) — el de 38x22 es
+  // incómodo de acertar con el pulgar.
+  const mob = isMobileNow();
+  const w = mob ? 51 : 38;
+  const h = mob ? 31 : 22;
+  const knob = h - 6;
   return (
     <button
       type="button"
       onClick={() => !disabled && onChange(!on)}
       disabled={disabled}
       style={{
-        width: 38, height: 22, borderRadius: 999,
+        width: w, height: h, flexShrink: 0, borderRadius: 999,
         background: on ? t.accent : t.bg4,
         border: `1px solid ${on ? t.accent : t.glassBorder}`,
         position: 'relative', cursor: disabled ? 'not-allowed' : 'pointer', padding: 0,
@@ -324,8 +341,8 @@ export function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: 
       }}
     >
       <span style={{
-        position: 'absolute', top: 2, left: on ? 18 : 2,
-        width: 16, height: 16, borderRadius: '50%',
+        position: 'absolute', top: 2, left: on ? w - knob - 4 : 2,
+        width: knob, height: knob, borderRadius: '50%',
         background: on ? t.accentOn : t.text1,
         transition: 'left 200ms',
       }}/>
@@ -334,11 +351,15 @@ export function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: 
 }
 
 export function fieldStyle(t: Tokens): CSSProperties {
+  // 16px no es estética: iOS Safari hace auto-zoom al enfocar cualquier input
+  // de menos de 16px, y de ahí no vuelve solo. Es el arreglo que más se siente
+  // en el teléfono porque aplica a todos los campos del producto.
+  const mob = isMobileNow();
   return {
     width: '100%', boxSizing: 'border-box',
     background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    borderRadius: 10, padding: '11px 14px',
-    fontFamily: t.fontSans, fontSize: 13.5, color: t.text0,
+    borderRadius: 10, padding: mob ? '13px 14px' : '11px 14px',
+    fontFamily: t.fontSans, fontSize: mob ? 16 : 13.5, color: t.text0,
     outline: 'none',
   };
 }

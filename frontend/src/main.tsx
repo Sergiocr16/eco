@@ -40,6 +40,24 @@ async function bootstrap() {
     console.error('[eco] bootstrap falló:', e);
     bootReloadOnce();
   }
+
+  registerServiceWorker();
+}
+
+// El SW existe para que iOS instale Eco como app (Compartir → Agregar a
+// inicio) y la abra sin la barra de Safari. Solo en web sobre HTTPS: bajo
+// file:// (Electron empaquetado) no hay service workers, y sobre http:// el
+// navegador rechaza el registro salvo en localhost.
+function registerServiceWorker() {
+  if (typeof window === 'undefined') return;
+  if (window.electronAPI) return;
+  if (!('serviceWorker' in navigator)) return;
+  if (window.location.protocol !== 'https:') return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((e) => {
+      console.warn('[eco] no se pudo registrar el service worker:', e);
+    });
+  });
 }
 
 void bootstrap();

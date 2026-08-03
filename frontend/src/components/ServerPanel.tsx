@@ -25,6 +25,7 @@ import { useWorkspaceServerDefaults } from '@/hooks/useWorkspaceServerDefaults';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { ecoToken } from '@/lib/eco-config';
 import { useT } from '@/hooks/useI18n';
+import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 
 type Status = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
 type SlotRole = 'main' | 'frontend' | 'backend';
@@ -59,6 +60,7 @@ const initSlot = (): SlotState => ({
 export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string; workspace: string; visible?: boolean }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const wsDefaults = useWorkspaceServerDefaults(workspace);
 
   // El modo single/dual lo define la config del workspace (admin). Read-only acá.
@@ -307,7 +309,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: isPhone ? '12px 12px' : '20px 24px' }}>
         {/* Header con estado(s) */}
         <PanelHeader
           dual={dual}
@@ -316,8 +318,9 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
           onRestartRole={(role) => void runActionForRole(role, 'restart')}
         />
 
-        {/* Botones de acción globales — corren ambos slots en dual */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+        {/* Botones de acción globales — corren ambos slots en dual.
+            Los tres rótulos en español piden ~430px de fila: envuelven. */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
           {(() => {
             const activeRoles: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
             const anyRunning = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting');
@@ -431,7 +434,11 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               Cuál panel se muestra grande. Igual podés colapsar/expandir desde los chevrons en cada panel.
             </div>
             <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6,
+              // Tres columnas en 300px dan tarjetas de ~86px para dos líneas
+              // de texto; una sola columna se lee.
+              display: 'grid',
+              gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, 1fr)',
+              gap: 6,
             }}>
               {([
                 { id: 'both',     label: 'Ambos',         sub: 'mitad y mitad' },
@@ -479,7 +486,11 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               Qué reinicia el botón "Reiniciar servidor". Igual podés reiniciar cada slot por separado desde su botón en el header.
             </div>
             <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6,
+              // Tres columnas en 300px dan tarjetas de ~86px para dos líneas
+              // de texto; una sola columna se lee.
+              display: 'grid',
+              gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, 1fr)',
+              gap: 6,
             }}>
               {([
                 { id: 'both',     label: 'Ambos',    sub: 'frontend + backend' },
@@ -550,7 +561,10 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             crece para ocupar el espacio. */}
         {dual ? (
           <div style={{
-            display: 'flex', gap: 10, marginTop: 16,
+            // Dos panes de log lado a lado dan ~160px cada uno en el teléfono:
+            // ilegibles. Apilados cada uno usa el ancho completo.
+            display: 'flex', flexDirection: isPhone ? 'column' : 'row',
+            gap: 10, marginTop: 16,
             alignItems: 'stretch',
           }}>
             <div style={{
@@ -820,10 +834,13 @@ function LogsPane({
   const HEIGHT_MIN = 160;
   const HEIGHT_MAX = 1400;
   const [paneHeight, setPaneHeight] = useState<number>(() => {
+    // En el teléfono 320px de log dejan el resto del panel fuera de pantalla;
+    // el handle de resize ya usa PointerEvents, así que se ajusta al toque.
+    const fallback = isPhoneNow() ? 240 : 320;
     try {
       const n = parseInt(window.localStorage.getItem(HEIGHT_KEY) ?? '', 10);
-      return Number.isFinite(n) ? Math.min(HEIGHT_MAX, Math.max(HEIGHT_MIN, n)) : 320;
-    } catch { return 320; }
+      return Number.isFinite(n) ? Math.min(HEIGHT_MAX, Math.max(HEIGHT_MIN, n)) : fallback;
+    } catch { return fallback; }
   });
 
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -985,7 +1002,9 @@ function TerminalLogs({
       disableStdin: true,
       convertEol: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-      fontSize: 11.5,
+      // Los logs son de solo lectura: acá lo que importa es que entren las
+      // columnas de un stack trace, no la comodidad de tipear.
+      fontSize: isPhoneNow() ? 10 : 11.5,
       lineHeight: 1.3,
       // 10k líneas: suficiente para scrollear el origen de un error aunque el
       // framework haya seguido logueando encima. Cuesta memoria solo mientras

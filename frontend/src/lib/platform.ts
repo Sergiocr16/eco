@@ -50,6 +50,30 @@ export function getTopInset(r: Runtime = detectRuntime()): number {
   return 0;
 }
 
+// ¿Corre como app instalada en la pantalla de inicio (standalone)? `navigator.
+// standalone` es el camino de iOS; el display-mode cubre al resto.
+export function isStandalone(): boolean {
+  if (typeof window === 'undefined') return false;
+  const nav = navigator as Navigator & { standalone?: boolean };
+  if (nav.standalone === true) return true;
+  return window.matchMedia?.('(display-mode: standalone)').matches ?? false;
+}
+
+// Safe area de iOS (notch / Dynamic Island arriba, indicador de home abajo).
+// Son strings porque los inline styles aceptan cualquier valor CSS:
+// `style={{ top: SAFE_TOP }}` y `calc(14px + ${SAFE_BOTTOM})` funcionan igual.
+//
+// **Solo aplican instalada.** Con `viewport-fit=cover` Safari igual reporta
+// ~34px abajo, pero ahí la barra del navegador YA ocupa esa zona: sumarle el
+// inset deja un hueco doble al pie de la pantalla. La regla es "los insets
+// valen cuando somos dueños de toda la pantalla".
+//
+// Ojo: esto NO es getTopInset(). Ese reserva espacio para los traffic lights de
+// macOS en Electron; esto compensa el hardware del teléfono. Son ortogonales.
+const OWNS_FULL_SCREEN = isStandalone();
+export const SAFE_TOP = OWNS_FULL_SCREEN ? 'env(safe-area-inset-top, 0px)' : '0px';
+export const SAFE_BOTTOM = OWNS_FULL_SCREEN ? 'env(safe-area-inset-bottom, 0px)' : '0px';
+
 export function runtimeLabel(r: Runtime = detectRuntime()): string {
   switch (r) {
     case 'electron': return 'Electron (escritorio)';

@@ -9,11 +9,29 @@
 // (~/.eco/token) en la pantalla "Conectar al servidor" y luego el PIN normal.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Sin esto `verifyFirebaseIdToken` devuelve null y TODO request autenticado
+// da 401 — incluido el WebSocket del PTY, que queda en un loop de
+// "reconectando…". El síntoma engaña: la app igual carga, porque los estáticos
+// se sirven antes del middleware de auth y Firestore lo habla el frontend
+// directo contra Google. El script de dev ya exportaba la variable; este no.
+function firebaseProjectId() {
+  const fromEnv = process.env.ECO_FIREBASE_PROJECT_ID
+    || process.env.FIREBASE_PROJECT_ID
+    || process.env.GCLOUD_PROJECT;
+  if (fromEnv) return fromEnv;
+  try {
+    const rc = JSON.parse(readFileSync(join(root, '.firebaserc'), 'utf-8'));
+    const id = rc?.projects?.default;
+    if (typeof id === 'string' && id) return id;
+  } catch { /* sin .firebaserc usable */ }
+  return '';
+}
 const PORT = Number(process.env.ECO_PORT ?? 7200);
 const rebuild = process.argv.includes('--rebuild');
 
@@ -99,6 +117,14 @@ console.log('  Eco server mode');
 console.log(`  · Local:   http://127.0.0.1:${PORT}`);
 console.log(`  · Tailnet: https://${host}`);
 console.log('  · Token de acceso para clientes remotos: ~/.eco/token');
+
+const firebaseProject = firebaseProjectId();
+if (firebaseProject) {
+  console.log(`  · Firebase project: ${firebaseProject}`);
+} else {
+  console.warn('  · ATENCIÓN: sin project id de Firebase — todo request autenticado va a dar 401');
+  console.warn('    (definí ECO_FIREBASE_PROJECT_ID o dejá projects.default en .firebaserc)');
+}
 console.log('');
 
 const child = spawn(process.execPath, [backendDist], {
@@ -116,6 +142,7 @@ const child = spawn(process.execPath, [backendDist], {
     ECO_EXTRA_HOSTS: host,
     ECO_PUBLIC_HOST: host,
     ECO_TAILSCALE_BIN: ts,
+    ...(firebaseProject ? { ECO_FIREBASE_PROJECT_ID: firebaseProject } : {}),
   },
 });
 

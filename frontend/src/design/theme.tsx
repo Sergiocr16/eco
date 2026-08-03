@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { buildTokens, isLightTheme, defaultHueForTheme, THEME_VARIANTS, type ThemeMode, type EffectiveThemeMode, type Tokens } from './tokens';
 import { updatePrefs, subscribePrefs } from '@/lib/prefs-sync';
+import { isMobileNow } from '@/hooks/useMediaQuery';
 
 type ThemeContextValue = {
   mode: ThemeMode;
@@ -123,8 +124,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // CSS color-scheme solo acepta 'dark' o 'light'; consultamos al tema.
     document.documentElement.style.colorScheme = isLightTheme(effectiveMode) ? 'light' : 'dark';
-    document.body.style.background = t.desktopBg;
+    // `desktopBg` simula el escritorio detrás de la ventana de Eco. En el
+    // teléfono no hay tal escritorio, y como es un color DISTINTO de windowBg
+    // (#0b0c10 vs #0a0a0c) asomaba como una franja gris detrás del indicador
+    // de home en la PWA instalada.
+    document.body.style.background = isMobileNow() ? t.windowBg : t.desktopBg;
     document.body.style.color = t.text0;
+
+    // iOS pinta con el `theme-color` las zonas que rodean al contenido en la
+    // PWA instalada (barra de estado, franja del indicador de home). Estaba
+    // fijo en #06070b desde el HTML mientras la app usa windowBg, así que se
+    // veía una banda de otro tono en TODAS las pantallas — incluido el login,
+    // que ni siquiera monta el shell. Además Eco tiene 14 temas: un color
+    // hardcodeado en el HTML no puede seguirlos.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t.windowBg);
   }, [effectiveMode, t.desktopBg, t.text0]);
 
   const value: ThemeContextValue = { mode, effectiveMode, accentHue, setMode, setAccentHue, t };

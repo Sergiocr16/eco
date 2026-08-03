@@ -7,6 +7,7 @@ import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { ecoToken } from '@/lib/eco-config';
 import { useT } from '@/hooks/useI18n';
+import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 import { BrowserTabBar } from './BrowserPanel/BrowserTabBar';
 import { ViewportMenu } from './BrowserPanel/ViewportMenu';
 import {
@@ -41,7 +42,10 @@ function normalizeUrl(input: string): string {
   return `https://${v}`;
 }
 
-const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+// Los dos primeros pasos existen para el teléfono: el zoom escala un viewport
+// más ancho, así que en 390px un 0.33 renderiza el sitio a ~1180px — ancho de
+// escritorio de verdad, entrando entero en la pantalla.
+const ZOOM_STEPS = [0.33, 0.4, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
 // ─── Persistencia + migración ─────────────────────────────────────────────
 
@@ -101,6 +105,7 @@ function persistState(bubbleId: string, state: StoredState) {
 export function BrowserPanel({ bubbleId, workspace }: Props) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const hasNativeDevTools = canEmbedArbitrarySites();
 
   const initial = useMemo(() => loadInitial(bubbleId), [bubbleId]);
@@ -326,12 +331,15 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
         onNewTab={(mode) => addTab(mode)}
       />
 
-      {/* URL bar */}
+      {/* URL bar. Son ~11 controles en una fila que pide ~600px: en el
+          teléfono envuelve, y los que solo tienen sentido en escritorio
+          (chip de path, presets de viewport, zoom) no se dibujan. */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '8px 12px',
         borderBottom: `1px solid ${t.glassBorder}`,
         background: t.bg1,
+        flexWrap: isPhone ? 'wrap' : 'nowrap',
       }}>
         <button
           type="button"
@@ -363,8 +371,11 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
             autoCorrect="off"
             autoCapitalize="off"
             style={{
-              flex: 1, background: 'transparent', border: 0, outline: 'none',
-              fontFamily: t.fontMono, fontSize: 12, color: t.text0,
+              flex: 1, minWidth: 0,
+              background: 'transparent', border: 0, outline: 'none',
+              fontFamily: t.fontMono, color: t.text0,
+              // 16px evita el auto-zoom de iOS al enfocar la barra.
+              fontSize: isPhone ? 16 : 12,
             }}
           />
           {draft && (
@@ -375,6 +386,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           )}
         </div>
         {(() => {
+          if (isPhone) return null;
           if (!activeTab?.url) return null;
           let path = '';
           try {
@@ -429,7 +441,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           }}>
           <IconTerminal size={12}/>
         </button>
-        {activeTab && (
+        {activeTab && !isPhone && (
           <ViewportMenu
             viewport={activeTab.viewport}
             customViewport={activeTab.customViewport}
@@ -448,6 +460,10 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
             }}
           />
         )}
+        {/* El zoom SÍ importa en el teléfono, y más que en escritorio: como se
+            aplica escalando un viewport más ancho (no es el pinch del
+            sistema), bajarlo hace que el sitio se renderice con ancho de
+            desktop y entre entero en la pantalla. */}
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 2,
           padding: '2px 4px', borderRadius: 6,
@@ -598,7 +614,9 @@ function TabContent({
     );
   }
   // Viewport wrapper — desktop = fluid, otro = caja centrada con sombra.
-  const dim = viewportDims(tab.viewport, tab.customViewport);
+  // En el teléfono siempre fluido: emular una caja de 768x1024 dentro de una
+  // pantalla de 390 no sirve para nada, y el selector ni se muestra.
+  const dim = isPhoneNow() ? null : viewportDims(tab.viewport, tab.customViewport);
   return (
     <div style={{
       position: 'absolute', inset: 0,
@@ -638,8 +656,9 @@ function TabContent({
 }
 
 function zoomBtnStyle(t: ReturnType<typeof useTokens>): CSSProperties {
+  const mob = isPhoneNow();
   return {
-    width: 18, height: 22, padding: 0, border: 0, borderRadius: 4,
+    width: mob ? 32 : 18, height: mob ? 32 : 22, padding: 0, border: 0, borderRadius: 4,
     background: 'transparent', color: t.text1, cursor: 'pointer',
     fontFamily: t.fontMono, fontSize: 13, lineHeight: 1,
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -647,8 +666,10 @@ function zoomBtnStyle(t: ReturnType<typeof useTokens>): CSSProperties {
 }
 
 function navBtnStyle(t: ReturnType<typeof useTokens>): CSSProperties {
+  const size = isPhoneNow() ? 36 : 26;
   return {
-    width: 26, height: 26, borderRadius: 6, border: 0,
+    width: size, height: size, borderRadius: 6, border: 0,
+    flexShrink: 0,
     background: t.bg2, color: t.text1, cursor: 'pointer',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     padding: 0,

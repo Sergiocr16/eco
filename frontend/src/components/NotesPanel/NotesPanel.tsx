@@ -172,6 +172,9 @@ export function NotesPanel({ bubble }: Props) {
       defaultLeft={260}
       minLeft={200}
       maxLeftPercent={0.5}
+      mobileShow={state.activeNoteId ? 'right' : 'left'}
+      mobileLeftLabel={tr('notes.mobile.list')}
+      mobileRightLabel={tr('notes.mobile.editor')}
       left={(
         <NotesList
           notes={state.notes}

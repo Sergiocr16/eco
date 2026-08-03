@@ -2,10 +2,29 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Sin zoom: Eco es un shell de app, no un documento. Todo el layout es
+         `position: fixed`, así que un pinch accidental descoloca la UI y no
+         hay forma de volver. El tamaño de letra donde importa se ajusta desde
+         la app (A-/A+ del terminal, zoom del navegador embebido). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
+    <!-- Debe coincidir con `windowBg` del tema dark (design/tokens.ts): es el
+         color con el que iOS pinta las zonas que rodean al contenido en la PWA
+         instalada. ThemeProvider lo reescribe en runtime para seguir al tema
+         activo; este valor es el del primer pintado, antes de que corra React. -->
+    <meta name="theme-color" content="#0a0a0c" />
     <link rel="icon" type="image/svg+xml" href="/brand/eco-appicon.svg" />
-    <link rel="apple-touch-icon" href="/brand/eco-appicon.svg" />
+    <!-- iOS ignora los apple-touch-icon en SVG: sin un PNG el ícono de la
+         pantalla de inicio termina siendo una captura de la página. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
+    <!-- Instalación en el iPhone. Los meta apple-* siguen siendo el camino
+         confiable aunque iOS 17.4+ ya respete `display: standalone` del
+         manifest. `black-translucent` mete el contenido debajo de la barra de
+         estado, que es lo que compensan los env(safe-area-inset-*) del shell. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Eco" />
     <title>Eco</title>
   </head>
   <body>

@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
 import { IconGithub, IconLayers, IconBranch } from '@/design/icons';
-import { on as ecoOn } from '@/lib/eco-bus';
+import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useT } from '@/hooks/useI18n';
+import { useIsPhone } from '@/hooks/useMediaQuery';
+import { CurrentPrBanner } from '@/components/CurrentPrBanner';
 import { ChangesView, type FileChange } from './ChangesView';
 import { HistoryView } from './HistoryView';
 import { PRsView } from './PRsView';
@@ -38,6 +40,7 @@ function saveSubtab(bubbleId: string, sub: GitSubtab) {
 export function GitPanel({ workspace, bubbleId, filesChanged, gitChangesLoading, onRename }: Props) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const [sub, setSub] = useState<GitSubtab>(() => loadSubtab(bubbleId));
 
   // Reaccionar a voice commands tipo "Eco historial".
@@ -89,6 +92,26 @@ export function GitPanel({ workspace, bubbleId, filesChanged, gitChangesLoading,
           />
         ))}
       </div>
+
+      {/* PR de la rama actual. En escritorio esto vive en el GitMiniDock del
+          rail derecho, pero en móvil ese rail es una sheet colapsada: sin
+          esto no había forma de saber si la rama tiene PR. El componente se
+          resuelve solo y devuelve null cuando no hay ninguno, así que no
+          ocupa lugar de más. */}
+      {isPhone && (
+        <div className="eco-collapse-empty" style={{ padding: '8px 10px 0', flexShrink: 0 }}>
+          <CurrentPrBanner
+            workspace={workspace}
+            bubbleId={bubbleId}
+            onOpenDetail={(prNumber) => {
+              setSub('prs');
+              // Mismo camino que usa el GitMiniDock: PRsView escucha este
+              // evento para preseleccionar el PR sin re-montar el panel.
+              ecoEmit('eco:open_pr', { bubbleId, prNumber });
+            }}
+          />
+        </div>
+      )}
 
       {/* Banner sticky de op en progreso */}
       <OpInProgressBanner

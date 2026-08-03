@@ -7,6 +7,7 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 import type { Extension } from '@codemirror/state';
 import type { Tokens } from '@/design/tokens';
+import { isMobileNow } from '@/hooks/useMediaQuery';
 
 // Construye un theme + highlighting basado en los tokens de Eco. Se llama
 // cada vez que cambia el theme global para que el editor se mantenga en sync.
@@ -35,7 +36,10 @@ export function buildEcoCmExtension(tokens: Tokens, isLight: boolean): Extension
       backgroundColor: bg,
       height: '100%',
       fontFamily: tokens.fontMono,
-      fontSize: '13px',
+      // El editor es contenteditable: por debajo de 16px iOS hace auto-zoom al
+      // enfocarlo y no vuelve. Se pierden caracteres por línea, pero el salto
+      // de zoom rompe el layout entero del panel.
+      fontSize: isMobileNow() ? '16px' : '13px',
     },
     '.cm-content': {
       caretColor: cursor,

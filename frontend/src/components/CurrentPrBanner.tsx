@@ -40,9 +40,11 @@ type MergeMethod = 'merge' | 'squash' | 'rebase';
 type Props = {
   workspace: string;
   bubbleId: string;
+  /** Cuando se pasa, el número y el título del PR abren su detalle. */
+  onOpenDetail?: (prNumber: number) => void;
 };
 
-export function CurrentPrBanner({ workspace, bubbleId }: Props) {
+export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
   const t = useTokens();
   const tr = useT();
   const [pr, setPr] = useState<CurrentPr | null>(null);
@@ -208,15 +210,29 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
       }}>
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '2px 8px', borderRadius: 999,
-          background: `color-mix(in oklch, ${stateColor} 18%, transparent)`,
-          color: stateColor,
-          fontSize: 10, fontWeight: 600,
-          textTransform: 'uppercase', letterSpacing: 0.4,
-          flexShrink: 0,
-        }}>
+        <span
+          {...(onOpenDetail ? {
+            role: 'button' as const,
+            tabIndex: 0,
+            onClick: () => onOpenDetail(pr.number),
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetail(pr.number); }
+            },
+            title: tr('prs.banner.open_detail'),
+          } : {})}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: onOpenDetail ? '5px 10px' : '2px 8px', borderRadius: 999,
+            background: `color-mix(in oklch, ${stateColor} 18%, transparent)`,
+            color: stateColor,
+            fontSize: 10, fontWeight: 600,
+            textTransform: 'uppercase', letterSpacing: 0.4,
+            flexShrink: 0,
+            ...(onOpenDetail ? {
+              cursor: 'pointer',
+              border: `1px solid color-mix(in oklch, ${stateColor} 45%, transparent)`,
+            } : {}),
+          }}>
           <IconBranch size={9}/>
           PR #{pr.number}
         </span>
@@ -239,16 +255,26 @@ export function CurrentPrBanner({ workspace, bubbleId }: Props) {
       </div>
 
       {/* Título del PR */}
-      <div style={{
-        fontSize: 12, color: t.text0, fontWeight: 500,
-        lineHeight: 1.4,
-        marginBottom: 6,
-        display: '-webkit-box',
-        WebkitLineClamp: 3,
-        WebkitBoxOrient: 'vertical' as const,
-        overflow: 'hidden', textOverflow: 'ellipsis',
-        wordBreak: 'break-word',
-      }} title={pr.title}>
+      <div
+        {...(onOpenDetail ? {
+          role: 'button' as const,
+          tabIndex: 0,
+          onClick: () => onOpenDetail(pr.number),
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetail(pr.number); }
+          },
+        } : {})}
+        style={{
+          fontSize: 12, color: t.text0, fontWeight: 500,
+          lineHeight: 1.4,
+          marginBottom: 6,
+          display: '-webkit-box',
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: 'vertical' as const,
+          overflow: 'hidden', textOverflow: 'ellipsis',
+          wordBreak: 'break-word',
+          ...(onOpenDetail ? { cursor: 'pointer' } : {}),
+        }} title={onOpenDetail ? tr('prs.banner.open_detail') : pr.title}>
         {pr.title}
       </div>
 

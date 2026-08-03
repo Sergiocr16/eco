@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { useTokens } from '@/design/theme';
+import { SAFE_BOTTOM } from '@/lib/platform';
 import { stateColor, type AgentState } from '@/design/tokens';
 import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
@@ -177,7 +178,9 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
       transition={{ type: 'spring', stiffness: 240, damping: 28 }}
       style={{
         position: 'fixed',
-        bottom: 14,
+        // El inset del indicador de home solo aplica instalada (ver
+        // platform.ts); en escritorio SAFE_BOTTOM resuelve a 0px.
+        bottom: `calc(14px + ${SAFE_BOTTOM})`,
         left: 64,
         right: 0,
         display: 'flex',
@@ -309,11 +312,11 @@ function ResizeHandle({
   const [dragging, setDragging] = useState(false);
   const startRef = useRef<{ y: number; size: number } | null>(null);
 
-  // mousemove/up se manejan en window mientras el drag está activo — sin
-  // listeners globales no captás el cursor cuando sale del handle.
+  // pointermove/up se manejan en window mientras el drag está activo — sin
+  // listeners globales no captás el puntero cuando sale del handle.
   useEffect(() => {
     if (!dragging) return;
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       if (!startRef.current) return;
       const dy = startRef.current.y - e.clientY; // mover hacia arriba = +
       // Factor 1.4 ≈ dockHeight / iconSize (padV ~0.4×iconSize + iconSize +
@@ -323,11 +326,13 @@ function ResizeHandle({
       onChange(next);
     };
     const onUp = () => { setDragging(false); startRef.current = null; };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    // Pointer y no mouse: el dock ahora se dibuja también en tablets, donde
+    // el único puntero es el dedo.
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
     };
   }, [dragging, onChange]);
 
@@ -336,7 +341,7 @@ function ResizeHandle({
       title={tr('dock.resize_tooltip')}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      onMouseDown={(e) => {
+      onPointerDown={(e) => {
         e.preventDefault();
         startRef.current = { y: e.clientY, size: iconSize };
         setDragging(true);

@@ -1,7 +1,23 @@
 html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; }
+
+/* Fondo a sangre que se desborda del viewport por arriba y por abajo. Todo el
+   shell es `position: fixed`, así que si el área visible resulta ser más alta
+   que el viewport de layout —safe area del indicador de home en la PWA
+   instalada, barras del navegador que se colapsan— esa franja queda sin nadie
+   que la pinte y se lee como una barra gris. Esto la cubre pase lo que pase.
+   Va en ::before del body para heredar su background sin tocar el z-index de
+   ningún componente. */
+body::before {
+  content: '';
+  position: fixed;
+  left: 0; right: 0; top: -120px; bottom: -120px;
+  background: inherit;
+  z-index: -1;
+  pointer-events: none;
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Geist", system-ui, sans-serif;
-  background: #06070b;
+  background: #0a0a0c;
   color: #f4f6fb;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
@@ -28,8 +44,43 @@ select {
 /* El dock scrollea horizontalmente con trackpad cuando hay muchos agentes,
    pero SIN barra visible — un dock estilo macOS no muestra scrollbar, y la
    barra de 5px desbordaba la altura del dock arrastrando un scroll vertical. */
-.eco-dock-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.eco-dock-scroll { scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; }
 .eco-dock-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* Contenedor cuyo hijo React puede renderizar null: sin esto el padding del
+   wrapper deja una franja vacía cuando no hay nada que mostrar. */
+.eco-collapse-empty:empty { display: none; }
+
+/* Táctil. `overscroll-behavior: none` mata el rubber-band de iOS, que en un
+   shell position:fixed despega toda la UI del viewport al llegar al final de
+   un scroll. El tap-highlight gris de Safari se ve mal sobre el glass, y
+   `touch-action: manipulation` elimina el delay de 300ms del double-tap-zoom
+   en los controles (el pinch-zoom de la página se conserva). */
+@media (pointer: coarse) {
+  /* `user-scalable=no` del meta viewport alcanza en la PWA instalada y en
+     Android, pero iOS Safari lo ignora desde iOS 10. `touch-action: pan-x
+     pan-y` sí lo respeta: deja scrollear en ambos ejes y bloquea el pinch. */
+  html, body { overscroll-behavior: none; touch-action: pan-x pan-y; }
+  * { -webkit-tap-highlight-color: transparent; }
+  button, [role="button"], a, input, select, textarea { touch-action: manipulation; }
+
+  /* Scroll del terminal en táctil.
+
+     En xterm v6 el scroll dejó de ser nativo: el elemento `xterm-scroll-area`
+     que le daba altura al viewport ya no existe (cero ocurrencias en el lib),
+     así que no hay nada que el navegador pueda scrollear. El scroll lo maneja
+     xterm por JS, con listeners de touch registrados en `document` y
+     `{passive:false}` para poder hacer preventDefault.
+
+     Por eso lo único que hace falta acá es que el navegador NO se quede con
+     el gesto: con `touch-action: none` el pan llega a los handlers de xterm.
+     No se pierde nada, porque el shell de Eco no scrollea de por sí. */
+  .xterm,
+  .xterm .xterm-viewport,
+  .xterm .xterm-screen {
+    touch-action: none;
+  }
+}
 
 @keyframes eco-pulse {
   0% { transform: scale(1); opacity: 0.7; }

@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { useT } from '@/hooks/useI18n';
 import { useAllBubbleChanges } from '@/hooks/useGitChanges';
 import { workspaceName } from '@/lib/workspace-name';
+import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 
 type Props = {
   bubbles: Bubble[];
@@ -26,6 +27,7 @@ function opFromChange(change: string): ChangeOp {
 export function FileExplorer({ bubbles, onOpenChange }: Props) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const [selected, setSelected] = useState<string | null>(null);
 
   // Las burbujas archivadas no cuentan: ni en el conteo por carpeta ni en los
@@ -60,14 +62,31 @@ export function FileExplorer({ bubbles, onOpenChange }: Props) {
   }, [gitChanges, bubbleMeta, selected]);
 
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
-      <div style={{
-        width: 240, flexShrink: 0, padding: '20px 12px',
-        borderRight: `1px solid ${t.glassBorder}`,
-        overflow: 'auto',
-      }}>
-        <SectionLabel>{tr('files.active_folders')}</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+    // El rail de 240px deja ~150px de contenido en el teléfono: las tarjetas
+    // de cambios quedaban cortadas por la derecha. En móvil la lista de
+    // carpetas se acuesta como tira de chips arriba y el contenido usa el
+    // ancho completo.
+    <div style={{
+      display: 'flex', height: '100%',
+      flexDirection: isPhone ? 'column' : 'row',
+    }}>
+      <div
+        className={isPhone ? 'eco-dock-scroll' : undefined}
+        style={isPhone ? {
+          flexShrink: 0, padding: '10px 12px',
+          borderBottom: `1px solid ${t.glassBorder}`,
+          overflowX: 'auto',
+        } : {
+          width: 240, flexShrink: 0, padding: '20px 12px',
+          borderRight: `1px solid ${t.glassBorder}`,
+          overflow: 'auto',
+        }}>
+        {!isPhone && <SectionLabel>{tr('files.active_folders')}</SectionLabel>}
+        <div style={{
+          display: 'flex',
+          flexDirection: isPhone ? 'row' : 'column',
+          gap: isPhone ? 6 : 2,
+        }}>
           {folders.length === 0 ? (
             <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('files.no_folders')}</div>
           ) : (
@@ -93,7 +112,10 @@ export function FileExplorer({ bubbles, onOpenChange }: Props) {
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+      <div style={{
+        flex: 1, minHeight: 0, minWidth: 0, overflow: 'auto',
+        padding: isPhone ? '14px 12px 24px' : '20px 24px',
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <div style={{ color: t.accent }}><IconFolderOpen size={16}/></div>
           <span style={{ fontFamily: t.fontMono, fontSize: 13, color: t.text0 }}
@@ -141,16 +163,23 @@ function FolderListRow({ label, title, count, changes, active, onClick }: {
       title={title}
       style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+        borderRadius: isPhoneNow() ? 999 : 8, cursor: 'pointer',
+        padding: isPhoneNow() ? '8px 12px' : '8px 10px',
         background: active ? t.bg3 : (h ? t.bg2 : 'transparent'),
         color: active ? t.text0 : t.text1,
+        // Como chip en la tira horizontal: no se encoge ni parte el nombre.
+        ...(isPhoneNow() ? {
+          flexShrink: 0,
+          border: `1px solid ${active ? t.accentDim : t.glassBorder}`,
+        } : {}),
       }}>
-      <div style={{ color: (count ?? 0) > 0 || active ? t.accent : t.text2 }}>
+      <div style={{ color: (count ?? 0) > 0 || active ? t.accent : t.text2, flexShrink: 0 }}>
         <IconFolder size={14}/>
       </div>
       <span style={{
-        flex: 1, fontFamily: t.fontMono, fontSize: 11.5, minWidth: 0,
+        fontFamily: t.fontMono, fontSize: 11.5, minWidth: 0,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        ...(isPhoneNow() ? {} : { flex: 1 }),
       }}>{label}</span>
       {(changes ?? 0) > 0 && (
         <span
@@ -189,9 +218,15 @@ function ChangeRow({ change, onDiff, onOpen }: {
   }[change.op];
   const Icon = opMeta.icon;
   return (
-    <Glass radius={12} hover style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+    <Glass radius={12} hover style={{
+      padding: isPhoneNow() ? 10 : 14,
+      display: 'flex', alignItems: 'center', gap: isPhoneNow() ? 8 : 12,
+      // Icono + ruta + "Diff" + abrir en una fila dejan la ruta —lo único que
+      // identifica el cambio— reducida a nada. En móvil los botones bajan.
+      ...(isPhoneNow() ? { flexWrap: 'wrap' as const } : {}),
+    }}>
       <div style={{
-        width: 32, height: 32, borderRadius: 9,
+        width: 32, height: 32, borderRadius: 9, flexShrink: 0,
         background: `color-mix(in oklch, ${opMeta.color} 12%, transparent)`,
         color: opMeta.color, border: `1px solid color-mix(in oklch, ${opMeta.color} 30%, transparent)`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -210,8 +245,13 @@ function ChangeRow({ change, onDiff, onOpen }: {
           </span>
         </div>
       </div>
-      <Btn kind="ghost" size="sm" icon={IconDiff} onClick={onDiff}>{tr('files.diff_btn')}</Btn>
-      <IconBtn icon={IconExt} size={28} title={tr('detail.files.open_editor')} onClick={onOpen}/>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+        ...(isPhoneNow() ? { flexBasis: '100%', justifyContent: 'flex-end' } : {}),
+      }}>
+        <Btn kind="ghost" size="sm" icon={IconDiff} onClick={onDiff}>{tr('files.diff_btn')}</Btn>
+        <IconBtn icon={IconExt} size={28} title={tr('detail.files.open_editor')} onClick={onOpen}/>
+      </div>
     </Glass>
   );
 }

@@ -34,6 +34,7 @@ import { stateColor, type AgentState } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
 import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
+import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 
 function HeaderMenu({
   workspaces, currentWorkspace, onClose, onRename, onChangeWorkspace,
@@ -240,11 +241,16 @@ function DictationBar({
 }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const hasText = text.trim().length > 0;
   return (
     <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 12,
-      padding: '12px 24px',
+      // Tres botones + etiqueta + texto en una fila dejan el texto dictado en
+      // ~40px de ancho en el teléfono. Apilado se lee.
+      display: 'flex', alignItems: isPhone ? 'stretch' : 'flex-start',
+      flexDirection: isPhone ? 'column' : 'row',
+      gap: isPhone ? 8 : 12,
+      padding: isPhone ? '10px 12px' : '12px 24px',
       borderBottom: `1px solid ${t.glassBorder}`,
       background: `color-mix(in oklch, ${t.accent} 8%, transparent)`,
     }}>
@@ -270,7 +276,10 @@ function DictationBar({
       }}>
         {hasText ? text : tr('detail.dictation.placeholder')}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+        ...(isPhone ? { justifyContent: 'flex-end' } : null),
+      }}>
         <Btn icon={IconSend} kind="primary" size="sm" onClick={onSend} disabled={!hasText}>
           {tr('detail.dictation.send')}
         </Btn>
@@ -332,6 +341,14 @@ export function AgentDetail({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
   const [menuOpen, setMenuOpen] = useState(false);
+  const isPhone = useIsPhone();
+  // El colapso del panel lateral vive acá porque en móvil el rail no se
+  // dibuja inline y el botón que lo abre está en el header. En táctil arranca
+  // cerrado siempre: la sheet tapa el panel activo.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (isPhoneNow()) return true;
+    try { return window.localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === '1'; } catch { return false; }
+  });
   // El agente trabaja mayormente en el PTY (claude CLI), cuyo "busy" se
   // trackea aparte de bubble.status (que refleja el chat SDK). Sin esto el
   // título quedaba "idle" aunque el agente estuviera procesando en la terminal.
@@ -381,11 +398,12 @@ export function AgentDetail({
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
       <GitBusyToast bubbleId={bubble.id}/>
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '14px 24px', borderBottom: `1px solid ${t.glassBorder}`,
+        display: 'flex', alignItems: 'center', gap: isPhone ? 8 : 14,
+        padding: isPhone ? '10px 12px' : '14px 24px',
+        borderBottom: `1px solid ${t.glassBorder}`,
       }}>
         <IconBtn icon={IconArrowL} size={32} onClick={onBack}/>
-        <AgentGlyph size={40} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
+        <AgentGlyph size={isPhone ? 28 : 40} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {renaming ? (
@@ -401,9 +419,15 @@ export function AgentDetail({
                 style={{
                   background: t.bg3, border: `1px solid ${t.accent}`,
                   borderRadius: 8, padding: '4px 10px',
-                  fontFamily: t.fontSans, fontSize: 18, fontWeight: 600,
+                  fontFamily: t.fontSans, fontWeight: 600,
+                  // 16px en móvil evita el auto-zoom de iOS al enfocar.
+                  fontSize: isPhone ? 16 : 18,
                   color: t.text0, letterSpacing: -0.3, outline: 'none',
-                  minWidth: 200, maxWidth: 380,
+                  // El minWidth de 200 empujaba el header entero en el
+                  // teléfono, donde el título tiene ~180px de espacio.
+                  ...(isPhone
+                    ? { width: '100%', minWidth: 0 }
+                    : { minWidth: 200, maxWidth: 380 }),
                 }}
               />
             ) : (
@@ -411,11 +435,19 @@ export function AgentDetail({
                 onDoubleClick={() => { setDraft(bubble.title); setRenaming(true); }}
                 title={tr('dash.bubble.rename_tip')}
                 style={{
-                  margin: 0, fontFamily: t.fontSans, fontSize: 18, fontWeight: 600,
+                  margin: 0, fontFamily: t.fontSans, fontSize: isPhone ? 15 : 18, fontWeight: 600,
                   color: t.text0, letterSpacing: -0.3, cursor: 'text',
+                  // `flex` en vez de `maxWidth: 100%`: así el título cede
+                  // ancho y los chips de categoría entran en la MISMA línea
+                  // cuando caben, en vez de empujarlos siempre abajo.
+                  ...(isPhone
+                    ? { flex: '1 1 90px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                    : null),
                 }}>{bubble.title}</h2>
             )}
-            <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>
+            {/* El estado ya lo muestra el punto del AgentGlyph al lado: en el
+                teléfono este Pill es información repetida que gasta la línea. */}
+            {!isPhone && <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>}
             {/* Chips de categorías — clickeables: abren el menú para cambiarlas.
                 "arriba donde está el nombre", como pidió el user. */}
             {bubbleCategories.map((category) => (
@@ -423,32 +455,48 @@ export function AgentDetail({
                 key={category.id}
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
-                title={tr('dash.category.change_tooltip')}
+                title={category.name}
+                aria-label={category.name}
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  padding: '2px 9px', borderRadius: 999,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  borderRadius: 999,
                   background: `color-mix(in oklch, ${category.color} 16%, transparent)`,
                   border: `1px solid color-mix(in oklch, ${category.color} 45%, transparent)`,
                   color: category.color, fontSize: 11, fontWeight: 500,
                   fontFamily: t.fontSans, cursor: 'pointer',
-                  whiteSpace: 'nowrap',
+                  whiteSpace: 'nowrap', flexShrink: 0,
+                  // En el teléfono queda solo el punto de color: el nombre no
+                  // entra al lado del título y el color ya identifica. Sigue
+                  // siendo un botón que abre el menú, así que conserva un área
+                  // de toque decente (28px) aunque el dibujo sea chico.
+                  ...(isPhone
+                    ? { width: 28, height: 28, padding: 0 }
+                    : { padding: '2px 9px' }),
                 }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: category.color }}/>
-                {category.name}
+                <span style={{
+                  borderRadius: '50%', background: category.color,
+                  ...(isPhone ? { width: 12, height: 12 } : { width: 7, height: 7 }),
+                }}/>
+                {!isPhone && category.name}
               </button>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-            <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('detail.header.bubble')}</span>
-            <span style={{ color: t.text3 }}>·</span>
-            <span style={{ fontFamily: t.fontMono, fontSize: 11.5, color: t.text2 }}>
-              {bubble.workspace || '—'}
-            </span>
-            <span style={{ color: t.text3 }}>·</span>
-            <span style={{ fontSize: 11.5, color: t.text2 }}>
-              {tr('detail.header.id')} <span style={{ fontFamily: t.fontMono, color: t.text1 }}>{bubble.id.slice(0, 10)}</span>
-            </span>
-          </div>
+          {/* La fila de meta no tiene flexWrap y son tres bloques de texto:
+              en 326px desborda el header. El workspace se sigue viendo en el
+              menú "⋯" y en el GitMiniDock. */}
+          {!isPhone && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('detail.header.bubble')}</span>
+              <span style={{ color: t.text3 }}>·</span>
+              <span style={{ fontFamily: t.fontMono, fontSize: 11.5, color: t.text2 }}>
+                {bubble.workspace || '—'}
+              </span>
+              <span style={{ color: t.text3 }}>·</span>
+              <span style={{ fontSize: 11.5, color: t.text2 }}>
+                {tr('detail.header.id')} <span style={{ fontFamily: t.fontMono, color: t.text1 }}>{bubble.id.slice(0, 10)}</span>
+              </span>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
@@ -459,9 +507,21 @@ export function AgentDetail({
               size="sm"
               onClick={() => { if (dictationActive) onCancelDictation?.(); else onStartDictation?.(); }}
               title={dictationActive ? tr('detail.btn.dictating_title') : tr('detail.btn.dictate_title')}
+              // Solo-icono en el teléfono: "Hablar a la terminal" al lado del
+              // título y los otros dos botones no entra en el header.
+              style={isPhone ? { padding: '0 10px' } : undefined}
             >
-              {dictationActive ? tr('detail.btn.dictating') : tr('detail.btn.dictate')}
+              {isPhone ? null : (dictationActive ? tr('detail.btn.dictating') : tr('detail.btn.dictate'))}
             </Btn>
+          )}
+          {isPhone && (
+            <IconBtn
+              icon={IconLayers}
+              size={32}
+              active={!sidebarCollapsed}
+              title={tr('detail.sidebar.show')}
+              onClick={() => setSidebarCollapsed((v) => !v)}
+            />
           )}
           <IconBtn icon={IconMore} size={32} onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}/>
           {menuOpen && (
@@ -489,12 +549,19 @@ export function AgentDetail({
         />
       )}
 
-      <div style={{
-        position: 'relative',
-        display: 'flex', gap: 2, padding: '0 24px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        alignItems: 'center',
-      }}>
+      <div
+        className={isPhone ? 'eco-dock-scroll' : undefined}
+        style={{
+          position: 'relative',
+          display: 'flex', gap: 2,
+          padding: isPhone ? '0 8px' : '0 24px',
+          borderBottom: `1px solid ${t.glassBorder}`,
+          alignItems: 'center',
+          // Sin overflowX las 6 tabs (~600px con etiqueta) se cortan sin
+          // aviso. En móvil van solo-icono para que entren las 6 de una y
+          // el scroll queda de red de seguridad para el botón remoto.
+          ...(isPhone ? { overflowX: 'auto', flexShrink: 0 } : null),
+        }}>
         {tabOrder.map((id) => {
           const def = TAB_DEFS[id];
           const badge = id === 'git' ? filesChanged.length : undefined;
@@ -507,6 +574,7 @@ export function AgentDetail({
               label={def.labelKey === 'Git' ? 'Git' : tr(def.labelKey)}
               icon={def.icon}
               badge={badge}
+              iconOnly={isPhone}
               dragOver={dragOverTabId === id}
               onDragStart={() => setDraggingTabId(id)}
               onDragEnd={() => { setDraggingTabId(null); setDragOverTabId(null); }}
@@ -534,8 +602,10 @@ export function AgentDetail({
         <RemoteControlNavButton bubble={bubble}/>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* position:relative es el ancla de la sheet del sidebar en móvil, que
+          se dibuja como `position:absolute; inset:0` sobre el panel activo. */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {tab === 'terminal' && <TerminalTabs bubble={bubble}/>}
           {tab === 'git' && (
             <GitPanel
@@ -557,8 +627,10 @@ export function AgentDetail({
         <AgentSidebar
           bubble={bubble}
           filesChangedCount={filesChanged.length}
-          onGoTab={(target) => setTab(target)}
+          onGoTab={(target) => { setTab(target); if (isPhone) setSidebarCollapsed(() => true); }}
           onRename={onRename}
+          collapsed={sidebarCollapsed}
+          setCollapsed={setSidebarCollapsed}
         />
       </div>
     </div>
@@ -568,10 +640,11 @@ export function AgentDetail({
 type FileChange = { path: string; change: string; agent: string; unstaged?: boolean };
 
 function TabBtn({
-  active, onClick, label, icon: Icon, badge,
+  active, onClick, label, icon: Icon, badge, iconOnly = false,
   tabId, dragOver, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
 }: {
   active: boolean; onClick: () => void; label: string; icon: (p: IconProps) => JSX.Element; badge?: number;
+  iconOnly?: boolean;
   tabId?: string;
   dragOver?: boolean;
   onDragStart?: () => void;
@@ -606,10 +679,13 @@ function TabBtn({
         e.preventDefault();
         onDrop?.();
       }}
+      title={iconOnly ? label : undefined}
+      aria-label={iconOnly ? label : undefined}
       style={{
-        position: 'relative',
+        position: 'relative', flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 7,
-        padding: '12px 14px', background: 'transparent', border: 0,
+        padding: iconOnly ? '13px 14px' : '12px 14px',
+        background: 'transparent', border: 0,
         borderBottom: `2px solid ${active ? t.accent : 'transparent'}`,
         color: active ? t.text0 : t.text2, cursor: 'pointer',
         fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
@@ -619,8 +695,8 @@ function TabBtn({
         boxShadow: dragOver ? `inset 3px 0 0 ${t.accent}` : 'none',
       }}
     >
-      <Icon size={14}/>
-      {label}
+      <Icon size={iconOnly ? 18 : 14}/>
+      {!iconOnly && label}
       {badge != null && badge > 0 && (
         <span style={{
           padding: '1px 6px', background: active ? t.accentFaint : t.bg3,
@@ -725,11 +801,14 @@ function TerminalTabs({ bubble }: { bubble: Bubble }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <div style={{
+      {/* Con 3-4 shells abiertos la tira desborda en el teléfono: scroll
+          horizontal sin barra visible, igual que el sub-nav de Git. */}
+      <div className="eco-dock-scroll" style={{
         display: 'flex', alignItems: 'center', gap: 4,
         padding: '6px 10px',
         borderBottom: `1px solid ${t.glassBorder}`,
         background: t.bg0,
+        overflowX: 'auto', flexShrink: 0,
       }}>
         {tabs.map((tab) => (
           <TermTabBtn
@@ -1330,19 +1409,21 @@ function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubb
 }
 
 function AgentSidebar({
-  bubble, filesChangedCount, onGoTab,
+  bubble, filesChangedCount, onGoTab, collapsed, setCollapsed,
 }: {
   bubble: Bubble;
   filesChangedCount: number;
   onGoTab: (tab: Tab) => void;
   onRename: (title: string) => void;
+  // El colapso lo controla AgentDetail: en móvil el rail no se dibuja inline
+  // y el disparador vive en el header, así que el estado tiene que ser
+  // compartido entre los dos.
+  collapsed: boolean;
+  setCollapsed: (fn: (v: boolean) => boolean) => void;
 }) {
   const t = useTokens();
   const tr = useT();
-
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    try { return window.localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === '1'; } catch { return false; }
-  });
+  const isPhone = useIsPhone();
   const [width, setWidth] = useState<number>(() => {
     try {
       const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -1362,7 +1443,7 @@ function AgentSidebar({
       try { window.localStorage.setItem(SIDEBAR_COLLAPSE_KEY, next ? '1' : '0'); } catch { /* noop */ }
       return next;
     });
-  }, []);
+  }, [setCollapsed]);
 
   // Drag para redimensionar: listener global mientras dura el drag.
   const onSplitterDown = useCallback((e: React.MouseEvent) => {
@@ -1425,8 +1506,10 @@ function AgentSidebar({
   // que se ve del agente.
   const sectionOrder: SectionId[] = ['git', 'skills', 'quick', 'stats', 'obsidian'];
 
+  // En móvil colapsado no queda ni la barra de 36px: el disparador está en
+  // el header y esos 36px son el 11% del ancho útil del teléfono.
   if (collapsed) {
-    return <CollapsedBar onExpand={toggleCollapsed} bubble={bubble}/>;
+    return isPhone ? null : <CollapsedBar onExpand={toggleCollapsed} bubble={bubble}/>;
   }
 
   const renderSection = (id: SectionId): ReactNode => {
@@ -1496,30 +1579,40 @@ function AgentSidebar({
 
   return (
     <div style={{
-      width, flexShrink: 0,
-      borderLeft: `1px solid ${t.glassBorder}`,
       display: 'flex', flexDirection: 'column',
-      position: 'relative',
       background: t.bg0,
+      ...(isPhone ? {
+        // Sheet a pantalla completa por encima del panel activo: un rail de
+        // 360px al lado de 326px de contenido no entra de ninguna forma.
+        position: 'absolute', inset: 0, zIndex: 60,
+        borderLeft: 0,
+      } : {
+        position: 'relative',
+        width, flexShrink: 0,
+        borderLeft: `1px solid ${t.glassBorder}`,
+      }),
     }}>
       {/* Splitter — área de 6 px en el borde izquierdo. Hover muestra el
-          accent; durante el drag, cursor col-resize global. */}
-      <div
-        onMouseDown={onSplitterDown}
-        title={tr('detail.resize_split_tooltip')}
-        style={{
-          position: 'absolute', left: -3, top: 0, bottom: 0, width: 6,
-          cursor: 'col-resize', zIndex: 10,
-          background: 'transparent',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLDivElement).style.background =
-            `linear-gradient(90deg, transparent 0%, ${t.accent} 50%, transparent 100%)`;
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-        }}
-      />
+          accent; durante el drag, cursor col-resize global. Es mouse-only, así
+          que en táctil no se dibuja. */}
+      {!isPhone && (
+        <div
+          onMouseDown={onSplitterDown}
+          title={tr('detail.resize_split_tooltip')}
+          style={{
+            position: 'absolute', left: -3, top: 0, bottom: 0, width: 6,
+            cursor: 'col-resize', zIndex: 10,
+            background: 'transparent',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLDivElement).style.background =
+              `linear-gradient(90deg, transparent 0%, ${t.accent} 50%, transparent 100%)`;
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+          }}
+        />
+      )}
 
       {/* Botón discreto arriba a la derecha para colapsar el panel. Esc
           también funciona (atajo registrado en el sidebar). */}
@@ -1608,6 +1701,7 @@ function emitRemoteChange(bubbleId: string, slug: string | null) {
 function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const [active, setActive] = useState<string | null>(() => readRemoteSlug(bubble.id));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1650,11 +1744,16 @@ function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
           : err
             ? tr('detail.remote.err_tooltip', { err })
             : tr('detail.remote.start_tooltip', { slug })}
+      // El rótulo es "Activar Claude remote control": al lado de 6 tabs de
+      // icono se come media barra. En táctil queda solo el indicador, con la
+      // misma info en el title.
+      aria-label={isOn ? tr('detail.remote.disable') : tr('detail.remote.enable')}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        height: 26, padding: '0 10px',
-        marginBottom: 4,
-        borderRadius: 13,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        flexShrink: 0,
+        ...(isPhone
+          ? { width: 30, height: 30, padding: 0, borderRadius: 15, marginBottom: 2 }
+          : { height: 26, padding: '0 10px', borderRadius: 13, marginBottom: 4 }),
         border: `1px solid ${err ? t.err : t.glassBorder}`,
         background: 'transparent',
         color: t.text1,
@@ -1688,11 +1787,13 @@ function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
           </svg>
         )}
       </span>
-      <span>
-        {busy
-          ? tr('detail.remote.activating_short')
-          : isOn ? tr('detail.remote.disable') : tr('detail.remote.enable')}
-      </span>
+      {!isPhone && (
+        <span>
+          {busy
+            ? tr('detail.remote.activating_short')
+            : isOn ? tr('detail.remote.disable') : tr('detail.remote.enable')}
+        </span>
+      )}
     </button>
   );
 }

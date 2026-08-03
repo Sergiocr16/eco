@@ -9,6 +9,7 @@ import { DiscardFileButton } from '@/components/DiscardFileButton';
 import { CommitWithAI } from '@/components/CommitWithAI';
 import { useReviewState, isReviewModeEnabled } from '@/hooks/useReviewState';
 import { useT } from '@/hooks/useI18n';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import { ResizableSplit } from './ResizableSplit';
 
 export type FileChange = {
@@ -147,6 +148,7 @@ export function ChangesView({ files, workspace, bubbleId, loading }: Props) {
       storageKey={splitKey}
       defaultLeft={300}
       minLeft={220}
+      mobileShow={selected ? 'right' : 'left'}
       left={
         <div style={{
           display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
@@ -306,6 +308,7 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
 }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const hasUnstaged = file.unstaged !== false;
   const dotColor = accepted ? t.ok : t.warn;
   // Acorta el path: si es muy largo, mostramos solo el último componente +
@@ -320,7 +323,10 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
       onClick={onClick}
       title={file.path}
       style={{
-        padding: '7px 12px',
+        // 5 hijos en una fila con targets de 22px: en táctil se sube la
+        // altura y se esconde el botón de abrir-en-editor (queda un toque
+        // más lejos, desde el propio panel de Files).
+        padding: isPhone ? '12px 12px' : '7px 12px',
         display: 'flex', alignItems: 'center', gap: 8,
         background: isSelected ? t.accentFaint : 'transparent',
         borderLeft: isSelected ? `3px solid ${t.accent}` : '3px solid transparent',
@@ -354,28 +360,30 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
           background: `color-mix(in oklch, ${t.ok} 14%, transparent)`,
         }}>+</span>
       )}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          ecoEmit('eco:switch_tab', { tab: 'files', bubbleId });
-          ecoEmit('eco:files:open_path', { bubbleId, path: file.path });
-        }}
-        title={tr('files.open_in_editor')}
-        aria-label={tr('files.open_in_editor')}
-        style={{
-          flexShrink: 0,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 22, height: 22, padding: 0,
-          background: 'transparent', color: t.text2,
-          border: 0, cursor: 'pointer', borderRadius: t.r2,
-          transition: 'background 120ms, color 120ms',
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.accent; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}
-      >
-        <IconFolderOpen size={13}/>
-      </button>
+      {!isPhone && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            ecoEmit('eco:switch_tab', { tab: 'files', bubbleId });
+            ecoEmit('eco:files:open_path', { bubbleId, path: file.path });
+          }}
+          title={tr('files.open_in_editor')}
+          aria-label={tr('files.open_in_editor')}
+          style={{
+            flexShrink: 0,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, padding: 0,
+            background: 'transparent', color: t.text2,
+            border: 0, cursor: 'pointer', borderRadius: t.r2,
+            transition: 'background 120ms, color 120ms',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.accent; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}
+        >
+          <IconFolderOpen size={13}/>
+        </button>
+      )}
       <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
         <DiscardFileButton
           path={file.path}
