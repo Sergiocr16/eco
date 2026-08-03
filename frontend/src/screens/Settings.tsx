@@ -2592,6 +2592,9 @@ function SectionAbout() {
     { id: 'slash',      group: 'reference', icon: IconTerminal, title: tr('settings.about.slash.title'),
       keywords: 'slash commands /dev-up /remote-control /kb skills',
       render: () => <SlashCommandsList/> },
+    { id: 'mobile',     group: 'reference', icon: IconGlobe,    title: tr('settings.about.mobile.title'),
+      keywords: 'mobile móvil celular iphone ipad tablet pwa instalar tailscale tailnet remoto terminal teclas',
+      render: () => <MobileList/> },
     { id: 'faq',        group: 'help',      icon: IconInfo,     title: tr('settings.about.faq.title'),
       keywords: 'faq preguntas frecuentes costo precio offline windows linux commit push worktree datos micrófono',
       render: () => <FaqList/> },
@@ -3129,6 +3132,7 @@ function NetworkList() {
     { src: 'Frontend',    dst: 'backend (mismo proceso)', kind: 'local', desc: tr('settings.about.net.frontend') },
     { src: 'Webview',     dst: 'cualquier URL que abras', kind: 'cloud', desc: tr('settings.about.net.webview') },
     { src: 'Obsidian',    dst: 'filesystem local', kind: 'local', desc: tr('settings.about.net.obsidian') },
+    { src: 'Tailscale',   dst: '<maquina>.ts.net:443', kind: 'local', desc: tr('settings.about.net.tailnet') },
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
@@ -3154,6 +3158,54 @@ function NetworkList() {
   );
 }
 
+// Cómo usar Eco desde el celular o una tablet. Es la parte que más preguntas
+// genera porque depende de cosas que se configuran fuera de la app.
+function MobileList() {
+  const t = useTokens();
+  const tr = useT();
+  const steps = [
+    { k: '1', d: tr('settings.about.mobile.step.toggle') },
+    { k: '2', d: tr('settings.about.mobile.step.open') },
+    { k: '3', d: tr('settings.about.mobile.step.install') },
+  ];
+  const notes = [
+    tr('settings.about.mobile.note.login'),
+    tr('settings.about.mobile.note.landscape'),
+    tr('settings.about.mobile.note.keys'),
+    tr('settings.about.mobile.note.tablet'),
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 6 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {steps.map((s) => (
+          <div key={s.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <span style={{
+              width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+              background: t.accentFaint, color: t.accent,
+              fontSize: 11, fontWeight: 700,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            }}>{s.k}</span>
+            <span style={{ flex: 1, fontSize: 12.5, color: t.text1, lineHeight: 1.6 }}>{s.d}</span>
+          </div>
+        ))}
+      </div>
+      <div>
+        <div style={{
+          fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
+          letterSpacing: 0.5, fontWeight: 600, marginBottom: 6,
+        }}>{tr('settings.about.mobile.notes.title')}</div>
+        <ul style={{
+          margin: 0, paddingLeft: 16,
+          display: 'flex', flexDirection: 'column', gap: 6,
+          fontSize: 11.5, color: t.text2, lineHeight: 1.55,
+        }}>
+          {notes.map((n, i) => <li key={i}>{n}</li>)}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function FilesList() {
   const t = useTokens();
   const tr = useT();
@@ -3162,6 +3214,8 @@ function FilesList() {
     { path: '~/.eco/token',       desc: tr('settings.about.files.token') },
     { path: '~/.eco/api-key',     desc: tr('settings.about.files.apikey') },
     { path: '~/.eco/obsidian.json', desc: tr('settings.about.files.obsidian') },
+    { path: '~/.eco/tailnet.json', desc: tr('settings.about.files.tailnet') },
+    { path: '~/.eco/workspace-config.json', desc: tr('settings.about.files.wsconfig') },
     { path: '~/.eco/worktrees/<bubble-id>', desc: tr('settings.about.files.worktrees') },
     { path: 'localStorage (browser)', desc: tr('settings.about.files.localstorage') },
   ];
@@ -3196,12 +3250,16 @@ function DevList() {
     { k: 'ECO_MODEL',      d: tr('settings.about.dev.env.model') },
     { k: 'ECO_PTY_AUTOCLAUDE', d: tr('settings.about.dev.env.autoclaude') },
     { k: 'CLAUDE_CLI_PATH', d: tr('settings.about.dev.env.clipath') },
+    { k: 'ECO_FIREBASE_PROJECT_ID', d: tr('settings.about.dev.env.firebase') },
+    { k: 'ECO_TAILSCALE_BIN', d: tr('settings.about.dev.env.tsbin') },
   ];
   const scripts = [
     { k: 'npm run dev',       d: tr('settings.about.dev.scripts.dev') },
     { k: 'npm run dev:app',   d: tr('settings.about.dev.scripts.devapp') },
     { k: 'npm run dist:mac',  d: tr('settings.about.dev.scripts.distmac') },
     { k: 'npm run typecheck', d: tr('settings.about.dev.scripts.typecheck') },
+    { k: 'npm run check:i18n', d: tr('settings.about.dev.scripts.i18n') },
+    { k: 'npm run serve:web',  d: tr('settings.about.dev.scripts.serveweb') },
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 6 }}>

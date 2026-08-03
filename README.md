@@ -105,7 +105,9 @@ Eco runs on two planes. The **local plane** does all the heavy lifting and never
 - **Solo-bubble window** — pop a single bubble into its own window (handy on a second monitor) while the rest of the app stays put.
 - **Archiving** — kill the running processes, keep the worktree and branch. Restore or permanently delete from the Archived screen.
 - **GitHub PAT** — store a Personal Access Token once, validated against GitHub; auto-injected as `GH_TOKEN` + git author env into every spawned process.
-- **Remote team access (Tailscale)** — `npm run serve:web` exposes Eco to the tailnet over HTTPS (`tailscale serve`); teammates connect from a browser (even an iPad). Dev-server previews are exposed per-port over the tailnet too.
+- **Mobile + tablet** — the whole UI adapts to a phone: bottom navigation, single-pane splits, 44pt touch targets, and a terminal with its own touch scrolling plus a key row for `Esc` / `Tab` / `Ctrl+C` / arrows that the iOS keyboard lacks. Tablets keep the desktop layout (side rail, dock, node graph) with mobile-sized controls.
+- **Installable as an app (PWA)** — from the phone browser, *Share → Add to Home Screen*. Eco gets its own icon and opens full-screen with no browser chrome.
+- **Remote access from the desktop app** — a toggle in Settings → Integrations publishes Eco on your tailnet at `https://<machine>.ts.net`. Off by default; once enabled it republishes itself every time you open Eco. Only your tailnet can reach it — it is never exposed to the internet. (`npm run serve:web` still exists as the development path: a standalone backend serving `frontend/dist`.) Dev-server previews are exposed per-port over the tailnet too.
 - **Admin console** — manage users (create / role / enable-disable / password reset) and watch who is working on which bubble, plus an append-only audit log. Server commands + favorite base branches are defined **by the admin per workspace**; members only start/stop.
 - **Obsidian integration** — save the current bubble as a `.md` note in your vault.
 - **Onboarding wizard** — multi-step setup on first run (language, theme, Claude auth, GitHub, workspace, Obsidian).
@@ -348,9 +350,17 @@ Three views: **Grid** (Liquid Glass cards), **Kanban** (by state: Active / Waiti
 
 The first registered user becomes the **admin owner** after the one-time `bootstrap:admin` promotion. From the in-app **Admin** console, the admin creates teammates with an email + display name (Eco creates their Firebase account in the background and writes their `users/<uid>` doc with `role: member`), promotes/demotes roles, disables accounts, and triggers Firebase password-reset emails. Members never see anyone else's data — isolation is enforced by `firestore.rules`.
 
-Run `npm run serve:web` to expose Eco to your **Tailscale** tailnet over HTTPS. A teammate (laptop or iPad) opens the share URL and logs in with their Firebase account. Their bubbles, categories, notes, review state and theme are **server-authoritative in Firestore** and sync live across all their devices — start on the Mac, continue on the iPad. (Logical, trusted-team isolation — see [CLAUDE.md Appendix D](./CLAUDE.md#multitenant).)
+To expose Eco to your **Tailscale** tailnet over HTTPS, turn on *Settings → Integrations → "Publish Eco on the tailnet"*. That publishes the app's own backend — the one already serving the frontend — at `https://<machine>.ts.net`; one backend, two ingresses. It is **off by default**, and once enabled it republishes itself on every launch, so there is nothing to run by hand. (`npm run serve:web` is still the development path, where the frontend is served from a standalone backend.) A teammate — laptop, tablet or phone — opens the share URL and logs in with their Firebase account. Their bubbles, categories, notes, review state and theme are **server-authoritative in Firestore** and sync live across all their devices — start on the Mac, continue on the iPad. (Logical, trusted-team isolation — see [CLAUDE.md Appendix D](./CLAUDE.md#multitenant).)
 
 The **Admin** console has three tabs: **Users** (create / enable-disable, roles, password reset), **Activity** (who is working on what right now, live PTY/dev indicators), and **Audit log** — an append-only record of session and agent events (login / logout, agent created / archived / deleted), filterable by user and type. The audit log is an append-only Firestore collection that never stores PINs, tokens or message text.
+
+### From the phone
+
+With remote access on, the same URL works from an iPhone or an iPad. The layout collapses to a single column, navigation moves to the bottom, and every split becomes one pane at a time with a List / Detail toggle. Tablets keep the desktop layout — side rail, dock, node graph — with touch-sized controls, because they have the width for it.
+
+The terminal is the interesting part. Touch scrolling is implemented in Eco (xterm v6 does not ship it), and a key row under the terminal sends `Esc`, `Tab`, `Shift+Tab`, `Ctrl+C`, arrows and `Enter` — none of which exist on the iOS keyboard — plus `A−`/`A+` for font size. **Rotate to landscape for terminal work**: portrait fits about 54 columns and the agent CLIs assume 80.
+
+*Share → Add to Home Screen* installs it as a PWA: own icon, full screen, no browser bar. Expect to sign in once more the first time, because iOS gives an installed web app its own storage container separate from Safari; after that the session actually lasts longer than in the browser.
 
 ### Onboarding
 

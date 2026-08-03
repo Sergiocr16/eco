@@ -2327,6 +2327,64 @@ const DICT = {
     es: 'Entrá a Eco desde el celular u otra máquina de tu tailnet, por HTTPS. Al activarlo, se republica solo cada vez que abrís Eco.',
     en: 'Reach Eco from your phone or another machine on your tailnet, over HTTPS. Once enabled, it republishes itself every time you open Eco.',
   },
+  'settings.about.mobile.title': { es: 'Eco en el celular', en: 'Eco on your phone' },
+  'settings.about.mobile.step.toggle': {
+    es: 'En esta computadora: Ajustes → Integraciones → activá "Publicar Eco en la tailnet". Copiá la URL que aparece.',
+    en: 'On this computer: Settings → Integrations → turn on "Publish Eco on the tailnet". Copy the URL it shows.',
+  },
+  'settings.about.mobile.step.open': {
+    es: 'En el celular, con Tailscale conectado a la misma tailnet, abrí esa URL en el navegador.',
+    en: 'On the phone, with Tailscale connected to the same tailnet, open that URL in the browser.',
+  },
+  'settings.about.mobile.step.install': {
+    es: 'Opcional: Compartir → Agregar a pantalla de inicio. Eco queda como una app, sin la barra del navegador.',
+    en: 'Optional: Share → Add to Home Screen. Eco behaves like an app, without the browser bar.',
+  },
+  'settings.about.mobile.notes.title': { es: 'Cosas a tener en cuenta', en: 'Things to know' },
+  'settings.about.mobile.note.login': {
+    es: 'Al instalarla, iOS le da su propio almacenamiento: vas a tener que iniciar sesión otra vez, una sola vez. Después la sesión dura MÁS que en el navegador.',
+    en: 'Once installed, iOS gives it separate storage: you will sign in again, once. After that the session lasts LONGER than in the browser.',
+  },
+  'settings.about.mobile.note.landscape': {
+    es: 'Para el terminal conviene el teléfono acostado: de pie entran ~54 columnas y los agentes asumen 80.',
+    en: 'For the terminal, rotate the phone: portrait fits ~54 columns and the agent CLIs assume 80.',
+  },
+  'settings.about.mobile.note.keys': {
+    es: 'La fila de teclas debajo del terminal manda Esc, Tab, Ctrl+C y flechas, que el teclado de iOS no tiene. A− y A+ cambian el tamaño de letra.',
+    en: 'The key row under the terminal sends Esc, Tab, Ctrl+C and arrows, which the iOS keyboard lacks. A− and A+ change the font size.',
+  },
+  'settings.about.mobile.note.tablet': {
+    es: 'En tablet se usa el layout de escritorio (barra lateral y dock) con los controles grandes del móvil.',
+    en: 'On a tablet you get the desktop layout (side rail and dock) with mobile-sized controls.',
+  },
+  'settings.about.files.tailnet': {
+    es: 'Si la publicación en la tailnet quedó activada. Se relee al abrir Eco.',
+    en: 'Whether tailnet publishing is enabled. Read again when Eco starts.',
+  },
+  'settings.about.files.wsconfig': {
+    es: 'Comandos de dev server, variables de entorno y ramas base por carpeta.',
+    en: 'Dev server commands, environment variables and base branches per folder.',
+  },
+  'settings.about.net.tailnet': {
+    es: 'Solo si activás el acceso remoto. Nunca sale a internet: la tailnet es privada.',
+    en: 'Only if you enable remote access. Never leaves for the internet: the tailnet is private.',
+  },
+  'settings.about.dev.env.firebase': {
+    es: 'Project id de Firebase para verificar los ID token. Sin esto TODO request autenticado da 401.',
+    en: 'Firebase project id used to verify ID tokens. Without it EVERY authenticated request 401s.',
+  },
+  'settings.about.dev.env.tsbin': {
+    es: 'Ruta del CLI de Tailscale. Por defecto usa /usr/local/bin/tailscale.',
+    en: 'Path to the Tailscale CLI. Defaults to /usr/local/bin/tailscale.',
+  },
+  'settings.about.dev.scripts.i18n': {
+    es: 'Falla si hay algún texto visible sin pasar por i18n.',
+    en: 'Fails if any visible string bypasses i18n.',
+  },
+  'settings.about.dev.scripts.serveweb': {
+    es: 'Modo servidor para desarrollo: backend aparte sirviendo frontend/dist.',
+    en: 'Server mode for development: standalone backend serving frontend/dist.',
+  },
   'settings.tailnet.reqs.title': { es: 'Qué hace falta', en: 'What you need' },
   'settings.tailnet.reqs.app': {
     es: 'Tailscale instalado y con sesión iniciada en esta computadora.',

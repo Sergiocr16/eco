@@ -1769,8 +1769,19 @@ Eco is usable from an iPhone over Tailscale (`npm run serve:web` → `https://<m
 
 So the responsive mechanism is a **JS breakpoint hook whose boolean is spread into the existing style objects** — the same pattern `design/theme.tsx` already uses for `prefers-color-scheme`.
 
-- `hooks/useMediaQuery.ts` — `useIsMobile()` (hook, reactive) + `isMobileNow()` (sync getter, for non-hook helpers like `fieldStyle`/`navBtnStyle`).
-- Query: `MOBILE_QUERY = '(pointer: coarse), (max-width: 820px)'`. The `pointer: coarse` half is what keeps the **iPhone in landscape** (932px on a 16 Pro Max) on the mobile layout; the `max-width` half lets you test everything by narrowing a desktop window.
+- `hooks/useMediaQuery.ts` — hooks (`useIsMobile`/`useIsPhone`/`useIsTablet`) plus sync getters (`isMobileNow`/`isPhoneNow`/`isTabletNow`) for non-hook helpers like `fieldStyle`/`navBtnStyle`.
+
+**Two independent axes — do not conflate them.** This is the single most important thing to get right when adding a mobile branch:
+
+| Signal | Query | Governs |
+|---|---|---|
+| `isMobile` | `(pointer: coarse), (max-width: 820px)` | **Touch sizing.** 44pt targets, 16px inputs, terminal key bar, safe area. **A tablet IS one.** |
+| `isTablet` | `(pointer: coarse) and (min-width: 768px) and (min-height: 700px)` | Touch device with room for the desktop layout. |
+| `isPhone` | `isMobile && !isTablet` | **Layout collapse.** Rails hidden, single-pane splits, icons-only tabs, bottom nav. **A tablet is NOT one** — it keeps the side rail and the dock. |
+
+The `min-height: 700px` in the tablet query is load-bearing: an iPhone 16 Pro Max in landscape is 932×430, so it passes the min-width but fails the min-height. An iPad is 820×1180 portrait / 1180×820 landscape and passes either way.
+
+**Rule of thumb:** sizing → `isMobile`; layout → `isPhone`. Getting this backwards is why the dock and the graph were briefly missing on iPads.
 - **`isMobileNow()` is not reactive on its own.** It relies on an ancestor having called `useIsMobile()` to re-render. `App.tsx:Shell` does, which covers the whole tree. Screens rendered *outside* Shell (`AuthScreen`, `LockScreen`) won't re-evaluate on a live breakpoint change — irrelevant on a real phone, cosmetic on desktop resize.
 
 **If you add a mobile branch, use `useIsMobile()` in components and `isMobileNow()` only inside plain functions.**
@@ -1820,13 +1831,26 @@ So the responsive mechanism is a **JS breakpoint hook whose boolean is spread in
 2. `components/TerminalKeyBar.tsx` — iOS has no Esc, Ctrl, Tab or arrows, which are exactly what the agent TUIs need. Sends raw sequences through the existing `sendInput` (exposed via a ref); **no protocol or backend change**. Buttons use `onPointerDown` + `preventDefault` so the terminal keeps focus and the system keyboard stays up.
 3. Tap-to-focus on the container — otherwise the keyboard only appears if your finger happens to land on xterm's hidden textarea.
 
+#### Touch scrolling is ours, not xterm's
+
+**xterm v6 does not scroll on touch, and no CSS can make it.** Two facts, both verified against `node_modules/@xterm/xterm/lib/xterm.js`:
+
+- The `xterm-scroll-area` element that used to give `.xterm-viewport` its height **no longer exists** (zero occurrences in the lib). Scrolling stopped being native — there is nothing for the browser to scroll.
+- The touch-scroll service it ships is **opt-in and never enabled**: `addTarget` is defined and called exactly zero times inside the library.
+
+So `RealTerminal.tsx` implements it: `touchstart`/`touchmove`/`touchend` on the container, drag converted to lines via the measured cell height (with a sub-line pixel accumulator), fed to the public `term.scrollLines()`, plus a decaying-velocity glide on release. `touchmove` must be `{passive: false}` — without `preventDefault` iOS keeps the gesture and pans the page instead.
+
+> Two earlier attempts failed and are worth not repeating: raising `.xterm-viewport` with `z-index` (pointless — nothing to scroll) and `stopPropagation` on its touch events (actively harmful — xterm's listeners live on `document`, so it broke what little worked).
+
 ### PWA install
 
 Already in Eco's favour before any of this: `tailscale serve --https=443` gives a real Let's Encrypt cert (secure context), `express.static` is mounted **before** the `X-Eco-Client` guard so `/manifest.webmanifest` and `/sw.js` are served unauthenticated (which is mandatory — the browser's manifest fetch and the SW script request carry no custom headers), and `helmet` runs with `contentSecurityPolicy: false`.
 
 - `frontend/public/manifest.webmanifest` + `frontend/public/icons/*` (180 apple-touch, 192, 512, 512-maskable). Generated from `electron/build/icon{,-opaque}.png` with `sips` (ships with macOS, no new dependency). **iOS ignores SVG apple-touch-icons** — `index.html` pointed at one, which is why the home-screen icon would have been a screenshot of the page.
 - `frontend/public/sw.js` — cache-first for `/assets/`, `/icons/`, `/brand/` (content-hashed → an old entry can never serve wrong content), passthrough for everything else. Registered from `main.tsx` **only** when not Electron and `protocol === 'https:'`. It exists so iOS treats Eco as an app; **it deliberately does not provide offline mode** — Eco needs the local backend and a Firebase token refresh, so a shell that boots and then fails at everything is worse than not booting.
-- **`backend/src/index.ts` static `setHeaders` exempts `sw.js` and `manifest.webmanifest`** from `Cache-Control: immutable, max-age=1y` alongside `index.html`. Without this the service worker is pinned for a year and can never be corrected on a client that already installed it. This is the only backend line the whole mobile effort touches.
+- **`backend/src/index.ts` static `setHeaders` exempts `sw.js` and `manifest.webmanifest`** from `Cache-Control: immutable, max-age=1y` alongside `index.html`. Without this the service worker is pinned for a year and can never be corrected on a client that already installed it.
+- **`theme-color` is rewritten at runtime by `ThemeProvider`** to the active theme's `windowBg`. iOS paints the areas surrounding the content in an installed PWA with it, so a hardcoded value showed as a mismatched grey band on **every** screen — including the login, which doesn't even mount the shell. The static value in `index.html`, the manifest's `theme_color`/`background_color` and `index.css`'s body background must all agree, or the mismatch shows during the first paint. Eco has 14 themes; a fixed colour in the HTML cannot follow them.
+- **No pinch-zoom.** `user-scalable=no` in the viewport meta covers the installed PWA and Android, but **iOS Safari has ignored it since iOS 10** — `touch-action: pan-x pan-y` on `html, body` is what it actually honours. Both are needed. Font size where it matters is adjustable in-app (terminal A−/A+, embedded browser zoom).
 
 **Three ways this fails silently:**
 1. `scripts/eco-server.mjs:73-74` skips the frontend build when `dist/index.html` exists → after touching the manifest or icons you must run `npm run serve:web -- --rebuild`.
