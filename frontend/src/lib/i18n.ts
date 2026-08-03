@@ -2327,6 +2327,27 @@ const DICT = {
     es: 'Entrá a Eco desde el celular u otra máquina de tu tailnet, por HTTPS. Al activarlo, se republica solo cada vez que abrís Eco.',
     en: 'Reach Eco from your phone or another machine on your tailnet, over HTTPS. Once enabled, it republishes itself every time you open Eco.',
   },
+  'settings.tailnet.reqs.title': { es: 'Qué hace falta', en: 'What you need' },
+  'settings.tailnet.reqs.app': {
+    es: 'Tailscale instalado y con sesión iniciada en esta computadora.',
+    en: 'Tailscale installed and signed in on this computer.',
+  },
+  'settings.tailnet.reqs.magicdns': {
+    es: 'MagicDNS activo en tu tailnet: de ahí sale el nombre <maquina>.ts.net con el que se entra.',
+    en: 'MagicDNS enabled on your tailnet: that is where the <machine>.ts.net name comes from.',
+  },
+  'settings.tailnet.reqs.serve': {
+    es: 'HTTPS habilitado en la tailnet (consola de Tailscale → DNS → HTTPS Certificates). Sin eso no hay certificado y Serve no puede publicar.',
+    en: 'HTTPS enabled on the tailnet (Tailscale console → DNS → HTTPS Certificates). Without it there is no certificate and Serve cannot publish.',
+  },
+  'settings.tailnet.reqs.device': {
+    es: 'El teléfono o la otra computadora tienen que estar en la MISMA tailnet, con Tailscale conectado.',
+    en: 'The phone or other computer must be on the SAME tailnet, with Tailscale connected.',
+  },
+  'settings.tailnet.reqs.slow': {
+    es: 'La primera activación puede tardar hasta medio minuto: Tailscale provisiona el certificado y su CLI responde más lento cuando lo llama la app.',
+    en: 'The first time can take up to half a minute: Tailscale provisions the certificate and its CLI is slower when called from the app.',
+  },
   'settings.tailnet.unavailable': {
     es: 'Quedó activado, pero ahora no se pudo publicar: revisá que Tailscale esté corriendo y que Serve esté habilitado en la tailnet. Se reintenta al abrir Eco.',
     en: 'Enabled, but it could not be published right now: check that Tailscale is running and that Serve is enabled on your tailnet. It retries when you open Eco.',

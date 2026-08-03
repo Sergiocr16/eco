@@ -2231,8 +2231,41 @@ function TailnetCard() {
           fontSize: 12, color: t.warn, lineHeight: 1.5,
         }}>
           {tr('settings.tailnet.unavailable')}
+          {/* El motivo crudo del backend: "Tailscale en estado X", "timeout
+              ejecutando <bin>", etc. Sin esto cualquier fallo se ve igual y
+              no hay por dónde empezar a mirar. */}
+          {status.error && (
+            <div style={{
+              marginTop: 6, fontFamily: t.fontMono, fontSize: 11,
+              color: t.text2, wordBreak: 'break-word',
+            }}>{status.error}</div>
+          )}
         </div>
       )}
+
+      {/* Requisitos. Van siempre visibles: son cosas que se configuran FUERA
+          de Eco (en la app de Tailscale y en la consola de la tailnet), así
+          que si falta alguna no hay nada acá que lo delate. */}
+      <div style={{
+        padding: '10px 12px', borderRadius: 10,
+        background: t.bg2, border: `1px solid ${t.glassBorder}`,
+      }}>
+        <div style={{
+          fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
+          letterSpacing: 0.5, fontWeight: 600, marginBottom: 8,
+        }}>{tr('settings.tailnet.reqs.title')}</div>
+        <ul style={{
+          margin: 0, paddingLeft: 16,
+          display: 'flex', flexDirection: 'column', gap: 6,
+          fontSize: 11.5, color: t.text2, lineHeight: 1.5,
+        }}>
+          <li>{tr('settings.tailnet.reqs.app')}</li>
+          <li>{tr('settings.tailnet.reqs.magicdns')}</li>
+          <li>{tr('settings.tailnet.reqs.serve')}</li>
+          <li>{tr('settings.tailnet.reqs.device')}</li>
+          <li>{tr('settings.tailnet.reqs.slow')}</li>
+        </ul>
+      </div>
 
       <div style={{ fontSize: 11.5, color: t.text3, lineHeight: 1.5 }}>
         {tr('settings.tailnet.hint')}
