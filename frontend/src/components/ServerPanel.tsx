@@ -23,7 +23,6 @@ import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useWorkspaceServerDefaults } from '@/hooks/useWorkspaceServerDefaults';
 import { writeToBubblePty } from '@/lib/pty-bridge';
-import { ecoToken } from '@/lib/eco-config';
 import { useT } from '@/hooks/useI18n';
 import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 
@@ -1196,7 +1195,6 @@ function TerminalLogs({
       bubbleId,
       workspace,
       text: payload,
-      token: ecoToken(),
     });
     setSending(false);
     if (r.ok) {

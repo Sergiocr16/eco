@@ -495,13 +495,17 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   function sendDictationToTerminal() {
     const bubbleId = dictationBubbleIdRef.current;
     const text = dictationBuffer.trim();
-    const token = ecoToken();
-    if (bubbleId && text && token) {
+    // El guard NO mira `ecoToken()`. Ese es el token de máquina de
+    // ~/.eco/token, que Electron inyecta por IPC pero que un navegador remoto
+    // no tiene: sobre Tailscale quedaba vacío, el guard fallaba y el dictado
+    // se descartaba en silencio. Además `writeToBubblePty` lo ignora — la
+    // auth del WS sale del ID token de Firebase.
+    if (bubbleId && text) {
       const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
       ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId });
       // Sin '\n': se escribe en el PTY principal (Claude) y el user revisa
       // antes de ejecutar.
-      void writeToBubblePty({ bubbleId, workspace: bubble?.workspace ?? '', text, token });
+      void writeToBubblePty({ bubbleId, workspace: bubble?.workspace ?? '', text });
     }
     cancelTerminalDictation();
   }

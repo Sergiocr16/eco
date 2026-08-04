@@ -5,7 +5,6 @@ import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { canEmbedArbitrarySites } from '@/lib/platform';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 import { writeToBubblePty } from '@/lib/pty-bridge';
-import { ecoToken } from '@/lib/eco-config';
 import { useT } from '@/hooks/useI18n';
 import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 import { BrowserTabBar } from './BrowserPanel/BrowserTabBar';
@@ -251,7 +250,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     setSendingToClaude(true);
     setSendMsg(null);
     const r = await writeToBubblePty({
-      bubbleId, workspace, text: activeTab.url, token: ecoToken(),
+      bubbleId, workspace, text: activeTab.url,
     });
     setSendingToClaude(false);
     if (r.ok) {

@@ -87,10 +87,11 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
   }
   function sendDictationToTerminal() {
     const text = dictationBuffer.trim();
-    const token = ecoToken();
-    if (bubble && text && token) {
+    // Ver App.tsx:sendDictationToTerminal — el guard por token de máquina
+    // rompía esto en cualquier cliente que no fuera Electron.
+    if (bubble && text) {
       ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId: bubble.id });
-      void writeToBubblePty({ bubbleId: bubble.id, workspace: bubble.workspace ?? '', text, token });
+      void writeToBubblePty({ bubbleId: bubble.id, workspace: bubble.workspace ?? '', text });
     }
     cancelTerminalDictation();
   }

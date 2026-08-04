@@ -8,7 +8,6 @@ import { useSkills, type SkillInfo } from '@/hooks/useSkills';
 import { useSkillFavorites, skillIdOf } from '@/hooks/useSkillFavorites';
 import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
 import { useCliAuth } from '@/hooks/useCliAuth';
-import { ecoToken } from '@/lib/eco-config';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { useCategories } from '@/hooks/useCategories';
@@ -970,7 +969,6 @@ async function runSkillInTerminal(opts: {
     bubbleId: opts.bubbleId,
     workspace: opts.workspace,
     text: `/${opts.skill.name}\r`,
-    token: ecoToken(),
   });
   if (r.ok) {
     ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId: opts.bubbleId });
@@ -1680,13 +1678,11 @@ async function activateRemoteControlViaPty(opts: {
   bubbleId: string;
   workspace: string;
   slug: string;
-  token: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   return writeToBubblePty({
     bubbleId: opts.bubbleId,
     workspace: opts.workspace,
     text: `/remote-control ${opts.slug}\r`,
-    token: opts.token,
   });
 }
 
@@ -1715,7 +1711,6 @@ function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
       bubbleId: bubble.id,
       workspace: bubble.workspace ?? '',
       slug,
-      token: ecoToken(),
     });
     setBusy(false);
     if (r.ok) {

@@ -4,7 +4,6 @@ import { useT } from '@/hooks/useI18n';
 import { apiFetch } from '@/lib/api';
 import { emit, on as ecoOn } from '@/lib/eco-bus';
 import { writeToBubblePty } from '@/lib/pty-bridge';
-import { ecoToken } from '@/lib/eco-config';
 import { useGitChanges } from '@/hooks/useGitChanges';
 import { ResizableSplit } from '@/components/GitPanel/ResizableSplit';
 import { translateBackendError } from '@/lib/backend-errors';
@@ -400,9 +399,10 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
     // puede escribir su pregunta a continuación y mandar.
     const snippet = `> ${range}\n\`\`\`${args.langTag}\n${args.selectedText}\n\`\`\`\n`;
     emit('eco:switch_tab', { tab: 'terminal', bubbleId });
-    const token = ecoToken();
-    if (!token) return;
-    await writeToBubblePty({ bubbleId, workspace, text: snippet, token });
+    // Sin guard por `ecoToken()`: ese token de máquina no existe en un
+    // navegador remoto y writeToBubblePty lo ignora (la auth del WS es el ID
+    // token de Firebase). Con el guard, esto no hacía nada por Tailscale.
+    await writeToBubblePty({ bubbleId, workspace, text: snippet });
   }, [bubbleId, workspace]);
 
   const activeFile = useMemo(

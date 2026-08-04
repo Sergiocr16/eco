@@ -12,8 +12,6 @@ export type WriteToBubblePtyOpts = {
   bubbleId: string;
   workspace: string;
   text: string;       // texto a escribir tal cual (typicamente termina en \r)
-  // Legacy (ignorado): la auth del WS ahora sale del ID token de Firebase.
-  token?: string;
   // Espera extra (ms) cuando el PTY se está creando recién — sin esto la
   // primera escritura puede llegar antes de que zsh + claude CLI imprimieran
   // el prompt y el input se pierde.
