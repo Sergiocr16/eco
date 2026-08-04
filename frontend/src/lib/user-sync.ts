@@ -146,8 +146,9 @@ export function markSeen(key: string, updatedAt: number): void {
 }
 
 // ── Listeners en vivo (reemplazan el push WS doc_updated/doc_deleted). Emiten
-// los mismos eventos eco-bus que ya escuchan los hooks. Filtran el echo propio
-// vía shouldApplyRemote. Devuelve un unsubscribe.
+// los mismos eventos eco-bus que ya escuchan los hooks. El filtro de echo NO
+// va acá: `shouldApplyRemote` muta y los consumidores lo llaman de nuevo, así
+// que filtrar dos veces descartaba todo cambio remoto. Devuelve un unsubscribe.
 export function startUserDocListeners(u: string): () => void {
   const db = getDb();
   const unsubs: Array<() => void> = [];
@@ -163,7 +164,15 @@ export function startUserDocListeners(u: string): () => void {
           return;
         }
         if (typeof data.updatedAt !== 'number') return;
-        if (!shouldApplyRemote(key, data.updatedAt)) return;
+        // NO filtrar acá. `shouldApplyRemote` MUTA `lastSeen`, y los cinco
+        // consumidores (bubbles, categories, review, prefs, notes) vuelven a
+        // llamarlo al recibir el evento: el primer chequeo registraba el
+        // updatedAt y el segundo lo veía como propio y descartaba el cambio.
+        // Resultado: ninguna sincronización cross-device en vivo llegaba —
+        // solo se veía al recargar, que hidrata por otro camino.
+        //
+        // El eco de nuestra propia escritura ya lo filtra el consumidor,
+        // porque `saveDoc` deja el updatedAt en `lastSeen` al escribir.
         ecoEmit('eco:doc_updated', { key, value: data.value, updatedAt: data.updatedAt });
       });
     },
@@ -176,7 +185,7 @@ export function startUserDocListeners(u: string): () => void {
     unsubs.push(onSnapshot(doc(db, key, u), (d) => {
       const data = d.data();
       if (!data || typeof data.updatedAt !== 'number') return;
-      if (!shouldApplyRemote(key, data.updatedAt)) return;
+      // Mismo motivo que arriba: el filtro vive en el consumidor.
       ecoEmit('eco:doc_updated', { key, value: data.value, updatedAt: data.updatedAt });
     }, () => { /* noop */ }));
   }

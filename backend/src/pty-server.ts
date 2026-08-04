@@ -295,6 +295,17 @@ export function runningPtyBubbleIds(): string[] {
   return [...out];
 }
 
+// Lista de bubbleIds cuyo PTY está ocupado AHORA. Espeja a
+// runningPtyBubbleIds: una burbuja con varios terminales cuenta una vez, y
+// alcanza con que uno esté ocupado (el busy es por-burbuja, no por-terminal).
+export function busyPtyBubbleIds(): string[] {
+  const out = new Set<string>();
+  for (const s of sessions.values()) {
+    if (!s.exited && s.busy) out.add(s.bubbleId);
+  }
+  return [...out];
+}
+
 // Devuelve el snapshot acumulado del ring buffer del PTY de una burbuja.
 // Si la burbuja tiene varios terminales (default 'main' + extras), los
 // concatena en orden de ptyId. Cap implícito en RING_BUFFER_MAX por
@@ -315,13 +326,24 @@ export function getBubblePtyBuffer(bubbleId: string): string {
 export function attachPtyServer(httpServer: Server, _authToken: string) {
   // Snapshot: cuando un cliente nuevo se conecta al /ws principal, recibe
   // un pty_status=true por cada PTY corriendo. Así sobrevive reload de UI.
-  registerSnapshotProvider(() =>
-    runningPtyBubbleIds().map((bubbleId) => ({
+  //
+  // El busy va TAMBIÉN en el snapshot. Sin esto un cliente recién conectado
+  // solo se entera de las TRANSICIONES futuras, y una sesión que ya está
+  // trabajando puede no transicionar por minutos: el agente se veía "idle"
+  // en el Dashboard mientras ejecutaba. Se notaba sobre todo desde el
+  // celular, donde cada visita abre una conexión nueva.
+  registerSnapshotProvider(() => [
+    ...runningPtyBubbleIds().map((bubbleId) => ({
       type: 'pty_status' as const,
       bubbleId,
       running: true,
     })),
-  );
+    ...busyPtyBubbleIds().map((bubbleId) => ({
+      type: 'pty_busy_change' as const,
+      bubbleId,
+      busy: true,
+    })),
+  ]);
 
   const wss = new WebSocketServer({
     noServer: true,
