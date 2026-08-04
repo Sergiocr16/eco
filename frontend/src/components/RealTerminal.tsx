@@ -109,9 +109,17 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     //
     // Lo resolvemos con `scrollLines()`, que sí es API pública: convertimos el
     // arrastre a líneas y le agregamos inercia para que se sienta como iOS.
-    const cellHeight = () => Math.max(1, term.element
-      ? (term.element.querySelector('.xterm-rows')?.firstElementChild as HTMLElement | null)?.offsetHeight || 0
-      : 0) || Math.round(readFontSize() * 1.25);
+    // Alto real de una fila. Se mide como alto del área de pantalla dividido
+    // filas, que funciona con CUALQUIER renderer — medir `.xterm-rows` no
+    // sirve porque con WebGL las filas se dibujan en un canvas y ese elemento
+    // queda sin altura. Si eso pasa el arrastre se traduce a una línea por
+    // píxel y el terminal salta al extremo del scrollback con cualquier gesto.
+    const cellHeight = () => {
+      const screen = term.element?.querySelector('.xterm-screen') as HTMLElement | null;
+      const measured = screen && term.rows > 0 ? screen.clientHeight / term.rows : 0;
+      if (measured > 1) return measured;
+      return Math.max(8, Math.round(readFontSize() * 1.25));
+    };
 
     let touchY: number | null = null;
     let touchRest = 0;          // píxeles sobrantes que aún no llegan a una línea
