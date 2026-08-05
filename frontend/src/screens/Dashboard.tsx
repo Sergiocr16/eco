@@ -1030,6 +1030,10 @@ function NameAgentDialog({
           } : {
             borderRadius: 16,
             padding: 20,
+            // Sin tope de altura, con muchas carpetas el diálogo crecía más
+            // que la ventana y los botones quedaban fuera de pantalla, justo
+            // donde flota el dock. Ahora el panel nunca pasa del alto útil.
+            maxHeight: '85vh', overflowY: 'auto',
           }),
         }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1098,7 +1102,9 @@ function NameAgentDialog({
             <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
               Carpeta
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {/* La lista scrollea sola: con muchas carpetas empujaba los
+                botones fuera de la ventana. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
               {workspaces.map((ws) => {
                 const active = selectedWs === ws;
                 const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
@@ -1383,7 +1389,9 @@ function NewAgentCard({
             <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
               Carpeta
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {/* La lista scrollea sola: con muchas carpetas empujaba los
+                botones fuera de la ventana. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
               {workspaces.map((ws) => {
                 const active = selectedWs === ws;
                 const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
