@@ -26,7 +26,7 @@ import { workspaceName } from '@/lib/workspace-name';
 import { useTeamBubbles } from '@/components/AdminGraph';
 import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
-import { SAFE_BOTTOM } from '@/lib/platform';
+import { SAFE_BOTTOM, SAFE_TOP } from '@/lib/platform';
 
 type Props = {
   bubbles: Bubble[];
@@ -2822,6 +2822,8 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
+  // Deliberadamente chicos, también en táctil: son controles secundarios y
+  // agrandarlos tapa el grafo, que es lo que interesa mirar.
   const zoomBtnStyle: CSSProperties = {
     width: 26, height: 26, borderRadius: 999,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2874,7 +2876,13 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
     <Glass radius={isFull ? 0 : 20} style={{
       position: isFull ? 'fixed' : 'relative',
       ...(isFull
-        ? { inset: 0, height: '100vh', width: '100vw', zIndex: 9000 }
+        // `inset: 0` ya llena el viewport. El `height: 100vh` que había acá
+        // lo desbordaba en iOS, donde 100vh incluye el área detrás de las
+        // barras del navegador: el grafo quedaba más alto que la pantalla y
+        // los controles anclados abajo — incluido el botón de SALIR de
+        // pantalla completa — caían fuera de vista. En el teléfono no hay
+        // Escape, así que ese botón es la única salida.
+        ? { inset: 0, zIndex: 9000 }
         // En el teléfono 520px de alto mínimo dejan el grafo fuera de pantalla
         // y obligan a scrollear para verlo entero; 380 entra completo.
         : { height: 'min(92vh, 1600px)', minHeight: isPhoneNow() ? 380 : 520 }),
@@ -3362,7 +3370,8 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
         || Object.keys(wsOffsets).length > 0
         || Object.keys(agentOffsets).length > 0) && (
         <div style={{
-          position: 'absolute', top: 12, left: 16,
+          position: 'absolute', left: 16,
+          top: isFull ? `calc(12px + ${SAFE_TOP})` : 12,
           display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
         }}>
           {(pan.x !== 0 || pan.y !== 0) && (
@@ -3401,7 +3410,8 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
         onClick={() => setIsFull((v) => !v)}
         title={tr(isFull ? 'graph.exit_fullscreen' : 'graph.fullscreen')}
         style={{
-          position: 'absolute', bottom: 12, right: 16,
+          position: 'absolute', right: 16, zIndex: 2,
+          bottom: isFull ? `calc(12px + ${SAFE_BOTTOM})` : 12,
           width: 30, height: 30, borderRadius: 999,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
@@ -3418,8 +3428,15 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
       {/* Controles de vista — separación de nodos, separación de carpetas y
           zoom visual; los tres independientes y persistidos. */}
       <div style={{
-        position: 'absolute', bottom: 12, left: 16,
+        position: 'absolute', left: 16,
+        bottom: isFull ? `calc(12px + ${SAFE_BOTTOM})` : 12,
         display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        // Sin tope de ancho este cluster se estira hasta la esquina inferior
+        // DERECHA en pantallas angostas y, como va después en el DOM, se
+        // dibujaba encima del botón de pantalla completa: los toques se los
+        // quedaba él y el botón parecía muerto. Los 76px son su ancho más
+        // margen.
+        maxWidth: 'calc(100% - 76px)',
       }}>
         {/* Separación agentes ↔ carpeta (en modo plano, agentes ↔ Eco) */}
         <div style={pillStyle}>
@@ -3509,7 +3526,8 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
       </div>
 
       <div style={{
-        position: 'absolute', top: 12, right: 16, fontSize: 11,
+        position: 'absolute', right: 16, fontSize: 11,
+        top: isFull ? `calc(12px + ${SAFE_TOP})` : 12,
         color: t.text2, display: 'flex', alignItems: 'center', gap: 6,
       }}>
         <span style={{
