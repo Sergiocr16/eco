@@ -1423,6 +1423,16 @@ app.post('/git/pr/merge', async (req: Request, res: Response) => {
   res.json(await gitOps.mergePullRequest(dir, num, method));
 });
 
+// Saca el PR de draft ("Ready for review"). GitHub bloquea el merge de un
+// draft, así que este es el paso previo al botón de merge.
+app.post('/git/pr/ready', async (req: Request, res: Response) => {
+  const dir = effectiveWorkspaceFromReq(req, res);
+  if (!dir) return;
+  const num = Number(req.body?.number);
+  if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
+  res.json(await gitOps.readyPullRequest(dir, num));
+});
+
 app.post('/git/pr/close', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;

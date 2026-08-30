@@ -248,6 +248,7 @@ function PrDetailPane({
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [mergeConfirm, setMergeConfirm] = useState<{ method: 'merge' | 'squash' | 'rebase' } | null>(null);
   const [closeConfirm, setCloseConfirm] = useState<{ comment: string } | null>(null);
+  const [readyConfirm, setReadyConfirm] = useState(false);
 
   useEffect(() => {
     if (!msg) return;
@@ -333,6 +334,32 @@ function PrDetailPane({
     } finally {
       setBusyAction(null);
       ecoEmit('eco:git_busy', { bubbleId, busy: false, kind: 'pr_merge' });
+    }
+  }
+
+  async function doReady() {
+    setReadyConfirm(false);
+    setBusyAction('ready'); setMsg(null);
+    ecoEmit('eco:git_busy', { bubbleId, busy: true, kind: 'pr_ready', label: tr('prs.banner.readying') });
+    try {
+      const r = await apiFetch('/git/pr/ready', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace, bubbleId, number: prNumber }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.ok) {
+        setMsg({ kind: 'ok', text: d.message || tr('prs.ready.ok', { n: prNumber }) });
+        ecoEmit('eco:git_refresh', { bubbleId });
+        void load(true);
+      } else {
+        setMsg({ kind: 'err', text: d.error || tr('prs.ready.fail') });
+      }
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
+    } finally {
+      setBusyAction(null);
+      ecoEmit('eco:git_busy', { bubbleId, busy: false, kind: 'pr_ready' });
     }
   }
 
@@ -510,6 +537,21 @@ function PrDetailPane({
               ? tr('prs.detail.draft_hint')
               : tr('prs.detail.actions_on', { n: number })}
           </div>
+          {isDraft && (
+            <button type="button"
+              onClick={() => setReadyConfirm(true)}
+              disabled={!!busyAction}
+              title={tr('prs.detail.ready_tooltip')}
+              style={{
+                height: 32, padding: '0 14px', borderRadius: 8,
+                background: 'transparent', border: `1px solid ${t.accent}`,
+                color: t.accent,
+                fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
+                cursor: busyAction ? 'wait' : 'pointer',
+              }}>
+              {busyAction === 'ready' ? '…' : tr('prs.detail.ready_btn')}
+            </button>
+          )}
           <button type="button"
             onClick={() => setCloseConfirm({ comment: '' })}
             disabled={!!busyAction}
@@ -548,6 +590,14 @@ function PrDetailPane({
           initialMethod={mergeConfirm.method}
           onCancel={() => setMergeConfirm(null)}
           onConfirm={(method) => void doMerge(method)}
+        />
+      )}
+      {readyConfirm && (
+        <ReadyConfirm
+          prNumber={number}
+          title={title}
+          onCancel={() => setReadyConfirm(false)}
+          onConfirm={() => void doReady()}
         />
       )}
       {closeConfirm && (
@@ -643,6 +693,57 @@ function MergeConfirm({
               fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
               cursor: 'pointer',
             }}>{tr('prs.merge_confirm.confirm')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReadyConfirm({
+  prNumber, title, onCancel, onConfirm,
+}: {
+  prNumber: number;
+  title: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      background: 'rgba(0,0,0,0.5)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: 480, maxWidth: '92vw', padding: 20, borderRadius: 12,
+        background: t.bg1, border: `1px solid ${t.accent}`,
+        display: 'flex', flexDirection: 'column', gap: 12,
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
+          {tr('prs.ready_confirm.title', { n: prNumber })}
+        </div>
+        <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
+          <em>{title}</em>
+        </div>
+        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
+          {tr('prs.ready_confirm.body')}
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onCancel}
+            style={{
+              height: 28, padding: '0 14px', borderRadius: 7,
+              background: 'transparent', color: t.text2,
+              border: `1px solid ${t.glassBorder}`,
+              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
+            }}>{tr('common.cancel')}</button>
+          <button type="button" onClick={onConfirm}
+            style={{
+              height: 28, padding: '0 14px', borderRadius: 7, border: 0,
+              background: t.accent, color: t.accentOn,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
+              cursor: 'pointer',
+            }}>{tr('prs.ready_confirm.confirm')}</button>
         </div>
       </div>
     </div>

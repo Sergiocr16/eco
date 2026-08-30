@@ -49,10 +49,10 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
   const tr = useT();
   const [pr, setPr] = useState<CurrentPr | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<'merging' | 'closing' | null>(null);
+  const [busy, setBusy] = useState<'merging' | 'closing' | 'readying' | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [showMergeMenu, setShowMergeMenu] = useState(false);
-  const [confirming, setConfirming] = useState<'close' | { method: MergeMethod } | null>(null);
+  const [confirming, setConfirming] = useState<'close' | 'ready' | { method: MergeMethod } | null>(null);
   const mergeBtnRef = useRef<HTMLDivElement | null>(null);
   const mergeMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -144,6 +144,34 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
     }
   }
 
+  async function doReady() {
+    if (!pr) return;
+    setConfirming(null);
+    setBusy('readying');
+    setMsg(null);
+    ecoEmit('eco:git_busy', { bubbleId, busy: true, kind: 'pr_ready', label: tr('prs.banner.readying') });
+    try {
+      const r = await apiFetch('/git/pr/ready', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace, bubbleId, number: pr.number }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.ok) {
+        setMsg({ kind: 'ok', text: d.message || tr('prs.ready.ok', { n: pr.number }) });
+        ecoEmit('eco:git_refresh', { bubbleId });
+        await fetchCurrent();
+      } else {
+        setMsg({ kind: 'err', text: d.error || tr('prs.ready.fail') });
+      }
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
+    } finally {
+      setBusy(null);
+      ecoEmit('eco:git_busy', { bubbleId, busy: false, kind: 'pr_ready' });
+    }
+  }
+
   async function doClose() {
     if (!pr) return;
     setConfirming(null);
@@ -193,6 +221,8 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
   const conflicting = pr?.mergeable === 'CONFLICTING';
   const canMerge = !!pr && pr.state === 'OPEN' && !pr.isDraft && !conflicting && !busy;
   const canClose = !!pr && pr.state === 'OPEN' && !busy;
+  const isDraft = !!pr?.isDraft;
+  const canReady = !!pr && pr.state === 'OPEN' && isDraft && !busy;
 
   if (!pr) {
     // Sin PR asociado a la rama actual — sólo mostramos un mensaje
@@ -321,89 +351,113 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
       {/* Acciones — sólo PR abierto */}
       {pr.state === 'OPEN' && (
         <div style={{ display: 'flex', gap: 6 }}>
-          {/* Merge split button */}
-          <div ref={mergeBtnRef} style={{ position: 'relative', display: 'inline-flex', flex: 1, minWidth: 0 }}>
+          {/* Mientras el PR es borrador, el merge está bloqueado por GitHub: en su
+              lugar ofrecemos sacarlo de borrador (el sidebar no da para 3 botones). */}
+          {isDraft && (
             <button type="button"
-              onClick={() => setConfirming({ method: 'merge' })}
-              disabled={!canMerge}
-              title={conflicting ? tr('prs.banner.conflict_tooltip') : pr.isDraft ? tr('prs.banner.draft_tooltip') : tr('prs.banner.merge_tooltip')}
+              onClick={() => setConfirming('ready')}
+              disabled={!canReady}
+              title={tr('prs.banner.ready_tooltip')}
               style={{
                 flex: 1, minWidth: 0,
-                padding: '6px 8px',
-                borderTopLeftRadius: 7, borderBottomLeftRadius: 7,
-                borderTopRightRadius: 0, borderBottomRightRadius: 0,
-                border: 0,
-                background: canMerge ? t.ok : t.bg3,
-                color: canMerge ? '#fff' : t.text3,
+                padding: '6px 8px', borderRadius: 7, border: 0,
+                background: canReady ? t.accent : t.bg3,
+                color: canReady ? t.accentOn : t.text3,
                 fontSize: 11, fontWeight: 600, fontFamily: t.fontSans,
-                cursor: canMerge ? 'pointer' : 'not-allowed',
-                opacity: busy === 'merging' ? 0.7 : 1,
+                cursor: canReady ? 'pointer' : 'not-allowed',
+                opacity: busy === 'readying' ? 0.7 : 1,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
               }}>
               <IconCheck size={10}/>
-              {busy === 'merging' ? tr('prs.banner.merging') : tr('prs.banner.merge_btn')}
+              {busy === 'readying' ? tr('prs.banner.readying') : tr('prs.banner.ready_btn')}
             </button>
-            <button type="button"
-              onClick={() => setShowMergeMenu((v) => !v)}
-              disabled={!canMerge}
-              title={tr('prs.banner.merge_method_tooltip')}
-              style={{
-                padding: '6px 7px',
-                borderTopLeftRadius: 0, borderBottomLeftRadius: 0,
-                borderTopRightRadius: 7, borderBottomRightRadius: 7,
-                border: 0, borderLeft: `1px solid color-mix(in oklch, ${t.ok} 60%, black)`,
-                background: canMerge ? t.ok : t.bg3,
-                color: canMerge ? '#fff' : t.text3,
-                cursor: canMerge ? 'pointer' : 'not-allowed',
-                display: 'inline-flex', alignItems: 'center',
-                flexShrink: 0,
-              }}>
-              <IconChevD size={9}/>
-            </button>
-            {/* Menú porteado a <body>. Sin AnimatePresence: un portal como
-                hijo directo de AnimatePresence no se trackea bien y el menú
-                no llegaba a montarse. La entrada igual se anima con
-                initial→animate del motion.div. */}
-            {showMergeMenu && (() => {
-              const r = mergeBtnRef.current?.getBoundingClientRect();
-              return createPortal(
-                  <motion.div
-                    ref={mergeMenuRef}
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.12 }}
-                    style={{
-                      position: 'fixed', zIndex: 400,
-                      top: r ? r.bottom + 4 : 0,
-                      right: r ? Math.max(8, window.innerWidth - r.right) : 8,
-                      background: t.bg1,
-                      border: `1px solid ${t.glassBorder}`,
-                      borderRadius: 8, padding: 4,
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                      minWidth: 200,
-                    }}>
-                    {(['merge', 'squash', 'rebase'] as const).map((m) => (
-                      <button key={m} type="button"
-                        onClick={() => { setShowMergeMenu(false); setConfirming({ method: m }); }}
-                        style={{
-                          width: '100%', padding: '7px 10px', borderRadius: 5,
-                          border: 0, background: 'transparent', color: t.text1,
-                          fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
-                          textAlign: 'left', cursor: 'pointer',
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                        <div>{m === 'merge' ? tr('prs.banner.method.merge.label') : m === 'squash' ? tr('prs.banner.method.squash.label') : tr('prs.banner.method.rebase.label')}</div>
-                        <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>
-                          {m === 'merge' ? tr('prs.banner.method.merge.desc') : m === 'squash' ? tr('prs.banner.method.squash.desc') : tr('prs.banner.method.rebase.desc')}
-                        </div>
-                      </button>
-                    ))}
-                  </motion.div>,
-                  document.body,
-                );
-            })()}
-          </div>
+          )}
+
+          {/* Merge split button */}
+          {!isDraft && (
+            <div ref={mergeBtnRef} style={{ position: 'relative', display: 'inline-flex', flex: 1, minWidth: 0 }}>
+              <button type="button"
+                onClick={() => setConfirming({ method: 'merge' })}
+                disabled={!canMerge}
+                title={conflicting ? tr('prs.banner.conflict_tooltip') : tr('prs.banner.merge_tooltip')}
+                style={{
+                  flex: 1, minWidth: 0,
+                  padding: '6px 8px',
+                  borderTopLeftRadius: 7, borderBottomLeftRadius: 7,
+                  borderTopRightRadius: 0, borderBottomRightRadius: 0,
+                  border: 0,
+                  background: canMerge ? t.ok : t.bg3,
+                  color: canMerge ? '#fff' : t.text3,
+                  fontSize: 11, fontWeight: 600, fontFamily: t.fontSans,
+                  cursor: canMerge ? 'pointer' : 'not-allowed',
+                  opacity: busy === 'merging' ? 0.7 : 1,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}>
+                <IconCheck size={10}/>
+                {busy === 'merging' ? tr('prs.banner.merging') : tr('prs.banner.merge_btn')}
+              </button>
+              <button type="button"
+                onClick={() => setShowMergeMenu((v) => !v)}
+                disabled={!canMerge}
+                title={tr('prs.banner.merge_method_tooltip')}
+                style={{
+                  padding: '6px 7px',
+                  borderTopLeftRadius: 0, borderBottomLeftRadius: 0,
+                  borderTopRightRadius: 7, borderBottomRightRadius: 7,
+                  border: 0, borderLeft: `1px solid color-mix(in oklch, ${t.ok} 60%, black)`,
+                  background: canMerge ? t.ok : t.bg3,
+                  color: canMerge ? '#fff' : t.text3,
+                  cursor: canMerge ? 'pointer' : 'not-allowed',
+                  display: 'inline-flex', alignItems: 'center',
+                  flexShrink: 0,
+                }}>
+                <IconChevD size={9}/>
+              </button>
+              {/* Menú porteado a <body>. Sin AnimatePresence: un portal como
+                  hijo directo de AnimatePresence no se trackea bien y el menú
+                  no llegaba a montarse. La entrada igual se anima con
+                  initial→animate del motion.div. */}
+              {showMergeMenu && (() => {
+                const r = mergeBtnRef.current?.getBoundingClientRect();
+                return createPortal(
+                    <motion.div
+                      ref={mergeMenuRef}
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.12 }}
+                      style={{
+                        position: 'fixed', zIndex: 400,
+                        top: r ? r.bottom + 4 : 0,
+                        right: r ? Math.max(8, window.innerWidth - r.right) : 8,
+                        background: t.bg1,
+                        border: `1px solid ${t.glassBorder}`,
+                        borderRadius: 8, padding: 4,
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                        minWidth: 200,
+                      }}>
+                      {(['merge', 'squash', 'rebase'] as const).map((m) => (
+                        <button key={m} type="button"
+                          onClick={() => { setShowMergeMenu(false); setConfirming({ method: m }); }}
+                          style={{
+                            width: '100%', padding: '7px 10px', borderRadius: 5,
+                            border: 0, background: 'transparent', color: t.text1,
+                            fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+                            textAlign: 'left', cursor: 'pointer',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+                          <div>{m === 'merge' ? tr('prs.banner.method.merge.label') : m === 'squash' ? tr('prs.banner.method.squash.label') : tr('prs.banner.method.rebase.label')}</div>
+                          <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>
+                            {m === 'merge' ? tr('prs.banner.method.merge.desc') : m === 'squash' ? tr('prs.banner.method.squash.desc') : tr('prs.banner.method.rebase.desc')}
+                          </div>
+                        </button>
+                      ))}
+                    </motion.div>,
+                    document.body,
+                  );
+              })()}
+            </div>
+          )}
 
           <button type="button"
             onClick={() => setConfirming('close')}
@@ -426,13 +480,19 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
       )}
 
       <AnimatePresence>
+        {confirming === 'ready' && pr && (
+          <ConfirmReadyDialog
+            pr={pr}
+            onCancel={() => setConfirming(null)}
+            onConfirm={() => void doReady()}/>
+        )}
         {confirming === 'close' && pr && (
           <ConfirmCloseDialog
             pr={pr}
             onCancel={() => setConfirming(null)}
             onConfirm={() => void doClose()}/>
         )}
-        {confirming && confirming !== 'close' && pr && (
+        {confirming && confirming !== 'close' && confirming !== 'ready' && pr && (
           <ConfirmMergeDialog
             pr={pr}
             method={confirming.method}
@@ -548,6 +608,74 @@ function ConfirmMergeDialog({
               background: t.ok, color: '#fff', border: 0,
               fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
             }}>{tr('prs.banner.merge_btn')}</button>
+        </div>
+      </motion.div>
+    </motion.div>
+  ), document.body);
+}
+
+function ConfirmReadyDialog({
+  pr, onCancel, onConfirm,
+}: {
+  pr: CurrentPr;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  return createPortal((
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+      onClick={onCancel}>
+      <motion.div
+        initial={{ scale: 0.96, y: 6 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 6 }}
+        transition={{ duration: 0.18 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(480px, 100%)',
+          background: t.bg1,
+          border: `1px solid ${t.glassBorder}`,
+          borderRadius: 16,
+          padding: 20,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+        }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
+          {tr('prs.banner.confirm_ready.title', { n: pr.number })}
+        </h3>
+        <div style={{
+          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 14,
+          lineHeight: 1.5,
+        }}>
+          <code style={{
+            fontFamily: t.fontMono, fontSize: 11,
+            padding: '1px 5px', borderRadius: 4,
+            background: t.bg3, color: t.text1,
+          }}>{pr.title}</code>
+          <div style={{ marginTop: 6 }}>
+            {tr('prs.banner.confirm_ready.body')}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onCancel}
+            style={{
+              padding: '9px 14px', borderRadius: 9,
+              background: 'transparent', color: t.text2,
+              border: `1px solid ${t.glassBorder}`,
+              fontSize: 12.5, cursor: 'pointer',
+            }}>{tr('common.cancel')}</button>
+          <button type="button" onClick={onConfirm}
+            style={{
+              padding: '9px 14px', borderRadius: 9,
+              background: t.accent, color: t.accentOn, border: 0,
+              fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            }}>{tr('prs.ready_confirm.confirm')}</button>
         </div>
       </motion.div>
     </motion.div>

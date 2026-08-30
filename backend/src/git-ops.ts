@@ -1175,6 +1175,26 @@ export async function closePullRequest(workspace: string, number: number, commen
 }
 
 /**
+ * Saca el PR del estado draft (`gh pr ready`). GitHub no deja mergear un
+ * draft, así que esta es la puerta previa al merge desde Eco.
+ */
+export async function readyPullRequest(workspace: string, number: number): Promise<GitActionResult> {
+  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
+  if (!(await ghAvailable())) return { ok: false, error: 'gh no instalado' };
+  if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
+  const r = await spawnAsync('gh', ['pr', 'ready', String(number)], {
+    cwd: workspace,
+    timeout: 30_000,
+    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
+  });
+  if (r.status !== 0) {
+    const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString());
+    return { ok: false, error: err.trim().slice(0, 600) || 'gh pr ready falló' };
+  }
+  return { ok: true, message: `PR #${number} listo para revisión` };
+}
+
+/**
  * Checkout de un PR usando `gh pr checkout <number>`. Maneja forks
  * transparentemente (crea remote temporal si hace falta) y branches que
  * ya existen localmente. Se ejecuta en el worktree del agente — el user
