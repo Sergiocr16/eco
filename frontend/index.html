@@ -19,17 +19,19 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
     <!-- Instalación en el iPhone/iPad. Los meta apple-* siguen siendo el camino
          confiable aunque iOS 17.4+ ya respete `display: standalone` del
-         manifest. La barra de estado va OPACA (`black`, fondo negro y símbolos
-         blancos): con `black-translucent` los símbolos también son blancos y
-         en los temas claros el reloj desaparece sobre el fondo. Ojo: iOS 26.1+ (visto en iPadOS 27)
-         esmerila una banda progresiva sobre el borde superior del web view con
-         CUALQUIER valor de este meta — el colchón que la esquiva vive en
-         lib/platform.ts (SAFE_TOP). iOS captura este meta al agregar la app a
-         la pantalla de inicio: si cambia, hay que quitarla y volver a
-         agregarla. -->
+         manifest. `black-translucent`: la barra de estado deja ver el fondo de
+         la app (sin franja negra arriba). El colchón que esquiva el blur que
+         iOS 26.1+/27 pinta sobre el borde superior del web view vive en
+         lib/platform.ts (SAFE_TOP) — ese blur aparece con CUALQUIER valor de
+         este meta. Se probó `black` (opaca): quita la banda muerta de ~62pt
+         que el bug de WebKit #301994 deja debajo de la nav en el iPhone
+         vertical, pero pinta una franja negra arriba; se prefirió el fondo
+         continuo. Limitación conocida: los símbolos son blancos también en
+         temas claros. iOS captura este meta al agregar la app a la pantalla
+         de inicio: si cambia, hay que quitarla y volver a agregarla. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Eco" />
     <title>Eco</title>
   </head>
