@@ -1798,6 +1798,21 @@ The `min-height: 700px` in the tablet query is load-bearing: an iPhone 16 Pro Ma
 - Both constants divide by `--eco-zoom` (see "UI zoom" below): under CSS zoom `env()` values arrive in visual px.
 - `hooks/useKeyboardInset.ts` — the iOS soft keyboard draws *over* the layout viewport, and with `body { overflow: hidden }` + a `position: fixed` shell nothing scrolls the prompt back into view. The hook reads `visualViewport` and its value is subtracted from the shell's `bottom` in `App.tsx`. The 120px threshold exists because Safari's collapsing URL bar also moves `visualViewport` by 50-90px; a real keyboard is never under ~250px.
 
+### iOS 27 workarounds — the revert checklist
+
+Two Apple-side defects shape the installed-app layout today. Each has a workaround and a concrete test that says when it can go. **Re-check both after every iOS/iPadOS update** on the test devices: Settings → Acerca de → **Viewport (diagnóstico)** (touch only, `ViewportDiagnostics` in `Settings.tsx`) prints `screen`, `inner`, `visual`, `env top/bottom`, `standalone`, `orientation`.
+
+| Defect | Symptom | Workaround (where) | Fixed when | Revert |
+|---|---|---|---|---|
+| [WebKit #301994](https://bugs.webkit.org/show_bug.cgi?id=301994) (rdar://184081721) — the Web App container shrinks the web view by the status bar height in portrait | ~62pt dead band under the bottom nav on a portrait iPhone; diagnostics show `inner` height < `screen` height by the status bar height (`812` vs `874` on a 6.3" phone). Landscape and iPad unaffected. | None in code: the status bar stays `black-translucent`. Opaque `black` hides the band (the web view starts below the bar) but paints a black strip on top — rejected. | Diagnostics on a portrait iPhone: `inner` height == `screen` height and the bottom nav touches the screen edge. | Nothing to change. Optionally delete `ViewportDiagnostics` + the `settings.about.viewport.*` i18n keys once both rows are closed. |
+| Progressive frost band over the top edge of the web view (iOS 26.1+/27, drawn with any `apple-mobile-web-app-status-bar-style`) | Header text blurred/dimmed within the first ~95pt of the screen. | `IOS_FROST_EXTRA = ' + 40px'` in `lib/platform.ts`, added to `SAFE_TOP` when `isStandalone() && isIOS()`. | Build with `IOS_FROST_EXTRA = ''`, open the installed app on iPad **and** iPhone: the bubble header title is crisp with the shell starting right under the status bar. | Delete `IOS_FROST_EXTRA`, `isIOS()` and their comment; `SAFE_TOP` becomes `calc(env(safe-area-inset-top, 0px) / var(--eco-zoom, 1))`. |
+
+Procedure to close a row:
+1. Update the test iPhone/iPad, open the installed Eco, read the diagnostics block (row 1) or apply the revert on a branch (row 2).
+2. `npm run serve:web -- --rebuild` from that branch — it takes over the tailnet `:443`, so the installed PWA loads the test build on the next cold open (close it fully in the app switcher; no re-add needed unless the `index.html` meta changed).
+3. Screenshot the Dashboard and a bubble header on both devices, portrait and landscape.
+4. If it passes: commit, `npm run dmg`, reinstall the `.app` (§19), which re-publishes the tailnet toggle on launch (`:443` back to 7100). If not: nothing to do, the workaround stays.
+
 ### Where the 44pt touch targets come from
 
 `design/primitives.tsx` is the single leverage point — one branch there fixes hundreds of call sites: `Btn` (26/32/40 → 36/44/48), `IconBtn` (grows the **hit area** to ≥40 while keeping the glyph at its original size, so dense toolbars don't balloon), `Toggle` (38×22 → 51×31, the iOS switch), `fieldStyle` (13.5px → **16px**).

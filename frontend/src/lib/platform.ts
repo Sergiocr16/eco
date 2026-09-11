@@ -90,7 +90,8 @@ function isIOS(): boolean {
 // opaca incluida — se probó. No hay API que diga cuánto mide. Los 40px salen
 // de medir en un iPad 13": la banda se desvanece a ~95pt del borde de la
 // pantalla. Debajo queda solo el fondo del shell, y un color plano esmerilado
-// no se nota; texto sí.
+// no se nota; texto sí. Cuándo y cómo quitarlo: CLAUDE.md, Appendix F →
+// "iOS 27 workarounds — the revert checklist".
 const IOS_FROST_EXTRA = OWNS_FULL_SCREEN && isIOS() ? ' + 40px' : '';
 // Bajo zoom CSS (web) los env() llegan en px visuales; lib/ui-zoom.ts publica
 // el factor en --eco-zoom para que el shell no reserve Z veces el inset.
