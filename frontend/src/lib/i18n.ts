@@ -1359,6 +1359,32 @@ const DICT = {
   'settings.appearance.theme.name.lavender': { es: 'Lavanda', en: 'Lavender' },
   'settings.appearance.theme.name.sand': { es: 'Arena', en: 'Sand' },
   'settings.appearance.theme.name.mint': { es: 'Menta', en: 'Mint' },
+  'settings.appearance.zoom': { es: 'Tamaño de la interfaz', en: 'Interface size' },
+  'settings.appearance.zoom.title': { es: 'Zoom de Eco', en: 'Eco zoom' },
+  'settings.appearance.zoom.desc': {
+    es: 'Escala toda la interfaz en este dispositivo. El terminal acompaña la escala y además tiene su propio tamaño de letra más abajo.',
+    en: 'Scales the whole interface on this device. The terminal follows it and also has its own font size below.',
+  },
+  'settings.appearance.zoom.desc_shortcut': {
+    es: 'Escala toda la interfaz de esta ventana. También con Cmd/Ctrl + y −, y Cmd/Ctrl 0 para volver a 100%.',
+    en: 'Scales the whole interface of this window. Also via Cmd/Ctrl + and −, and Cmd/Ctrl 0 to get back to 100%.',
+  },
+  'settings.appearance.zoom.reset': { es: 'Restablecer', en: 'Reset' },
+  'settings.appearance.terminal': { es: 'Terminal', en: 'Terminal' },
+  'settings.appearance.terminal.font_size': { es: 'Tamaño de letra', en: 'Font size' },
+  'settings.appearance.terminal.font_size_desc': {
+    es: 'Aplica a todas las terminales (Claude, Codex y shells). En el teléfono también se ajusta con A−/A+ sobre el teclado.',
+    en: 'Applies to every terminal (Claude, Codex and shells). On the phone it can also be adjusted with A−/A+ above the keyboard.',
+  },
+  'settings.appearance.terminal.font_size.smaller': { es: 'Achicar', en: 'Smaller' },
+  'settings.appearance.terminal.font_size.bigger': { es: 'Agrandar', en: 'Bigger' },
+  'settings.appearance.terminal.font_family': { es: 'Tipografía', en: 'Typeface' },
+  'settings.appearance.terminal.font_family_desc': {
+    es: 'Solo familias monoespaciadas. Las marcadas como no instaladas caen a la del sistema en este dispositivo.',
+    en: 'Monospaced families only. Those marked as not installed fall back to the system one on this device.',
+  },
+  'settings.appearance.terminal.font.system': { es: 'Sistema (monoespaciada)', en: 'System (monospaced)' },
+  'settings.appearance.terminal.font.not_installed': { es: 'no instalada', en: 'not installed' },
 
   // ─────────────────────────── Settings — About
   'settings.about.tagline': {
@@ -1366,6 +1392,11 @@ const DICT = {
     en: 'Local control center for Claude agents. Voice, code, terminal, browser and git, all on your Mac.',
   },
   'settings.about.packaged': { es: 'App empaquetada', en: 'Packaged app' },
+  'settings.about.viewport.title': { es: 'Viewport (diagnóstico)', en: 'Viewport (diagnostics)' },
+  'settings.about.viewport.desc': {
+    es: 'Medidas reales de pantalla y viewport en este dispositivo. Sirve para distinguir qué franja dibuja Eco y cuál el sistema.',
+    en: 'Real screen and viewport measurements on this device. Tells apart what Eco draws from what the system draws.',
+  },
   'settings.about.dev':      { es: 'Modo dev', en: 'Dev mode' },
 
   // Auto-update

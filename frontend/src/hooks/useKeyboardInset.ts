@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { cssZoom } from '@/lib/ui-zoom';
 
 // El teclado táctil de iOS no achica el layout viewport: se dibuja ENCIMA. Con
 // el shell en `position: fixed` y `body { overflow: hidden }` (index.css), eso
@@ -29,11 +30,14 @@ export function useKeyboardInset(): number {
       // navegador estuvieran colapsadas, así que innerHeight - vv.height daba
       // ~130px de barras y se interpretaba como un teclado abierto: el shell
       // se subía y quedaba una franja gris muerta al pie de la pantalla.
-      const layoutHeight = document.documentElement.clientHeight;
+      // Se mide el rect de <html> (height: 100% en index.css) y no clientHeight:
+      // bajo zoom CSS (web) clientHeight viene en px del documento escalado y
+      // visualViewport en px visuales — restarlos inventaba un teclado.
+      const layoutHeight = document.documentElement.getBoundingClientRect().height;
       const overlap = layoutHeight - vv.height - vv.offsetTop;
       // Segundo cinturón: sin un campo enfocado no hay teclado, por más que
-      // las alturas digan otra cosa.
-      setInset(isEditing() && overlap > KEYBOARD_MIN ? Math.round(overlap) : 0);
+      // las alturas digan otra cosa. El inset se devuelve en px CSS del shell.
+      setInset(isEditing() && overlap > KEYBOARD_MIN ? Math.round(overlap / cssZoom()) : 0);
     };
     update();
     vv.addEventListener('resize', update);

@@ -481,6 +481,9 @@ eco.notes.splitter.<bubbleId>            ← NotesPanel list/editor splitter
 eco.notes.preview.<bubbleId>             ← preview mode toggle
 eco.review.accepted.<bubbleId>           ← {[path]: acceptedAt timestamp}
 eco.agent.review_mode                    ← '1' to enable Cursor-style review
+eco.zoom.main / eco.zoom.solo.<bubbleId> ← UI zoom per window (lib/ui-zoom.ts: native webFrame zoom in Electron, CSS `zoom` on <html> in web/PWA)
+eco.term.fontsize                        ← terminal font size, global (lib/terminal-prefs.ts; Settings → Apariencia + phone A−/A+ write the same store)
+eco.term.fontfamily                      ← terminal typeface id, global (lib/terminal-prefs.ts)
 ```
 
 ### Self-origin allowlist
@@ -1790,6 +1793,9 @@ The `min-height: 700px` in the tablet query is load-bearing: an iPhone 16 Pro Ma
 
 - `index.html` already had `viewport-fit=cover`; **nothing consumed it** until now. `lib/platform.ts` exports `SAFE_TOP` / `SAFE_BOTTOM` (`env(safe-area-inset-*)` strings — inline styles accept any CSS value, including `calc()`).
 - **`SAFE_TOP` is not `getTopInset()`.** The latter reserves 36px for macOS traffic lights in Electron; the former compensates for phone hardware. Orthogonal — don't merge them.
+- **`SAFE_TOP` applies everywhere; `SAFE_BOTTOM` only installed.** Since iOS 26 (Liquid Glass) content runs under the status bar in Safari too and the OS blurs whatever sits there, so the top inset is honored unconditionally (`env()` reports 0 whenever the browser already reserves the strip). The bottom stays gated to standalone because Safari's toolbar already occupies that zone. The shell (`App.tsx`) adds `SAFE_TOP` on every device, tablets included — the iPad is `isMobile` but not `isPhone`, and it used to start at `top: 0` with the header under the blur. Installed on iOS 26.1+ (verified on iPadOS 27), `SAFE_TOP` adds a **40px cushion** on top of `env()`: the OS frosts a progressive-blur band roughly 4× the status bar height over the top edge of the web view, does so with **any** `apple-mobile-web-app-status-bar-style` (opaque `black` was tried and changed nothing), and exposes no API for its height — 40px was measured on a 13" iPad (the band fades out ~95pt from the screen edge). Only the shell background sits under it, and a flat color blurred is invisible; text is not. The meta stays `black` (black bar, white symbols) because `black-translucent` also uses white symbols, which vanish on the light themes. iOS captures that meta when the app is added to the home screen — changing it means removing and re-adding the app.
+- **The dock hugs the bottom edge on touch.** `BubbleDock.tsx` uses a 6px margin on touch (14px on desktop) and no safe-area inset at all — iPadOS 26 removed the home indicator, and `14px + env(safe-area-inset-bottom)` left the dock floating over a dead band. It exports `DOCK_RESERVED_BOTTOM` (dock height + margin), which the shell uses as its `bottom` while the dock is visible; before, the shell reserved a flat 76px while the dock floated higher, so on an installed iPad the dock overlapped the terminal key bar.
+- Both constants divide by `--eco-zoom` (see "UI zoom" below): under CSS zoom `env()` values arrive in visual px.
 - `hooks/useKeyboardInset.ts` — the iOS soft keyboard draws *over* the layout viewport, and with `body { overflow: hidden }` + a `position: fixed` shell nothing scrolls the prompt back into view. The hook reads `visualViewport` and its value is subtracted from the shell's `bottom` in `App.tsx`. The 120px threshold exists because Safari's collapsing URL bar also moves `visualViewport` by 50-90px; a real keyboard is never under ~250px.
 
 ### Where the 44pt touch targets come from
@@ -1827,7 +1833,7 @@ The `min-height: 700px` in the tablet query is load-bearing: an iPhone 16 Pro Ma
 
 326px at 12.5px monospace is **~40 columns**; the Claude and Codex TUIs assume 80. In landscape (844-932px) it's ~90 and genuinely comfortable. **Tell users to rotate for terminal sessions.** Three mitigations in `RealTerminal.tsx`:
 
-1. `eco.term.fontsize` (**global**, not per-bubble — deliberately, so it never has to join the `useBubbles.removeBubble` cleanup list). Defaults to 10 on mobile (~54 cols), 12.5 on desktop. Applied in a **separate effect** from the main one: putting `fontSize` in the big effect's deps would recreate the terminal and reconnect the PTY on every A+ tap. The container doesn't resize, so that effect re-emits the resize by hand.
+1. `eco.term.fontsize` (**global**, not per-bubble — deliberately, so it never has to join the `useBubbles.removeBubble` cleanup list). Defaults to 10 on mobile (~54 cols), 12.5 on desktop. The store is `lib/terminal-prefs.ts` (also `eco.term.fontfamily`), shared with Settings → Apariencia → Terminal; the A−/A+ keys write the same store and every mounted terminal follows live. Applied in a **separate effect** from the main one: putting the font in the big effect's deps would recreate the terminal and reconnect the PTY on every A+ tap. The container doesn't resize, so that effect re-emits the resize by hand.
 2. `components/TerminalKeyBar.tsx` — iOS has no Esc, Ctrl, Tab or arrows, which are exactly what the agent TUIs need. Sends raw sequences through the existing `sendInput` (exposed via a ref); **no protocol or backend change**. Buttons use `onPointerDown` + `preventDefault` so the terminal keeps focus and the system keyboard stays up.
 3. Tap-to-focus on the container — otherwise the keyboard only appears if your finger happens to land on xterm's hidden textarea.
 
@@ -1841,6 +1847,14 @@ The `min-height: 700px` in the tablet query is load-bearing: an iPhone 16 Pro Ma
 So `RealTerminal.tsx` implements it: `touchstart`/`touchmove`/`touchend` on the container, drag converted to lines via the measured cell height (with a sub-line pixel accumulator), fed to the public `term.scrollLines()`, plus a decaying-velocity glide on release. `touchmove` must be `{passive: false}` — without `preventDefault` iOS keeps the gesture and pans the page instead.
 
 > Two earlier attempts failed and are worth not repeating: raising `.xterm-viewport` with `z-index` (pointless — nothing to scroll) and `stopPropagation` on its touch events (actively harmful — xterm's listeners live on `document`, so it broke what little worked).
+
+### UI zoom (Settings → Apariencia)
+
+`lib/ui-zoom.ts` owns the whole-UI zoom (0.5–2.0, step 0.1, persisted per window as `eco.zoom.main` / `eco.zoom.solo.<id>`). Two engines: **Electron** → `webFrame.setZoomFactor` (native Chromium zoom, also driven by Cmd/Ctrl +/−/0 from the View menu through `WindowZoomController`). **Web/PWA** → CSS `zoom` on `<html>`, the only option on an iPad/iPhone where no browser shortcut exists. `applyStoredUiZoom()` runs in `main.tsx` before the first render.
+
+CSS zoom has one trap: Chromium and WebKit return **visual** px from `getBoundingClientRect()` / `clientX`, while inline styles are applied in the zoomed document's CSS px. Any code that measures pixels and writes them back as a style must divide by `cssZoom()` (1 in Electron). Already compensated: `ResizableSplit` drag, `BubbleDock` tooltip, `CurrentPrBanner` merge menu, Dashboard menu anchor + graph measure + pan/drag deltas, `FileEditor` floating send button, `useKeyboardInset`, and `SAFE_TOP`/`SAFE_BOTTOM` (via `--eco-zoom`). Viewport units scale with the document too (under zoom 1.3, `100vh` measures 130% of the viewport — verified in Chrome), so inline styles use the `vh()` / `vw()` / `dvh()` helpers from `lib/ui-zoom.ts` (`calc(n * var(--eco-vh, 1vh))`, where the variable is `1vh / zoom` on web and absent elsewhere) instead of raw `85vh` / `calc(100vw - 48px)`. Don't write a raw viewport unit in a style object. CodeMirror detects the scale by itself (`@codemirror/view` ≥ 6.23). **xterm does not**: it measures cells with `getBoundingClientRect` and the WebGL canvas would render blurry, so `RealTerminal` and the `ServerPanel` log viewer wrap xterm in a container with `zoom: 1/cssZoom()` and multiply the font size by `cssZoom()` instead — the terminal follows the UI zoom visually while running at scale 1 internally. Apply the same pattern to any new xterm/canvas surface.
+
+Terminal font size and typeface live in `lib/terminal-prefs.ts` (`eco.term.fontsize`, `eco.term.fontfamily`, global on purpose), edited from Settings → Apariencia → Terminal and from the phone's A−/A+ key bar; changes apply live to every mounted terminal. Typeface options are a curated monospace list; `isFontInstalled` (canvas metric comparison — `document.fonts.check()` returns true for any system font, installed or not) flags the ones missing on the device.
 
 ### PWA install
 

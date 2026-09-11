@@ -1,3 +1,4 @@
+import { vw } from '@/lib/ui-zoom';
 import { useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { Btn } from '@/design/primitives';
@@ -48,7 +49,7 @@ export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignO
       <DriftingOrbs/>
       <div style={{
         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        zIndex: 2, width: 'min(340px, calc(100vw - 48px))',
+        zIndex: 2, width: `min(340px, calc(${vw(100)} - 48px))`,
         display: 'flex', flexDirection: 'column', alignItems: 'center',
       }}>
         {/* Avatar del usuario (foto o inicial) */}

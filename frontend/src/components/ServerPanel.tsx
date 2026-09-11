@@ -1,3 +1,4 @@
+import { cssZoom, useCssZoom } from '@/lib/ui-zoom';
 // Panel de control del dev server por agente — separado del navegador
 // porque son cosas distintas (proceso vs página). Cuando el server arranca,
 // el panel Navegador se navega automáticamente a la URL emitida.
@@ -948,6 +949,11 @@ function LogsPane({
   );
 }
 
+// Los logs son de solo lectura: acá lo que importa es que entren las columnas
+// de un stack trace, no la comodidad de tipear. Se escala por el zoom CSS de
+// la UI porque el contenedor se contra-zoomea (misma razón que RealTerminal).
+const logFontPx = () => (isPhoneNow() ? 10 : 11.5) * cssZoom();
+
 // Viewer de logs renderizado con xterm.js — interpreta secuencias ANSI
 // (colores, bold, dim, etc.) fielmente como una terminal real. El input
 // nativo está deshabilitado: es solo lectura.
@@ -1001,9 +1007,7 @@ function TerminalLogs({
       disableStdin: true,
       convertEol: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-      // Los logs son de solo lectura: acá lo que importa es que entren las
-      // columnas de un stack trace, no la comodidad de tipear.
-      fontSize: isPhoneNow() ? 10 : 11.5,
+      fontSize: logFontPx(),
       lineHeight: 1.3,
       // 10k líneas: suficiente para scrollear el origen de un error aunque el
       // framework haya seguido logueando encima. Cuesta memoria solo mientras
@@ -1169,6 +1173,16 @@ function TerminalLogs({
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   }, [visible]);
 
+  // El zoom de la UI (web) cambia la fuente efectiva, y el contenedor
+  // contra-zoomeado no cambia de tamaño visual: se refitea a mano.
+  const cssZ = useCssZoom();
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = logFontPx();
+    try { fitRef.current?.fit(); } catch { /* noop */ }
+  }, [cssZ]);
+
   // Auto-clear del feedback después de 2.5s.
   useEffect(() => {
     if (!feedback) return;
@@ -1221,6 +1235,9 @@ function TerminalLogs({
       <div ref={containerRef} style={{
         width: '100%', height: '100%',
         overflow: 'hidden',
+        // Contra-zoom bajo zoom CSS (web): xterm mide en px visuales y los
+        // aplica como px CSS — ver el mismo style en RealTerminal.
+        ...(cssZ !== 1 ? { zoom: 1 / cssZ } : null),
       }}/>
 
       {/* Floating action bar — aparece cuando hay texto seleccionado */}

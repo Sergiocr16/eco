@@ -1,3 +1,4 @@
+import { vw } from '@/lib/ui-zoom';
 import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider, useTokens } from './design/theme';
 import { AppSidebar, MOBILE_NAV_HEIGHT, type Screen } from './components/AppSidebar';
@@ -32,6 +33,7 @@ import type { Bubble } from './lib/types';
 
 import { ecoBackend, ecoToken } from './lib/eco-config';
 import { getTopInset, SAFE_TOP } from './lib/platform';
+import { DOCK_RESERVED_BOTTOM } from './components/BubbleDock';
 import { useIsPhone } from './hooks/useMediaQuery';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { getSoloBubbleId } from './lib/solo';
@@ -149,7 +151,7 @@ function SoloLockedScreen() {
         transform: 'translate(-50%, -50%)', zIndex: 2,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexDirection: 'column', gap: 14, padding: 24,
-        width: 'min(380px, calc(100vw - 48px))', textAlign: 'center',
+        width: `min(380px, calc(${vw(100)} - 48px))`, textAlign: 'center',
       }}>
         <div style={{
           width: 52, height: 52, borderRadius: '50%',
@@ -568,14 +570,15 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const isPhone = useIsPhone();
   const keyboardInset = useKeyboardInset();
 
-  // Inset inferior cuando el dock está activo y hay agentes — reserva ~76px
-  // (alto del dock + margen) para que el contenido no quede tapado.
+  // Con el dock activo y agentes, el shell reserva DOCK_RESERVED_BOTTOM (alto
+  // del dock + margen + su inset de safe area) para que el contenido no quede
+  // tapado. Sin el inset, en el iPad instalado el dock flotaba encima de la
+  // barra de teclas del terminal.
   // En móvil el dock no se dibuja: `left:64` hardcodeado, resize solo-mouse y
   // tooltips por hover son affordances de escritorio. El cambio de agente en
   // el teléfono es el Dashboard, a un toque en la barra inferior.
   const dockEnabled = useDockPref();
   const dockVisible = dockEnabled && bubbles.bubbles.length > 0 && !isPhone;
-  const bottomInset = dockVisible ? 76 : 0;
 
   // Patrón iOS: entrar al detalle de un agente esconde la barra inferior. En
   // el terminal cada píxel vertical cuenta y el header ya tiene "volver".
@@ -601,12 +604,15 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         }}/>
       )}
       {/* Shell del UI: top=topInset empuja TODO 36px abajo, así los traffic
-          lights de mac y el frame del sistema viven en el área superior libre. */}
+          lights de mac y el frame del sistema viven en el área superior libre.
+          SAFE_TOP suma la barra de estado en táctil — también en el iPad, que
+          no es "phone" pero desde iPadOS 26 pone un blur sobre lo que quede
+          debajo de la barra. Fuera de iOS resuelve a 0px. */}
       <div style={{
         position: 'fixed',
-        top: isPhone ? SAFE_TOP : topInset,
+        top: `calc(${topInset}px + ${SAFE_TOP})`,
         left: 0, right: 0,
-        bottom: bottomInset + keyboardInset,
+        bottom: dockVisible ? `calc(${keyboardInset}px + ${DOCK_RESERVED_BOTTOM})` : keyboardInset,
         zIndex: 1,
         display: 'flex',
         // En móvil la barra de navegación NO va en el flujo: se dibuja

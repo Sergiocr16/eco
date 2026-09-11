@@ -1,3 +1,4 @@
+import { vw } from '@/lib/ui-zoom';
 import { useCallback, useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { Btn } from '@/design/primitives';
@@ -639,7 +640,7 @@ function MergeConfirm({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        width: 520, maxWidth: '92vw', padding: 20, borderRadius: 12,
+        width: 520, maxWidth: vw(92), padding: 20, borderRadius: 12,
         background: t.bg1, border: `1px solid ${t.accent}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
@@ -716,7 +717,7 @@ function ReadyConfirm({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        width: 480, maxWidth: '92vw', padding: 20, borderRadius: 12,
+        width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
         background: t.bg1, border: `1px solid ${t.accent}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
@@ -769,7 +770,7 @@ function CloseConfirm({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        width: 480, maxWidth: '92vw', padding: 20, borderRadius: 12,
+        width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
         background: t.bg1, border: `1px solid ${t.err}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>

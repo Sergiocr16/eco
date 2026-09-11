@@ -1,85 +1,39 @@
-// Zoom de toda la UI POR VENTANA. En Electron cada ventana (la principal y las
-// satélites "?solo=<id>" de otro monitor) tiene su propio webFrame, así que el
-// factor escala solo esa ventana — pensado para calzar la UI en monitores de
-// distinta resolución. El factor se persiste por identidad de ventana:
-//   - principal  → eco.zoom.main
-//   - satélite   → eco.zoom.solo.<bubbleId>
-// Atajos: Cmd/Ctrl + (= / +) agranda, Cmd/Ctrl − achica, Cmd/Ctrl 0 resetea.
-// Los atajos los registra el menú Vista de Electron (main.cjs) y llegan acá por
-// el evento `onZoom` — así no hay doble disparo con los roles built-in.
-// No hace nada fuera de Electron (en el navegador el zoom nativo ya existe).
+// Indicador transitorio del zoom (pill con el %) + atajos del menú Vista de
+// Electron: Cmd/Ctrl + (= / +) agranda, Cmd/Ctrl − achica, Cmd/Ctrl 0 resetea.
+// Los registra main.cjs y llegan por `onZoom` — así no hay doble disparo con
+// los roles built-in. El estado vive en lib/ui-zoom.ts, compartido con
+// Settings → Apariencia; en web no hay atajos (el navegador tiene los suyos)
+// y el zoom se cambia desde ahí.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { getSoloBubbleId } from '@/lib/solo';
-
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 2.0;
-const ZOOM_STEP = 0.1;
-const ZOOM_DEFAULT = 1.0;
-
-function zoomKey(): string {
-  const solo = getSoloBubbleId();
-  return solo ? `eco.zoom.solo.${solo}` : 'eco.zoom.main';
-}
-
-function clampZoom(n: number): number {
-  // Redondeo a 2 decimales para evitar drift de floats al sumar 0.1 repetido.
-  return Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n)) * 100) / 100;
-}
-
-function readZoom(key: string): number {
-  try {
-    const n = Number(window.localStorage.getItem(key));
-    if (Number.isFinite(n) && n >= ZOOM_MIN && n <= ZOOM_MAX) return n;
-  } catch { /* noop */ }
-  return ZOOM_DEFAULT;
-}
+import { getUiZoom, setUiZoom, subscribeUiZoom, ZOOM_DEFAULT, ZOOM_STEP } from '@/lib/ui-zoom';
 
 export function WindowZoomController() {
   const t = useTokens();
-  const isElectron = typeof window !== 'undefined' && !!window.electronAPI?.setZoomFactor;
-  const keyRef = useRef(zoomKey());
-  const [zoom, setZoom] = useState<number>(() => readZoom(keyRef.current));
-  const zoomRef = useRef(zoom);
-  // Indicador transitorio (pill con el %) que aparece al cambiar y se desvanece.
+  const [zoom, setZoom] = useState<number>(getUiZoom());
   const [showIndicator, setShowIndicator] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const apply = useCallback((next: number, flash: boolean) => {
-    const clamped = clampZoom(next);
-    zoomRef.current = clamped;
-    setZoom(clamped);
-    try { window.localStorage.setItem(keyRef.current, String(clamped)); } catch { /* noop */ }
-    window.electronAPI?.setZoomFactor?.(clamped);
-    if (flash) {
-      setShowIndicator(true);
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = setTimeout(() => setShowIndicator(false), 1100);
-    }
-  }, []);
+  useEffect(() => subscribeUiZoom((z) => {
+    setZoom(z);
+    setShowIndicator(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setShowIndicator(false), 1100);
+  }), []);
 
-  // Aplica el factor persistido al montar (sin flash).
   useEffect(() => {
-    if (!isElectron) return;
-    apply(readZoom(keyRef.current), false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isElectron]);
-
-  // El menú Vista (Cmd +/−/0) emite 'in' | 'out' | 'reset' a esta ventana.
-  useEffect(() => {
-    if (!isElectron) return;
     const off = window.electronAPI?.onZoom?.((dir) => {
-      if (dir === 'in') apply(zoomRef.current + ZOOM_STEP, true);
-      else if (dir === 'out') apply(zoomRef.current - ZOOM_STEP, true);
-      else apply(ZOOM_DEFAULT, true);
+      if (dir === 'in') setUiZoom(getUiZoom() + ZOOM_STEP);
+      else if (dir === 'out') setUiZoom(getUiZoom() - ZOOM_STEP);
+      else setUiZoom(ZOOM_DEFAULT);
     });
     return () => { if (off) off(); };
-  }, [isElectron, apply]);
+  }, []);
 
   useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
 
-  if (!isElectron || !showIndicator) return null;
+  if (!showIndicator) return null;
 
   return (
     <div style={{

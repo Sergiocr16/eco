@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { useTheme, useTokens } from '@/design/theme';
 import { ACCENT_HUES, THEME_VARIANTS, defaultHueForTheme } from '@/design/tokens';
 import {
@@ -7,7 +7,7 @@ import {
 import {
   IconSettings, IconKey, IconFolder, IconShield, IconLayers,
   IconInfo, IconCheck, IconCpu, IconTerminal, IconGlobe, IconAlert,
-  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, IconSearch, IconFile, IconExt, type IconProps,
+  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, IconSearch, IconFile, IconExt, IconEdit, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
@@ -28,7 +28,13 @@ import { useIsAdmin } from '@/lib/auth-role';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { getExternalIde, setExternalIde, ideDisplayLabel, type ExternalIde } from '@/lib/ide-uri';
 import { getElectronBackupAPI, u8ToBase64 } from '@/lib/backup';
-import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
+import { useIsPhone, isPhoneNow, isMobileNow } from '@/hooks/useMediaQuery';
+import { cssZoom, hasNativeZoom, setUiZoom, useUiZoom, ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/lib/ui-zoom';
+import { isStandalone } from '@/lib/platform';
+import {
+  TERM_FONT_FAMILIES, TERM_FONT_MAX, TERM_FONT_MIN, isFontInstalled,
+  setTermFontFamily, setTermFontSize, termFontStack, useTermPrefs,
+} from '@/lib/terminal-prefs';
 
 type Section = 'general' | 'agents' | 'github' | 'security' | 'appearance' | 'integrations' | 'about';
 
@@ -1788,6 +1794,16 @@ function SectionAppearance() {
         })}
       </div>
 
+      <SectionLabel>{tr('settings.appearance.zoom')}</SectionLabel>
+      <div style={{ marginBottom: 22 }}>
+        <UiZoomRow/>
+      </div>
+
+      <SectionLabel>{tr('settings.appearance.terminal')}</SectionLabel>
+      <div style={{ marginBottom: 22 }}>
+        <TerminalFontRows/>
+      </div>
+
       <SectionLabel>{tr('settings.categories.label')}</SectionLabel>
       <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
         {tr('settings.categories.desc')}
@@ -1901,6 +1917,127 @@ function CategoryManager() {
         </Btn>
       </div>
     </div>
+  );
+}
+
+// Stepper −/valor/+ con reset opcional. En táctil los botones crecen a 40px,
+// como IconBtn.
+function Stepper({ value, onDec, onInc, decDisabled, incDisabled, decTitle, incTitle, onReset, resetLabel }: {
+  value: string;
+  onDec: () => void;
+  onInc: () => void;
+  decDisabled?: boolean;
+  incDisabled?: boolean;
+  decTitle?: string;
+  incTitle?: string;
+  onReset?: () => void;
+  resetLabel?: string;
+}) {
+  const t = useTokens();
+  const box = isMobileNow() ? 40 : 30;
+  const btn = (label: string, onClick: () => void, disabled: boolean, title?: string) => (
+    <button type="button" onClick={onClick} disabled={disabled} title={title} style={{
+      width: box, height: box, borderRadius: 8, flexShrink: 0,
+      border: `1px solid ${t.glassBorder}`, background: t.bg3,
+      color: disabled ? t.text3 : t.text0, cursor: disabled ? 'default' : 'pointer',
+      opacity: disabled ? 0.5 : 1,
+      fontFamily: t.fontMono, fontSize: 15, lineHeight: 1,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    }}>{label}</button>
+  );
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isPhoneNow() ? { justifyContent: 'flex-end' } : null) }}>
+      {btn('−', onDec, !!decDisabled, decTitle)}
+      <span style={{
+        minWidth: 56, textAlign: 'center', fontFamily: t.fontMono, fontSize: 12.5,
+        color: t.text0, fontVariantNumeric: 'tabular-nums',
+      }}>{value}</span>
+      {btn('+', onInc, !!incDisabled, incTitle)}
+      {onReset && resetLabel && (
+        <button type="button" onClick={onReset} style={{
+          border: 0, background: 'transparent', color: t.text3,
+          fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans, padding: '2px 6px',
+        }}>{resetLabel}</button>
+      )}
+    </div>
+  );
+}
+
+function UiZoomRow() {
+  const tr = useT();
+  const zoom = useUiZoom();
+  return (
+    <Row icon={IconSearch}
+      title={tr('settings.appearance.zoom.title')}
+      desc={hasNativeZoom() ? tr('settings.appearance.zoom.desc_shortcut') : tr('settings.appearance.zoom.desc')}
+      control={
+        <Stepper
+          value={`${Math.round(zoom * 100)}%`}
+          onDec={() => setUiZoom(zoom - ZOOM_STEP)}
+          onInc={() => setUiZoom(zoom + ZOOM_STEP)}
+          decDisabled={zoom <= ZOOM_MIN}
+          incDisabled={zoom >= ZOOM_MAX}
+          decTitle={tr('menu.zoom_out')}
+          incTitle={tr('menu.zoom_in')}
+          onReset={zoom !== ZOOM_DEFAULT ? () => setUiZoom(ZOOM_DEFAULT) : undefined}
+          resetLabel={tr('settings.appearance.zoom.reset')}
+        />
+      }/>
+  );
+}
+
+function TerminalFontRows() {
+  const t = useTokens();
+  const tr = useT();
+  const prefs = useTermPrefs();
+  // Medición por canvas una vez por montaje: barata, pero no gratis.
+  const installed = useMemo(
+    () => new Map(TERM_FONT_FAMILIES.map((f) => [f.id, f.family ? isFontInstalled(f.family) : true])),
+    [],
+  );
+  return (
+    <>
+      <Row icon={IconTerminal}
+        title={tr('settings.appearance.terminal.font_size')}
+        desc={tr('settings.appearance.terminal.font_size_desc')}
+        control={
+          <Stepper
+            value={`${prefs.fontSize} px`}
+            onDec={() => setTermFontSize(prefs.fontSize - 1)}
+            onInc={() => setTermFontSize(prefs.fontSize + 1)}
+            decDisabled={prefs.fontSize <= TERM_FONT_MIN}
+            incDisabled={prefs.fontSize >= TERM_FONT_MAX}
+            decTitle={tr('settings.appearance.terminal.font_size.smaller')}
+            incTitle={tr('settings.appearance.terminal.font_size.bigger')}
+            onReset={prefs.fontSizeStored != null ? () => setTermFontSize(null) : undefined}
+            resetLabel={tr('settings.appearance.zoom.reset')}
+          />
+        }/>
+      <Row icon={IconEdit}
+        title={tr('settings.appearance.terminal.font_family')}
+        desc={tr('settings.appearance.terminal.font_family_desc')}
+        control={
+          <select value={prefs.fontFamilyId} onChange={(e) => setTermFontFamily(e.target.value)}
+            style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 220 }}>
+            {TERM_FONT_FAMILIES.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.family ?? tr('settings.appearance.terminal.font.system')}
+                {installed.get(f.id) ? '' : ` — ${tr('settings.appearance.terminal.font.not_installed')}`}
+              </option>
+            ))}
+          </select>
+        }/>
+      {/* Muestra con los colores reales del terminal: fuente y tamaño se ven
+          acá antes de abrir una burbuja. */}
+      <div style={{
+        marginTop: 12, padding: '10px 14px', borderRadius: 10,
+        background: '#0c0e14', color: '#e5e7eb',
+        fontFamily: termFontStack(prefs.fontFamilyId), fontSize: prefs.fontSize, lineHeight: 1.25,
+        whiteSpace: 'pre', overflowX: 'auto',
+      }}>
+        {'$ claude --resume\n0O 1lI |  {} [] ()  ~/.eco/worktrees'}
+      </div>
+    </>
   );
 }
 
@@ -2547,6 +2684,50 @@ function UpdatesRow() {
   );
 }
 
+// Diagnóstico de viewport, solo táctil. En iOS 27 la app instalada recibe un
+// web view más chico que la pantalla (bug de WebKit 301994) y desde una
+// captura no se distingue qué franja pinta Eco y cuál el sistema.
+function ViewportDiagnostics() {
+  const t = useTokens();
+  const tr = useT();
+  const [lines, setLines] = useState<string[]>([]);
+  useEffect(() => {
+    const measure = () => {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;left:0;width:1px;visibility:hidden;pointer-events:none;'
+        + 'top:env(safe-area-inset-top,0px);bottom:env(safe-area-inset-bottom,0px)';
+      document.body.appendChild(probe);
+      const cs = getComputedStyle(probe);
+      const vv = window.visualViewport;
+      setLines([
+        `screen ${screen.width}x${screen.height}`,
+        `inner ${window.innerWidth}x${window.innerHeight}`,
+        `visual ${vv ? `${Math.round(vv.width)}x${Math.round(vv.height)} @${Math.round(vv.offsetTop)}` : '-'}`,
+        `html ${Math.round(document.documentElement.getBoundingClientRect().height)}`,
+        `env top ${cs.top} / bottom ${cs.bottom}`,
+        `standalone ${String(isStandalone())} · zoom ${cssZoom()}`,
+        `orientation ${screen.orientation?.type ?? '-'}`,
+      ]);
+      probe.remove();
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+  if (!isMobileNow()) return null;
+  return (
+    <div style={{ padding: '10px 12px', borderRadius: 10, background: t.bg2, border: `1px solid ${t.glassBorder}` }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{tr('settings.about.viewport.title')}</div>
+      <div style={{ fontSize: 11.5, color: t.text2, margin: '3px 0 8px', lineHeight: 1.5 }}>
+        {tr('settings.about.viewport.desc')}
+      </div>
+      <pre style={{ margin: 0, fontFamily: t.fontMono, fontSize: 12, color: t.text1, whiteSpace: 'pre-wrap' }}>
+        {lines.join('\n')}
+      </pre>
+    </div>
+  );
+}
+
 function SectionAbout() {
   const t = useTokens();
   const tr = useT();
@@ -2643,6 +2824,7 @@ function SectionAbout() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <ViewportDiagnostics/>
       {/* Hero */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 18,

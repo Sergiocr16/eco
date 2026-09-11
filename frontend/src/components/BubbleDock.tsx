@@ -1,8 +1,17 @@
+import { vw } from '@/lib/ui-zoom';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { useTokens } from '@/design/theme';
-import { SAFE_BOTTOM } from '@/lib/platform';
+import { cssZoom } from '@/lib/ui-zoom';
+import { isMobileNow } from '@/hooks/useMediaQuery';
+
+// Margen del dock al borde inferior. En táctil roza el borde: iPadOS 26 retiró
+// el indicador de home, y sumarle el inset de 20pt dejaba al dock flotando
+// sobre una banda muerta. En escritorio conserva el aire de dock de macOS.
+const DOCK_MARGIN = isMobileNow() ? 6 : 14;
+// Alto del dock + margen: lo que el shell reserva abajo (App.tsx).
+export const DOCK_RESERVED_BOTTOM = `${62 + DOCK_MARGIN}px`;
 import { stateColor, type AgentState } from '@/design/tokens';
 import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
@@ -178,9 +187,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
       transition={{ type: 'spring', stiffness: 240, damping: 28 }}
       style={{
         position: 'fixed',
-        // El inset del indicador de home solo aplica instalada (ver
-        // platform.ts); en escritorio SAFE_BOTTOM resuelve a 0px.
-        bottom: `calc(14px + ${SAFE_BOTTOM})`,
+        bottom: DOCK_MARGIN,
         left: 64,
         right: 0,
         display: 'flex',
@@ -207,7 +214,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
           '0 2px 6px rgba(0,0,0,0.2)',
         ].join(', '),
         overflow: 'visible',
-        maxWidth: 'calc(100vw - 96px)',
+        maxWidth: `calc(${vw(100)} - 96px)`,
       }}>
         <ResizeHandle iconSize={iconSize} onChange={setIconSize}/>
         {onGoHome && (
@@ -495,10 +502,13 @@ function DockIcon({
     const el = wrapperRef.current;
     if (!el) return;
     const update = () => {
+      // Px visuales → px CSS: bajo zoom CSS (web) el tooltip es fixed dentro
+      // de un documento escalado.
+      const z = cssZoom();
       const r = el.getBoundingClientRect();
       setTipPos({
-        left: r.left + r.width / 2,
-        bottom: window.innerHeight - r.top + 14,
+        left: (r.left + r.width / 2) / z,
+        bottom: (window.innerHeight - r.top) / z + 14,
       });
     };
     update();

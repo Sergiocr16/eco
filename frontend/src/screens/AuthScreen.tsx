@@ -1,3 +1,4 @@
+import { vw } from '@/lib/ui-zoom';
 import { useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { Btn } from '@/design/primitives';
@@ -37,7 +38,7 @@ export function AuthScreen({ authState, authActions }: Props) {
         top: '50%', left: '50%',
         transform: 'translate(-50%, -50%)',
         zIndex: 2,
-        width: 'min(380px, calc(100vw - 48px))',
+        width: `min(380px, calc(${vw(100)} - 48px))`,
         padding: '24px 4px',
       }}>
         <div style={{ position: 'relative' }}>

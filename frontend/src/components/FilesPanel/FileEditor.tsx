@@ -1,3 +1,4 @@
+import { cssZoom } from '@/lib/ui-zoom';
 import { useEffect, useRef, useState } from 'react';
 import { EditorView } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
@@ -414,9 +415,11 @@ function FloatingSendButton({ coords, hostRect, label, onClick }: {
   onClick: () => void;
 }) {
   const t = useTokens();
-  // Posicionar relativo al host: usamos absolute con coords convertidas.
-  const left = Math.min(Math.max(coords.left - hostRect.left + 8, 8), hostRect.width - 160);
-  const top = Math.max(coords.top - hostRect.top - 32, 6);
+  // Posicionar relativo al host: usamos absolute con coords convertidas. Las
+  // dos medidas vienen en px visuales; el botón se ubica en px CSS del host.
+  const z = cssZoom();
+  const left = Math.min(Math.max((coords.left - hostRect.left) / z + 8, 8), hostRect.width / z - 160);
+  const top = Math.max((coords.top - hostRect.top) / z - 32, 6);
   return (
     <button
       type="button"

@@ -1,3 +1,4 @@
+import { dvh, vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '@/lib/api';
@@ -27,6 +28,7 @@ import { useTeamBubbles } from '@/components/AdminGraph';
 import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { SAFE_BOTTOM, SAFE_TOP } from '@/lib/platform';
+import { cssZoom } from '@/lib/ui-zoom';
 
 type Props = {
   bubbles: Bubble[];
@@ -1026,14 +1028,14 @@ function NameAgentDialog({
             // que es el patrón de cualquier modal de iOS.
             borderRadius: '18px 18px 0 0',
             padding: `18px 16px calc(18px + ${keyboardInset > 0 ? '0px' : SAFE_BOTTOM})`,
-            maxHeight: '85dvh', overflowY: 'auto',
+            maxHeight: dvh(85), overflowY: 'auto',
           } : {
             borderRadius: 16,
             padding: 20,
             // Sin tope de altura, con muchas carpetas el diálogo crecía más
             // que la ventana y los botones quedaban fuera de pantalla, justo
             // donde flota el dock. Ahora el panel nunca pasa del alto útil.
-            maxHeight: '85vh', overflowY: 'auto',
+            maxHeight: vh(85), overflowY: 'auto',
           }),
         }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1589,8 +1591,8 @@ function WorkspaceChip({
             // El minWidth fijo desbordaba la card en el teléfono; el clamp
             // contra el viewport es el mismo patrón que ya usan los otros
             // popovers del Dashboard.
-            minWidth: 'min(240px, calc(100vw - 32px))',
-            maxWidth: 'min(320px, calc(100vw - 32px))', padding: 4,
+            minWidth: `min(240px, calc(${vw(100)} - 32px))`,
+            maxWidth: `min(320px, calc(${vw(100)} - 32px))`, padding: 4,
             background: t.bg1, border: `1px solid ${t.glassBorder}`,
             borderRadius: 12, boxShadow: t.shadowLg,
             display: 'flex', flexDirection: 'column',
@@ -1646,8 +1648,8 @@ function BubbleMenu({
       onClick={(e) => e.stopPropagation()}
       style={{
         position: 'fixed', zIndex: 400,
-        top: rect ? rect.bottom + 4 : 0,
-        right: rect ? Math.max(8, window.innerWidth - rect.right) : 8,
+        top: rect ? rect.bottom / cssZoom() + 4 : 0,
+        right: rect ? Math.max(8, (window.innerWidth - rect.right) / cssZoom()) : 8,
         minWidth: 180, padding: 4,
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         borderRadius: 12, boxShadow: t.shadowLg,
@@ -1953,7 +1955,7 @@ function KanbanView({
               // siguiente y ninguna entera. Con 85vw la columna activa llena
               // la pantalla y asoma la que sigue, que es la señal de que hay
               // más para scrollear al costado.
-              flex: isPhone ? '0 0 85vw' : '0 0 280px',
+              flex: isPhone ? `0 0 ${vw(85)}` : '0 0 280px',
               background: t.bg2,
               border: `1px solid ${t.glassBorder}`,
               borderRadius: 14,
@@ -2420,8 +2422,9 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
     if (!el) return;
     const measure = () => {
       const rect = el.getBoundingClientRect();
-      const w = Math.max(280, Math.round(rect.width));
-      const h = Math.max(280, Math.round(rect.height));
+      const z = cssZoom();
+      const w = Math.max(280, Math.round(rect.width / z));
+      const h = Math.max(280, Math.round(rect.height / z));
       setSize((prev) => (prev.W === w && prev.H === h ? prev : { W: w, H: h }));
     };
     measure();
@@ -2743,11 +2746,14 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   useEffect(() => {
     function onMove(e: PointerEvent) {
       const d = dragRef.current;
+      // Los deltas del puntero vienen en px visuales; el pan y los offsets
+      // viven en px CSS del documento (escalado bajo zoom CSS en web).
+      const z = cssZoom();
       if (d) {
-        setPan({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) });
+        setPan({ x: d.px + (e.clientX - d.sx) / z, y: d.py + (e.clientY - d.sy) / z });
         return;
       }
-      const s = viewScaleRef.current || 1;
+      const s = (viewScaleRef.current || 1) * z;
       const w = wsDragRef.current;
       if (w) {
         const dx = w.dx0 + (e.clientX - w.sx) / s;
@@ -2885,7 +2891,7 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
         ? { inset: 0, zIndex: 9000 }
         // En el teléfono 520px de alto mínimo dejan el grafo fuera de pantalla
         // y obligan a scrollear para verlo entero; 380 entra completo.
-        : { height: 'min(92vh, 1600px)', minHeight: isPhoneNow() ? 380 : 520 }),
+        : { height: `min(${vh(92)}, 1600px)`, minHeight: isPhoneNow() ? 380 : 520 }),
       padding: 0, overflow: 'hidden',
     }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }}/>

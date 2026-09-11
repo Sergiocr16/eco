@@ -2,9 +2,13 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { setEcoConfig, readStoredToken } from './lib/eco-config';
 import { RootErrorBoundary, bootReloadOnce } from './components/RootErrorBoundary';
+import { applyStoredUiZoom } from './lib/ui-zoom';
 import './index.css';
 
 async function bootstrap() {
+  // Antes del primer render: así el zoom persistido no parpadea a 100%.
+  applyStoredUiZoom();
+
   // En Electron, el preload nos da el token leído de ~/.eco/token y la URL
   // del backend. En web puro, fallback a las env vars de Vite.
   if (typeof window !== 'undefined' && window.electronAPI) {

@@ -1,3 +1,4 @@
+import { vw } from '@/lib/ui-zoom';
 import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { IconLock, IconArrowR, IconKey } from '@/design/icons';
@@ -101,7 +102,7 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
             ...(isPhone
               ? { right: 8, bottom: `calc(64px + ${SAFE_BOTTOM})` }
               : { left: 70, bottom: 16 }),
-            width: 'min(240px, calc(100vw - 16px))',
+            width: `min(240px, calc(${vw(100)} - 16px))`,
             background: t.glassBg,
             backdropFilter: 'blur(40px) saturate(180%)',
             WebkitBackdropFilter: 'blur(40px) saturate(180%)',
@@ -196,7 +197,7 @@ function ChangePasswordDialog({ onChangePassword, onClose }: {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 'min(380px, calc(100vw - 48px))', background: t.bg2, border: `1px solid ${t.glassBorder}`, borderRadius: 16, padding: 24 }}>
+      <div style={{ width: `min(380px, calc(${vw(100)} - 48px))`, background: t.bg2, border: `1px solid ${t.glassBorder}`, borderRadius: 16, padding: 24 }}>
         <h3 style={{ margin: '0 0 14px', color: t.text0, fontSize: 16 }}>{tr('account.password')}</h3>
         {done ? (
           <>

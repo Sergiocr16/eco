@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
 import { SAFE_BOTTOM } from '@/lib/platform';
+import { TERM_FONT_MAX, TERM_FONT_MIN } from '@/lib/terminal-prefs';
 
 // El teclado de iOS no tiene Esc, Ctrl, Tab ni flechas, que son exactamente
 // las teclas que necesitan los TUI de Claude y Codex (interrumpir, completar,
@@ -60,13 +61,13 @@ export function TerminalKeyBar({
       <KeyBtn
         label="A−"
         title={tr('term.keybar.font_smaller')}
-        disabled={fontSize <= 8}
+        disabled={fontSize <= TERM_FONT_MIN}
         onPress={() => onFontSize(fontSize - 1)}
       />
       <KeyBtn
         label="A+"
         title={tr('term.keybar.font_bigger')}
-        disabled={fontSize >= 18}
+        disabled={fontSize >= TERM_FONT_MAX}
         onPress={() => onFontSize(fontSize + 1)}
       />
     </div>

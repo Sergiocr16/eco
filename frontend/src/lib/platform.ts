@@ -63,16 +63,41 @@ export function isStandalone(): boolean {
 // Son strings porque los inline styles aceptan cualquier valor CSS:
 // `style={{ top: SAFE_TOP }}` y `calc(14px + ${SAFE_BOTTOM})` funcionan igual.
 //
-// **Solo aplican instalada.** Con `viewport-fit=cover` Safari igual reporta
-// ~34px abajo, pero ahí la barra del navegador YA ocupa esa zona: sumarle el
-// inset deja un hueco doble al pie de la pantalla. La regla es "los insets
-// valen cuando somos dueños de toda la pantalla".
+// **Abajo solo aplica instalada.** Con `viewport-fit=cover` Safari igual
+// reporta ~34px abajo, pero ahí la barra del navegador YA ocupa esa zona:
+// sumarle el inset deja un hueco doble al pie de la pantalla. Arriba es
+// distinto — ver RAW_TOP.
 //
 // Ojo: esto NO es getTopInset(). Ese reserva espacio para los traffic lights de
 // macOS en Electron; esto compensa el hardware del teléfono. Son ortogonales.
 const OWNS_FULL_SCREEN = isStandalone();
-export const SAFE_TOP = OWNS_FULL_SCREEN ? 'env(safe-area-inset-top, 0px)' : '0px';
-export const SAFE_BOTTOM = OWNS_FULL_SCREEN ? 'env(safe-area-inset-bottom, 0px)' : '0px';
+
+// iPad incluido: navigator.platform dice "MacIntel" desde iPadOS 13 y lo
+// delata el touch.
+function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /iPad|iPhone|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+// Arriba el inset vale SIEMPRE, instalada o no: desde iOS 26 el contenido se
+// mete debajo de la barra de estado también en Safari, y cuando el navegador
+// ya reserva esa franja env() devuelve 0 solo.
+//
+// Instalada en iOS 26.1+ (verificado en iPadOS 27) hace falta un colchón extra: el sistema esmerila una
+// banda progresiva sobre el borde superior del web view (~4× la barra de
+// estado) y lo hace con cualquier `apple-mobile-web-app-status-bar-style`,
+// opaca incluida — se probó. No hay API que diga cuánto mide. Los 40px salen
+// de medir en un iPad 13": la banda se desvanece a ~95pt del borde de la
+// pantalla. Debajo queda solo el fondo del shell, y un color plano esmerilado
+// no se nota; texto sí.
+const IOS_FROST_EXTRA = OWNS_FULL_SCREEN && isIOS() ? ' + 40px' : '';
+// Bajo zoom CSS (web) los env() llegan en px visuales; lib/ui-zoom.ts publica
+// el factor en --eco-zoom para que el shell no reserve Z veces el inset.
+export const SAFE_TOP = `calc((env(safe-area-inset-top, 0px)${IOS_FROST_EXTRA}) / var(--eco-zoom, 1))`;
+export const SAFE_BOTTOM = OWNS_FULL_SCREEN
+  ? 'calc(env(safe-area-inset-bottom, 0px) / var(--eco-zoom, 1))'
+  : '0px';
 
 export function runtimeLabel(r: Runtime = detectRuntime()): string {
   switch (r) {

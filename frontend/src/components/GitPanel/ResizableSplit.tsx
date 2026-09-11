@@ -1,3 +1,4 @@
+import { cssZoom } from '@/lib/ui-zoom';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
 import { useIsPhone } from '@/hooks/useMediaQuery';
@@ -76,13 +77,16 @@ export function ResizableSplit({
     if (!container) return;
 
     const onMove = (e: MouseEvent) => {
+      // Px visuales → px CSS: bajo zoom CSS (web) el ancho se aplica escalado.
+      const z = cssZoom();
       const rect = container.getBoundingClientRect();
-      const x = e.clientX - rect.left;
+      const x = (e.clientX - rect.left) / z;
+      const width = rect.width / z;
       // El clamp estaba invertido: en un contenedor angosto,
       // `rect.width * maxLeftPercent` cae por debajo de minLeft y el
       // `Math.max(minLeft, …)` final lo dejaba MÁS ancho que su propio máximo.
       // Acá el techo gana cuando los dos no pueden cumplirse a la vez.
-      const max = Math.min(rect.width * maxLeftPercent, Math.max(120, rect.width - RIGHT_MIN));
+      const max = Math.min(width * maxLeftPercent, Math.max(120, width - RIGHT_MIN));
       const lo = Math.min(minLeft, max);
       const next = Math.max(lo, Math.min(max, x));
       setLeftWidth(next);

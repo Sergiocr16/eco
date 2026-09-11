@@ -1,3 +1,4 @@
+import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
@@ -88,14 +89,14 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        paddingTop: '15vh', zIndex: 100,
+        paddingTop: vh(15), zIndex: 100,
       }}
     >
       <div style={{
-        width: 'min(560px, 90vw)',
+        width: `min(560px, ${vw(90)})`,
         background: t.windowBg, border: `1px solid ${t.glassBorder}`,
         borderRadius: t.r3, boxShadow: t.shadowLg,
-        display: 'flex', flexDirection: 'column', maxHeight: '70vh', overflow: 'hidden',
+        display: 'flex', flexDirection: 'column', maxHeight: vh(70), overflow: 'hidden',
       }}>
         <input
           ref={inputRef}

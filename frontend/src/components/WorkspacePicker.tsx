@@ -1,3 +1,4 @@
+import { vh } from '@/lib/ui-zoom';
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { Btn, Glass } from '@/design/primitives';
@@ -89,7 +90,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(540px, 100%)', maxHeight: '80vh',
+          width: 'min(540px, 100%)', maxHeight: vh(80),
           background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
           borderRadius: 18, boxShadow: t.shadowLg,
           display: 'flex', flexDirection: 'column', overflow: 'hidden',

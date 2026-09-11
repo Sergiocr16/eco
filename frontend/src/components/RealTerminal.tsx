@@ -6,32 +6,14 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { currentIdToken } from '@/lib/firebase';
 import { useTokens } from '@/design/theme';
-import { useIsMobile, isMobileNow } from '@/hooks/useMediaQuery';
+import { useIsMobile } from '@/hooks/useMediaQuery';
 import { TerminalKeyBar } from './TerminalKeyBar';
+import { getTermPrefs, setTermFontSize, termFontStack, useTermPrefs } from '@/lib/terminal-prefs';
+import { cssZoom, useCssZoom } from '@/lib/ui-zoom';
 
 // Debe coincidir con `AgentCli` en backend/src/pty-server.ts.
 export type AgentCli = 'claude' | 'codex' | 'none';
 
-// Tamaño de fuente del terminal. Global (no por burbuja) a propósito: así no
-// hay que sumarlo a la limpieza de claves de useBubbles.removeBubble.
-const FONT_SIZE_KEY = 'eco.term.fontsize';
-const FONT_MIN = 8;
-const FONT_MAX = 18;
-// 326px de ancho útil con fuente 12.5 dan ~40 columnas, y los TUI de Claude y
-// Codex asumen 80. Con 10 se llega a ~54, que sigue siendo poco pero hace la
-// diferencia entre leerlo y no leerlo. En horizontal el default ya alcanza.
-const FONT_DEFAULT_MOBILE = 10;
-const FONT_DEFAULT_DESKTOP = 12.5;
-
-function readFontSize(): number {
-  const fallback = isMobileNow() ? FONT_DEFAULT_MOBILE : FONT_DEFAULT_DESKTOP;
-  try {
-    const raw = window.localStorage.getItem(FONT_SIZE_KEY);
-    const n = raw ? Number(raw) : NaN;
-    if (Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX) return n;
-  } catch { /* noop */ }
-  return fallback;
-}
 
 type Props = {
   workspace: string;
@@ -57,7 +39,14 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
   const isMobile = useIsMobile();
   const [status, setStatus] = useState<'connecting' | 'open' | 'reconnecting' | 'closed' | 'error'>('connecting');
   const [errMsg, setErrMsg] = useState<string | null>(null);
-  const [fontSize, setFontSizeState] = useState<number>(readFontSize);
+  // Tamaño y tipografía viven en lib/terminal-prefs.ts (Settings → Apariencia
+  // y la barra A−/A+ escriben ahí). En web el contenedor de xterm se
+  // contra-zoomea (ver el style de abajo), así que para que el terminal
+  // acompañe el zoom de la UI la fuente se escala a mano.
+  const prefs = useTermPrefs();
+  const cssZ = useCssZoom();
+  const fontPx = prefs.fontSize * cssZ;
+  const fontStack = termFontStack(prefs.fontFamilyId);
 
   // Refs para que la barra de teclas y el stepper de fuente lleguen al term y
   // al socket sin re-crearlos: meter `fontSize` en las deps del efecto grande
@@ -79,8 +68,8 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     const TERMINAL_FG = '#e5e7eb';        // gris claro siempre legible
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-      fontSize: readFontSize(),
+      fontFamily: termFontStack(),
+      fontSize: getTermPrefs().fontSize * cssZoom(),
       lineHeight: 1.25,
       scrollback: 2000,
       allowTransparency: false,
@@ -118,7 +107,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       const screen = term.element?.querySelector('.xterm-screen') as HTMLElement | null;
       const measured = screen && term.rows > 0 ? screen.clientHeight / term.rows : 0;
       if (measured > 1) return measured;
-      return Math.max(8, Math.round(readFontSize() * 1.25));
+      return Math.max(8, Math.round(getTermPrefs().fontSize * cssZoom() * 1.25));
     };
 
     let touchY: number | null = null;
@@ -358,15 +347,10 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    term.options.fontSize = fontSize;
+    term.options.fontSize = fontPx;
+    term.options.fontFamily = fontStack;
     doResizeRef.current();
-  }, [fontSize]);
-
-  const setFontSize = (next: number) => {
-    const clamped = Math.min(FONT_MAX, Math.max(FONT_MIN, next));
-    setFontSizeState(clamped);
-    try { window.localStorage.setItem(FONT_SIZE_KEY, String(clamped)); } catch { /* noop */ }
-  };
+  }, [fontPx, fontStack]);
 
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -385,6 +369,11 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
           background: '#0c0e14',
           borderRadius: 10,
           overflow: 'hidden',
+          // Bajo zoom CSS (web) xterm mide las celdas con getBoundingClientRect,
+          // que devuelve px visuales, y las aplica como px CSS: las celdas
+          // salen Z veces más grandes y el canvas WebGL se ve borroso. Con el
+          // contra-zoom el terminal queda a escala 1 y la fuente hace el resto.
+          ...(cssZ !== 1 ? { zoom: 1 / cssZ } : null),
         }}
       />
       {isMobile && (
@@ -393,8 +382,8 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
             sendInputRef.current(seq);
             try { termRef.current?.focus(); } catch { /* noop */ }
           }}
-          fontSize={fontSize}
-          onFontSize={setFontSize}
+          fontSize={prefs.fontSize}
+          onFontSize={setTermFontSize}
         />
       )}
       {(status !== 'open') && (

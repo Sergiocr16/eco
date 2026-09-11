@@ -1,3 +1,4 @@
+import { vh } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useState } from 'react';
 import { useTokens, useTheme } from '@/design/theme';
 import { ACCENT_HUES } from '@/design/tokens';
@@ -67,7 +68,7 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
     }}>
       <div style={{
         width: '100%', maxWidth: 640,
-        maxHeight: 'calc(100vh - 48px)',
+        maxHeight: `calc(${vh(100)} - 48px)`,
         background: t.bg1,
         border: `1px solid ${t.glassBorder}`,
         borderRadius: 18,

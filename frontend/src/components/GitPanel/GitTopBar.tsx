@@ -1,3 +1,4 @@
+import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTokens } from '@/design/theme';
@@ -487,7 +488,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
     }} onClick={onClose}>
       <div ref={ref} onClick={(e) => e.stopPropagation()} style={{
         position: 'absolute', top: 100, left: '50%', transform: 'translateX(-50%)',
-        width: 460, maxWidth: '92vw', maxHeight: '70vh',
+        width: 460, maxWidth: vw(92), maxHeight: vh(70),
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         borderRadius: 12, boxShadow: `0 16px 48px rgba(0,0,0,0.4)`,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -639,7 +640,7 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        width: 420, maxWidth: '92vw', padding: 20, borderRadius: 12,
+        width: 420, maxWidth: vw(92), padding: 20, borderRadius: 12,
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
@@ -733,7 +734,7 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        width: 480, maxWidth: '92vw', padding: 20, borderRadius: 12,
+        width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>

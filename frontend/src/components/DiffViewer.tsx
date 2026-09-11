@@ -1,3 +1,4 @@
+import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTokens, useTheme } from '@/design/theme';
 import { isLightTheme } from '@/design/tokens';
@@ -573,7 +574,7 @@ export function DiffViewer({ open, path, workspace, bubbleId, onClose, pathList,
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(1200px, 96vw)', height: '90vh',
+          width: `min(1200px, ${vw(96)})`, height: vh(90),
           background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
           borderRadius: 18, boxShadow: t.shadowLg,
           display: 'flex', flexDirection: 'column', overflow: 'hidden',

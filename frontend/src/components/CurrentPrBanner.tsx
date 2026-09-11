@@ -1,3 +1,4 @@
+import { cssZoom } from '@/lib/ui-zoom';
 // Banner sticky en la parte superior del chat que indica si la rama
 // actual del worktree del agente está asociada a un Pull Request. Si lo
 // está, ofrece acciones: ver en GitHub, mergear (con dropdown de método)
@@ -419,6 +420,8 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
                   initial→animate del motion.div. */}
               {showMergeMenu && (() => {
                 const r = mergeBtnRef.current?.getBoundingClientRect();
+                // Px visuales → px CSS (zoom CSS en web).
+                const z = cssZoom();
                 return createPortal(
                     <motion.div
                       ref={mergeMenuRef}
@@ -427,8 +430,8 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
                       transition={{ duration: 0.12 }}
                       style={{
                         position: 'fixed', zIndex: 400,
-                        top: r ? r.bottom + 4 : 0,
-                        right: r ? Math.max(8, window.innerWidth - r.right) : 8,
+                        top: r ? r.bottom / z + 4 : 0,
+                        right: r ? Math.max(8, (window.innerWidth - r.right) / z) : 8,
                         background: t.bg1,
                         border: `1px solid ${t.glassBorder}`,
                         borderRadius: 8, padding: 4,

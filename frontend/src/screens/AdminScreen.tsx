@@ -1,3 +1,4 @@
+import { vw } from '@/lib/ui-zoom';
 // Consola de admin (solo rol admin). Lee Firestore directo (gateado por Rules):
 //  - Usuarios: cambiar rol y habilitar/deshabilitar. (El alta es self-service
 //    por Firebase Auth; no hay creación/claim/workspaces/borrado acá.)
@@ -82,7 +83,7 @@ function CredsDialog({ email, password, onClose }: { email: string; password: st
   }
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 'min(460px, calc(100vw - 48px))', background: t.bg2, border: `1px solid ${t.glassBorder}`, borderRadius: 16, padding: 24 }}>
+      <div style={{ width: `min(460px, calc(${vw(100)} - 48px))`, background: t.bg2, border: `1px solid ${t.glassBorder}`, borderRadius: 16, padding: 24 }}>
         <h3 style={{ margin: '0 0 8px', color: t.text0, fontSize: 16 }}>{tr('admin.newuser.done.title')}</h3>
         <p style={{ margin: '0 0 14px', color: t.text2, fontSize: 12.5, lineHeight: 1.5 }}>{tr('admin.newuser.done.sub')}</p>
         <div style={{ padding: 14, borderRadius: 10, background: t.bg3, border: `1px solid ${t.glassBorder}`, fontFamily: t.fontMono, fontSize: 13, color: t.text0, lineHeight: 1.7 }}>
