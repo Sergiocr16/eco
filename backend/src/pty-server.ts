@@ -419,8 +419,14 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
       existing.clients.add(ws);
       existing.activeWs = ws;  // legacy ref — último que se conectó
 
-      // Ajustar dimensiones al cliente actual.
-      try { existing.pty.resize(cols, rows); } catch { /* noop */ }
+      // Ajustar dimensiones al cliente actual, pero SOLO si de verdad cambian:
+      // un resize dispara SIGWINCH y la TUI del agente responde redibujando,
+      // muchas veces con un clear (\x1b[3J borra el scrollback en xterm). Ese
+      // redibujo llega DESPUÉS del replay de acá abajo y se lo come — el
+      // cliente queda sin historial previo a la conexión.
+      if (existing.pty.cols !== cols || existing.pty.rows !== rows) {
+        try { existing.pty.resize(cols, rows); } catch { /* noop */ }
+      }
 
       sendJson(ws, { type: 'ready', cwd: existing.cwd, shell: defaultShell(), cols, rows, reattached: true });
       // Replay del buffer acumulado mientras estuviste fuera.

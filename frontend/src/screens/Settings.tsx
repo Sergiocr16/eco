@@ -22,6 +22,7 @@ import { GhStatusBanner } from '@/components/GhStatusBanner';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { useMcpConfig } from '@/hooks/useMcpConfig';
 import { useTailnet } from '@/hooks/useTailnet';
+import { useNoSleep } from '@/hooks/useNoSleep';
 import { useCategories, CATEGORY_PALETTE } from '@/hooks/useCategories';
 import { useWorkspaceConfig, saveWorkspaceConfig } from '@/lib/workspace-config';
 import { useIsAdmin } from '@/lib/auth-role';
@@ -182,6 +183,7 @@ function SectionGeneral() {
         storageKey="eco.agent.review_mode"
       />
       {isAdmin && <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>}
+      <NoSleepRow/>
       <GeneralToggleRow
         icon={IconCommand}
         title={tr('settings.general.dock')}
@@ -211,6 +213,28 @@ function SectionGeneral() {
         <SuggestionsEditor/>
       </div>
     </div>
+  );
+}
+
+// Solo macOS: `supported` lo decide el backend por `process.platform`, no el
+// renderer, para que un cliente remoto (celular vía Tailscale) contra un
+// backend Mac lo siga viendo — el toggle afecta a la máquina anfitriona.
+function NoSleepRow() {
+  const tr = useT();
+  const { status, saving, setEnabled } = useNoSleep();
+  if (!status.supported) return null;
+  return (
+    <Row
+      icon={IconBolt}
+      title={tr('settings.general.nosleep')}
+      desc={status.error
+        ? (status.error === 'cancelled'
+          ? tr('settings.general.nosleep_cancelled')
+          : tr('settings.general.nosleep_err').replace('{detail}', status.error))
+        : tr('settings.general.nosleep_desc')}
+      control={
+        <Toggle on={status.enabled} disabled={saving} onChange={(v) => { void setEnabled(v); }}/>
+      }/>
   );
 }
 

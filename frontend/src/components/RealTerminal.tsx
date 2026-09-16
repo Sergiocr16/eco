@@ -35,6 +35,8 @@ type Props = {
 
 export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main', agent = 'claude' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollTrackRef = useRef<HTMLDivElement>(null);
+  const scrollThumbRef = useRef<HTMLDivElement>(null);
   const t = useTokens();
   const isMobile = useIsMobile();
   const [status, setStatus] = useState<'connecting' | 'open' | 'reconnecting' | 'closed' | 'error'>('connecting');
@@ -110,6 +112,33 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       return Math.max(8, Math.round(getTermPrefs().fontSize * cssZoom() * 1.25));
     };
 
+    // Indicador de scroll. Como el scroll no es nativo (ver arriba), tampoco
+    // hay barra del navegador: la dibujamos a partir del buffer. Se actualiza
+    // de forma imperativa —no por estado de React— porque corre en cada frame
+    // del arrastre, y se desvanece sola como en iOS.
+    //
+    // Se muestra SOLO con gesto del usuario, no en term.onScroll: el auto
+    // scroll de cada línea que escribe el agente la tendría parpadeando todo
+    // el tiempo.
+    let hideBarTimer: number | null = null;
+    const updateScrollBar = () => {
+      const track = scrollTrackRef.current;
+      const thumb = scrollThumbRef.current;
+      if (!track || !thumb) return;
+      const buf = term.buffer.active;
+      const total = buf.length;
+      const visible = term.rows;
+      if (total <= visible) { track.style.opacity = '0'; return; }
+      const trackH = track.clientHeight;
+      const thumbH = Math.max(24, Math.round(trackH * (visible / total)));
+      const progress = Math.min(1, Math.max(0, buf.viewportY / (total - visible)));
+      thumb.style.height = `${thumbH}px`;
+      thumb.style.top = `${Math.round((trackH - thumbH) * progress)}px`;
+      track.style.opacity = '1';
+      if (hideBarTimer) window.clearTimeout(hideBarTimer);
+      hideBarTimer = window.setTimeout(() => { track.style.opacity = '0'; }, 900);
+    };
+
     let touchY: number | null = null;
     let touchRest = 0;          // píxeles sobrantes que aún no llegan a una línea
     let lastMoveAt = 0;
@@ -136,6 +165,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       touchRest = px - lines * cellHeight();
       if (lines !== 0) {
         term.scrollLines(lines);
+        updateScrollBar();
         const dt = Math.max(1, e.timeStamp - lastMoveAt);
         velocity = lines / dt;
         lastMoveAt = e.timeStamp;
@@ -152,6 +182,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
         v *= 0.94;
         if (Math.abs(v) < 0.05) return;
         term.scrollLines(v > 0 ? Math.ceil(v) : Math.floor(v));
+        updateScrollBar();
         inertia = requestAnimationFrame(step);
       };
       inertia = requestAnimationFrame(step);
@@ -187,8 +218,19 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       url.searchParams.set('agent', agent);
       url.searchParams.set('cols', String(term.cols));
       url.searchParams.set('rows', String(term.rows));
+      // El backend aplica estas dims al reattachar, así que ya las "sabe".
+      sentCols = term.cols;
+      sentRows = term.rows;
       return url.toString();
     };
+
+    // Últimas dimensiones que el backend conoce. Cada resize que le mandamos
+    // es un SIGWINCH que hace redibujar a la TUI del agente, y ese redibujo
+    // puede llevarse puesto el scrollback (un \x1b[3J lo borra). Los fits de
+    // más abajo corren varias veces a propósito, así que solo avisamos cuando
+    // las dimensiones cambiaron de verdad.
+    let sentCols = 0;
+    let sentRows = 0;
 
     let ws: WebSocket | null = null;
     let pingTimer: number | null = null;
@@ -228,10 +270,11 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
         pingTimer = window.setInterval(() => {
           if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
         }, 25_000);
-        // Re-sync el tamaño actual al backend tras (re)conectar.
-        try {
-          if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-        } catch { /* noop */ }
+        // Re-sync del tamaño SOLO si cambió desde que armamos la URL (los fits
+        // diferidos pueden haber corrido mientras abría el socket). Reenviarlo
+        // igual sería un SIGWINCH que borra el replay que el backend acaba de
+        // mandarnos.
+        try { doResize(); } catch { /* noop */ }
       };
 
       ws.onmessage = (ev) => {
@@ -293,11 +336,29 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
 
     const doResize = () => {
       try { fit.fit(); } catch { /* noop */ }
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-      }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (term.cols === sentCols && term.rows === sentRows) return;
+      sentCols = term.cols;
+      sentRows = term.rows;
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     };
     doResizeRef.current = doResize;
+
+    // El fit de arriba corre en el mismo tick que open() y sus cols/rows son
+    // los que viajan en la URL del WS. En móvil el layout todavía se asienta
+    // en ese instante (barra de tabs scrolleable, TerminalKeyBar, safe-area),
+    // así que el PTY arranca con un tamaño que no es el final y la TUI del
+    // agente queda descalzada. El ResizeObserver no lo rescata: una vez
+    // asentado el contenedor ya no vuelve a cambiar de tamaño. Por eso
+    // re-medimos mientras se estabiliza — fit() no hace nada si nada cambió.
+    const settleTimers = [
+      window.setTimeout(doResize, 120),
+      window.setTimeout(doResize, 400),
+    ];
+    const settleRaf = requestAnimationFrame(doResize);
+    // Hasta que la monoespaciada no está resuelta, el ancho de celda medido es
+    // el de la fuente de fallback y todas las columnas salen corridas.
+    document.fonts?.ready.then(() => { if (!disposed) doResize(); }).catch(() => { /* noop */ });
 
     resizeObs = new ResizeObserver(() => doResize());
     resizeObs.observe(container);
@@ -327,6 +388,9 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       if (pingTimer) window.clearInterval(pingTimer);
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       window.clearInterval(wakeTimer);
+      settleTimers.forEach((id) => window.clearTimeout(id));
+      cancelAnimationFrame(settleRaf);
+      if (hideBarTimer) window.clearTimeout(hideBarTimer);
       resizeObs?.disconnect();
       cancelAnimationFrame(inertia);
       container.removeEventListener('touchstart', onTouchStart);
@@ -354,28 +418,48 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
 
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div
-        ref={containerRef}
-        // En iOS el teclado solo sube si el foco cae en el textarea oculto de
-        // xterm, y acertarle con el dedo es casualidad. Un tap en cualquier
-        // parte del terminal lo enfoca.
-        onClick={() => { try { termRef.current?.focus(); } catch { /* noop */ } }}
-        style={{
-          flex: 1, minHeight: 0,
-          padding: isMobile ? 6 : 10,
-          // Mismo color que el background del Terminal — así no se ve un marco
-          // de otro color alrededor cuando hay padding o cuando el shell aún
-          // no se conectó.
-          background: '#0c0e14',
-          borderRadius: 10,
-          overflow: 'hidden',
-          // Bajo zoom CSS (web) xterm mide las celdas con getBoundingClientRect,
-          // que devuelve px visuales, y las aplica como px CSS: las celdas
-          // salen Z veces más grandes y el canvas WebGL se ve borroso. Con el
-          // contra-zoom el terminal queda a escala 1 y la fuente hace el resto.
-          ...(cssZ !== 1 ? { zoom: 1 / cssZ } : null),
-        }}
-      />
+      {/* Wrapper propio para posicionar la barra de scroll: el contenedor de
+          xterm no puede llevar hijos de React (ese subárbol lo maneja xterm). */}
+      <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex' }}>
+        <div
+          ref={containerRef}
+          // En iOS el teclado solo sube si el foco cae en el textarea oculto de
+          // xterm, y acertarle con el dedo es casualidad. Un tap en cualquier
+          // parte del terminal lo enfoca.
+          onClick={() => { try { termRef.current?.focus(); } catch { /* noop */ } }}
+          style={{
+            flex: 1, minWidth: 0,
+            padding: isMobile ? 6 : 10,
+            // Mismo color que el background del Terminal — así no se ve un marco
+            // de otro color alrededor cuando hay padding o cuando el shell aún
+            // no se conectó.
+            background: '#0c0e14',
+            borderRadius: 10,
+            overflow: 'hidden',
+            // Bajo zoom CSS (web) xterm mide las celdas con getBoundingClientRect,
+            // que devuelve px visuales, y las aplica como px CSS: las celdas
+            // salen Z veces más grandes y el canvas WebGL se ve borroso. Con el
+            // contra-zoom el terminal queda a escala 1 y la fuente hace el resto.
+            ...(cssZ !== 1 ? { zoom: 1 / cssZ } : null),
+          }}
+        />
+        {isMobile && (
+          <div
+            ref={scrollTrackRef}
+            style={{
+              position: 'absolute', right: 2, top: 8, bottom: 8, width: 3,
+              opacity: 0, transition: 'opacity 220ms ease',
+              pointerEvents: 'none',
+            }}>
+            <div
+              ref={scrollThumbRef}
+              style={{
+                position: 'absolute', left: 0, width: '100%', height: 0,
+                borderRadius: 2, background: 'rgba(229,231,235,0.5)',
+              }}/>
+          </div>
+        )}
+      </div>
       {isMobile && (
         <TerminalKeyBar
           onKey={(seq) => {

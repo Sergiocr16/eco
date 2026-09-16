@@ -21,6 +21,7 @@ import * as gitAdv from './git-ops-advanced.js';
 import * as devServer from './dev-server.js';
 import * as obsidian from './obsidian.js';
 import * as tailnet from './tailnet.js';
+import * as nosleep from './nosleep.js';
 import { getClaudeAuthStatus } from './claude-auth.js';
 import { getCodexAuthStatus, invalidateCodexAuthCache } from './codex-auth.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
@@ -696,6 +697,23 @@ app.post('/config/tailnet', requireAdmin, async (req: Request, res: Response) =>
   }
   tailnet.stopTailnet();
   res.json(tailnet.tailnetStatus());
+});
+
+// ─── Evitar que la Mac duerma (macOS) ─────────────────────────────────────
+// Recurso del anfitrión como Tailnet o Folders → requireAdmin. En Win/Linux
+// devuelve supported:false y la UI esconde el control.
+
+app.get('/config/nosleep', requireAdmin, async (_req: Request, res: Response) => {
+  res.json(await nosleep.noSleepStatus());
+});
+
+const NoSleepConfigSchema = z.object({ enabled: z.boolean() });
+app.post('/config/nosleep', requireAdmin, async (req: Request, res: Response) => {
+  const parsed = NoSleepConfigSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.bad_request', 'Body inválido');
+  }
+  res.json(await nosleep.setNoSleep(parsed.data.enabled));
 });
 
 // ─── GitHub credentials (PAT) ─────────────────────────────────────────────

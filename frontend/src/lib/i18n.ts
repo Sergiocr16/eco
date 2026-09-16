@@ -920,6 +920,16 @@ const DICT = {
     en: 'Shows a system notification when the agent PTY goes idle after processing. Only fires when the Eco window is not visible (you’re in another app).',
   },
   'settings.general.menubar': { es: 'Mantener Eco en la barra de menú', en: 'Keep Eco in the menu bar' },
+  'settings.general.nosleep': { es: 'Evitar que la Mac duerma', en: 'Prevent this Mac from sleeping' },
+  'settings.general.nosleep_desc': {
+    es: 'Mantiene la Mac despierta aunque cierres la tapa. Pide contraseña de administrador al cambiarlo.',
+    en: 'Keeps the Mac awake even with the lid closed. Asks for an administrator password when toggled.',
+  },
+  'settings.general.nosleep_cancelled': {
+    es: 'Se canceló la autorización — el ajuste quedó sin cambiar.',
+    en: 'Authorization was cancelled — the setting was left unchanged.',
+  },
+  'settings.general.nosleep_err': { es: 'No se pudo cambiar: {detail}', en: 'Could not change it: {detail}' },
   'settings.general.default_folder': { es: 'Carpeta por defecto', en: 'Default folder' },
   'settings.general.default_folder_desc': {
     es: 'Se asigna automáticamente al crear un agente. Vacío = pedir cada vez.',
