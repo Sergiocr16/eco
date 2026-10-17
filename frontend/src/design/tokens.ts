@@ -7,8 +7,12 @@ export type ThemeMode =
   // Oscuros
   | 'dark' | 'slate' | 'ocean' | 'emerald' | 'dracula' | 'indigo' | 'rose-pine'
   | 'gruvbox' | 'blood-moon'
+  // Oscuros glass (degradado de fondo + paneles translúcidos)
+  | 'aurora' | 'nebula' | 'horizon' | 'lagoon' | 'obsidian' | 'honey'
   // Claros
-  | 'light' | 'sky' | 'lavender' | 'sand' | 'mint';
+  | 'light' | 'sky' | 'lavender' | 'sand' | 'mint'
+  // Claros glass
+  | 'frost' | 'prism' | 'peach';
 
 export type EffectiveThemeMode = Exclude<ThemeMode, 'system'>;
 
@@ -38,6 +42,10 @@ export type Tokens = {
   idle: string;
   chromeBg: string;
   windowBg: string;
+  // Glassmorphism: capa de degradados que el shell pinta SOBRE windowBg
+  // (`backgroundImage`). windowBg sigue siendo un color sólido porque lo usan
+  // bordes y el meta theme-color. Solo los temas glass lo definen.
+  windowBgImage?: string;
   windowBorder: string;
   desktopBg: string;
   fontSans: string;
@@ -379,6 +387,161 @@ const LAVENDER_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accen
   desktopBg: '#e6e0f4',
 };
 
+
+// ─── Temas glassmorphism ──────────────────────────────────────────────────
+// Un degradado de luces de color detrás de todo + superficies translúcidas:
+// el blur de `glassEffect`, el dock y los diálogos dejan ver el fondo. bg1 y
+// chromeBg bajan su alpha para que el degradado atraviese también los paneles.
+
+type Base = Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'>;
+
+function darkGlass(opts: {
+  bg: string; rgb: string; text: [string, string, string, string]; image: string;
+}): Base {
+  return {
+    ...DARK_BASE,
+    bg0: opts.bg,
+    bg1: `rgba(${opts.rgb}, 0.55)`,
+    bg2: 'rgba(255,255,255,0.05)',
+    bg3: 'rgba(255,255,255,0.08)',
+    bg4: 'rgba(255,255,255,0.12)',
+    glassBg: `rgba(${opts.rgb}, 0.42)`,
+    glassBorder: 'rgba(255,255,255,0.12)',
+    glassBorderHi: 'rgba(255,255,255,0.24)',
+    glassInset: 'inset 0 1px 0 rgba(255,255,255,0.10)',
+    text0: opts.text[0], text1: opts.text[1], text2: opts.text[2], text3: opts.text[3],
+    chromeBg: `rgba(${opts.rgb}, 0.62)`,
+    windowBg: opts.bg,
+    windowBgImage: opts.image,
+    windowBorder: 'rgba(255,255,255,0.14)',
+    desktopBg: opts.bg,
+  };
+}
+
+function lightGlass(opts: {
+  bg: string; text: [string, string, string, string]; image: string;
+}): Base {
+  return {
+    ...LIGHT_BASE,
+    bg0: opts.bg,
+    bg1: 'rgba(255,255,255,0.55)',
+    bg2: 'rgba(255,255,255,0.45)',
+    bg3: 'rgba(255,255,255,0.65)',
+    bg4: 'rgba(255,255,255,0.85)',
+    glassBg: 'rgba(255,255,255,0.48)',
+    glassBorder: 'rgba(255,255,255,0.65)',
+    glassBorderHi: 'rgba(255,255,255,0.95)',
+    glassInset: 'inset 0 1px 0 rgba(255,255,255,0.9)',
+    text0: opts.text[0], text1: opts.text[1], text2: opts.text[2], text3: opts.text[3],
+    chromeBg: 'rgba(255,255,255,0.6)',
+    windowBg: opts.bg,
+    windowBgImage: opts.image,
+    windowBorder: 'rgba(255,255,255,0.8)',
+    desktopBg: opts.bg,
+  };
+}
+
+// Aurora — noche polar: verde-teal y violeta sobre azul profundo.
+const AURORA_BASE = darkGlass({
+  bg: '#0b1220', rgb: '11, 18, 32',
+  text: ['#e6f1ff', '#aac4e0', '#7d97b8', '#50688a'],
+  image: [
+    'radial-gradient(900px 600px at 12% 8%, rgba(45,212,191,0.26), transparent 62%)',
+    'radial-gradient(1000px 700px at 88% 18%, rgba(139,92,246,0.24), transparent 62%)',
+    'radial-gradient(800px 600px at 55% 100%, rgba(52,211,153,0.16), transparent 62%)',
+  ].join(', '),
+});
+
+// Nebulosa — magenta e índigo flotando sobre púrpura casi negro.
+const NEBULA_BASE = darkGlass({
+  bg: '#140b22', rgb: '20, 11, 34',
+  text: ['#f3e8ff', '#cbb6e8', '#9a82bd', '#67558a'],
+  image: [
+    'radial-gradient(900px 650px at 85% 10%, rgba(217,70,239,0.26), transparent 62%)',
+    'radial-gradient(900px 700px at 10% 35%, rgba(99,102,241,0.26), transparent 62%)',
+    'radial-gradient(700px 600px at 60% 100%, rgba(244,114,182,0.16), transparent 62%)',
+  ].join(', '),
+});
+
+// Horizonte — atardecer: naranja y rosa que se apagan en púrpura.
+const HORIZON_BASE = darkGlass({
+  bg: '#1a0f1e', rgb: '26, 15, 30',
+  text: ['#fff1ea', '#e8c4b8', '#b8928a', '#80625d'],
+  image: [
+    'radial-gradient(1000px 650px at 10% 100%, rgba(251,146,60,0.28), transparent 62%)',
+    'radial-gradient(900px 650px at 50% 70%, rgba(236,72,153,0.20), transparent 62%)',
+    'radial-gradient(900px 600px at 90% 0%, rgba(124,58,237,0.22), transparent 62%)',
+  ].join(', '),
+});
+
+// Laguna — cian y esmeralda sobre verde abisal.
+const LAGOON_BASE = darkGlass({
+  bg: '#06201f', rgb: '6, 32, 31',
+  text: ['#e3fffb', '#a8dcd5', '#74aaa3', '#4b7a74'],
+  image: [
+    'radial-gradient(900px 650px at 15% 15%, rgba(34,211,238,0.24), transparent 62%)',
+    'radial-gradient(900px 650px at 85% 85%, rgba(16,185,129,0.22), transparent 62%)',
+    'radial-gradient(700px 500px at 70% 10%, rgba(59,130,246,0.14), transparent 62%)',
+  ].join(', '),
+});
+
+// Obsidiana — negro con brillo frío: el glass monocromo.
+const OBSIDIAN_BASE = darkGlass({
+  bg: '#09090b', rgb: '9, 9, 11',
+  text: ['#f4f4f5', '#c4c4cc', '#8e8e99', '#5c5c66'],
+  image: [
+    'radial-gradient(900px 600px at 0% 0%, rgba(255,255,255,0.09), transparent 60%)',
+    'radial-gradient(1000px 700px at 100% 100%, rgba(96,165,250,0.14), transparent 62%)',
+    'radial-gradient(600px 400px at 70% 20%, rgba(167,139,250,0.08), transparent 60%)',
+  ].join(', '),
+});
+
+// Miel — el Ámbar en versión glass: mismo gris cálido y texto crema, con
+// luces ámbar, dorado y un toque cobre.
+const HONEY_BASE = darkGlass({
+  bg: '#282828', rgb: '40, 40, 40',
+  text: ['#ebdbb2', '#d5c4a1', '#a89984', '#7c6f64'],
+  image: [
+    'radial-gradient(900px 650px at 12% 12%, rgba(250,189,47,0.26), transparent 62%)',
+    'radial-gradient(900px 650px at 88% 80%, rgba(214,93,14,0.22), transparent 62%)',
+    'radial-gradient(700px 500px at 60% 0%, rgba(254,128,25,0.14), transparent 60%)',
+  ].join(', '),
+});
+
+// Escarcha — hielo: celeste y lavanda sobre blanco azulado.
+const FROST_BASE = lightGlass({
+  bg: '#eef4fb',
+  text: ['#0f1b2d', '#3b4d66', '#6b7d96', '#9aaabf'],
+  image: [
+    'radial-gradient(900px 650px at 10% 10%, rgba(56,189,248,0.26), transparent 62%)',
+    'radial-gradient(900px 650px at 90% 30%, rgba(167,139,250,0.20), transparent 62%)',
+    'radial-gradient(800px 600px at 50% 100%, rgba(255,255,255,0.9), transparent 60%)',
+  ].join(', '),
+});
+
+// Prisma — arcoíris pastel sobre blanco.
+const PRISM_BASE = lightGlass({
+  bg: '#f7f5fc',
+  text: ['#1a1526', '#463d5c', '#75698c', '#a59cb8'],
+  image: [
+    'radial-gradient(800px 600px at 5% 20%, rgba(244,114,182,0.22), transparent 62%)',
+    'radial-gradient(800px 600px at 95% 10%, rgba(250,204,21,0.18), transparent 62%)',
+    'radial-gradient(900px 650px at 60% 100%, rgba(34,211,238,0.20), transparent 62%)',
+    'radial-gradient(600px 500px at 40% 40%, rgba(167,139,250,0.14), transparent 60%)',
+  ].join(', '),
+});
+
+// Durazno — cálido: durazno, rosa y un toque de amarillo.
+const PEACH_BASE = lightGlass({
+  bg: '#fdf3ec',
+  text: ['#2a1a12', '#5c4234', '#8c6e5e', '#b89c8e'],
+  image: [
+    'radial-gradient(900px 650px at 10% 90%, rgba(251,146,60,0.22), transparent 62%)',
+    'radial-gradient(900px 650px at 90% 10%, rgba(251,113,133,0.18), transparent 62%)',
+    'radial-gradient(700px 500px at 50% 0%, rgba(253,224,71,0.16), transparent 60%)',
+  ].join(', '),
+});
+
 // Mapping de cada modo a su base.
 const THEME_BASES: Record<EffectiveThemeMode, Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'>> = {
   'dark': DARK_BASE,
@@ -390,11 +553,20 @@ const THEME_BASES: Record<EffectiveThemeMode, Omit<Tokens, 'accent' | 'accentDim
   'rose-pine': ROSE_PINE_BASE,
   'gruvbox': GRUVBOX_BASE,
   'blood-moon': BLOOD_MOON_BASE,
+  'aurora': AURORA_BASE,
+  'nebula': NEBULA_BASE,
+  'horizon': HORIZON_BASE,
+  'lagoon': LAGOON_BASE,
+  'obsidian': OBSIDIAN_BASE,
+  'honey': HONEY_BASE,
   'light': LIGHT_BASE,
   'sky': SKY_BASE,
   'lavender': LAVENDER_BASE,
   'sand': SAND_BASE,
   'mint': MINT_BASE,
+  'frost': FROST_BASE,
+  'prism': PRISM_BASE,
+  'peach': PEACH_BASE,
 };
 
 // Luminosidad del accent por tema — los oscuros usan accent claro (~74-78%),
@@ -409,12 +581,21 @@ const ACCENT_LUMINOSITY: Record<EffectiveThemeMode, number> = {
   'rose-pine': 76,
   'gruvbox': 74,
   'blood-moon': 64,
+  'aurora': 78,
+  'nebula': 78,
+  'horizon': 76,
+  'lagoon': 78,
+  'obsidian': 76,
+  'honey': 76,
   // Light themes: accent ~56-58% L para que contraste contra fondos claros.
   'light': 58,
   'sky': 56,
   'lavender': 56,
   'sand': 58,
   'mint': 56,
+  'frost': 54,
+  'prism': 54,
+  'peach': 56,
 };
 
 // Metadata para mostrar al usuario en el picker de Apariencia.
@@ -443,12 +624,23 @@ export const THEME_VARIANTS: ThemeVariant[] = [
   { id: 'rose-pine',  name: 'Rosa',      kind: 'dark',  preview: '#191724', defaultHue: 350 },
   { id: 'gruvbox',    name: 'Ámbar',     kind: 'dark',  preview: '#282828', defaultHue: 70, defaultChroma: 0.14 },
   { id: 'blood-moon', name: 'Carmesí',   kind: 'dark',  preview: '#0c0204', defaultHue: 20, defaultChroma: 0.16 },
+  // Oscuros glass — el swatch adelanta el degradado del fondo.
+  { id: 'aurora',   name: 'Aurora',    kind: 'dark', preview: 'linear-gradient(120deg, #0f2a33 0%, #0b1220 45%, #221640 100%)', defaultHue: 175, defaultChroma: 0.14 },
+  { id: 'nebula',   name: 'Nebulosa',  kind: 'dark', preview: 'linear-gradient(120deg, #1d1545 0%, #140b22 50%, #3a1040 100%)', defaultHue: 310, defaultChroma: 0.15 },
+  { id: 'horizon',  name: 'Horizonte', kind: 'dark', preview: 'linear-gradient(120deg, #3a1a14 0%, #1a0f1e 50%, #2a1446 100%)', defaultHue: 35,  defaultChroma: 0.15 },
+  { id: 'lagoon',   name: 'Laguna',    kind: 'dark', preview: 'linear-gradient(120deg, #0a3a3f 0%, #06201f 50%, #073a2c 100%)', defaultHue: 205, defaultChroma: 0.13 },
+  { id: 'obsidian', name: 'Obsidiana', kind: 'dark', preview: 'linear-gradient(120deg, #1c1c20 0%, #09090b 50%, #10172a 100%)', defaultHue: 230, defaultChroma: 0.10 },
+  { id: 'honey',    name: 'Miel',      kind: 'dark', preview: 'linear-gradient(120deg, #4a3a14 0%, #282828 50%, #3e2412 100%)', defaultHue: 70,  defaultChroma: 0.14 },
   // Claros.
   { id: 'light',      name: 'Claro',     kind: 'light', preview: '#fbfbfd', defaultHue: 165 },
   { id: 'sky',        name: 'Cielo',     kind: 'light', preview: '#f0f6fc', defaultHue: 210 },
   { id: 'lavender',   name: 'Lavanda',   kind: 'light', preview: '#f6f4fc', defaultHue: 285 },
   { id: 'sand',       name: 'Arena',     kind: 'light', preview: '#f7f1e0', defaultHue: 45, defaultChroma: 0.12 },
   { id: 'mint',       name: 'Menta',     kind: 'light', preview: '#f1f8f4', defaultHue: 150 },
+  // Claros glass.
+  { id: 'frost',    name: 'Escarcha',  kind: 'light', preview: 'linear-gradient(120deg, #cfe9fb 0%, #eef4fb 50%, #e4dcfb 100%)', defaultHue: 215, defaultChroma: 0.14 },
+  { id: 'prism',    name: 'Prisma',    kind: 'light', preview: 'linear-gradient(120deg, #fbd9ea 0%, #f7f5fc 45%, #d4f4fb 100%)', defaultHue: 300, defaultChroma: 0.13 },
+  { id: 'peach',    name: 'Durazno',   kind: 'light', preview: 'linear-gradient(120deg, #fde0cc 0%, #fdf3ec 50%, #fbdde3 100%)', defaultHue: 40,  defaultChroma: 0.13 },
 ];
 
 // Lookups derivados — fuente única de verdad para light/dark y para el acento
@@ -541,5 +733,9 @@ export const ACCENT_HUES = [
   { hue: 350, name: 'Rosa' },
   { hue: 20,  name: 'Rojo' },
   { hue: 45,  name: 'Ámbar' },
+  { hue: 65,  name: 'Dorado' },
   { hue: 90,  name: 'Lima' },
+  { hue: 115, name: 'Oliva' },
+  { hue: 140, name: 'Verde' },
+  { hue: 210, name: 'Cian' },
 ];

@@ -103,7 +103,7 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
 
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: t.windowBg }}/>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: t.windowBg, backgroundImage: t.windowBgImage }}/>
       {topInset > 0 && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, height: topInset,
