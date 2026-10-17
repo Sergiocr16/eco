@@ -17,7 +17,7 @@ import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
 import { IconCommand } from '@/design/icons';
 import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
-import { useCategories } from '@/hooks/useCategories';
+import { useCategories, sortByCategory } from '@/hooks/useCategories';
 import { useT } from '@/hooks/useI18n';
 
 type Props = {
@@ -86,17 +86,20 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
 
   // Aplica el orden custom: los bubbles que están en customOrder respetan
   // ese orden; el resto va al final ordenado por sortFn.
+  // Después, agrupa por categoría (en el orden de la lista de categorías;
+  // sin categoría al final). El drag sigue reordenando, pero dentro de la
+  // categoría: un icono arrastrado a otra categoría vuelve a la suya.
   const applyCustomOrder = useCallback((items: Bubble[]) => {
     const indexMap = new Map<string, number>();
     customOrder.forEach((id, i) => indexMap.set(id, i));
-    return [...items].sort((a, b) => {
+    return sortByCategory([...items].sort((a, b) => {
       const ia = indexMap.get(a.id);
       const ib = indexMap.get(b.id);
       if (ia != null && ib != null) return ia - ib;
       if (ia != null) return -1;
       if (ib != null) return 1;
       return sortFn(a, b);
-    });
+    }));
   }, [customOrder]);
 
   // Si hay más de un workspace en uso, agrupamos los iconos del dock por

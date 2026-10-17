@@ -32,7 +32,7 @@ const FIREBASE_SHAPE: Record<string, RegExp> = {
 function assertFirebaseConfigured(mode: string): void {
   // loadEnv mergea los .env* del root con las VITE_* que ya estén en process.env
   // (que es como las inyecta CI).
-  const env = loadEnv(mode, __dirname, 'VITE_');
+  const env = loadEnv(mode, import.meta.dirname, 'VITE_');
   const bad = Object.entries(FIREBASE_SHAPE)
     .filter(([k, re]) => !re.test(env[k]?.trim() ?? ''))
     .map(([k]) => k);
@@ -54,7 +54,7 @@ export default defineConfig(({ command, mode }) => {
     base: './',
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
     },
     build: {
@@ -67,10 +67,13 @@ export default defineConfig(({ command, mode }) => {
           // Separamos libs pesadas en chunks paralelos para que el navegador
           // las cachee independientemente y solo recargue el chunk de la app
           // cuando cambia código nuestro.
-          manualChunks: {
-            'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
-            'vendor-motion': ['motion', 'motion/react'],
-            'vendor-react': ['react', 'react-dom'],
+          // Vite 8 (rolldown) solo acepta la forma función, no el objeto.
+          manualChunks: (id) => {
+            if (!id.includes('/node_modules/')) return undefined;
+            if (/\/node_modules\/@xterm\//.test(id)) return 'vendor-xterm';
+            if (/\/node_modules\/(motion|framer-motion|motion-dom|motion-utils)\//.test(id)) return 'vendor-motion';
+            if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'vendor-react';
+            return undefined;
           },
         },
       },

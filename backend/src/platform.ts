@@ -137,8 +137,9 @@ export function resolveCodexCli(): string {
 }
 
 /** Resuelve el binario de ripgrep (`rg` / `rg.exe`) cross-platform.
- *  Prioridad: $ECO_RIPGREP/$RG_BIN → binario bundleado del claude-agent-sdk
- *  (`vendor/ripgrep/<arch>-<plat>/`) → `'rg'` en el PATH.
+ *  Prioridad: $ECO_RIPGREP/$RG_BIN → binario de `@vscode/ripgrep` (paquete
+ *  opcional por plataforma, `@vscode/ripgrep-<plat>-<arch>/bin/rg`) → `'rg'`
+ *  en el PATH.
  *
  *  El bundleado es clave en Windows: el `.exe` empaquetado NO está en el PATH,
  *  así que `spawn('rg')` fallaba y la búsqueda caía a `grep` (inexistente en
@@ -155,27 +156,17 @@ function computeRipgrepPath(): string | null {
   const override = (process.env.ECO_RIPGREP || process.env.RG_BIN)?.trim();
   if (override && existsSync(override)) return override;
 
-  // Carpeta vendor por arch: arm64-darwin, x64-win32, x64-linux, etc.
-  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-  const plat = IS_WIN ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
   const binName = IS_WIN ? 'rg.exe' : 'rg';
-  const vendorRel = join('vendor', 'ripgrep', `${arch}-${plat}`, binName);
-
-  // El SDK puede resolverse via require (dev) o estar junto al backend en el
-  // bundle. fileURLToPath, nunca new URL().pathname (rompe en Windows).
-  const candidates: string[] = [];
+  // npm instala solo el paquete de la plataforma del host, que es la misma
+  // que empaqueta electron-builder (mac en Mac, win en Windows). Resolvemos el
+  // binario directo en vez de importar `@vscode/ripgrep` (su index es ESM y
+  // haría lo mismo). En el bundle vive junto al backend, en dev lo hoistea
+  // el root: require.resolve cubre ambos.
   try {
     const require = createRequire(import.meta.url);
-    const sdkPkg = require.resolve('@anthropic-ai/claude-agent-sdk/package.json');
-    candidates.push(join(dirname(sdkPkg), vendorRel));
-  } catch { /* no resoluble por require: probamos rutas relativas */ }
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
-  candidates.push(join(moduleDir, '..', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', vendorRel));
-  candidates.push(join(moduleDir, '..', '..', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', vendorRel));
-
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
-  }
+    const rg = require.resolve(`@vscode/ripgrep-${process.platform}-${process.arch}/bin/${binName}`);
+    if (existsSync(rg)) return rg;
+  } catch { /* paquete de plataforma ausente: probamos el PATH */ }
 
   // Fallback: PATH. Confirmamos que responde a --version (en POSIX típico).
   try {

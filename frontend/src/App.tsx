@@ -141,7 +141,7 @@ function SoloLockedScreen() {
       className="eco-keep-animating"
       style={{
         position: 'fixed', inset: 0, zIndex: 1, overflow: 'hidden',
-        background: t.windowBg, color: t.text0, fontFamily: t.fontSans,
+        background: t.windowBg, backgroundImage: t.windowBgImage, color: t.text0, fontFamily: t.fontSans,
       }}>
       {/* Mismo fondo animado que la pantalla del PIN (auroras + partículas). */}
       <DriftingOrbs/>
@@ -589,6 +589,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,
         background: t.windowBg,
+        // Temas glass: degradado de luces detrás de todos los paneles.
+        backgroundImage: t.windowBgImage,
       }}/>
       {/* Región arrastrable invisible que cubre los traffic lights y el resto
           de la titlebar. -webkit-app-region: drag permite mover la ventana

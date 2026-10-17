@@ -7,7 +7,7 @@ import {
 import {
   IconSettings, IconKey, IconFolder, IconShield, IconLayers,
   IconInfo, IconCheck, IconCpu, IconTerminal, IconGlobe, IconAlert,
-  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, IconSearch, IconFile, IconExt, IconEdit, type IconProps,
+  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, IconSearch, IconFile, IconExt, IconEdit, IconChevR, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
@@ -32,6 +32,7 @@ import { getElectronBackupAPI, u8ToBase64 } from '@/lib/backup';
 import { useIsPhone, isPhoneNow, isMobileNow } from '@/hooks/useMediaQuery';
 import { cssZoom, hasNativeZoom, setUiZoom, useUiZoom, ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/lib/ui-zoom';
 import { isStandalone } from '@/lib/platform';
+import type { JSX } from 'react';
 import {
   TERM_FONT_FAMILIES, TERM_FONT_MAX, TERM_FONT_MIN, isFontInstalled,
   setTermFontFamily, setTermFontSize, termFontStack, useTermPrefs,
@@ -1046,6 +1047,16 @@ export function FoldersManager() {
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
   const filtered = q ? ws.list.workspaces.filter((p) => p.toLowerCase().includes(q)) : ws.list.workspaces;
+  const [openSet, setOpenSet] = useState<Set<string>>(() => new Set(folderOpenCache));
+  function toggleFolder(p: string, force?: boolean) {
+    setOpenSet((prev) => {
+      const next = new Set(prev);
+      const open = force ?? !next.has(p);
+      if (open) next.add(p); else next.delete(p);
+      folderOpenCache = next;
+      return next;
+    });
+  }
 
   async function handleAdd(pathOverride?: string) {
     const v = (pathOverride ?? draft).trim();
@@ -1056,6 +1067,7 @@ export function FoldersManager() {
     setAdding(false);
     if (result.ok) {
       setDraft('');
+      toggleFolder(v, true);
     } else {
       setAddError(result.error);
     }
@@ -1171,33 +1183,7 @@ export function FoldersManager() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {filtered.map((p) => (
-              <Glass key={p} radius={12} style={{ padding: isPhone ? 10 : 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 8 : 12 }}>
-                  <div style={{ color: t.accent, flexShrink: 0 }}><IconFolder size={18}/></div>
-                  <div style={{
-                    flex: 1, minWidth: 0,
-                    fontFamily: t.fontMono, fontSize: isPhone ? 11.5 : 13, color: t.text0,
-                    // En el teléfono un path largo con ellipsis deja ver solo
-                    // el principio, que es la parte que menos identifica la
-                    // carpeta. Cortado por el final se lee el nombre real.
-                    ...(isPhone
-                      ? { direction: 'rtl' as const, textAlign: 'left' as const, overflow: 'hidden', whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' }
-                      : { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }),
-                  }} title={p}>{p}</div>
-                  <button
-                    type="button"
-                    onClick={() => ws.remove(p)}
-                    title={tr('settings.claude.apikey.remove_btn')}
-                    style={{
-                      width: 30, height: 30, borderRadius: 8, border: 0,
-                      background: 'transparent', color: t.text2, cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                    <IconTrash size={14}/>
-                  </button>
-                </div>
-                <FolderCardConfig workspace={p} collapsible={isPhone}/>
-              </Glass>
+            <FolderCard key={p} workspace={p} open={openSet.has(p)} onToggle={() => toggleFolder(p)} onRemove={() => ws.remove(p)}/>
           ))}
         </div>
       )}
@@ -1208,47 +1194,76 @@ export function FoldersManager() {
   );
 }
 
-// Config por carpeta (dev server + ramas base). En escritorio va siempre
-// desplegada; en móvil arranca colapsada porque cada carpeta trae un editor
-// completo —toggle single/dual, comandos, variables de entorno, ramas— y con
-// tres o cuatro carpetas la pantalla es un muro imposible de escanear.
-function FolderCardConfig({ workspace, collapsible }: { workspace: string; collapsible: boolean }) {
+// Cada workspace arranca colapsado: su cuerpo trae un editor completo
+// (toggle single/dual, comandos, variables de entorno, ramas) y con tres o
+// cuatro carpetas la pantalla era un muro. Lo abierto se recuerda mientras
+// dure la sesión (cache de módulo) para que cambiar de sección no lo cierre.
+let folderOpenCache = new Set<string>();
+
+function FolderCard({ workspace, open, onToggle, onRemove }: {
+  workspace: string;
+  open: boolean;
+  onToggle: () => void;
+  onRemove: () => void;
+}) {
   const t = useTokens();
   const tr = useT();
-  const [open, setOpen] = useState(false);
-
-  if (!collapsible) {
-    return (
-      <>
-        <WorkspaceServerConfigField workspace={workspace}/>
-        <WorktreeFavoritesField workspace={workspace}/>
-      </>
-    );
-  }
-
+  const isPhone = useIsPhone();
+  const cfg = useWorkspaceConfig(workspace);
+  const summary = cfg.server.dual
+    ? tr('settings.folders.summary_dual')
+    : (cfg.server.main.trim() || tr('settings.folders.summary_no_server'));
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          marginTop: 10, width: '100%', height: 40,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          borderRadius: 8, cursor: 'pointer',
-          border: `1px solid ${t.glassBorder}`,
-          background: open ? t.bg3 : 'transparent',
-          color: t.text1, fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
-        }}>
-        <IconCpu size={13}/>
-        {open ? tr('settings.folders.config_hide') : tr('settings.folders.config_show')}
-      </button>
+    <Glass radius={12} style={{ padding: isPhone ? 10 : 14 }}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+        title={open ? tr('settings.folders.collapse') : tr('settings.folders.expand')}
+        style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 8 : 12, cursor: 'pointer', outline: 'none' }}>
+        <div style={{
+          color: t.text2, flexShrink: 0, display: 'flex',
+          transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 140ms',
+        }}><IconChevR size={14}/></div>
+        <div style={{ color: t.accent, flexShrink: 0 }}><IconFolder size={18}/></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: t.fontMono, fontSize: isPhone ? 11.5 : 13, color: t.text0,
+            // En el teléfono un path largo con ellipsis deja ver solo el
+            // principio, que es la parte que menos identifica la carpeta.
+            // Cortado por el final se lee el nombre real.
+            ...(isPhone
+              ? { direction: 'rtl' as const, textAlign: 'left' as const, overflow: 'hidden', whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' }
+              : { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }),
+          }} title={workspace}>{workspace}</div>
+          {!open && (
+            <div style={{
+              marginTop: 2, fontFamily: t.fontMono, fontSize: 11, color: t.text3,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>{summary}</div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          title={tr('settings.claude.apikey.remove_btn')}
+          style={{
+            width: 30, height: 30, borderRadius: 8, border: 0,
+            background: 'transparent', color: t.text2, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+          <IconTrash size={14}/>
+        </button>
+      </div>
       {open && (
         <>
           <WorkspaceServerConfigField workspace={workspace}/>
           <WorktreeFavoritesField workspace={workspace}/>
         </>
       )}
-    </>
+    </Glass>
   );
 }
 
@@ -1784,7 +1799,7 @@ function SectionAppearance() {
         {tr('settings.appearance.accent.override_desc')}
       </div>
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10,
+        display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10,
         marginBottom: 22,
       }}>
         {ACCENT_HUES.map((a) => {

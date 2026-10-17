@@ -8,13 +8,13 @@
 // `mcp__eco__create_bubble`, `mcp__eco__list_bubbles` y
 // `mcp__eco__send_to_bubble`.
 
+import { z } from 'zod';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 
 import {
   CreateBubbleSchema,
@@ -40,7 +40,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'de la bubble procesará apenas se monta — útil para arrancar la ' +
         'conversación con una tarea ya definida. ' +
         'Si no se pasa workspace, se autodetecta usando el cwd actual.',
-      inputSchema: zodToJsonSchema(CreateBubbleSchema),
+      inputSchema: z.toJSONSchema(CreateBubbleSchema),
     },
     {
       name: 'list_bubbles',
@@ -48,7 +48,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'Lista las bubbles activas en Eco (id, título, workspace, status). ' +
         'Requiere que Eco haya sincronizado al menos una vez desde que el ' +
         'backend arrancó.',
-      inputSchema: zodToJsonSchema(ListBubblesSchema),
+      inputSchema: z.toJSONSchema(ListBubblesSchema),
     },
     {
       name: 'send_to_bubble',
@@ -58,7 +58,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'el usuario; si el terminal no estaba corriendo, se levanta solo. ' +
         'Fire-and-forget: no devuelve la respuesta del agente. ' +
         'Usá list_bubbles para conocer el bubble_id.',
-      inputSchema: zodToJsonSchema(SendToBubbleSchema),
+      inputSchema: z.toJSONSchema(SendToBubbleSchema),
     },
   ],
 }));
@@ -72,7 +72,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [
           {
             type: 'text',
-            text: `Argumentos inválidos: ${parsed.error.errors.map((e) => e.message).join('; ')}`,
+            text: `Argumentos inválidos: ${parsed.error.issues.map((e) => e.message).join('; ')}`,
           },
         ],
         isError: true,
@@ -90,7 +90,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [
           {
             type: 'text',
-            text: `Argumentos inválidos: ${parsed.error.errors.map((e) => e.message).join('; ')}`,
+            text: `Argumentos inválidos: ${parsed.error.issues.map((e) => e.message).join('; ')}`,
           },
         ],
         isError: true,

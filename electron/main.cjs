@@ -18,6 +18,15 @@ const isDev = !app.isPackaged;
 // el updater queda inerte hasta tener cuenta Apple Developer. En dev tampoco.
 const UPDATES_ENABLED = app.isPackaged && process.platform === 'win32';
 
+// Windows muestra las notificaciones nativas (toasts) solo si el proceso
+// declara el mismo AppUserModelId que el acceso directo del instalador NSIS
+// (electron-builder lo fija al `appId`). Sin esto `new Notification()` no
+// falla pero tampoco aparece — ni la de "nueva versión" ni la de "agente
+// terminó". En dev no hay acceso directo, así que no aplica.
+if (app.isPackaged && process.platform === 'win32') {
+  app.setAppUserModelId('com.aditum.eco');
+}
+
 // Mantener vivas las ventanas en segundo plano / ocluidas (satélites en otro
 // monitor). Sin esto Chromium throttlea o SUSPENDE el render de las ventanas
 // que no tienen foco o están tapadas, y solo la última enfocada anima — las
@@ -486,8 +495,9 @@ ipcMain.handle('eco:delete-file', async (_e, opts) => {
 // IPC: notificación nativa via `electron.Notification`. Usado por
 // `usePtyBusyNotifier` cuando un agente termina (PTY busy→idle). En
 // `.dmg` unsigned, `new Notification(...)` de la Web API NO aparece en
-// Notification Center de macOS — pero Electron.Notification sí, porque
-// Electron asocia internamente la notif con el bundle ID.
+// Notification Center de macOS. Electron.Notification sí aparecía hasta
+// Electron 41; desde 42 va por UNNotification y en una app SIN firmar emite
+// `failed` en vez de mostrarse (Windows no cambia). Se loguea, no se rompe.
 // Click handler: trae la ventana al frente y manda al renderer un
 // `eco:notification_clicked` con el bubbleId para que abra el agente.
 ipcMain.handle('eco:notify', (_event, opts) => {
@@ -500,6 +510,7 @@ ipcMain.handle('eco:notify', (_event, opts) => {
       body: o.body ? String(o.body) : '',
       silent: !!o.silent,
     });
+    n.on('failed', (_e, error) => { console.warn('[notify] falló (¿app sin firmar?):', error); });
     if (o.bubbleId) {
       n.on('click', () => {
         try {
@@ -739,6 +750,25 @@ function sendUpdateEvent(channel, payload) {
 // Configura electron-updater: auto-descarga en background y reenvía el ciclo de
 // vida al renderer. Solo se llama cuando UPDATES_ENABLED.
 let autoUpdaterWired = false;
+// Toast nativo del updater. Click → trae la ventana al frente (ahí está el
+// banner con "Reiniciar para actualizar").
+function showUpdateNotification(body) {
+  try {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title: 'Eco', body });
+    n.on('failed', (_e, error) => { console.warn('[updater] notificación falló:', error); });
+    n.on('click', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    });
+    n.show();
+  } catch (e) {
+    console.warn('[updater] notificación falló:', e);
+  }
+}
+
 function setupAutoUpdater() {
   if (!UPDATES_ENABLED || autoUpdaterWired) return;
   autoUpdaterWired = true;
@@ -750,6 +780,9 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-available', (info) => {
     sendUpdateEvent('eco:update-available', { version: info?.version });
+    // Aviso apenas se detecta: la descarga puede tardar y el user quiere
+    // saber que hay versión nueva aunque todavía no pueda reiniciar.
+    showUpdateNotification(`Hay una versión nueva (${info?.version || ''}). Se está descargando…`);
   });
   autoUpdater.on('download-progress', (p) => {
     sendUpdateEvent('eco:update-progress', { percent: Math.round(p?.percent || 0) });
@@ -757,18 +790,7 @@ function setupAutoUpdater() {
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloaded = true;
     sendUpdateEvent('eco:update-ready', { version: info?.version });
-    try {
-      if (Notification.isSupported()) {
-        const n = new Notification({
-          title: 'Eco',
-          body: `Nueva versión ${info?.version || ''} lista — reiniciá para actualizar`,
-        });
-        n.on('click', () => {
-          if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
-        });
-        n.show();
-      }
-    } catch { /* noop */ }
+    showUpdateNotification(`Nueva versión ${info?.version || ''} lista — reiniciá para actualizar`);
   });
   autoUpdater.on('error', (err) => {
     sendUpdateEvent('eco:update-error', { message: (err && err.message) || String(err) });

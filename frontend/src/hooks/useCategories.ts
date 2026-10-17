@@ -165,3 +165,23 @@ export function getCategoryById(id: string | undefined): Category | null {
   if (!id) return null;
   return categories.find((c) => c.id === id) ?? null;
 }
+
+/** Posición de la primera categoría del agente en la lista de categorías
+ *  (el orden en que el user las creó). Sin categoría → al final. */
+export function categoryRank(categoryIds: string[] | undefined): number {
+  for (const id of categoryIds ?? []) {
+    const i = categories.findIndex((c) => c.id === id);
+    if (i !== -1) return i;
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
+
+/** Orden por categoría, estable: empata → se respeta el orden de entrada.
+ *  Lo usan el dock y el grafo para que los agentes de una misma categoría
+ *  queden juntos dentro de su carpeta. */
+export function sortByCategory<T extends { categoryIds?: string[] }>(items: T[]): T[] {
+  return items
+    .map((it, i) => ({ it, i, rank: categoryRank(it.categoryIds) }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((x) => x.it);
+}

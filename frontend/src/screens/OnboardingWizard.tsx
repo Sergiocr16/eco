@@ -12,6 +12,7 @@ import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { apiFetch } from '@/lib/api';
 import { EcoMark } from '@/design/EcoMark';
+import type { JSX } from 'react';
 import {
   IconBolt, IconCheck, IconFolder, IconGithub, IconGlobe, IconKey, IconLayers,
   IconShield, type IconProps,

@@ -7,6 +7,7 @@ import {
 } from '@/design/icons';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
 import { useT } from '@/hooks/useI18n';
+import type { JSX } from 'react';
 
 type AuthHook = ReturnType<typeof useAuth>;
 
@@ -26,7 +27,7 @@ export function AuthScreen({ authState, authActions }: Props) {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1,
-      background: t.windowBg, color: t.text0,
+      background: t.windowBg, backgroundImage: t.windowBgImage, color: t.text0,
       overflow: 'hidden',
     }}>
       {/* Orbes animados de fondo */}

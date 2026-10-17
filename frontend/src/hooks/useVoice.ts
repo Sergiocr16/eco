@@ -2,23 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { translate, loadLang } from '@/lib/i18n';
 import { ecoPlatform } from '@/lib/eco-config';
 
+// Desde TypeScript 7 lib.dom trae SpeechRecognitionEvent/ErrorEvent/ResultList
+// (declararlos acá duplicaba y chocaba), pero sigue sin la interfaz
+// SpeechRecognition en sí ni el prefijo webkit de Chrome: eso queda acá.
 declare global {
   interface Window {
     SpeechRecognition?: typeof SpeechRecognition;
     webkitSpeechRecognition?: typeof SpeechRecognition;
-  }
-  interface SpeechRecognitionEventMap {
-    audioend: Event;
-    audiostart: Event;
-    end: Event;
-    error: SpeechRecognitionErrorEvent;
-    nomatch: SpeechRecognitionEvent;
-    result: SpeechRecognitionEvent;
-    soundend: Event;
-    soundstart: Event;
-    speechend: Event;
-    speechstart: Event;
-    start: Event;
   }
   interface SpeechRecognition extends EventTarget {
     lang: string;
@@ -34,29 +24,6 @@ declare global {
     abort(): void;
   }
   const SpeechRecognition: { new (): SpeechRecognition };
-  interface SpeechRecognitionEvent extends Event {
-    resultIndex: number;
-    results: SpeechRecognitionResultList;
-  }
-  interface SpeechRecognitionResultList {
-    readonly length: number;
-    item(index: number): SpeechRecognitionResult;
-    [index: number]: SpeechRecognitionResult;
-  }
-  interface SpeechRecognitionResult {
-    readonly isFinal: boolean;
-    readonly length: number;
-    item(index: number): SpeechRecognitionAlternative;
-    [index: number]: SpeechRecognitionAlternative;
-  }
-  interface SpeechRecognitionAlternative {
-    readonly transcript: string;
-    readonly confidence: number;
-  }
-  interface SpeechRecognitionErrorEvent extends Event {
-    readonly error: string;
-    readonly message: string;
-  }
 }
 
 export type VoiceState = 'unsupported' | 'off' | 'listening';

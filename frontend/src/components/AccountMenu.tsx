@@ -7,6 +7,7 @@ import { useT } from '@/hooks/useI18n';
 import { useProfile } from '@/hooks/useProfile';
 import { useIsPhone } from '@/hooks/useMediaQuery';
 import { SAFE_BOTTOM } from '@/lib/platform';
+import type { JSX } from 'react';
 
 type AuthActionResult = { ok: true } | { ok: false; error: string };
 

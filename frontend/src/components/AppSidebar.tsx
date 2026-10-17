@@ -7,6 +7,7 @@ import { useT } from '@/hooks/useI18n';
 import { useIsPhone } from '@/hooks/useMediaQuery';
 import { SAFE_BOTTOM } from '@/lib/platform';
 import { AccountMenu } from './AccountMenu';
+import type { JSX } from 'react';
 
 export type Screen = 'dashboard' | 'folders' | 'files' | 'archived' | 'settings' | 'admin' | 'detail' | 'login' | 'onboarding';
 

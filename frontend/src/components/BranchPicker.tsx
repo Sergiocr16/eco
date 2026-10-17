@@ -7,6 +7,7 @@ import { IconBranch, IconSearch, IconX, IconCheck, IconResume, IconEdit, IconAge
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useT } from '@/hooks/useI18n';
+import type { JSX } from 'react';
 
 type BranchInfo = {
   name: string;

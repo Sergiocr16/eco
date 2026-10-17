@@ -11,7 +11,7 @@ import {
   IconGrid, IconGraph, IconExt, IconColumns,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck, IconAgent,
   IconClock, IconAlert, IconZap, IconCpu, IconTrash, IconX,
-  IconGlobe, IconLayers, IconShield, IconGithub, IconCommand, type IconProps,
+  IconGlobe, IconLayers, IconShield, IconGithub, IconCommand, IconSearch, type IconProps,
 } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
@@ -20,7 +20,7 @@ import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useProfile } from '@/hooks/useProfile';
 import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
-import { useCategories, getCategoryById } from '@/hooks/useCategories';
+import { useCategories, getCategoryById, sortByCategory } from '@/hooks/useCategories';
 import { getWorkspaceConfig } from '@/lib/workspace-config';
 import { useBubbleHasFilesMap, useBubbleChangeCountMap } from '@/hooks/useGitChanges';
 import { workspaceName } from '@/lib/workspace-name';
@@ -29,6 +29,7 @@ import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { SAFE_BOTTOM, SAFE_TOP } from '@/lib/platform';
 import { cssZoom } from '@/lib/ui-zoom';
+import type { JSX } from 'react';
 
 type Props = {
   bubbles: Bubble[];
@@ -907,6 +908,109 @@ function useNameAgentDialog(
   return { open: () => setOpen(true), dialog };
 }
 
+// Selector de workspace compartido por el diálogo del header y la tarjeta
+// "nuevo agente" de la grilla. Solo aparece con más de un workspace. El
+// filtro mira el path completo, así "aditum" matchea aunque la carpeta se
+// llame distinto; el seleccionado se conserva aunque el filtro lo oculte.
+function WorkspacePicker({ workspaces, selected, onSelect, onSubmit }: {
+  workspaces: string[];
+  selected: string;
+  onSelect: (ws: string) => void;
+  onSubmit: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const isPhone = useIsPhone();
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const visible = q ? workspaces.filter((ws) => ws.toLowerCase().includes(q)) : workspaces;
+  if (workspaces.length <= 1) return null;
+  const home = getHome();
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
+        {tr('dash.bubble.workspace_label')}
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
+        padding: isPhone ? '10px 12px' : '7px 10px', borderRadius: 8,
+        background: t.bg2, border: `1px solid ${t.glassBorder}`,
+      }}>
+        <IconSearch size={13} style={{ color: t.text2, flexShrink: 0 }}/>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            // Con un único match, Enter lo elige y crea: el teclado alcanza
+            // sin bajar a la lista.
+            if (e.key === 'Enter' && visible.length === 1) {
+              onSelect(visible[0]!);
+              onSubmit();
+            }
+          }}
+          placeholder={tr('dash.bubble.workspace_search')}
+          style={{
+            flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none',
+            // 16px: por debajo de eso iOS hace auto-zoom al enfocar.
+            fontFamily: t.fontSans, fontSize: isPhone ? 16 : 12.5, color: t.text0,
+          }}
+        />
+      </div>
+      {/* La lista scrollea sola: con muchas carpetas empujaba los botones
+          fuera de la ventana. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+        {visible.length === 0 && (
+          <div style={{ fontSize: 12, color: t.text3, padding: '10px 4px', textAlign: 'center' }}>
+            {tr('dash.bubble.workspace_no_match')}
+          </div>
+        )}
+        {visible.map((ws) => {
+          const active = selected === ws;
+          const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
+          const display = ws.startsWith(home) ? '~' + ws.slice(home.length) : ws;
+          return (
+            <button
+              key={ws}
+              type="button"
+              onClick={() => onSelect(ws)}
+              title={ws}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: isPhone ? '12px' : '8px 10px', borderRadius: 8,
+                border: `1px solid ${active ? t.accent : t.glassBorder}`,
+                background: active ? t.accentFaint : t.bg2,
+                color: active ? t.accent : t.text1,
+                cursor: 'pointer', textAlign: 'left',
+                transition: 'all 140ms',
+              }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                background: active ? t.accent : t.bg3,
+                color: active ? t.accentOn : t.text2,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <IconFolder size={11}/>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+                  color: active ? t.accent : t.text0,
+                }}>{name}</div>
+                <div style={{
+                  fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                  marginTop: 1,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{display}</div>
+              </div>
+              {active && <IconCheck size={13}/>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function NameAgentDialog({
   open, onClose, onCreate, workspaces,
 }: {
@@ -1096,72 +1200,15 @@ function NameAgentDialog({
             outline: 'none',
           }}
         />
-        {/* Selector de workspace (carpeta). Filas verticales con el path
-            completo + el nombre de la carpeta resaltado. Solo si hay más de
-            un workspace disponible. */}
-        {workspaces.length > 1 && (
-          <div>
-            <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
-              Carpeta
-            </div>
-            {/* La lista scrollea sola: con muchas carpetas empujaba los
-                botones fuera de la ventana. */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
-              {workspaces.map((ws) => {
-                const active = selectedWs === ws;
-                const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
-                const display = ws.startsWith(getHome())
-                  ? '~' + ws.slice(getHome().length)
-                  : ws;
-                return (
-                  <button
-                    key={ws}
-                    type="button"
-                    onClick={() => setSelectedWs(ws)}
-                    title={ws}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: isPhone ? '12px' : '8px 10px', borderRadius: 8,
-                      border: `1px solid ${active ? t.accent : t.glassBorder}`,
-                      background: active ? t.accentFaint : t.bg2,
-                      color: active ? t.accent : t.text1,
-                      cursor: 'pointer', textAlign: 'left',
-                      transition: 'all 140ms',
-                    }}>
-                    <div style={{
-                      width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                      background: active ? t.accent : t.bg3,
-                      color: active ? t.accentOn : t.text2,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <IconFolder size={11}/>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
-                        color: active ? t.accent : t.text0,
-                      }}>{name}</div>
-                      <div style={{
-                        fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
-                        marginTop: 1,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>{display}</div>
-                    </div>
-                    {active && <IconCheck size={13}/>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <WorkspacePicker workspaces={workspaces} selected={selectedWs} onSelect={setSelectedWs} onSubmit={submit}/>
         {/* Selector de rama base — siempre visible cuando hay workspace
             seleccionado. Favoritos vienen de Settings → Carpetas → ws actual.
             Si no hay favoritos para este ws, mostramos solo "otra…". */}
         <div>
           <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
-            Rama base del worktree {favorites.length === 0 && (
+            {tr('dash.bubble.base_branch_label')} {favorites.length === 0 && (
               <span style={{ color: t.text3, fontWeight: 400 }}>
-                · sin favoritos para esta carpeta
+                {tr('dash.bubble.base_branch_no_favorites')}
               </span>
             )}
           </div>
@@ -1191,7 +1238,7 @@ function NameAgentDialog({
                   background: customMode ? t.accentFaint : t.bg2,
                   color: customMode ? t.accent : t.text2,
                   fontFamily: t.fontSans, fontSize: isPhone ? 13 : 11, cursor: 'pointer',
-                }}>otra…</button>
+                }}>{tr('dash.bubble.base_branch_other')}</button>
             </div>
           {customMode && (
             <input
@@ -1385,68 +1432,13 @@ function NewAgentCard({
             outline: 'none',
           }}
         />
-        {/* Selector de workspace — filas con path completo. */}
-        {workspaces.length > 1 && (
-          <div>
-            <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
-              Carpeta
-            </div>
-            {/* La lista scrollea sola: con muchas carpetas empujaba los
-                botones fuera de la ventana. */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
-              {workspaces.map((ws) => {
-                const active = selectedWs === ws;
-                const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
-                const display = ws.startsWith(getHome())
-                  ? '~' + ws.slice(getHome().length)
-                  : ws;
-                return (
-                  <button
-                    key={ws}
-                    type="button"
-                    onClick={() => setSelectedWs(ws)}
-                    title={ws}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: isPhone ? '12px' : '8px 10px', borderRadius: 8,
-                      border: `1px solid ${active ? t.accent : t.glassBorder}`,
-                      background: active ? t.accentFaint : t.bg2,
-                      color: active ? t.accent : t.text1,
-                      cursor: 'pointer', textAlign: 'left',
-                      transition: 'all 140ms',
-                    }}>
-                    <div style={{
-                      width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                      background: active ? t.accent : t.bg3,
-                      color: active ? t.accentOn : t.text2,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <IconFolder size={11}/>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
-                        color: active ? t.accent : t.text0,
-                      }}>{name}</div>
-                      <div style={{
-                        fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
-                        marginTop: 1,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>{display}</div>
-                    </div>
-                    {active && <IconCheck size={13}/>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <WorkspacePicker workspaces={workspaces} selected={selectedWs} onSelect={setSelectedWs} onSubmit={submit}/>
         {/* Picker de rama base — favoritos del workspace seleccionado. */}
         <div>
           <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
-            Rama base del worktree {favorites.length === 0 && (
+            {tr('dash.bubble.base_branch_label')} {favorites.length === 0 && (
               <span style={{ color: t.text3, fontWeight: 400 }}>
-                · sin favoritos para esta carpeta
+                {tr('dash.bubble.base_branch_no_favorites')}
               </span>
             )}
           </div>
@@ -1476,7 +1468,7 @@ function NewAgentCard({
                 background: customMode ? t.accentFaint : t.bg2,
                 color: customMode ? t.accent : t.text2,
                 fontFamily: t.fontSans, fontSize: 11, cursor: 'pointer',
-              }}>otra…</button>
+              }}>{tr('dash.bubble.base_branch_other')}</button>
           </div>
           {customMode && (
             <input
@@ -2110,8 +2102,17 @@ function SatellitesLocal({
 
   return (
     <motion.g
+      // Orbitan alrededor del centro del nodo, que es el (0,0) local. Desde
+      // motion 14 un SVG animado usa `transform-box: fill-box` con origen
+      // `50% 50%` (el centro de la caja de los propios satélites), lo que
+      // descentraba la órbita. `view-box` resuelve el origen en coordenadas
+      // del usuario. Va como `originX/originY`, no `transformOrigin`: motion
+      // pisa esa propiedad del style con su propio valor en cada frame.
+      style={{ originX: '0px', originY: '0px', transformBox: 'view-box' }}
       animate={{ rotate: [phase, phase + 360] }}
-      transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}>
+      // Una vuelta cada 3 min: se nota el movimiento, no distrae y cada
+      // estado se encuentra casi siempre en el mismo lugar.
+      transition={{ duration: 180, repeat: Infinity, ease: 'linear' }}>
       {visible.map((it, idx) => {
         const θ = ((idx / visible.length) * 2 * Math.PI) - Math.PI / 2;
         const sx = Math.cos(θ) * r;
@@ -2490,7 +2491,9 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
       return {
         key,
         label: ws === '__none__' ? tr('dash.no_folder') : (ws.split('/').filter(Boolean).pop() || ws),
-        items,
+        // Los agentes de una misma categoría quedan contiguos en la órbita
+        // de su carpeta; dentro de la categoría, los más recientes primero.
+        items: sortByCategory([...items].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))),
         ownerId,
         workspace: ws,
       };
@@ -2679,7 +2682,7 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
     const cnt = Math.max(1, bubbles.length);
     const orbitBaseR = Math.max(88, 165 - cnt * 14);
     const orbitSpacing = Math.max(34, 60 - cnt * 5);
-    bubbles.forEach((b, i) => {
+    sortByCategory([...bubbles].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))).forEach((b, i) => {
       const orbitR = (orbitBaseR + i * orbitSpacing) * spreadNodes;
       const phaseDeg = (i * 67) % 360;
       const f = nodeFlags(b);

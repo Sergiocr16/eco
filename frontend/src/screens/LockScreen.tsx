@@ -45,7 +45,7 @@ export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignO
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1, background: t.windowBg, color: t.text0, overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1, background: t.windowBg, backgroundImage: t.windowBgImage, color: t.text0, overflow: 'hidden' }}>
       <DriftingOrbs/>
       <div style={{
         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',

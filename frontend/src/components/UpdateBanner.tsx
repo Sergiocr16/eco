@@ -2,32 +2,44 @@ import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
 
-// Aviso global cuando electron-updater terminó de descargar una versión nueva.
-// Complementa la notificación nativa (que dispara el main process): un banner
-// persistente con botón "Reiniciar para actualizar". Solo aparece en la app
-// empaquetada de Windows (donde el updater está habilitado).
+// Aviso global del auto-update. Aparece apenas electron-updater detecta una
+// versión nueva (con el progreso de descarga) y, cuando terminó de bajar,
+// ofrece "Reiniciar para actualizar". Complementa los toasts nativos que
+// dispara el main process. Solo en la app empaquetada de Windows (donde el
+// updater está habilitado).
 export function UpdateBanner() {
   const t = useTokens();
   const tr = useT();
-  const [ready, setReady] = useState(false);
+  const [phase, setPhase] = useState<'hidden' | 'downloading' | 'ready'>('hidden');
   const [version, setVersion] = useState('');
+  const [percent, setPercent] = useState(0);
   const [installing, setInstalling] = useState(false);
-  const lastVersion = useRef('');
+  const dismissedVersion = useRef('');
 
   useEffect(() => {
     const api = window.electronAPI;
     if (!api?.onUpdateReady) return;
-    const off = api.onUpdateReady((p) => {
+    const offs: Array<() => void> = [];
+    if (api.onUpdateAvailable) {
+      offs.push(api.onUpdateAvailable((p) => {
+        const v = p.version ?? '';
+        if (v && v === dismissedVersion.current) return;
+        setVersion(v); setPercent(0); setPhase('downloading');
+      }));
+    }
+    if (api.onUpdateProgress) {
+      offs.push(api.onUpdateProgress((p) => { setPercent(p.percent); }));
+    }
+    offs.push(api.onUpdateReady((p) => {
       const v = p.version ?? '';
-      if (v && v === lastVersion.current) return;
-      lastVersion.current = v;
-      setVersion(v);
-      setReady(true);
-    });
-    return () => { try { off(); } catch { /* noop */ } };
+      if (v && v === dismissedVersion.current) return;
+      setVersion(v); setPhase('ready');
+    }));
+    return () => { for (const off of offs) { try { off(); } catch { /* noop */ } } };
   }, []);
 
-  if (!ready) return null;
+  if (phase === 'hidden') return null;
+  const ready = phase === 'ready';
 
   return (
     <div style={{
@@ -41,10 +53,13 @@ export function UpdateBanner() {
       fontFamily: t.fontSans, fontSize: 13,
     }}>
       <span>
-        {version
-          ? tr('update.banner.title').replace('{version}', version)
-          : tr('update.banner.title_noversion')}
+        {ready
+          ? (version
+            ? tr('update.banner.title').replace('{version}', version)
+            : tr('update.banner.title_noversion'))
+          : tr('update.banner.downloading').replace('{version}', version || '…').replace('{percent}', String(percent))}
       </span>
+      {ready && (
       <button
         type="button"
         disabled={installing}
@@ -60,9 +75,10 @@ export function UpdateBanner() {
         }}>
         {tr('update.banner.restart')}
       </button>
+      )}
       <button
         type="button"
-        onClick={() => setReady(false)}
+        onClick={() => { dismissedVersion.current = version; setPhase('hidden'); }}
         aria-label={tr('update.banner.dismiss')}
         style={{
           width: 24, height: 24, borderRadius: 6, border: 0,
