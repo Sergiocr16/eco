@@ -4,7 +4,8 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
-import { currentIdToken } from '@/lib/firebase';
+import { currentIdToken, hasSignedInUser } from '@/lib/firebase';
+import { useT } from '@/hooks/useI18n';
 import { useTokens } from '@/design/theme';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { TerminalKeyBar } from './TerminalKeyBar';
@@ -39,6 +40,10 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
   const scrollThumbRef = useRef<HTMLDivElement>(null);
   const t = useTokens();
   const isMobile = useIsMobile();
+  const tr = useT();
+  // El efecto del socket no se re-corre al cambiar de idioma; lee la traducción vigente vía ref.
+  const trRef = useRef(tr);
+  trRef.current = tr;
   const [status, setStatus] = useState<'connecting' | 'open' | 'reconnecting' | 'closed' | 'error'>('connecting');
   const [errMsg, setErrMsg] = useState<string | null>(null);
   // Tamaño y tipografía viven en lib/terminal-prefs.ts (Settings → Apariencia
@@ -238,34 +243,82 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     let reconnectTimer: number | null = null;
     let attempts = 0;
     let disposed = false;
+    let connecting = false;
+    // Último frame recibido del server (incluye su `heartbeat` cada 20 s). Es
+    // la única señal de vida que vale: los timers del renderer se estrangulan
+    // en background y un salto entre ticks NO significa que el socket murió.
+    let lastFrameAt = Date.now();
 
     const disposeInputRef: { current: { dispose: () => void } | null } = { current: null };
 
-    async function connect() {
-      if (disposed) return;
-      const idToken = await currentIdToken();
-      if (disposed) return;
-      if (!idToken) {
+    // Neutraliza un socket antes de soltarlo: sus handlers no deben volver a
+    // tocar `ws`, `attempts` ni programar reconexiones. Así era como cada
+    // "wake" dejaba un socket huérfano abierto en el backend, enganchado a la
+    // misma sesión PTY (output duplicado) y ocupando cupo hasta llenar el tope.
+    const dropSocket = (s: WebSocket | null) => {
+      if (!s) return;
+      s.onopen = null; s.onmessage = null; s.onerror = null; s.onclose = null;
+      try { s.close(1000, 'replaced'); } catch { /* noop */ }
+    };
+
+    const scheduleReconnect = (delay: number) => {
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      reconnectTimer = window.setTimeout(() => { reconnectTimer = null; void connect(); }, delay);
+    };
+
+    // Reconexión silenciosa con backoff. Los primeros 2 intentos en <1s NO
+    // muestran "error" — el user no debería ver código 1006 durante un
+    // reinicio rápido del backend. Después de 2 intentos, mostramos el mensaje.
+    const failAndRetry = () => {
+      attempts += 1;
+      const delay = Math.min(8000, 250 * Math.pow(2, attempts - 1));
+      if (attempts > 2) {
         setStatus('error');
-        setErrMsg('Sesión no iniciada');
+        setErrMsg(trRef.current('term.conn.retrying', { n: attempts }));
+      } else {
+        setStatus('reconnecting');
+      }
+      scheduleReconnect(delay);
+    };
+
+    async function connect() {
+      if (disposed || connecting) return;
+      if (ws && ws.readyState <= WebSocket.OPEN) return;
+      connecting = true;
+      const idToken = await currentIdToken();
+      connecting = false;
+      if (disposed) return;
+      if (ws && ws.readyState <= WebSocket.OPEN) return;
+      if (!idToken) {
+        // Sin red Firebase no puede renovar el token: no es "sin sesión", es
+        // "todavía no". Reintentar con el mismo backoff.
+        if (hasSignedInUser()) { failAndRetry(); return; }
+        setStatus('error');
+        setErrMsg(trRef.current('term.conn.no_session'));
         return;
       }
       const protocols = [`eco.idtoken.${idToken}`];
       const urlStr = buildUrl();
+      let sock: WebSocket;
       try {
-        ws = new WebSocket(urlStr, protocols);
+        sock = new WebSocket(urlStr, protocols);
       } catch (e) {
         setStatus('error');
-        setErrMsg(e instanceof Error ? e.message : 'No se pudo abrir el WebSocket');
+        setErrMsg(e instanceof Error ? e.message : trRef.current('term.conn.open_failed'));
         return;
       }
+      ws = sock;
+      lastFrameAt = Date.now();
       setStatus((prev) => prev === 'open' ? 'open' : (attempts > 0 ? 'reconnecting' : 'connecting'));
 
-      ws.onopen = () => {
+      // Cada handler comprueba que su socket siga siendo el vigente.
+      sock.onopen = () => {
+        if (ws !== sock) return;
         attempts = 0;
+        lastFrameAt = Date.now();
         setStatus('open');
         setErrMsg(null);
-        // Keep-alive
+        // Keep-alive (el server responde `pong`, que cuenta como frame recibido).
         if (pingTimer) window.clearInterval(pingTimer);
         pingTimer = window.setInterval(() => {
           if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
@@ -277,7 +330,9 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
         try { doResize(); } catch { /* noop */ }
       };
 
-      ws.onmessage = (ev) => {
+      sock.onmessage = (ev) => {
+        if (ws !== sock) return;
+        lastFrameAt = Date.now();
         try {
           const msg = JSON.parse(ev.data as string);
           if (msg.type === 'data') {
@@ -285,49 +340,36 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
           } else if (msg.type === 'exit') {
             term.write(`\r\n\x1b[2m[shell exited code=${msg.code ?? '?'}]\x1b[0m\r\n`);
             setStatus('closed');
-          } else if (msg.type === 'ready') {
-            // info inicial; ya estamos listos
           } else if (msg.type === 'error') {
             term.write(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m\r\n`);
           }
+          // 'ready' / 'pong' / 'heartbeat': solo refrescan lastFrameAt
         } catch { /* noop */ }
       };
 
-      ws.onerror = () => {
+      sock.onerror = () => {
         // Silenciamos onerror — el onclose se va a disparar inmediatamente
         // después y ahí manejamos la reconexión. No queremos parpadear el
         // mensaje "Error de conexión" antes de saber si vamos a reintentar.
       };
 
-      ws.onclose = (ev) => {
-        if (disposed) return;
-        // Códigos "normales" = el server cerró limpio (1000/1001) o nosotros
-        // lo cerramos. No reconectar.
+      sock.onclose = (ev) => {
+        if (ws !== sock || disposed) return;
+        ws = null;
+        if (pingTimer) { window.clearInterval(pingTimer); pingTimer = null; }
+        // Códigos "normales" = el server cerró limpio (1000/1001). No reconectar.
         if (ev.code === 1000 || ev.code === 1001) {
           setStatus('closed');
           return;
         }
-        // Reconexión silenciosa con backoff. Los primeros 2 intentos en
-        // <1s NO muestran "error" — el user no debería ver código 1006
-        // durante un reinicio rápido del backend. Después de 2 intentos
-        // fallidos, mostramos el mensaje.
-        attempts += 1;
-        const delay = Math.min(8000, 250 * Math.pow(2, attempts - 1));
-        if (attempts > 2) {
-          setStatus('error');
-          setErrMsg(`Reconectando… (intento ${attempts})`);
-        } else {
-          setStatus('reconnecting');
-        }
-        if (pingTimer) { window.clearInterval(pingTimer); pingTimer = null; }
-        reconnectTimer = window.setTimeout(connect, delay);
+        failAndRetry();
       };
 
       // Input wiring: lo reconfiguramos en cada (re)connect porque el ws cambia.
       disposeInputRef.current?.dispose();
       const sendInput = (data: string) => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'input', data }));
+        if (ws === sock && sock.readyState === WebSocket.OPEN) {
+          sock.send(JSON.stringify({ type: 'input', data }));
         }
       };
       disposeInputRef.current = term.onData(sendInput);
@@ -363,22 +405,39 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     resizeObs = new ResizeObserver(() => doResize());
     resizeObs.observe(container);
 
-    // Recuperación tras sleep/wake: los timers se pausan al dormir; si un tick
-    // cae mucho después de lo esperado, la máquina durmió → el WS suele quedar
-    // zombie (OPEN pero muerto). Forzamos cierre + reconexión.
+    // Detección de socket muerto por SILENCIO del server (heartbeat), no por
+    // saltos entre ticks: Chromium estrangula los timers de una ventana tapada
+    // o minimizada (un tick cada minuto) y eso parecía "la máquina durmió"
+    // aunque el socket a 127.0.0.1 estuviera perfecto. Tras un sleep real / al
+    // volver a primer plano, 30 s de silencio alcanzan para reconectar ya.
+    const HEARTBEAT_STALE_MS = 45_000;
+    const WAKE_STALE_MS = 30_000;
+    const reconnectIfDead = (staleMs: number, wake: boolean) => {
+      if (disposed || document.hidden || connecting) return;
+      if (!ws) {
+        // Hay un backoff pendiente: al despertar no vale la pena esperarlo.
+        if (wake && reconnectTimer) { attempts = 0; scheduleReconnect(0); }
+        return;
+      }
+      if (ws.readyState === WebSocket.CONNECTING) return;
+      if (ws.readyState === WebSocket.OPEN && Date.now() - lastFrameAt < staleMs) return;
+      const dead = ws;
+      ws = null;
+      dropSocket(dead);
+      attempts = 0;
+      void connect();
+    };
     let lastTick = Date.now();
     const wakeTimer = window.setInterval(() => {
       const now = Date.now();
       const slept = now - lastTick > 10_000;
       lastTick = now;
-      if (slept && !disposed) {
-        if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = null; }
-        attempts = 0;
-        try { ws?.close(); } catch { /* noop */ }
-        ws = null;
-        void connect();
-      }
+      reconnectIfDead(slept ? WAKE_STALE_MS : HEARTBEAT_STALE_MS, slept);
     }, 3000);
+    const onWake = () => reconnectIfDead(WAKE_STALE_MS, true);
+    const onVisible = () => { if (!document.hidden) onWake(); };
+    window.addEventListener('online', onWake);
+    document.addEventListener('visibilitychange', onVisible);
 
     connect();
 
@@ -388,6 +447,8 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       if (pingTimer) window.clearInterval(pingTimer);
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       window.clearInterval(wakeTimer);
+      window.removeEventListener('online', onWake);
+      document.removeEventListener('visibilitychange', onVisible);
       settleTimers.forEach((id) => window.clearTimeout(id));
       cancelAnimationFrame(settleRaf);
       if (hideBarTimer) window.clearTimeout(hideBarTimer);
@@ -397,7 +458,9 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       container.removeEventListener('touchmove', onTouchMove);
       container.removeEventListener('touchend', onTouchEnd);
       container.removeEventListener('touchcancel', onTouchEnd);
-      try { ws?.close(1000, 'unmount'); } catch { /* noop */ }
+      const last = ws;
+      ws = null;
+      dropSocket(last);
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -488,10 +551,10 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
             top: 8, right: 12, fontSize: 10.5,
           }),
         }}>
-          {status === 'connecting' && 'conectando…'}
-          {status === 'reconnecting' && 'reconectando…'}
-          {status === 'closed' && 'cerrado'}
-          {status === 'error' && (errMsg ?? 'error')}
+          {status === 'connecting' && tr('conn.connecting')}
+          {status === 'reconnecting' && tr('term.conn.reconnecting')}
+          {status === 'closed' && tr('term.conn.closed')}
+          {status === 'error' && (errMsg ?? tr('conn.error'))}
         </div>
       )}
     </div>

@@ -27,4 +27,8 @@ export type ServerMessage =
   // El backend lo empuja a los OTROS dispositivos del mismo usuario cuando uno
   // guarda un doc. `key` es la clave del doc (p.ej. "bubble:b_1", "prefs").
   | { type: 'doc_updated'; key: string; value: unknown; updatedAt: number }
-  | { type: 'doc_deleted'; key: string };
+  | { type: 'doc_deleted'; key: string }
+  // Señal de vida del server cada HEARTBEAT_MS. El cliente la usa para saber si
+  // el socket sigue vivo sin depender de sus propios timers (Chromium los
+  // estrangula en background).
+  | { type: 'heartbeat' };

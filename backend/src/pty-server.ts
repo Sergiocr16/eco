@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import { config, isAllowedWorkspace, hostAllowed } from './config.js';
 import { buildSafeEnv } from './security.js';
-import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
+import { broadcastServerMessage, registerSnapshotProvider, startHeartbeat, trackAlive, logUpgradeRejected } from './ws-server.js';
 import { ensureWorktree } from './worktree-manager.js';
 import { githubEnvOverrides } from './github-runtime.js';
 import { verifyFirebaseIdToken } from './firebase-auth.js';
@@ -361,10 +361,14 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
         return callback(false, 403, 'Origin no permitido');
       }
       if (wss.clients.size >= config.maxOpenConnections) {
+        logUpgradeRejected('/ws/pty', 503, `${wss.clients.size} conexiones (tope ${config.maxOpenConnections})`);
         return callback(false, 503, 'ws.too_many_connections');
       }
       void verifyFirebaseIdToken(extractIdTokenFromProtocols(info.req.headers['sec-websocket-protocol'])).then((verified) => {
-        if (!verified) return callback(false, 401, 'http.unauthorized');
+        if (!verified) {
+          logUpgradeRejected('/ws/pty', 401, 'token inválido o sin red para verificarlo');
+          return callback(false, 401, 'http.unauthorized');
+        }
         setMachineUser(verified.uid);
         (info.req as ReqWithUid).ecoUid = verified.uid;
         callback(true);
@@ -380,7 +384,10 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
     });
   });
 
+  startHeartbeat(wss);
+
   wss.on('connection', (ws: WebSocket, req) => {
+    trackAlive(ws);
     const url = new URL(req.url || '/ws/pty', 'http://localhost');
     const bubbleId = url.searchParams.get('bubble') ?? '';
     // ptyId default = "main" para compat con writeToBubblePty (skill click,
@@ -529,8 +536,9 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
         const c = clampInt(msg.cols, 24, 400, 100);
         const r = clampInt(msg.rows, 6, 200, 30);
         try { session.pty.resize(c, r); } catch { /* noop */ }
+      } else if (msg.type === 'ping') {
+        sendJson(ws, { type: 'pong' });
       }
-      // 'ping' → no-op; keep-alive del cliente
     });
 
     const detach = () => {

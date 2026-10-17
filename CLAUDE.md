@@ -197,6 +197,7 @@ VITE_FIREBASE_APP_ID=
 | `ECO_HOST` | `127.0.0.1` | Bind interface — do not change. |
 | `ECO_PORT` | `7000` (overridden: 7050 dev, 7100 packaged) | HTTP/WS port. |
 | `ECO_ALLOWED_ORIGINS` | (defaults + auto-include own origin) | WS origin whitelist. |
+| `ECO_MAX_CONNS` | `64` | Max open connections **per WS server** (`/ws` and `/ws/pty` count separately). Shared by every terminal of every bubble, solo windows, the phone and the ephemeral `pty-bridge` sockets. When full, the upgrade is rejected with 503 — which the browser only sees as close code 1006, so the client keeps retrying. Was 12; see §6 "Liveness". |
 | `ECO_FIREBASE_PROJECT_ID` | (none; dev script sets `aditum-eco`) | Firebase project id used to verify ID tokens (`firebase-auth.ts`; falls back to `FIREBASE_PROJECT_ID`/`GCLOUD_PROJECT`). Without it, `verifyFirebaseIdToken` returns null → every request 401s. |
 | `ECO_PTY_AUTOCLAUDE` | `1` | Auto-launch the agent CLI (`claude`/`codex`) in each new PTY. `0` disables it for every agent. |
 | `CLAUDE_CLI_PATH` | resolved (see §E) | Claude binary path override. |
@@ -551,6 +552,19 @@ Auth via subprotocol: **`eco.idtoken.<jwt>`** (Firebase ID token). `verifyClient
 - `{type:'dev_status', bubbleId, role, status, port, url, command, exitCode, skill?}` — dev server state change
 - `{type:'dev_log', bubbleId, role, chunk}` — dev server stdout/stderr batched every 80 ms
 - **legacy** `{type:'doc_updated', key, value, updatedAt}` / `{type:'doc_deleted', key}` — push del doc-store local a otros dispositivos (`broadcastToUser`). Reemplazado por la sincronización directa de Firestore; solo sobrevive para la migración one-time.
+- `{type:'heartbeat'}` — señal de vida cada 20 s (`ws-server.ts:startHeartbeat`, usado por `/ws` y `/ws/pty`). Ver "Liveness" abajo.
+
+### Liveness y reconexión (lección aprendida, 2026-10)
+
+El síntoma "Reconectando… (intento 259)" hasta hacer hard reload tenía esta cadena: (1) el cliente fugaba un socket por terminal en cada "wake" — el `onclose` del socket viejo seguía vivo y programaba OTRA reconexión encima de la nueva, dejando el socket del medio huérfano pero abierto; (2) el "wake" se detectaba por un salto entre ticks de 3 s, y Chromium estrangula los timers de una ventana tapada/minimizada a 1 por minuto → falsa alarma cada minuto; (3) con 12 cupos por servidor, `/ws/pty` se llenaba y cada reintento moría con 503 (invisible para el cliente). Los sockets huérfanos además seguían enganchados a la misma sesión PTY y al mismo xterm → output N veces → congelamientos.
+
+Reglas que salen de eso — no las deshagas:
+
+- **Identidad por socket en los clientes** (`RealTerminal.tsx`, `useEcoSocket.ts`): cada handler empieza con `if (ws !== sock) return`. Antes de soltar un socket se neutralizan sus 4 handlers (`dropSocket`) y recién después se cierra. Un solo `connect()` en vuelo (`connecting` flag) — la espera del ID token es asíncrona y sin el flag se abrían dos.
+- **Muerte por silencio, no por saltos de tick**: el server manda `heartbeat` cada 20 s (más ping/pong nativo). El cliente guarda `lastFrameAt`; reconecta solo si pasaron 45 s sin frames (30 s tras un salto de tick / `visibilitychange` / `online`), y nunca mientras `document.hidden`. Un salto entre ticks por sí solo NO reconecta.
+- **Server-side**: `startHeartbeat` termina sockets que no respondieron al ping anterior (`isAlive`). `trackAlive` registra `ws.on('error')` — sin listener, un error de socket era `uncaughtException` y mataba el backend entero. Un upgrade rechazado se loguea (`[ws] upgrade … rechazado 503/401`); antes era invisible.
+- **Token null ≠ sin sesión**: `currentIdToken()` devuelve null también cuando Firebase no pudo renovar (sin red recién despierto). Si `hasSignedInUser()` es true se reintenta con backoff; solo sin usuario se muestra "sesión no iniciada".
+- **`firebase-auth.ts`**: JWKS con `cacheMaxAge` 24 h (jose igual refetchea ante un `kid` desconocido) + cache en memoria de tokens ya verificados hasta su `exp`. Una reconexión tras el wake pasa aunque Google no responda todavía.
 
 ### `/ws/pty` (interactive terminal)
 

@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SocketStatus } from '@/lib/types';
-import { currentIdToken } from '@/lib/firebase';
+import { currentIdToken, hasSignedInUser } from '@/lib/firebase';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 
 const RECONNECT_BACKOFF_MS = [500, 1500, 3000, 5000, 10_000];
+
+// El server manda `heartbeat` cada 20 s. Si en 45 s no llegó NINGÚN frame, el
+// socket está muerto aunque diga OPEN. Tras un sleep real / al volver a
+// primer plano, con 30 s de silencio ya reconectamos sin esperar al tick.
+const HEARTBEAT_STALE_MS = 45_000;
+const WAKE_STALE_MS = 30_000;
 
 // `/ws` es solo server → cliente desde que se removió el tab de Conversación
 // (era el único que mandaba `prompt`/`interrupt`). Ahora transporta estado:
@@ -15,7 +21,8 @@ type ServerMsg =
   | { type: 'dev_status'; bubbleId: string; role?: 'main' | 'frontend' | 'backend'; status: 'idle' | 'starting' | 'running' | 'stopped' | 'error'; port: number; url: string; command: string; exitCode: number | null; skill?: string }
   | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string }
   | { type: 'doc_updated'; key: string; value: unknown; updatedAt: number }
-  | { type: 'doc_deleted'; key: string };
+  | { type: 'doc_deleted'; key: string }
+  | { type: 'heartbeat' };
 
 export type ClientAction = {
   kind: 'open_bubble';
@@ -65,9 +72,30 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
   const wantedRef = useRef(true);
   const handlersRef = useRef(handlers);
   useEffect(() => { handlersRef.current = handlers; }, [handlers]);
+  // `connect` espera el ID token antes de abrir el socket; mientras tanto no
+  // hay `wsRef` y un segundo `connect` abriría otro socket en paralelo.
+  const connectingRef = useRef(false);
+  const lastFrameAt = useRef(Date.now());
+  const connectRef = useRef<() => void>(() => { /* se asigna abajo */ });
+
+  const scheduleReconnect = useCallback((delay: number) => {
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+    reconnectTimer.current = setTimeout(() => {
+      reconnectTimer.current = null;
+      connectRef.current();
+    }, delay);
+  }, []);
 
   const connect = useCallback(() => {
+    const nextDelay = () => {
+      const attempt = Math.min(reconnectAttempt.current, RECONNECT_BACKOFF_MS.length - 1);
+      reconnectAttempt.current += 1;
+      return RECONNECT_BACKOFF_MS[attempt]!;
+    };
+    if (!wantedRef.current) return;
+    if (connectingRef.current) return;
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+    connectingRef.current = true;
 
     setStatus('connecting');
     setError(null);
@@ -75,25 +103,49 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
     // El ID token de Firebase es asíncrono → lo resolvemos antes de abrir el WS.
     void (async () => {
     const idToken = await currentIdToken();
-    if (!idToken) { setError('Sesión no iniciada'); setStatus('error'); return; }
+    connectingRef.current = false;
     if (!wantedRef.current) return;
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+    if (!idToken) {
+      // Sin red Firebase no puede renovar el token: no es "sin sesión", es
+      // "todavía no". Reintentar con el mismo backoff.
+      if (hasSignedInUser()) { setStatus('disconnected'); scheduleReconnect(nextDelay()); return; }
+      setError('Sesión no iniciada'); setStatus('error'); return;
+    }
 
     const wsUrl = url || (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
     const finalUrl = wsUrl.startsWith('ws') ? wsUrl : wsUrl.replace(/^http/, 'ws') + (wsUrl.endsWith('/ws') ? '' : '/ws');
     const protocols = [`eco.idtoken.${idToken}`];
-    const ws = new WebSocket(finalUrl, protocols);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(finalUrl, protocols);
+    } catch {
+      setStatus('error');
+      scheduleReconnect(nextDelay());
+      return;
+    }
     wsRef.current = ws;
+    lastFrameAt.current = Date.now();
 
+    // Cada handler comprueba que su socket siga siendo el vigente: el `onclose`
+    // de un socket reemplazado NO debe pisar la referencia del nuevo ni
+    // programar otra reconexión (así se fugaban sockets en cada "wake").
     ws.onopen = () => {
+      if (wsRef.current !== ws) return;
+      lastFrameAt.current = Date.now();
       setStatus('connected');
       reconnectAttempt.current = 0;
     };
 
     ws.onmessage = (ev) => {
+      if (wsRef.current !== ws) return;
+      lastFrameAt.current = Date.now();
       try {
         const msg = JSON.parse(ev.data) as ServerMsg;
-        if (msg.type === 'client_action') {
+        if (msg.type === 'heartbeat') {
+          // solo refresca lastFrameAt
+        }
+        else if (msg.type === 'client_action') {
           handlersRef.current.onClientAction?.(msg.action);
         }
         else if (msg.type === 'pty_status') {
@@ -125,29 +177,35 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
       }
     };
 
-    ws.onerror = () => setStatus('error');
+    ws.onerror = () => {
+      if (wsRef.current !== ws) return;
+      setStatus('error');
+    };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
       wsRef.current = null;
-      if (!wantedRef.current) { setStatus('disconnected'); return; }
-      const attempt = Math.min(reconnectAttempt.current, RECONNECT_BACKOFF_MS.length - 1);
-      const delay = RECONNECT_BACKOFF_MS[attempt]!;
-      reconnectAttempt.current += 1;
       setStatus('disconnected');
-      reconnectTimer.current = setTimeout(connect, delay);
+      if (!wantedRef.current) return;
+      scheduleReconnect(nextDelay());
     };
     })();
-  }, [token, url]);
+  }, [token, url, scheduleReconnect]);
+  useEffect(() => { connectRef.current = connect; }, [connect]);
 
-  // Cierra el socket actual (aunque parezca OPEN — tras dormir queda "zombie")
-  // y reconecta de cero.
+  // Suelta el socket actual (aunque parezca OPEN — tras dormir puede quedar
+  // "zombie") y reconecta de cero. Neutraliza los handlers ANTES de cerrar para
+  // que su `onclose` no programe nada.
   const forceReconnect = useCallback(() => {
     if (!wantedRef.current) return;
     reconnectAttempt.current = 0;
     if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
     const ws = wsRef.current;
     wsRef.current = null;
-    try { ws?.close(); } catch { /* noop */ }
+    if (ws) {
+      ws.onopen = null; ws.onmessage = null; ws.onerror = null; ws.onclose = null;
+      try { ws.close(1000, 'replaced'); } catch { /* noop */ }
+    }
     connect();
   }, [connect]);
 
@@ -156,32 +214,50 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
     connect();
     return () => {
       wantedRef.current = false;
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
+      if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        ws.onopen = null; ws.onmessage = null; ws.onerror = null; ws.onclose = null;
+        try { ws.close(1000, 'unmount'); } catch { /* noop */ }
+      }
     };
   }, [connect]);
 
-  // Recuperación tras sleep/wake. Los timers de JS se pausan mientras la
-  // máquina duerme; al despertar, un tick que debía caer cada 3s cae mucho
-  // después → detectamos el "salto" y forzamos reconexión (el socket suele
-  // quedar zombie: readyState OPEN pero muerto). Igual al volver online / foco.
+  // Detección de socket muerto por SILENCIO del server (heartbeat), no por
+  // saltos entre ticks: Chromium estrangula los timers de una ventana tapada o
+  // minimizada (un tick cada minuto) y eso parecía "la máquina durmió" aunque
+  // el socket a 127.0.0.1 estuviera perfecto — cada falsa alarma reconectaba.
   useEffect(() => {
+    const check = (staleMs: number, wake: boolean) => {
+      if (document.hidden || connectingRef.current) return;
+      const ws = wsRef.current;
+      if (!ws) {
+        // Hay un backoff pendiente: al despertar no vale la pena esperarlo.
+        if (wake && reconnectTimer.current) forceReconnect();
+        return;
+      }
+      if (ws.readyState === WebSocket.CONNECTING) return;
+      if (ws.readyState === WebSocket.OPEN && Date.now() - lastFrameAt.current < staleMs) return;
+      forceReconnect();
+    };
     let last = Date.now();
     const iv = setInterval(() => {
       const now = Date.now();
       const slept = now - last > 10_000;
       last = now;
-      if (slept) forceReconnect();
+      check(slept ? WAKE_STALE_MS : HEARTBEAT_STALE_MS, slept);
     }, 3000);
-    const onWake = () => {
-      if (wsRef.current?.readyState !== WebSocket.OPEN) forceReconnect();
-    };
+    const onWake = () => check(WAKE_STALE_MS, true);
+    const onVisible = () => { if (!document.hidden) onWake(); };
     window.addEventListener('online', onWake);
     window.addEventListener('focus', onWake);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(iv);
       window.removeEventListener('online', onWake);
       window.removeEventListener('focus', onWake);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [forceReconnect]);
 
