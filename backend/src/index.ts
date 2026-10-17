@@ -168,7 +168,7 @@ app.get('/auth/status', (_req: Request, res: Response) => {
 // que existe al menos un usuario, los demás los crea el admin (registro cerrado).
 app.post('/auth/register', async (req: Request, res: Response) => {
   const parsed = RegisterSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Datos inválidos');
   try {
     const { user, recoveryPhrase } = await registerFirstUser(parsed.data.username, parsed.data.pin);
     const session = createSession(user.id, user.role, user.username);
@@ -196,7 +196,7 @@ app.post('/auth/login', async (req: Request, res: Response) => {
 
 app.post('/auth/recover', async (req: Request, res: Response) => {
   const parsed = RecoverSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Datos inválidos');
   try {
     const { user, newRecoveryPhrase } = await recoverUser(parsed.data.username, parsed.data.recoveryPhrase, parsed.data.newPin);
     const session = createSession(user.id, user.role, user.username);
@@ -372,7 +372,7 @@ app.get('/admin/users', requireAdmin, (_req: Request, res: Response) => {
 
 app.post('/admin/users', requireAdmin, async (req: Request, res: Response) => {
   const parsed = CreateMemberSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Datos inválidos');
   try {
     const { user, claimToken } = await createMember(parsed.data.username, (parsed.data.role ?? 'member') as Role);
     res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role }, claimToken });
@@ -382,7 +382,7 @@ app.post('/admin/users', requireAdmin, async (req: Request, res: Response) => {
 });
 
 app.delete('/admin/users/:id', requireAdmin, (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = String(req.params.id ?? '');
   if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
   if (req.ecoUser?.id === id) return errResponse(res, 400, 'admin.cant_delete_self', 'No podés borrar tu propia cuenta acá');
   deleteUser(id);
@@ -390,7 +390,7 @@ app.delete('/admin/users/:id', requireAdmin, (req: Request, res: Response) => {
 });
 
 app.post('/admin/users/:id/role', requireAdmin, (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = String(req.params.id ?? '');
   if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
   const parsed = RoleSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Rol inválido');
@@ -402,7 +402,7 @@ app.post('/admin/users/:id/role', requireAdmin, (req: Request, res: Response) =>
 });
 
 app.post('/admin/users/:id/workspaces', requireAdmin, (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = String(req.params.id ?? '');
   if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
   const parsed = GrantsSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Workspaces inválidos');
@@ -412,14 +412,14 @@ app.post('/admin/users/:id/workspaces', requireAdmin, (req: Request, res: Respon
 
 // Reseteo de PIN = emitir un token de activación nuevo (el admin no fija PINs).
 app.post('/admin/users/:id/issue-claim', requireAdmin, async (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = String(req.params.id ?? '');
   if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
   try { const { claimToken } = await issueClaim(id); res.json({ ok: true, claimToken }); }
   catch (e) { fromException(res, e, 'admin.reset_failed', 'No se pudo generar el código'); }
 });
 
 app.post('/admin/users/:id/disabled', requireAdmin, (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = String(req.params.id ?? '');
   if (!USER_ID_RE.test(id)) return errResponse(res, 400, 'admin.bad_id', 'Id inválido');
   const parsed = DisabledSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Valor inválido');
@@ -1154,7 +1154,7 @@ const FsTreeSchema = z.object({
 app.post('/fs/tree', (req: Request, res: Response) => {
   const parsed = FsTreeSchema.safeParse(req.body);
   if (!parsed.success) {
-    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const { workspace, bubbleId, path: subPath, maxDepth, includeHidden } = parsed.data;
   if (!isAllowedWorkspace(workspace)) {
@@ -1177,7 +1177,7 @@ const FileSaveSchema = z.object({
 app.post('/file/save', (req: Request, res: Response) => {
   const parsed = FileSaveSchema.safeParse(req.body);
   if (!parsed.success) {
-    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const { workspace, bubbleId, path: relPath, content, expectedMtime } = parsed.data;
   if (!isAllowedWorkspace(workspace)) {
@@ -1220,7 +1220,7 @@ const FsSearchSchema = z.object({
 app.post('/fs/search', async (req: Request, res: Response) => {
   const parsed = FsSearchSchema.safeParse(req.body);
   if (!parsed.success) {
-    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const { workspace, bubbleId, query, regex, caseSensitive, includePattern, maxResults, wholeWord } = parsed.data;
   if (!isAllowedWorkspace(workspace)) {
@@ -1724,7 +1724,7 @@ const SaveSessionSchema = z.object({
 });
 app.post('/integrations/obsidian/save-session', (req: Request, res: Response) => {
   const parsed = SaveSessionSchema.safeParse(req.body);
-  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Datos inválidos');
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Datos inválidos');
   const r = obsidian.saveSession(parsed.data);
   if (!r.ok) return errResponse(res, 400, 'obsidian.save_failed', r.error);
   res.json({ ok: true, path: r.path });
@@ -1828,7 +1828,7 @@ const BubbleCreateSchema = z.object({
 app.post('/bubble/create', (req: Request, res: Response) => {
   const parsed = BubbleCreateSchema.safeParse(req.body);
   if (!parsed.success) {
-    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const { title, workspace, baseBranch, initialPrompt, agent } = parsed.data;
   // Dueño: el usuario de la sesión, o el primer admin para callers MCP sin
@@ -1899,7 +1899,7 @@ const BubbleSendSchema = z.object({
 app.post('/bubble/send', (req: Request, res: Response) => {
   const parsed = BubbleSendSchema.safeParse(req.body);
   if (!parsed.success) {
-    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const { bubbleId, text, agent } = parsed.data;
   if (!isValidBubbleId(bubbleId)) {
@@ -1963,7 +1963,7 @@ app.post('/bubbles/sync', (req: Request, res: Response) => {
   if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
   const parsed = BubblesSyncSchema.safeParse(req.body);
   if (!parsed.success) {
-    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const sanitized: Omit<BubbleSummary, 'ownerId'>[] = parsed.data.bubbles
     .filter((b) => isValidBubbleId(b.id))
@@ -2008,7 +2008,7 @@ const NotesSummarizeSchema = z.object({
 app.post('/notes/summarize', (req: Request, res: Response) => {
   const parsed = NotesSummarizeSchema.safeParse(req.body);
   if (!parsed.success) {
-    return errResponse(res, 400, 'http.invalid_body', parsed.error.errors[0]?.message ?? 'Cuerpo inválido');
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const { bubbleId, bubbleTitle, workspace, messages } = parsed.data;
   if (workspace && !isAllowedWorkspace(workspace)) {
@@ -2087,7 +2087,7 @@ const BackupRestoreSchema = z.object({
   // MÁS la clave `users` que es un Record<string,string> anidado (colección
   // multi-tenant: index.json + <id>/user.json + <id>/docs/<key>.json). Sin el
   // union, Zod rechazaba el objeto `users` con http.invalid_body.
-  eco: z.record(z.union([z.string(), z.record(z.string())])).optional(),
+  eco: z.record(z.string(), z.union([z.string(), z.record(z.string(), z.string())])).optional(),
   worktrees: z.array(WorktreeStateSchema).max(500).optional(),
 });
 app.post('/backup/restore', requireAdmin, (req: Request, res: Response) => {
@@ -2131,7 +2131,7 @@ app.delete('/backup/config', requireAdmin, (_req: Request, res: Response) => {
 // SPA fallback final — si llegaste hasta acá sin matchear ningún API route,
 // servimos el index.html (deep linking del navegador interno de Eco).
 if (frontendDistEarly && fsExistsSync(frontendDistEarly)) {
-  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+  app.get('/{*splat}', (req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith('/ws')) return next();
     // Ya tiene auth pasada acá, así que es safe servir el shell.
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');

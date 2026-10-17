@@ -1,4 +1,7 @@
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+// quiet: desde dotenv 17 imprime un tip en stdout al cargar, y el backend
+// corre como subproceso del .app con stdout heredado.
+loadDotenv({ quiet: true });
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve, sep, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
