@@ -18,6 +18,45 @@ function extractIdToken(req: IncomingMessage): string | null {
 // uid resuelto en verifyClient (verificación async del JWT) y leído en 'connection'.
 type ReqWithUid = IncomingMessage & { ecoUid?: string };
 
+type AliveWs = WebSocket & { isAlive?: boolean };
+
+export const HEARTBEAT_MS = 20_000;
+
+// Heartbeat server-side para los dos servidores WS: (a) un frame `heartbeat`
+// que el cliente usa como señal de vida, y (b) ping/pong nativo para terminar
+// sockets muertos a medias — sin esto quedaban en `wss.clients` para siempre,
+// ocupando cupo del tope de conexiones.
+export function startHeartbeat(wss: WebSocketServer): void {
+  const timer = setInterval(() => {
+    const data = JSON.stringify({ type: 'heartbeat' });
+    for (const client of wss.clients as Set<AliveWs>) {
+      if (client.isAlive === false) {
+        try { client.terminate(); } catch { /* noop */ }
+        continue;
+      }
+      client.isAlive = false;
+      try { client.ping(); } catch { /* noop */ }
+      if (client.readyState === client.OPEN) {
+        try { client.send(data); } catch { /* noop */ }
+      }
+    }
+  }, HEARTBEAT_MS);
+  timer.unref();
+  wss.on('close', () => clearInterval(timer));
+}
+
+export function trackAlive(ws: WebSocket): void {
+  (ws as AliveWs).isAlive = true;
+  ws.on('pong', () => { (ws as AliveWs).isAlive = true; });
+  // Sin listener, un error de socket es un uncaughtException que mata el
+  // backend entero. El 'close' que sigue hace la limpieza.
+  ws.on('error', () => { /* noop */ });
+}
+
+export function logUpgradeRejected(path: string, code: number, detail: string): void {
+  console.warn(`[ws] upgrade ${path} rechazado ${code}: ${detail}`);
+}
+
 let broadcastFn: ((msg: ServerMessage) => void) | null = null;
 let wssRef: WebSocketServer | null = null;
 
@@ -86,11 +125,15 @@ export function attachWebSocket(httpServer: Server, _authToken: string) {
         return callback(false, 403, 'Origin no permitido');
       }
       if (wss.clients.size >= config.maxOpenConnections) {
+        logUpgradeRejected('/ws', 503, `${wss.clients.size} conexiones (tope ${config.maxOpenConnections})`);
         return callback(false, 503, 'ws.too_many_connections');
       }
       // Verificación async del ID token de Firebase. El uid queda en req.ecoUid.
       void verifyFirebaseIdToken(extractIdToken(info.req)).then((verified) => {
-        if (!verified) return callback(false, 401, 'http.unauthorized');
+        if (!verified) {
+          logUpgradeRejected('/ws', 401, 'token inválido o sin red para verificarlo');
+          return callback(false, 401, 'http.unauthorized');
+        }
         setMachineUser(verified.uid);
         (info.req as ReqWithUid).ecoUid = verified.uid;
         callback(true);
@@ -107,6 +150,8 @@ export function attachWebSocket(httpServer: Server, _authToken: string) {
     });
   });
 
+  startHeartbeat(wss);
+
   broadcastFn = (msg: ServerMessage) => {
     const data = JSON.stringify(msg);
     for (const client of wss.clients) {
@@ -118,6 +163,7 @@ export function attachWebSocket(httpServer: Server, _authToken: string) {
   wssRef = wss;
 
   wss.on('connection', (ws, req: IncomingMessage) => {
+    trackAlive(ws);
     const connUserId = (req as ReqWithUid).ecoUid;
     if (connUserId) {
       let set = wsByUser.get(connUserId);

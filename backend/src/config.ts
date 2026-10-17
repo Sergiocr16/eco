@@ -105,7 +105,11 @@ export const config = {
   // arman con él y los puertos se exponen vía `tailscale serve`. Solo afecta
   // la URL/exposición — NUNCA la asignación de puertos.
   publicHost: process.env.ECO_PUBLIC_HOST?.trim().toLowerCase() || undefined,
-  maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 12),
+  // Tope por servidor WS (/ws y /ws/pty por separado). Lo comparten todos los
+  // terminales de todas las burbujas, las solo-windows, el teléfono y los
+  // sockets efímeros de pty-bridge; con 12 se llenaba y cada reintento del
+  // terminal moría con 503 (que el navegador solo ve como close 1006).
+  maxOpenConnections: Number(process.env.ECO_MAX_CONNS ?? 64),
   wsBackpressureBytes: Number(process.env.ECO_WS_BACKPRESSURE ?? 8 * 1024 * 1024),
   skillSources: parseSkillSources(),
 };

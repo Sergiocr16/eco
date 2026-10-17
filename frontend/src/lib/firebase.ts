@@ -107,6 +107,14 @@ export async function createUserAsAdmin(email: string, password: string): Promis
 // configurado). El SDK lo cachea y lo refresca solo; getIdToken() devuelve uno
 // fresco. Se manda como Bearer a cada request del backend local y como
 // subprotocolo WS (eco.idtoken.<jwt>).
+// Hay usuario logueado aunque `currentIdToken()` haya devuelto null (típico sin
+// red: Firebase no pudo renovar el token). Los clientes WS lo usan para
+// distinguir "reintentar más tarde" de "no hay sesión".
+export function hasSignedInUser(): boolean {
+  if (!firebaseConfigured()) return false;
+  return getEcoAuth().currentUser !== null;
+}
+
 export async function currentIdToken(): Promise<string | null> {
   if (!firebaseConfigured()) return null;
   const user = getEcoAuth().currentUser;
