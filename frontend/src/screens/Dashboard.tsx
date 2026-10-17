@@ -29,6 +29,7 @@ import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { SAFE_BOTTOM, SAFE_TOP } from '@/lib/platform';
 import { cssZoom } from '@/lib/ui-zoom';
+import type { JSX } from 'react';
 
 type Props = {
   bubbles: Bubble[];

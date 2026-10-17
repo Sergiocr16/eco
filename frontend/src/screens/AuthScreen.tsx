@@ -7,6 +7,7 @@ import {
 } from '@/design/icons';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
 import { useT } from '@/hooks/useI18n';
+import type { JSX } from 'react';
 
 type AuthHook = ReturnType<typeof useAuth>;
 

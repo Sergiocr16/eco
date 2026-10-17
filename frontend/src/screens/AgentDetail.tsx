@@ -34,6 +34,7 @@ import { useT } from '@/hooks/useI18n';
 import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
+import type { JSX } from 'react';
 
 function HeaderMenu({
   workspaces, currentWorkspace, onClose, onRename, onChangeWorkspace,

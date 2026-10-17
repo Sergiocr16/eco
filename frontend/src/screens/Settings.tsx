@@ -32,6 +32,7 @@ import { getElectronBackupAPI, u8ToBase64 } from '@/lib/backup';
 import { useIsPhone, isPhoneNow, isMobileNow } from '@/hooks/useMediaQuery';
 import { cssZoom, hasNativeZoom, setUiZoom, useUiZoom, ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/lib/ui-zoom';
 import { isStandalone } from '@/lib/platform';
+import type { JSX } from 'react';
 import {
   TERM_FONT_FAMILIES, TERM_FONT_MAX, TERM_FONT_MIN, isFontInstalled,
   setTermFontFamily, setTermFontSize, termFontStack, useTermPrefs,
