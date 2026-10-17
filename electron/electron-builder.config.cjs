@@ -1,10 +1,11 @@
 // Config de electron-builder generada en JS para poder CONDICIONAR los filtros
 // por plataforma de build — algo imposible en el `build` estático de
-// package.json. El problema que resuelve: los prebuilds nativos (node-pty,
-// ripgrep del claude-agent-sdk) traen una carpeta por arquitectura; en el .dmg
-// de Mac excluimos todo lo que no sea darwin-arm64 para bajar peso, pero en el
-// .exe de Windows necesitamos SÍ incluir win32-x64. Acá detectamos el target y
-// dejamos pasar solo los prebuilds de esa plataforma.
+// package.json. El problema que resuelve: los prebuilds nativos de node-pty
+// traen una carpeta por arquitectura; en el .dmg de Mac excluimos todo lo que
+// no sea darwin-arm64 para bajar peso, pero en el .exe de Windows necesitamos
+// SÍ incluir win32-x64. Acá detectamos el target y dejamos pasar solo los
+// prebuilds de esa plataforma. (ripgrep no necesita filtro: `@vscode/ripgrep`
+// instala solo el paquete opcional de la plataforma del host.)
 //
 // Lo consumen los scripts build:mac / build:win / build:linux vía
 // `electron-builder --config electron-builder.config.cjs`.
@@ -22,9 +23,6 @@ const target =
   : 'linux';
 
 // Arquitecturas de los prebuilds y cuál conservamos por target.
-const RG_ARCHES = ['arm64-darwin', 'arm64-linux', 'x64-darwin', 'x64-linux', 'x64-win32'];
-const RG_KEEP = { mac: 'arm64-darwin', win: 'x64-win32', linux: 'x64-linux' }[target];
-
 const PTY_ARCHES = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-arm64', 'win32-x64'];
 const PTY_KEEP = { mac: 'darwin-arm64', win: 'win32-x64', linux: 'linux-x64' }[target];
 
@@ -52,9 +50,6 @@ const backendNmFilter = [
   '!**/HISTORY*',
   '!**/.github/**',
   '!**/.vscode/**',
-  // ripgrep: solo la arch del target.
-  ...RG_ARCHES.filter((a) => a !== RG_KEEP)
-    .map((a) => `!**/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/${a}/**`),
   // node-pty: solo la arch del target + fuera fuentes/tooling y símbolos debug.
   ...PTY_ARCHES.filter((a) => a !== PTY_KEEP)
     .map((a) => `!**/node-pty/prebuilds/${a}/**`),
