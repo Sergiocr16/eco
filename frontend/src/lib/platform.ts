@@ -84,15 +84,22 @@ function isIOS(): boolean {
 // mete debajo de la barra de estado también en Safari, y cuando el navegador
 // ya reserva esa franja env() devuelve 0 solo.
 //
-// Instalada en iOS 26.1+ (verificado en iPadOS 27) hace falta un colchón extra: el sistema esmerila una
-// banda progresiva sobre el borde superior del web view (~4× la barra de
-// estado) y lo hace con cualquier `apple-mobile-web-app-status-bar-style`,
-// opaca incluida — se probó. No hay API que diga cuánto mide. Los 40px salen
-// de medir en un iPad 13": la banda se desvanece a ~95pt del borde de la
-// pantalla. Debajo queda solo el fondo del shell, y un color plano esmerilado
-// no se nota; texto sí. Cuándo y cómo quitarlo: CLAUDE.md, Appendix F →
-// "iOS 27 workarounds — the revert checklist".
-const IOS_FROST_EXTRA = OWNS_FULL_SCREEN && isIOS() ? ' + 40px' : '';
+// Instalada en iOS 26.1+ (verificado en iPadOS 27) hace falta un colchón
+// extra: el sistema esmerila una banda progresiva sobre el borde superior del
+// web view y lo hace con cualquier `apple-mobile-web-app-status-bar-style`,
+// opaca incluida — se probó. No hay API que diga cuánto mide. La banda está
+// anclada al BORDE DE LA PANTALLA, no a la barra de estado: en un iPad 13"
+// (barra de 24pt) el texto queda nítido a ~64pt del borde; en un iPhone 16 Pro
+// (barra de ~62pt) hizo falta llegar a ~80pt. En un iPhone la
+// barra ya mide ~60pt y cubre casi toda la banda, así que sumar 40px fijos
+// regalaba ~40pt de pantalla; el colchón solo completa hasta IOS_FROST_REACH
+// y nunca pasa de 40px (en landscape env() da 0). Debajo queda solo el fondo
+// del shell, y un color plano esmerilado no se nota; texto sí. Cuándo y cómo
+// quitarlo: CLAUDE.md, Appendix F → "iOS 27 workarounds — the revert checklist".
+const IOS_FROST_REACH = '80px';
+const IOS_FROST_EXTRA = OWNS_FULL_SCREEN && isIOS()
+  ? ` + clamp(0px, ${IOS_FROST_REACH} - env(safe-area-inset-top, 0px), 40px)`
+  : '';
 // Bajo zoom CSS (web) los env() llegan en px visuales; lib/ui-zoom.ts publica
 // el factor en --eco-zoom para que el shell no reserve Z veces el inset.
 export const SAFE_TOP = `calc((env(safe-area-inset-top, 0px)${IOS_FROST_EXTRA}) / var(--eco-zoom, 1))`;

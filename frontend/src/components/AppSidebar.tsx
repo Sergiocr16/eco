@@ -1,4 +1,5 @@
 import { useTokens } from '@/design/theme';
+import { glassEffect } from '@/design/primitives';
 import { EcoMarkStacked } from '@/design/EcoMark';
 import {
   IconCommand, IconFolderOpen, IconGrid, IconArchive, IconSettings, IconShield, type IconProps,
@@ -60,8 +61,13 @@ export function AppSidebar({
         width: '100%',
         flexDirection: 'row',
         justifyContent: 'space-around',
-        borderTop: `1px solid ${t.glassBorder}`,
-        background: t.windowBg,
+        // Mismo cristal que el dock y las tarjetas: fondo translúcido con blur
+        // sobre lo que quede debajo (el degradado del tema). Solo el borde
+        // superior — es una barra apoyada en el borde, no un panel flotante.
+        ...glassEffect(t, { intensity: 'strong' }),
+        border: 0,
+        borderTop: `1px solid ${t.glassBorderHi}`,
+        borderRadius: 0,
         // El inset completo de iOS (34px) es más aire del que necesita el
         // indicador de home, que mide ~5px y vive a ~8px del borde.
         padding: `4px 6px calc(4px + min(${SAFE_BOTTOM}, 14px))`,

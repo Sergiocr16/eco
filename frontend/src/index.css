@@ -1,5 +1,22 @@
 html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; }
 
+/* iOS 26.1+ instalada (WebKit 301994): con `black-translucent` el web view
+   arranca debajo de la barra de estado pero iOS lo recorta por abajo en la
+   misma altura, y solo mientras el documento mide menos que la pantalla.
+   `100lvh` sí reporta la pantalla entera: estirar html hasta ahí hace que
+   iOS entregue el viewport completo y el shell fijo llegue al borde inferior.
+   El min() evita que html se pase (y aparezca scroll fantasma) donde el bug
+   no existe. Bajo zoom CSS los viewport units y env() llegan en px visuales,
+   de ahí la división por --eco-zoom. */
+@media (display-mode: standalone) {
+  html {
+    min-height: min(
+      calc(100lvh / var(--eco-zoom, 1)),
+      calc(100% + env(safe-area-inset-top, 0px) / var(--eco-zoom, 1))
+    );
+  }
+}
+
 /* Fondo a sangre que se desborda del viewport por arriba y por abajo. Todo el
    shell es `position: fixed`, así que si el área visible resulta ser más alta
    que el viewport de layout —safe area del indicador de home en la PWA
