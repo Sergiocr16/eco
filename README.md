@@ -235,7 +235,7 @@ npm run dist:linux
 # → release/Eco-1.0.0.AppImage (x64)
 ```
 
-The build config (`electron/electron-builder.config.cjs`) filters native prebuilds (node-pty, ripgrep) per target, and the OS-dependent backend lives in `backend/src/platform.ts`. For the full Windows reference (build, prepare scripts, icon generation, gotchas) see [CLAUDE.md Appendix E](./CLAUDE.md#windows); for the macOS reinstall recipe see [CLAUDE.md Appendix B](./CLAUDE.md#debug).
+The build config (`electron/electron-builder.config.cjs`) filters native prebuilds (node-pty) per target, and the OS-dependent backend lives in `backend/src/platform.ts`. For the full Windows reference (build, prepare scripts, icon generation, gotchas) see [CLAUDE.md Appendix E](./CLAUDE.md#windows); for the macOS reinstall recipe see [CLAUDE.md Appendix B](./CLAUDE.md#debug).
 
 ### Shipping a Windows release (auto-update)
 
@@ -440,7 +440,7 @@ Run the backend security suite with `npm run test:security` and the Firestore ru
 | Terminal dictation | Swift CLI (`eco-stt`) + Apple `SFSpeechRecognizer` on-device · PCM capture via Web Audio API → WAV PCM16 (.dmg) · Web Speech API (browser) |
 | Editor | CodeMirror 6 with lazy `@codemirror/language-data` packs + `@codemirror/merge` diff view |
 | Agents | `claude` (Claude Code) + `codex` (OpenAI Codex) CLIs, run as real processes in per-bubble PTYs; provider auth (CLI session or API key) in Settings → Agents & API |
-| Backend | Node 20.19+ (Electron's Node 24 when packaged), Express 5, ws 8, node-pty 1.1, Zod 4, helmet 8, `jose` 6 (Firebase ID-token verification). `@anthropic-ai/claude-agent-sdk` stays as a dep only for its bundled ripgrep |
+| Backend | Node 20.19+ (Electron's Node 24 when packaged), Express 5, ws 8, node-pty 1.1, Zod 4, helmet 8, `jose` 6 (Firebase ID-token verification), `@vscode/ripgrep` (global search) |
 | Auto-update | `electron-updater` → GitHub Releases (Windows); tag-driven CI (`release-win.yml`) |
 | i18n | Custom TS dictionary, bilingual ES/EN, no external lib |
 | Theme | 14 themes (9 dark + 5 light) + system, `oklch()` accents + `glassEffect` helper |
