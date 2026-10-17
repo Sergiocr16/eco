@@ -106,7 +106,7 @@ const extraResources = [
 module.exports = {
   appId: 'com.aditum.eco',
   productName: 'Eco',
-  electronVersion: '33.4.11',
+  electronVersion: '44.9.0',
   npmRebuild: false,
   buildDependenciesFromSource: false,
   asar: true,

@@ -120,7 +120,7 @@ Eco runs on two planes. The **local plane** does all the heavy lifting and never
 ## 4. Requirements
 
 - **macOS Apple Silicon** (arm64), **Windows x64**, or **Linux x64** (AppImage target is experimental/untested). macOS Intel is not packaged.
-- **Node 20** (`nvm use 20.20.2` works). Vite 6 doesn't support Node 16.
+- **Node 20.19+** (`nvm use 20.20.2` works). Vite 8 requires `^20.19 || >=22.12`.
 - **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated (`claude login` or an API key saved from Settings → Agents & API). This is the default agent. On Windows the native installer's `claude.exe` is auto-resolved; otherwise set `CLAUDE_CLI_PATH` to a real `.exe`.
 - **`codex` CLI** from `@openai/codex` (optional) — `npm i -g @openai/codex` (Node 22+) or `brew install codex`, authenticated with `codex login` or an OpenAI API key saved from Settings → Agents & API. Eco resolves the binary from the usual bin dirs including nvm's, so a `which codex` miss (nvm PATH) is fine; override with `CODEX_CLI_PATH`. Without it, the Codex terminal tab just shows the install command.
 - **A Firebase project** (Auth with Email/Password enabled + Firestore). The default project id used by the dev scripts is `aditum-eco`. The web config values go into `frontend/.env.local`; the backend only needs the project id to verify ID tokens. See [Configuration](#configuration).
@@ -269,7 +269,7 @@ eco/
 │
 ├── backend/                   ← Node + Express + node-pty + git/dev-server/files ops (OS seam: src/platform.ts)
 ├── frontend/                  ← Vite + React + TS + Motion + Tailwind v4 (Firebase client SDK)
-├── electron/                  ← Electron 33 wrapper + electron-builder.config.cjs + Swift dictation CLI (eco-stt, macOS)
+├── electron/                  ← Electron 44 wrapper + electron-builder.config.cjs + Swift dictation CLI (eco-stt, macOS)
 ├── mcp-server/                ← standalone MCP stdio server (create/list bubbles from Claude Code or Codex)
 ├── .github/workflows/         ← release-win.yml (tag-driven NSIS build + GitHub Release for auto-update)
 │
@@ -432,15 +432,15 @@ Run the backend security suite with `npm run test:security` and the Firestore ru
 
 | Layer | Technology |
 |---|---|
-| Packaging | Electron 33.4.11 + electron-builder 25.1.8 — macOS arm64 `.dmg` + Windows x64 NSIS `.exe` + Linux x64 AppImage (experimental); JS build config with per-target prebuild filters |
-| Frontend | Vite 6, React 18.3, TypeScript 5.7, Tailwind v4, Motion 11.18, Radix UI, Lucide, Sonner |
-| Identity & cloud state | Firebase 11 (Auth email/password + Firestore client SDK with offline persistence); `firestore.rules` as the authorization boundary |
+| Packaging | Electron 44.9 + electron-builder 26.17 — macOS arm64 `.dmg` + Windows x64 NSIS `.exe` + Linux x64 AppImage (experimental); JS build config with per-target prebuild filters |
+| Frontend | Vite 8 (rolldown), React 19.3, TypeScript 7, Tailwind v4, Motion 14, Radix UI, Lucide, Sonner |
+| Identity & cloud state | Firebase 13 (Auth email/password + Firestore client SDK with offline persistence); `firestore.rules` as the authorization boundary |
 | Embedded browser | Chromium `<webview>` with a persisted per-bubble partition |
 | Terminal | xterm.js 6 + addon-fit + addon-web-links + node-pty (real PTY) |
 | Terminal dictation | Swift CLI (`eco-stt`) + Apple `SFSpeechRecognizer` on-device · PCM capture via Web Audio API → WAV PCM16 (.dmg) · Web Speech API (browser) |
 | Editor | CodeMirror 6 with lazy `@codemirror/language-data` packs + `@codemirror/merge` diff view |
 | Agents | `claude` (Claude Code) + `codex` (OpenAI Codex) CLIs, run as real processes in per-bubble PTYs; provider auth (CLI session or API key) in Settings → Agents & API |
-| Backend | Node 20, Express 4, ws 8, node-pty 1.1, Zod 3, helmet 8, `jose` 5 (Firebase ID-token verification). `@anthropic-ai/claude-agent-sdk` stays as a dep only for its bundled ripgrep |
+| Backend | Node 20.19+ (Electron's Node 24 when packaged), Express 5, ws 8, node-pty 1.1, Zod 4, helmet 8, `jose` 6 (Firebase ID-token verification). `@anthropic-ai/claude-agent-sdk` stays as a dep only for its bundled ripgrep |
 | Auto-update | `electron-updater` → GitHub Releases (Windows); tag-driven CI (`release-win.yml`) |
 | i18n | Custom TS dictionary, bilingual ES/EN, no external lib |
 | Theme | 14 themes (9 dark + 5 light) + system, `oklch()` accents + `glassEffect` helper |

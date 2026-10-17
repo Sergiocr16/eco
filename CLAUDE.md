@@ -37,7 +37,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 ## 1. TL;DR
 
 - **Eco** is a **cross-platform** desktop app (macOS Apple Silicon + Windows x64 + Linux x64 experimental) that orchestrates Claude conversations. Each conversation ("agent" / "bubble") gets its own git worktree, PTY, files, dev server, browser, notes. **Local-first compute** (worktrees/PTY/dev-servers/git/files never leave the host) but **cloud identity + state**: login via **Firebase Auth**, multi-tenant app state in **Firestore** (gated by `firestore.rules`). External calls: Anthropic API + Firebase (Auth + Firestore).
-- **Packaged** via Electron 33 + electron-builder 25. macOS → `.dmg` arm64 (~112 MB). Windows → NSIS `.exe` x64 (~96 MB). The OS-dependent backend primitives (shell, ports, process-kill) live in `backend/src/platform.ts`; the build config is `electron/electron-builder.config.cjs` (conditional native prebuilds per target). **Full Windows + packaging detail in Appendix E — read it before touching spawn/shell/port/kill code, the electron-builder config, or the prepare scripts.**
+- **Packaged** via Electron 44 + electron-builder 26. macOS → `.dmg` arm64 (~112 MB). Windows → NSIS `.exe` x64 (~96 MB). The OS-dependent backend primitives (shell, ports, process-kill) live in `backend/src/platform.ts`; the build config is `electron/electron-builder.config.cjs` (conditional native prebuilds per target). **Full Windows + packaging detail in Appendix E — read it before touching spawn/shell/port/kill code, the electron-builder config, or the prepare scripts.**
 - **User**: Sergio Castro (Florida, USA). Rules in §2 + the global `~/.claude/CLAUDE.md` apply (Obsidian vault, no auto-commits, Spanish UI but English docs).
 - **Voice**: the ONLY voice feature is **terminal dictation** (on-device STT via Swift + Apple Speech in the .dmg, Web Speech in the browser, macOS-only). Everything else voice-related was removed (wake word, voice commands, TTS, voice settings — see the Removed table in §2). Dev servers persist across reloads.
 - **Dev logs flow via WS push** (`dev_log` batched every 80 ms), not polling.
@@ -183,7 +183,7 @@ VITE_FIREBASE_APP_ID=
 
 ### Versions required
 
-- **Node 20** (`nvm use 20.20.2`). Vite 6 doesn't support 16.
+- **Node 20.19+** (`nvm use 20.20.2`; Vite 8 requires `^20.19 || >=22.12`). The packaged app runs the backend on Electron's own Node (24.x in Electron 44), so `@types/node` tracks 24.
 - **`claude` CLI** from `@anthropic-ai/claude-code`, authenticated.
 - **Swift 5+** (Xcode CLT) if rebuilding the native CLI.
 - **git** (worktrees, branches).
@@ -1147,6 +1147,17 @@ The whole meta-command system (wake word + `Eco …` navigation/agent/tab/server
 - Header `X-Eco-Client: 1` required. Minimal CSRF defense.
 - Origin whitelist with auto-include of own origin.
 - Rate limit per endpoint where applicable (`ECO_RATE_LIMIT`).
+
+### Dependencies (lessons from the 2026-10 upgrade)
+
+- **`@anthropic-ai/claude-agent-sdk` stays on 0.1.x on purpose.** 0.3 no longer ships `vendor/ripgrep`, which `platform.ts:resolveRipgrepPath` and the electron-builder prebuild filters depend on. Bumping it means moving to `@vscode/ripgrep` (postinstall download in `prepare-backend` + CI) — a separate task.
+- **zod 4**: `parsed.error.issues` (not `.errors`); `z.record(keySchema, valueSchema)` needs both args; `z.toJSONSchema()` replaces `zod-to-json-schema`.
+- **Express 5**: the SPA fallback is `app.get('/{*splat}')` (`'*'` is invalid in path-to-regexp 8); `req.params.x` is typed `string | string[]`, so coerce with `String(...)`.
+- **TypeScript 7**: `baseUrl` is gone (`paths` are relative to the tsconfig); lib.dom now declares `SpeechRecognitionEvent`/`ErrorEvent`/`ResultList` (see `useVoice.ts` — only `SpeechRecognition` itself stays local); `mcp-server/tsconfig.json` needs `"types": ["node"]` explicitly.
+- **Vite 8 (rolldown)**: `build.rollupOptions.output.manualChunks` must be a function; use `import.meta.dirname` instead of `__dirname` in `vite.config.ts`.
+- **React 19 types**: there is no global `JSX` namespace — `import type { JSX } from 'react'`.
+- **npm workspaces gotcha**: `npm install --workspace frontend <pkg>` can leave `@types/react` (or `vite`) **nested** under `frontend/node_modules` while root libs (motion, radix, `@tailwindcss/vite`) resolve the root copy → callbacks typed `any` / peer mismatches. After a major bump, check `npm explain <pkg>` and make sure a single copy lives at the root (drop the nested lock entries + `npm install`).
+- **Electron 42+** no longer downloads the binary on `postinstall`: run `node node_modules/electron/install.js` once after a fresh install (or `npx install-electron`). **Electron 44** requires macOS 13+. On macOS, notifications go through `UNNotification`, so on the **unsigned** `.dmg` `new Notification()` from the main process emits `failed` instead of showing — signing fixes it; Windows is unaffected.
 
 ### `gitCapture` helper
 

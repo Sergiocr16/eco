@@ -486,8 +486,9 @@ ipcMain.handle('eco:delete-file', async (_e, opts) => {
 // IPC: notificación nativa via `electron.Notification`. Usado por
 // `usePtyBusyNotifier` cuando un agente termina (PTY busy→idle). En
 // `.dmg` unsigned, `new Notification(...)` de la Web API NO aparece en
-// Notification Center de macOS — pero Electron.Notification sí, porque
-// Electron asocia internamente la notif con el bundle ID.
+// Notification Center de macOS. Electron.Notification sí aparecía hasta
+// Electron 41; desde 42 va por UNNotification y en una app SIN firmar emite
+// `failed` en vez de mostrarse (Windows no cambia). Se loguea, no se rompe.
 // Click handler: trae la ventana al frente y manda al renderer un
 // `eco:notification_clicked` con el bubbleId para que abra el agente.
 ipcMain.handle('eco:notify', (_event, opts) => {
@@ -500,6 +501,7 @@ ipcMain.handle('eco:notify', (_event, opts) => {
       body: o.body ? String(o.body) : '',
       silent: !!o.silent,
     });
+    n.on('failed', (_e, error) => { console.warn('[notify] falló (¿app sin firmar?):', error); });
     if (o.bubbleId) {
       n.on('click', () => {
         try {
