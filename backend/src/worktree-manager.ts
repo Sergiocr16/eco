@@ -9,7 +9,7 @@
 // preserva la rama para que el usuario pueda mergear o revisar después). Las
 // referencias en disco se pueden recolectar manualmente con `git worktree prune`.
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -33,6 +33,43 @@ function runGit(
     stdout: (r.stdout ?? '').toString(),
     stderr: (r.stderr ?? '').toString(),
   };
+}
+
+// Variante no bloqueante para los barridos sobre TODOS los worktrees: con
+// cientos de entradas, ~6 git por worktree en spawnSync congelaban el event
+// loop (y con él PTYs, WS y dev-logs) más de un minuto al arrancar y cada 15 min.
+function runGitAsync(
+  args: string[],
+  cwd: string,
+  timeoutMs = 8_000,
+): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    let out = '';
+    let err = '';
+    let done = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      resolve({ ok, stdout: out, stderr: err });
+    };
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch {
+      resolve({ ok: false, stdout: '', stderr: 'spawn failed' });
+      return;
+    }
+    timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* noop */ }
+      finish(false);
+    }, timeoutMs);
+    child.stdout?.on('data', (d: Buffer) => { out += d.toString('utf-8'); });
+    child.stderr?.on('data', (d: Buffer) => { err += d.toString('utf-8'); });
+    child.on('error', () => finish(false));
+    child.on('close', (code) => finish(code === 0));
+  });
 }
 
 // Trae lo último del remoto para la rama base y devuelve el ref remote-tracking
@@ -83,6 +120,12 @@ function fetchUpdatedBaseRef(parentWorkspace: string, baseName: string): string 
 function isGitRepo(dir: string): boolean {
   if (!existsSync(dir)) return false;
   const r = runGit(['rev-parse', '--is-inside-work-tree'], dir, 3_000);
+  return r.ok && r.stdout.trim() === 'true';
+}
+
+async function isGitRepoAsync(dir: string): Promise<boolean> {
+  if (!existsSync(dir)) return false;
+  const r = await runGitAsync(['rev-parse', '--is-inside-work-tree'], dir, 3_000);
   return r.ok && r.stdout.trim() === 'true';
 }
 
@@ -238,7 +281,16 @@ export function listWorktrees(): Array<{ bubbleId: string; path: string }> {
  *  - O no tiene archivos modificados/untracked AND no tiene commits ahead del upstream.
  * Llamado al arrancar Eco, periódicamente, y al cerrar.
  */
-export function pruneCleanWorktrees(): { removed: string[]; kept: string[] } {
+export function pruneCleanWorktrees(): Promise<{ removed: string[]; kept: string[] }> {
+  // Startup, timer y endpoint pueden coincidir: un solo barrido a la vez.
+  if (!pruneInFlight) {
+    pruneInFlight = pruneCleanWorktreesImpl().finally(() => { pruneInFlight = null; });
+  }
+  return pruneInFlight;
+}
+let pruneInFlight: Promise<{ removed: string[]; kept: string[] }> | null = null;
+
+async function pruneCleanWorktreesImpl(): Promise<{ removed: string[]; kept: string[] }> {
   const removed: string[] = [];
   const kept: string[] = [];
   if (!existsSync(WORKTREES_ROOT)) return { removed, kept };
@@ -253,12 +305,12 @@ export function pruneCleanWorktrees(): { removed: string[]; kept: string[] } {
   const seenParents = new Set<string>();
   for (const name of entries) {
     const p = join(WORKTREES_ROOT, name);
-    const common = runGit(['rev-parse', '--git-common-dir'], p, 2000);
+    const common = await runGitAsync(['rev-parse', '--git-common-dir'], p, 2000);
     if (common.ok && common.stdout.trim()) {
       const parent = common.stdout.trim().replace(/\/?\.git\/?$/, '');
       if (parent && existsSync(parent) && !seenParents.has(parent)) {
         seenParents.add(parent);
-        runGit(['worktree', 'prune'], parent, 5000);
+        await runGitAsync(['worktree', 'prune'], parent, 5000);
       }
     }
   }
@@ -271,7 +323,7 @@ export function pruneCleanWorktrees(): { removed: string[]; kept: string[] } {
     } catch { continue; }
 
     // 1) Si el path no es un repo git válido (huérfano), lo borramos.
-    if (!isGitRepo(path)) {
+    if (!(await isGitRepoAsync(path))) {
       try {
         rmSync(path, { recursive: true, force: true });
         worktrees.delete(name);
@@ -281,7 +333,7 @@ export function pruneCleanWorktrees(): { removed: string[]; kept: string[] } {
     }
 
     // 2) ¿Tiene cambios o untracked?
-    const status = runGit(['status', '--porcelain'], path, 5000);
+    const status = await runGitAsync(['status', '--porcelain'], path, 5000);
     if (!status.ok) { kept.push(name); continue; }
     if (status.stdout.trim().length > 0) { kept.push(name); continue; }
 
@@ -290,7 +342,7 @@ export function pruneCleanWorktrees(): { removed: string[]; kept: string[] } {
     let hasCommits = false;
     const compareRefs = ['@{upstream}', 'origin/HEAD', 'origin/main', 'origin/master'];
     for (const ref of compareRefs) {
-      const ahead = runGit(['rev-list', '--count', `${ref}..HEAD`], path, 5000);
+      const ahead = await runGitAsync(['rev-list', '--count', `${ref}..HEAD`], path, 5000);
       if (ahead.ok && ahead.stdout.trim() && ahead.stdout.trim() !== '0') {
         hasCommits = true; break;
       }
@@ -300,12 +352,12 @@ export function pruneCleanWorktrees(): { removed: string[]; kept: string[] } {
 
     // 4) Worktree limpio → intentamos `git worktree remove --force` desde el repo padre.
     let removedOk = false;
-    const commonDir = runGit(['rev-parse', '--git-common-dir'], path, 3000);
+    const commonDir = await runGitAsync(['rev-parse', '--git-common-dir'], path, 3000);
     if (commonDir.ok && commonDir.stdout.trim()) {
       const absCommon = commonDir.stdout.trim();
       const parent = absCommon.replace(/\/?\.git\/?$/, '');
       if (parent && existsSync(parent)) {
-        const r = runGit(['worktree', 'remove', path, '--force'], parent, 5000);
+        const r = await runGitAsync(['worktree', 'remove', path, '--force'], parent, 5000);
         if (r.ok) removedOk = true;
       }
     }
