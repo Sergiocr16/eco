@@ -1076,6 +1076,8 @@ On bubble close: PTY dies, worktree is removed (`git worktree remove --force`), 
 
 List orphan branches: `git -C <repo> branch | grep eco/`
 
+> **El prune de worktrees (`pruneCleanWorktrees`) es asíncrono y nunca debe volver a `spawnSync`.** Corre al arrancar, cada 15 min y vía `POST /worktrees/prune`, y hace ~6 `git` por entrada de `~/.eco/worktrees/`. Con 300+ entradas la versión síncrona bloqueaba el event loop ~95 s en cada arranque y en cada tick (PTYs, WS y dev-logs congelados, "Reconectando…" en las terminales), y en el `shutdown` tardaba más que el SIGKILL de Electron (1.5 s) dejando el proceso vivo escuchando sin responder. Ahora usa `runGitAsync` (secuencial, un solo barrido en vuelo) y el cierre ya no poda.
+
 ### OnboardingWizard
 
 `frontend/src/screens/OnboardingWizard.tsx` — modal with 8 linear steps:

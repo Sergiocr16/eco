@@ -1593,9 +1593,9 @@ app.get('/git/op-status', (req: Request, res: Response) => {
 // ─── Worktrees mantenimiento ──────────────────────────────────────────────
 // Llama pruneCleanWorktrees() bajo demanda — devuelve qué se removió/conservó.
 // Para usar desde la UI cuando el usuario pide "limpiar worktrees".
-app.post('/worktrees/prune', (_req: Request, res: Response) => {
+app.post('/worktrees/prune', async (_req: Request, res: Response) => {
   try {
-    const r = pruneCleanWorktrees();
+    const r = await pruneCleanWorktrees();
     res.json({ removed: r.removed, kept: r.kept });
   } catch (e) {
     errResponse(res, 500, 'worktree.prune_failed', e instanceof Error ? e.message : 'prune failed');
@@ -2178,15 +2178,15 @@ server.listen(config.port, config.host, () => {
   // apagado solo queda el warning y la app sigue funcionando local.
   void tailnet.restoreTailnet(config.port);
 
-  // GC de worktrees: limpia los que no tienen cambios al startup.
-  try {
-    const r = pruneCleanWorktrees();
+  // GC de worktrees: limpia los que no tienen cambios al startup. En segundo
+  // plano — el server ya escucha y no debe esperar a que terminen cientos de git.
+  pruneCleanWorktrees().then((r) => {
     if (r.removed.length > 0) {
       console.log(`   Worktrees limpios eliminados al startup: ${r.removed.length} (${r.removed.slice(0, 3).join(', ')}${r.removed.length > 3 ? '…' : ''})`);
     }
-  } catch (e) {
+  }).catch((e) => {
     console.error('[worktree-prune] error en startup:', e);
-  }
+  });
 
   // Auto-registro del MCP "eco" en Claude Code al arrancar (idempotente): si el
   // binario está bundleado y `claude` existe pero el MCP no está registrado, lo
@@ -2211,32 +2211,28 @@ server.listen(config.port, config.host, () => {
 // GC periódico cada 15 min mientras corre.
 const PRUNE_INTERVAL_MS = 15 * 60 * 1000;
 const pruneTimer = setInterval(() => {
-  try {
-    const r = pruneCleanWorktrees();
+  pruneCleanWorktrees().then((r) => {
     if (r.removed.length > 0) {
       console.log(`[worktree-prune] eliminados ${r.removed.length}: ${r.removed.join(', ')}`);
     }
-  } catch (e) {
+  }).catch((e) => {
     console.error('[worktree-prune] error:', e);
-  }
+  });
 }, PRUNE_INTERVAL_MS);
 pruneTimer.unref();
 
-// GC al cerrar gracefully (Ctrl-C, kill TERM). Cerramos el server para liberar
-// el puerto enseguida (un relaunch inmediato del host no debe chocar con
+// Cierre graceful (Ctrl-C, kill TERM). Cerramos el server para liberar el
+// puerto enseguida (un relaunch inmediato del host no debe chocar con
 // EADDRINUSE) y forzamos la salida con un timeout duro por si algún handle
 // (PTY, dev-server, socket WS) impide que el proceso muera solo.
+// Acá NO se podan worktrees: con cientos de entradas el barrido síncrono tardaba
+// más que el SIGKILL de Electron (1.5 s) y el proceso quedaba colgado,
+// escuchando el puerto sin responder. El prune del próximo arranque cubre lo mismo.
 let shuttingDown = false;
 function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`\n[eco] recibí ${signal}, limpiando worktrees sin cambios…`);
-  try {
-    const r = pruneCleanWorktrees();
-    if (r.removed.length > 0) {
-      console.log(`[eco] worktrees eliminados: ${r.removed.length}`);
-    }
-  } catch { /* noop */ }
+  console.log(`\n[eco] recibí ${signal}, cerrando…`);
   try { server.close(); } catch { /* noop */ }
   const hard = setTimeout(() => process.exit(0), 1500);
   hard.unref();
