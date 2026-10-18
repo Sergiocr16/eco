@@ -10,7 +10,7 @@
 // referencias en disco se pueden recolectar manualmente con `git worktree prune`.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isAllowedWorkspace } from './config.js';
@@ -290,6 +290,31 @@ export function pruneCleanWorktrees(): Promise<{ removed: string[]; kept: string
 }
 let pruneInFlight: Promise<{ removed: string[]; kept: string[] }> | null = null;
 
+// Un git cortado por timeout deja `index.lock` en `.git/worktrees/<id>/` y
+// bloquea toda mutación de esa burbuja. iCloud (Documents) además duplica los
+// huérfanos como `index 2.lock`. Barremos los que llevan más de una hora.
+const STALE_LOCK_SWEEP_MS = 60 * 60 * 1000;
+const STALE_LOCK_RE = /^index( \d+)?\.lock$/;
+
+function sweepStaleLocks(worktreesGitDir: string): void {
+  let ids: string[] = [];
+  try { ids = readdirSync(worktreesGitDir); } catch { return; }
+  for (const id of ids) {
+    const dir = join(worktreesGitDir, id);
+    let files: string[] = [];
+    try { files = readdirSync(dir); } catch { continue; }
+    for (const f of files) {
+      if (!STALE_LOCK_RE.test(f)) continue;
+      const lock = join(dir, f);
+      try {
+        if (Date.now() - statSync(lock).mtimeMs < STALE_LOCK_SWEEP_MS) continue;
+        unlinkSync(lock);
+        console.warn(`[worktrees] lock huérfano eliminado: ${lock}`);
+      } catch { /* otro proceso lo soltó primero */ }
+    }
+  }
+}
+
 async function pruneCleanWorktreesImpl(): Promise<{ removed: string[]; kept: string[] }> {
   const removed: string[] = [];
   const kept: string[] = [];
@@ -311,6 +336,7 @@ async function pruneCleanWorktreesImpl(): Promise<{ removed: string[]; kept: str
       if (parent && existsSync(parent) && !seenParents.has(parent)) {
         seenParents.add(parent);
         await runGitAsync(['worktree', 'prune'], parent, 5000);
+        sweepStaleLocks(join(parent, '.git', 'worktrees'));
       }
     }
   }

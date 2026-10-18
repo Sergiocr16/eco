@@ -933,7 +933,9 @@ const FILE_CHANGES_CACHE_MS = 300;
 function gitCapture(cwd: string, args: string[], stdin?: string, timeoutMs = 5000): Promise<{ ok: boolean; out: string }> {
   return new Promise((resolve) => {
     import('node:child_process').then(({ spawn }) => {
-      const proc = spawn('git', ['-C', cwd, ...args], { timeout: timeoutMs });
+      // Consultas de solo lectura: GIT_OPTIONAL_LOCKS=0 evita que el status/diff
+      // del polling tome el index.lock y haga fallar un checkout del usuario.
+      const proc = spawn('git', ['-C', cwd, ...args], { timeout: timeoutMs, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } });
       let out = '';
       proc.stdout.on('data', (d) => { out += d.toString(); });
       proc.on('close', (code) => resolve({ ok: code === 0 || code === 1, out })); // 1 = "ningún match" para check-ignore
@@ -1011,7 +1013,7 @@ async function computeFileChanges(effective: string): Promise<FileChangesPayload
       // --quiet` retorna exit 1 si hay diferencias, 0 si está clean.
       const hasDiff = await new Promise<boolean>((resolve) => {
         import('node:child_process').then(({ spawn }) => {
-          const p = spawn('git', ['-C', effective, 'diff', '--quiet', '--', path], { timeout: 4000 });
+          const p = spawn('git', ['-C', effective, 'diff', '--quiet', '--', path], { timeout: 4000, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } });
           p.on('close', (code) => resolve(code === 1));
           p.on('error', () => resolve(false));
         });
