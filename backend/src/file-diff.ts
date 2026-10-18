@@ -41,7 +41,8 @@ async function runGit(args: string[], cwd: string): Promise<{ stdout: string; co
   return new Promise((resolve) => {
     const child = spawn('git', args, {
       cwd,
-      env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0' }),
+      // Solo lectura: sin index.lock, para no pisar un checkout/apply en curso.
+      env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' }),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';

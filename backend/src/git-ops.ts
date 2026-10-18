@@ -120,21 +120,60 @@ export type BranchListResult = {
   worktree: string;
 };
 
+// `git status` del polling (cada 4 s, por burbuja) y `git diff` toman el
+// index.lock un instante para refrescar el índice. Un checkout/apply/rm que
+// cae justo ahí muere con "Unable to create '.../index.lock': File exists"
+// — el usuario lo veía al descartar o rechazar un archivo. Las lecturas van
+// con GIT_OPTIONAL_LOCKS=0 (no toman el lock) y las mutaciones reintentan.
+const LOCK_RETRIES = 6;
+const LOCK_WAIT_MS = 120;
+const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+function isLockContention(stderr: string): boolean {
+  return /index\.lock|Unable to create .*\.lock|Another git process seems to be running/i.test(stderr);
+}
+
+// Un git cortado por GIT_TIMEOUT (SIGTERM) deja su `.lock` atrás y nadie lo
+// suelta nunca: toda mutación posterior en ese worktree muere con "File
+// exists". git escribe en el .lock y renombra atómicamente, así que borrar un
+// lock que ya nadie está escribiendo no corrompe el índice.
+const STALE_LOCK_MS = 15_000;
+
+function clearStaleLock(stderr: string): boolean {
+  const m = /Unable to create '([^']+\.lock)'/.exec(stderr);
+  if (!m) return false;
+  const lockPath = m[1];
+  try {
+    const st = statSync(lockPath);
+    if (Date.now() - st.mtimeMs < STALE_LOCK_MS) return false;
+    unlinkSync(lockPath);
+    console.warn(`[git] lock huérfano eliminado: ${lockPath}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function git(args: string[], cwd: string): { ok: boolean; stdout: string; stderr: string } {
   // Inyectamos las env vars de GitHub configuradas en Eco (GH_TOKEN, identity)
   // a TODO spawn de git. Si no hay credenciales, githubEnvOverrides() retorna
   // {} y se ignora — el flow normal con git config global sigue funcionando.
-  const r = spawnSync('git', args, {
-    cwd,
-    timeout: GIT_TIMEOUT,
-    encoding: 'utf-8',
-    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
-  });
-  return {
-    ok: r.status === 0,
-    stdout: (r.stdout ?? '').toString(),
-    stderr: (r.stderr ?? '').toString(),
-  };
+  for (let attempt = 0; ; attempt++) {
+    const r = spawnSync('git', args, {
+      cwd,
+      timeout: GIT_TIMEOUT,
+      encoding: 'utf-8',
+      env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', ...githubEnvOverrides() }),
+    });
+    const out = {
+      ok: r.status === 0,
+      stdout: (r.stdout ?? '').toString(),
+      stderr: (r.stderr ?? '').toString(),
+    };
+    if (out.ok || attempt >= LOCK_RETRIES || !isLockContention(out.stderr)) return out;
+    if (clearStaleLock(out.stderr)) continue;
+    sleepSync(LOCK_WAIT_MS * (attempt + 1));
+  }
 }
 
 
