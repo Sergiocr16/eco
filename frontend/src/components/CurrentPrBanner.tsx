@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
-import { Glass } from '@/design/primitives';
+import { Glass, scrimStyle, dialogSurface } from '@/design/primitives';
 import {
   IconBranch, IconCheck, IconX, IconAlert, IconExt, IconChevD,
 } from '@/design/icons';
@@ -564,7 +564,7 @@ function ConfirmMergeDialog({
       transition={{ duration: 0.15 }}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+        ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
       }}
@@ -575,11 +575,9 @@ function ConfirmMergeDialog({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(480px, 100%)',
-          background: t.bg1,
-          border: `1px solid ${t.glassBorder}`,
+          ...dialogSurface(t),
           borderRadius: 16,
           padding: 20,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
         }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
           {tr('prs.banner.confirm_merge.title', { n: pr.number })}
@@ -632,7 +630,7 @@ function ConfirmReadyDialog({
       transition={{ duration: 0.15 }}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+        ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
       }}
@@ -643,11 +641,9 @@ function ConfirmReadyDialog({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(480px, 100%)',
-          background: t.bg1,
-          border: `1px solid ${t.glassBorder}`,
+          ...dialogSurface(t),
           borderRadius: 16,
           padding: 20,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
         }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
           {tr('prs.banner.confirm_ready.title', { n: pr.number })}
@@ -702,7 +698,7 @@ function ConfirmCloseDialog({
       transition={{ duration: 0.15 }}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+        ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
       }}
@@ -713,11 +709,9 @@ function ConfirmCloseDialog({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(480px, 100%)',
-          background: t.bg1,
-          border: `1px solid ${t.glassBorder}`,
+          ...dialogSurface(t),
           borderRadius: 16,
           padding: 20,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
         }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
           {tr('prs.banner.confirm_close.title', { n: pr.number })}

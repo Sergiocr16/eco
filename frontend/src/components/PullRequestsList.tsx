@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
-import { Glass } from '@/design/primitives';
+import { Glass, scrimStyle, dialogSurface } from '@/design/primitives';
 import {
   IconBranch, IconChevR, IconChevD, IconCheck, IconX,
   IconAlert, IconResume, IconExt, IconUser,
@@ -388,7 +388,7 @@ function CheckoutConfirmDialog({
       transition={{ duration: 0.15 }}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+        ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
       }}
@@ -399,11 +399,9 @@ function CheckoutConfirmDialog({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(520px, 100%)',
-          background: t.bg1,
-          border: `1px solid ${t.glassBorder}`,
+          ...dialogSurface(t),
           borderRadius: 16,
           padding: 20,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
         }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,

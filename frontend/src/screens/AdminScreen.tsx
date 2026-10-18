@@ -8,7 +8,7 @@ import { vw } from '@/lib/ui-zoom';
 
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn } from '@/design/primitives';
+import { Btn, scrimStyle, dialogSurface } from '@/design/primitives';
 import { useT } from '@/hooks/useI18n';
 import { useAdmin, type AdminUser, type Role, AUDIT_EVENT_TYPES } from '@/hooks/useAdmin';
 import { useFormatRelTime } from '@/components/GitPanel/shared';
@@ -82,8 +82,8 @@ function CredsDialog({ email, password, onClose }: { email: string; password: st
     try { await navigator.clipboard.writeText(`${email}\n${password}`); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch { /* noop */ }
   }
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: `min(460px, calc(${vw(100)} - 48px))`, background: t.bg2, border: `1px solid ${t.glassBorder}`, borderRadius: 16, padding: 24 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, ...scrimStyle(t), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: `min(460px, calc(${vw(100)} - 48px))`, ...dialogSurface(t), borderRadius: 16, padding: 24 }}>
         <h3 style={{ margin: '0 0 8px', color: t.text0, fontSize: 16 }}>{tr('admin.newuser.done.title')}</h3>
         <p style={{ margin: '0 0 14px', color: t.text2, fontSize: 12.5, lineHeight: 1.5 }}>{tr('admin.newuser.done.sub')}</p>
         <div style={{ padding: 14, borderRadius: 10, background: t.bg3, border: `1px solid ${t.glassBorder}`, fontFamily: t.fontMono, fontSize: 13, color: t.text0, lineHeight: 1.7 }}>

@@ -2,6 +2,7 @@ import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTokens, useTheme } from '@/design/theme';
 import { isLightTheme } from '@/design/tokens';
+import { scrimStyle, dialogSurface } from '@/design/primitives';
 import { IconX, IconDiff, IconSearch, IconCheck, IconTrash } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { useT } from '@/hooks/useI18n';
@@ -565,9 +566,7 @@ export function DiffViewer({ open, path, workspace, bubbleId, onClose, pathList,
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 160,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
+        ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
       }}>
@@ -575,8 +574,8 @@ export function DiffViewer({ open, path, workspace, bubbleId, onClose, pathList,
         onClick={(e) => e.stopPropagation()}
         style={{
           width: `min(1200px, ${vw(96)})`, height: vh(90),
-          background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
-          borderRadius: 18, boxShadow: t.shadowLg,
+          ...dialogSurface(t),
+          borderRadius: 18,
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
         <DiffPane

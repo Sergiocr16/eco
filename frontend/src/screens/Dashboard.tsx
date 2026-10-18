@@ -2935,6 +2935,15 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
           { fx: 0.74, fy: 0.22, r: 2.5, dur: 10, color: 'oklch(78% 0.15 220)' },
           { fx: 0.92, fy: 0.14, r: 2,   dur: 9,  color: 'oklch(72% 0.16 290)' },
           { fx: 0.05, fy: 0.55, r: 2,   dur: 10, color: 'oklch(78% 0.15 220)' },
+          { fx: 0.18, fy: 0.30, r: 1.5, dur: 8,  color: t.accent },
+          { fx: 0.33, fy: 0.52, r: 1.5, dur: 11, color: 'oklch(78% 0.15 220)' },
+          { fx: 0.48, fy: 0.28, r: 2,   dur: 9,  color: 'oklch(72% 0.16 290)' },
+          { fx: 0.62, fy: 0.66, r: 1.5, dur: 8,  color: t.accent },
+          { fx: 0.80, fy: 0.84, r: 2,   dur: 10, color: 'oklch(72% 0.16 290)' },
+          { fx: 0.88, fy: 0.48, r: 1.5, dur: 7,  color: 'oklch(78% 0.15 220)' },
+          { fx: 0.96, fy: 0.72, r: 2,   dur: 11, color: t.accent },
+          { fx: 0.14, fy: 0.94, r: 1.5, dur: 9,  color: t.accent },
+          { fx: 0.68, fy: 0.40, r: 1.5, dur: 12, color: 'oklch(78% 0.15 220)' },
         ].map((p, i) => {
           const x = p.fx * W;
           const y = p.fy * H;

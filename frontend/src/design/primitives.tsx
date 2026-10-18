@@ -67,6 +67,34 @@ export function glassEffect(
   };
 }
 
+// Velo detrás de un diálogo modal. El blur es lo que hace que el panel se lea
+// como material y no como una lámina de color: sin él, el texto de la pantalla
+// de fondo atraviesa nítido cualquier fondo translúcido.
+export function scrimStyle(t: Tokens): CSSProperties {
+  return {
+    background: t.scrimBg ?? 'rgba(0,0,0,0.45)',
+    backdropFilter: 'blur(14px) saturate(120%)',
+    WebkitBackdropFilter: 'blur(14px) saturate(120%)',
+  };
+}
+
+// Panel de un diálogo modal: cristal denso (dialogBg, más opaco que glassBg)
+// con blur fuerte y el filo iluminado arriba. Pasá `border` para los diálogos
+// que marcan intención con color (acento / err); el default es el filo neutro.
+export function dialogSurface(t: Tokens, opts: { border?: string } = {}): CSSProperties {
+  return {
+    background: t.dialogBg ?? t.bg1,
+    backdropFilter: 'blur(40px) saturate(180%)',
+    WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+    border: `1px solid ${opts.border ?? t.glassBorderHi}`,
+    boxShadow: [
+      'inset 0 1px 0 rgba(255,255,255,0.10)',
+      'inset 0 0 0 0.5px rgba(255,255,255,0.03)',
+      t.shadowLg,
+    ].join(', '),
+  };
+}
+
 export type BtnKind = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type BtnSize = 'sm' | 'md' | 'lg';
 

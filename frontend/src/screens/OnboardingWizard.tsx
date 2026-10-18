@@ -2,6 +2,7 @@ import { vh } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useState } from 'react';
 import { useTokens, useTheme } from '@/design/theme';
 import { ACCENT_HUES } from '@/design/tokens';
+import { scrimStyle, dialogSurface } from '@/design/primitives';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { useApiKey } from '@/hooks/useApiKey';
 import { useGithubCredentials } from '@/hooks/useGithubCredentials';
@@ -62,18 +63,15 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(0,0,0,0.65)',
-      backdropFilter: 'blur(8px)',
+      ...scrimStyle(t),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: 24,
     }}>
       <div style={{
         width: '100%', maxWidth: 640,
         maxHeight: `calc(${vh(100)} - 48px)`,
-        background: t.bg1,
-        border: `1px solid ${t.glassBorder}`,
+        ...dialogSurface(t),
         borderRadius: 18,
-        boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSPropertie
 import { useTheme, useTokens } from '@/design/theme';
 import { ACCENT_HUES, THEME_VARIANTS, defaultHueForTheme } from '@/design/tokens';
 import {
-  Glass, Btn, StatusDot, SectionLabel, Toggle, fieldStyle,
+  Glass, Btn, StatusDot, SectionLabel, Toggle, fieldStyle, scrimStyle, dialogSurface,
 } from '@/design/primitives';
 import {
   IconSettings, IconKey, IconFolder, IconShield, IconLayers,
@@ -992,15 +992,14 @@ function SectionGithub() {
           aria-modal="true"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setRemoveConfirm(false); }}
           style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+            position: 'fixed', inset: 0, ...scrimStyle(t),
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
           }}
         >
           <div style={{
             maxWidth: 400, width: '90%', padding: 18,
-            background: t.windowBg, border: `1px solid ${t.glassBorder}`,
+            ...dialogSurface(t),
             borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
-            boxShadow: t.shadowLg,
           }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
               {tr('settings.github.remove_confirm_title')}

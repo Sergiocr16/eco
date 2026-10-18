@@ -38,6 +38,7 @@ import { useIsPhone } from './hooks/useMediaQuery';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { getSoloBubbleId } from './lib/solo';
 import { IconLock } from './design/icons';
+import { scrimStyle, dialogSurface } from './design/primitives';
 import { WindowZoomController } from './components/WindowZoomController';
 import { UpdateBanner } from './components/UpdateBanner';
 import { bubbleStreamHandlers } from './lib/bubble-socket';
@@ -881,9 +882,7 @@ function ConfirmCloseBubble({
       onClick={onCancel}
       style={{
         position: 'fixed', inset: 0, zIndex: 230,
-        background: 'rgba(0,0,0,0.55)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
+        ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
       }}>
@@ -891,8 +890,8 @@ function ConfirmCloseBubble({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(420px, 100%)',
-          background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
-          borderRadius: 18, boxShadow: t.shadowLg,
+          ...dialogSurface(t),
+          borderRadius: 18,
           padding: 24,
         }}>
         <h2 style={{

@@ -10,8 +10,11 @@ import { isMobileNow } from '@/hooks/useMediaQuery';
 // el indicador de home, y sumarle el inset de 20pt dejaba al dock flotando
 // sobre una banda muerta. En escritorio conserva el aire de dock de macOS.
 const DOCK_MARGIN = isMobileNow() ? 6 : 14;
-// Alto del dock + margen: lo que el shell reserva abajo (App.tsx).
-export const DOCK_RESERVED_BOTTOM = `${62 + DOCK_MARGIN}px`;
+// Alto del dock + margen: lo que el shell reserva abajo (App.tsx). El alto
+// real depende del tamaño de icono y de si hay etiquetas de grupo, así que el
+// dock lo mide y lo publica en `--eco-dock-h` (ver el ResizeObserver abajo);
+// el fallback solo cubre el primer frame antes de montar.
+export const DOCK_RESERVED_BOTTOM = `calc(var(--eco-dock-h, 62px) + ${DOCK_MARGIN}px)`;
 import { stateColor, type AgentState } from '@/design/tokens';
 import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
@@ -49,7 +52,7 @@ function saveOrder(ids: string[]) {
 // Se persiste en localStorage. Min 26 px (debajo de eso la inicial dentro
 // del icono se descalza visualmente respecto al SVG del Home), max 72 px.
 const SIZE_KEY = 'eco.dock.iconSize';
-const SIZE_MIN = 26;
+const SIZE_MIN = 20;
 const SIZE_MAX = 72;
 const SIZE_DEFAULT = 40;
 
@@ -58,7 +61,7 @@ function loadIconSize(): number {
     const v = parseInt(localStorage.getItem(SIZE_KEY) || '', 10);
     // Clampeamos al rango actual — si el user había guardado un valor
     // que después dejó de ser válido (p.ej. tenía 15 y subimos el min a
-    // 26), volvemos al closest válido en vez de saltar al default.
+    // 20), volvemos al closest válido en vez de saltar al default.
     if (Number.isFinite(v)) return Math.max(SIZE_MIN, Math.min(SIZE_MAX, v));
     return SIZE_DEFAULT;
   } catch { return SIZE_DEFAULT; }
@@ -75,6 +78,20 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
   useEffect(() => {
     try { localStorage.setItem(SIZE_KEY, String(iconSize)); } catch { /* noop */ }
   }, [iconSize]);
+
+  // offsetHeight va en px CSS del documento, igual que los estilos que leen
+  // la variable: no hay que dividir por cssZoom().
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const publish = () => root.style.setProperty('--eco-dock-h', `${el.offsetHeight}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => { ro.disconnect(); root.style.removeProperty('--eco-dock-h'); };
+  }, []);
   // Mostramos el dock si hay agentes O si hay home button (para navegar
   // siempre desde cualquier vista).
   if (bubbles.length === 0 && !onGoHome) return null;
@@ -198,7 +215,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
         pointerEvents: 'none',
         zIndex: 80,
       }}>
-      <div style={{
+      <div ref={containerRef} style={{
         pointerEvents: 'auto',
         position: 'relative',
         display: 'flex',

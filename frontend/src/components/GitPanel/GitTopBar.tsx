@@ -2,6 +2,7 @@ import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTokens } from '@/design/theme';
+import { scrimStyle, dialogSurface } from '@/design/primitives';
 import { IconBranch, IconMore, IconResume, IconGlobe, IconEdit, IconTrash, IconCheck, IconSearch, IconAgent } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
@@ -489,8 +490,8 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
       <div ref={ref} onClick={(e) => e.stopPropagation()} style={{
         position: 'absolute', top: 100, left: '50%', transform: 'translateX(-50%)',
         width: 460, maxWidth: vw(92), maxHeight: vh(70),
-        background: t.bg1, border: `1px solid ${t.glassBorder}`,
-        borderRadius: 12, boxShadow: `0 16px 48px rgba(0,0,0,0.4)`,
+        ...dialogSurface(t),
+        borderRadius: 12,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Buscador */}
@@ -636,12 +637,12 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
   return createPortal(
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0,0,0,0.5)',
+      ...scrimStyle(t),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 420, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        background: t.bg1, border: `1px solid ${t.glassBorder}`,
+        ...dialogSurface(t),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('git.topbar.rename.title')}</div>
@@ -730,12 +731,12 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
   return createPortal(
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0,0,0,0.5)',
+      ...scrimStyle(t),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        background: t.bg1, border: `1px solid ${t.glassBorder}`,
+        ...dialogSurface(t),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('git.topbar.merge.title')}</div>
