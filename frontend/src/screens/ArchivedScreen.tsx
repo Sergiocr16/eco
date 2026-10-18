@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
 import { IconArchive, IconResume, IconTrash, IconX } from '@/design/icons';
-import { AgentGlyph, bubbleLetter } from '@/design/primitives';
+import { AgentGlyph, bubbleLetter, scrimStyle, dialogSurface } from '@/design/primitives';
 import type { Bubble } from '@/lib/types';
 
 type Props = {
@@ -196,17 +196,14 @@ function ConfirmDeleteDialog({ bubble, onCancel, onConfirm }: {
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
       style={{
         position: 'fixed', inset: 0, zIndex: 230,
-        background: 'rgba(0,0,0,0.55)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
+        ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >
       <div style={{
         maxWidth: 440, width: '90%', padding: 22,
-        background: t.windowBg, border: `1px solid ${t.glassBorder}`,
+        ...dialogSurface(t),
         borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
-        boxShadow: t.shadowLg,
       }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,

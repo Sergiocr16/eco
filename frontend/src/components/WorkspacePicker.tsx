@@ -1,7 +1,7 @@
 import { vh } from '@/lib/ui-zoom';
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn, Glass } from '@/design/primitives';
+import { Btn, Glass, scrimStyle, dialogSurface } from '@/design/primitives';
 import { IconFolder, IconFolderOpen, IconX, IconCheck } from '@/design/icons';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useT } from '@/hooks/useI18n';
@@ -81,9 +81,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 170,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
+        ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
       }}>
@@ -91,8 +89,8 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(540px, 100%)', maxHeight: vh(80),
-          background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
-          borderRadius: 18, boxShadow: t.shadowLg,
+          ...dialogSurface(t),
+          borderRadius: 18,
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
         <div style={{

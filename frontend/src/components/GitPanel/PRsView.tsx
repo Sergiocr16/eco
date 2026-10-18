@@ -1,7 +1,7 @@
 import { vw } from '@/lib/ui-zoom';
 import { useCallback, useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn } from '@/design/primitives';
+import { Btn, scrimStyle, dialogSurface } from '@/design/primitives';
 import { IconBranch, IconExt, IconUser, IconCheck, IconX, IconResume } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit, on as ecoOn } from '@/lib/eco-bus';
@@ -636,12 +636,12 @@ function MergeConfirm({
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0,0,0,0.5)',
+      ...scrimStyle(t),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 520, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        background: t.bg1, border: `1px solid ${t.accent}`,
+        ...dialogSurface(t, { border: t.accent }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
@@ -713,12 +713,12 @@ function ReadyConfirm({
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0,0,0,0.5)',
+      ...scrimStyle(t),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        background: t.bg1, border: `1px solid ${t.accent}`,
+        ...dialogSurface(t, { border: t.accent }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
@@ -766,12 +766,12 @@ function CloseConfirm({
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0,0,0,0.5)',
+      ...scrimStyle(t),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        background: t.bg1, border: `1px solid ${t.err}`,
+        ...dialogSurface(t, { border: t.err }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.err }}>

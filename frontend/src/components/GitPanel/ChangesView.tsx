@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn } from '@/design/primitives';
+import { Btn, scrimStyle, dialogSurface } from '@/design/primitives';
 import { IconCheck, IconFile, IconFolderOpen, IconTrash } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
@@ -249,16 +249,15 @@ function DiscardAllDialog({ count, onCancel, onConfirm }: {
       aria-modal="true"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+        position: 'fixed', inset: 0, ...scrimStyle(t),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 100,
       }}
     >
       <div style={{
         maxWidth: 440, width: '90%', padding: 18,
-        background: t.windowBg, border: `1px solid ${t.glassBorder}`,
+        ...dialogSurface(t),
         borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
-        boxShadow: t.shadowLg,
       }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
           {tr('git.changes.discard_all_title')}

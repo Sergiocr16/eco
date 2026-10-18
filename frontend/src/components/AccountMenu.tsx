@@ -2,7 +2,7 @@ import { vw } from '@/lib/ui-zoom';
 import { useEffect, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { IconLock, IconArrowR, IconKey } from '@/design/icons';
-import { Btn } from '@/design/primitives';
+import { Btn, scrimStyle, dialogSurface } from '@/design/primitives';
 import { useT } from '@/hooks/useI18n';
 import { useProfile } from '@/hooks/useProfile';
 import { useIsPhone } from '@/hooks/useMediaQuery';
@@ -197,8 +197,8 @@ function ChangePasswordDialog({ onChangePassword, onClose }: {
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: `min(380px, calc(${vw(100)} - 48px))`, background: t.bg2, border: `1px solid ${t.glassBorder}`, borderRadius: 16, padding: 24 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, ...scrimStyle(t), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: `min(380px, calc(${vw(100)} - 48px))`, ...dialogSurface(t), borderRadius: 16, padding: 24 }}>
         <h3 style={{ margin: '0 0 14px', color: t.text0, fontSize: 16 }}>{tr('account.password')}</h3>
         {done ? (
           <>

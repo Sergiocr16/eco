@@ -46,6 +46,14 @@ export type Tokens = {
   // (`backgroundImage`). windowBg sigue siendo un color sólido porque lo usan
   // bordes y el meta theme-color. Solo los temas glass lo definen.
   windowBgImage?: string;
+  // Superficie de los diálogos modales. En los temas glass bg1 es translúcido
+  // (55%) y un panel plano con ese fondo deja leer lo que hay detrás; esta
+  // capa es más densa y va siempre con backdrop blur (ver dialogSurface).
+  // Los temas sólidos la omiten y caen a bg1.
+  dialogBg?: string;
+  // Velo detrás de los diálogos. Los claros lo bajan: un negro al 45% sobre un
+  // fondo blanco se ve como apagón, no como foco. Ausente → rgba(0,0,0,0.45).
+  scrimBg?: string;
   windowBorder: string;
   desktopBg: string;
   fontSans: string;
@@ -97,6 +105,7 @@ const DARK_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFai
 const LIGHT_BASE: Omit<Tokens, 'accent' | 'accentDim' | 'accentGlow' | 'accentFaint'> = {
   bg0: '#ffffff',
   bg1: '#fbfbfd',
+  scrimBg: 'rgba(20, 24, 34, 0.30)',
   bg2: 'rgba(0,0,0,0.025)',
   bg3: 'rgba(0,0,0,0.05)',
   bg4: 'rgba(0,0,0,0.08)',
@@ -406,6 +415,7 @@ function darkGlass(opts: {
     bg3: 'rgba(255,255,255,0.08)',
     bg4: 'rgba(255,255,255,0.12)',
     glassBg: `rgba(${opts.rgb}, 0.42)`,
+    dialogBg: `rgba(${opts.rgb}, 0.78)`,
     glassBorder: 'rgba(255,255,255,0.12)',
     glassBorderHi: 'rgba(255,255,255,0.24)',
     glassInset: 'inset 0 1px 0 rgba(255,255,255,0.10)',
@@ -429,6 +439,7 @@ function lightGlass(opts: {
     bg3: 'rgba(255,255,255,0.65)',
     bg4: 'rgba(255,255,255,0.85)',
     glassBg: 'rgba(255,255,255,0.48)',
+    dialogBg: 'rgba(255,255,255,0.78)',
     glassBorder: 'rgba(255,255,255,0.65)',
     glassBorderHi: 'rgba(255,255,255,0.95)',
     glassInset: 'inset 0 1px 0 rgba(255,255,255,0.9)',
@@ -446,9 +457,9 @@ const AURORA_BASE = darkGlass({
   bg: '#0b1220', rgb: '11, 18, 32',
   text: ['#e6f1ff', '#aac4e0', '#7d97b8', '#50688a'],
   image: [
-    'radial-gradient(900px 600px at 12% 8%, rgba(45,212,191,0.26), transparent 62%)',
-    'radial-gradient(1000px 700px at 88% 18%, rgba(139,92,246,0.24), transparent 62%)',
-    'radial-gradient(800px 600px at 55% 100%, rgba(52,211,153,0.16), transparent 62%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(45,212,191,0.30), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(139,92,246,0.30), transparent 68%)',
+    'linear-gradient(155deg, rgba(45,212,191,0.07) 0%, transparent 48%, rgba(139,92,246,0.10) 100%)',
   ].join(', '),
 });
 
@@ -457,9 +468,9 @@ const NEBULA_BASE = darkGlass({
   bg: '#140b22', rgb: '20, 11, 34',
   text: ['#f3e8ff', '#cbb6e8', '#9a82bd', '#67558a'],
   image: [
-    'radial-gradient(900px 650px at 85% 10%, rgba(217,70,239,0.26), transparent 62%)',
-    'radial-gradient(900px 700px at 10% 35%, rgba(99,102,241,0.26), transparent 62%)',
-    'radial-gradient(700px 600px at 60% 100%, rgba(244,114,182,0.16), transparent 62%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(99,102,241,0.32), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(217,70,239,0.28), transparent 68%)',
+    'linear-gradient(155deg, rgba(99,102,241,0.08) 0%, transparent 48%, rgba(244,114,182,0.10) 100%)',
   ].join(', '),
 });
 
@@ -468,9 +479,9 @@ const HORIZON_BASE = darkGlass({
   bg: '#1a0f1e', rgb: '26, 15, 30',
   text: ['#fff1ea', '#e8c4b8', '#b8928a', '#80625d'],
   image: [
-    'radial-gradient(1000px 650px at 10% 100%, rgba(251,146,60,0.28), transparent 62%)',
-    'radial-gradient(900px 650px at 50% 70%, rgba(236,72,153,0.20), transparent 62%)',
-    'radial-gradient(900px 600px at 90% 0%, rgba(124,58,237,0.22), transparent 62%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(124,58,237,0.28), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(251,146,60,0.30), transparent 68%)',
+    'linear-gradient(155deg, rgba(124,58,237,0.07) 0%, transparent 48%, rgba(236,72,153,0.12) 100%)',
   ].join(', '),
 });
 
@@ -479,9 +490,9 @@ const LAGOON_BASE = darkGlass({
   bg: '#06201f', rgb: '6, 32, 31',
   text: ['#e3fffb', '#a8dcd5', '#74aaa3', '#4b7a74'],
   image: [
-    'radial-gradient(900px 650px at 15% 15%, rgba(34,211,238,0.24), transparent 62%)',
-    'radial-gradient(900px 650px at 85% 85%, rgba(16,185,129,0.22), transparent 62%)',
-    'radial-gradient(700px 500px at 70% 10%, rgba(59,130,246,0.14), transparent 62%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(34,211,238,0.28), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(16,185,129,0.28), transparent 68%)',
+    'linear-gradient(155deg, rgba(59,130,246,0.06) 0%, transparent 48%, rgba(16,185,129,0.10) 100%)',
   ].join(', '),
 });
 
@@ -490,9 +501,9 @@ const OBSIDIAN_BASE = darkGlass({
   bg: '#09090b', rgb: '9, 9, 11',
   text: ['#f4f4f5', '#c4c4cc', '#8e8e99', '#5c5c66'],
   image: [
-    'radial-gradient(900px 600px at 0% 0%, rgba(255,255,255,0.09), transparent 60%)',
-    'radial-gradient(1000px 700px at 100% 100%, rgba(96,165,250,0.14), transparent 62%)',
-    'radial-gradient(600px 400px at 70% 20%, rgba(167,139,250,0.08), transparent 60%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(255,255,255,0.10), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(96,165,250,0.16), transparent 68%)',
+    'linear-gradient(155deg, rgba(255,255,255,0.03) 0%, transparent 48%, rgba(167,139,250,0.06) 100%)',
   ].join(', '),
 });
 
@@ -502,9 +513,9 @@ const HONEY_BASE = darkGlass({
   bg: '#282828', rgb: '40, 40, 40',
   text: ['#ebdbb2', '#d5c4a1', '#a89984', '#7c6f64'],
   image: [
-    'radial-gradient(900px 650px at 12% 12%, rgba(250,189,47,0.26), transparent 62%)',
-    'radial-gradient(900px 650px at 88% 80%, rgba(214,93,14,0.22), transparent 62%)',
-    'radial-gradient(700px 500px at 60% 0%, rgba(254,128,25,0.14), transparent 60%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(250,189,47,0.22), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(214,93,14,0.22), transparent 68%)',
+    'linear-gradient(155deg, rgba(250,189,47,0.05) 0%, transparent 48%, rgba(254,128,25,0.08) 100%)',
   ].join(', '),
 });
 
@@ -513,9 +524,10 @@ const FROST_BASE = lightGlass({
   bg: '#eef4fb',
   text: ['#0f1b2d', '#3b4d66', '#6b7d96', '#9aaabf'],
   image: [
-    'radial-gradient(900px 650px at 10% 10%, rgba(56,189,248,0.26), transparent 62%)',
-    'radial-gradient(900px 650px at 90% 30%, rgba(167,139,250,0.20), transparent 62%)',
-    'radial-gradient(800px 600px at 50% 100%, rgba(255,255,255,0.9), transparent 60%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(56,189,248,0.30), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(167,139,250,0.24), transparent 68%)',
+    'radial-gradient(900px 600px at 50% 110%, rgba(255,255,255,0.9), transparent 60%)',
+    'linear-gradient(155deg, rgba(56,189,248,0.06) 0%, transparent 48%, rgba(167,139,250,0.08) 100%)',
   ].join(', '),
 });
 
@@ -524,10 +536,9 @@ const PRISM_BASE = lightGlass({
   bg: '#f7f5fc',
   text: ['#1a1526', '#463d5c', '#75698c', '#a59cb8'],
   image: [
-    'radial-gradient(800px 600px at 5% 20%, rgba(244,114,182,0.22), transparent 62%)',
-    'radial-gradient(800px 600px at 95% 10%, rgba(250,204,21,0.18), transparent 62%)',
-    'radial-gradient(900px 650px at 60% 100%, rgba(34,211,238,0.20), transparent 62%)',
-    'radial-gradient(600px 500px at 40% 40%, rgba(167,139,250,0.14), transparent 60%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(244,114,182,0.26), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(34,211,238,0.26), transparent 68%)',
+    'linear-gradient(155deg, rgba(250,204,21,0.08) 0%, transparent 48%, rgba(167,139,250,0.10) 100%)',
   ].join(', '),
 });
 
@@ -536,9 +547,9 @@ const PEACH_BASE = lightGlass({
   bg: '#fdf3ec',
   text: ['#2a1a12', '#5c4234', '#8c6e5e', '#b89c8e'],
   image: [
-    'radial-gradient(900px 650px at 10% 90%, rgba(251,146,60,0.22), transparent 62%)',
-    'radial-gradient(900px 650px at 90% 10%, rgba(251,113,133,0.18), transparent 62%)',
-    'radial-gradient(700px 500px at 50% 0%, rgba(253,224,71,0.16), transparent 60%)',
+    'radial-gradient(1300px 900px at -8% -12%, rgba(251,113,133,0.22), transparent 68%)',
+    'radial-gradient(1300px 900px at 108% 112%, rgba(251,146,60,0.26), transparent 68%)',
+    'linear-gradient(155deg, rgba(253,224,71,0.08) 0%, transparent 48%, rgba(251,146,60,0.06) 100%)',
   ].join(', '),
 });
 

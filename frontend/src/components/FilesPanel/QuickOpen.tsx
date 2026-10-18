@@ -2,6 +2,7 @@ import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
+import { scrimStyle, dialogSurface } from '@/design/primitives';
 import { useT } from '@/hooks/useI18n';
 import { FileTypeIcon } from './file-icon';
 import type { TreeEntry } from './types';
@@ -87,15 +88,15 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
       aria-modal="true"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+        position: 'fixed', inset: 0, ...scrimStyle(t),
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         paddingTop: vh(15), zIndex: 100,
       }}
     >
       <div style={{
         width: `min(560px, ${vw(90)})`,
-        background: t.windowBg, border: `1px solid ${t.glassBorder}`,
-        borderRadius: t.r3, boxShadow: t.shadowLg,
+        ...dialogSurface(t),
+        borderRadius: t.r3,
         display: 'flex', flexDirection: 'column', maxHeight: vh(70), overflow: 'hidden',
       }}>
         <input

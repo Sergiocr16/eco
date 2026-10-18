@@ -1,7 +1,7 @@
 import { vw } from '@/lib/ui-zoom';
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn } from '@/design/primitives';
+import { Btn, scrimStyle, dialogSurface } from '@/design/primitives';
 import { IconCheck, IconX, IconResume, IconCopy } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
@@ -349,12 +349,12 @@ function CherryPickConfirm({
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0,0,0,0.5)',
+      ...scrimStyle(t),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        background: t.bg1, border: `1px solid ${t.accent}`,
+        ...dialogSurface(t, { border: t.accent }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
@@ -416,12 +416,12 @@ function ResetHardConfirm({
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0,0,0,0.5)',
+      ...scrimStyle(t),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 460, maxWidth: vw(90), padding: 20, borderRadius: 12,
-        background: t.bg1, border: `1px solid ${t.err}`,
+        ...dialogSurface(t, { border: t.err }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.err }}>
