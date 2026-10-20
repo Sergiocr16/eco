@@ -59,6 +59,11 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
 
   const bubble = bubbles.bubbles.find((b) => b.id === bubbleId) ?? null;
 
+  // Abrir la ventana solo cuenta como "abrir la burbuja" para el orden del
+  // Dashboard (lastOpenedAt), igual que entrar al detalle en la principal.
+  const focusBubble = bubbles.focusBubble;
+  useEffect(() => { focusBubble(bubbleId); }, [bubbleId, focusBubble]);
+
   // La config por workspace (comandos de server + base branches) la hidrata el
   // App principal al loguear; la ventana "solo bubble" tiene su propio árbol, así
   // que la hidratamos también acá — si no, el ServerPanel cree que el workspace

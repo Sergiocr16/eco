@@ -504,7 +504,7 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
 
   const focusBubble = useCallback((id: string) => {
     setActiveBubbleId(id);
-    setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, unread: 0 } : b));
+    setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, unread: 0, lastOpenedAt: Date.now() } : b));
   }, []);
 
   const renameBubble = useCallback((id: string, title: string) => {
