@@ -153,6 +153,10 @@ module.exports = {
     // `node electron/scripts/make-win-icon.cjs`.
     icon: 'build/icon.ico',
     target: [{ target: 'nsis', arch: ['x64'] }],
+    // Sin espacios: el workflow sube el archivo con `gh release upload`, que usa
+    // el nombre tal cual como asset, y latest.yml tiene que apuntar a ese mismo
+    // nombre (el uploader de electron-builder los convertía a guiones solo).
+    artifactName: 'Eco-Setup-${version}.${ext}',
   },
   nsis: {
     oneClick: false,
