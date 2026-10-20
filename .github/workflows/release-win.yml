@@ -7,6 +7,15 @@ name: release-win
 #
 # Requisito: la versión en electron/package.json debe coincidir con el tag
 # (electron-updater compara app.getVersion() contra latest.yml).
+#
+# La subida NO la hace electron-builder (`--publish always`): en v1.0.15 su
+# uploader arrancó dos flujos de publish para el mismo release, el segundo vio
+# "already exists", borró el .exe y latest.yml recién subidos y el proceso
+# terminó con exit 0 sin volver a subirlos. Quedó un release "Latest" con solo
+# el .blockmap y ningún error en CI. Acá electron-builder solo construye (y
+# genera latest.yml porque hay un `publish` provider en la config) y la subida
+# la hace `gh release upload`, que falla fuerte; el último paso verifica que
+# los tres assets estén en estado `uploaded`.
 
 on:
   push:
@@ -33,10 +42,8 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Build + publish (NSIS + latest.yml)
+      - name: Build (NSIS + latest.yml)
         env:
-          # electron-builder lo usa para crear el Release y subir los artefactos.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Config web de Firebase. Se hornea en el bundle en build-time: el .exe
           # llega a una máquina sin `.env.local`, así que si falta acá, el usuario
           # ve "Firebase no está configurado" y no puede loguearse. Desde v1.0.5
@@ -52,4 +59,41 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-        run: npm run release:win
+        run: npm run dist:win
+
+      - name: Publish to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./electron/package.json').version")
+          TAG="v$VERSION"
+          cd release
+          ls -la
+          test -f "Eco-Setup-$VERSION.exe"
+          test -f "Eco-Setup-$VERSION.exe.blockmap"
+          # latest.yml debe apuntar al nombre exacto del asset que subimos.
+          grep -q "Eco-Setup-$VERSION.exe" latest.yml
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "Eco $VERSION" --latest
+          fi
+          gh release upload "$TAG" "Eco-Setup-$VERSION.exe" "Eco-Setup-$VERSION.exe.blockmap" latest.yml \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Verify published assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./electron/package.json').version")
+          TAG="v$VERSION"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            --jq '.assets[] | select(.state == "uploaded") | .name' > uploaded.txt
+          cat uploaded.txt
+          for f in "Eco-Setup-$VERSION.exe" "Eco-Setup-$VERSION.exe.blockmap" latest.yml; do
+            grep -qx "$f" uploaded.txt || { echo "::error::Falta el asset $f en el release $TAG"; exit 1; }
+          done
+          DRAFT=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.draft')
+          [ "$DRAFT" = "false" ] || { echo "::error::El release $TAG quedó en borrador"; exit 1; }
