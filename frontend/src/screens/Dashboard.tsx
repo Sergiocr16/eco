@@ -1729,7 +1729,8 @@ function GridView({
   const t = useTokens();
   const tr = useT();
   const activeIds = useActiveBubbleIds(bubbles);
-  const ordered = activeFirst(bubbles, activeIds);
+  const workingIds = useWorkingBubbleIds(bubbles);
+  const ordered = activeFirst(bubbles, workingIds, activeIds);
 
   // Modo admin "todos": una sección por dueño. Modo normal: por workspace (si 2+).
   const groups = (() => {
@@ -1848,13 +1849,26 @@ function GridView({
   );
 }
 
-// Activas primero (mismo criterio que el card "Agentes en vivo"), estable
-// para el resto: lo que estaba trabajando sube, el orden de entrada se respeta.
-function activeFirst(items: Bubble[], activeIds: Set<string>): Bubble[] {
+// Orden: (0) el agente está trabajando ahora (Claude procesando o PTY con
+// output), (1) actividad secundaria — dev server, browser, cambios sin
+// commitear (el criterio del card "Agentes en vivo"), (2) el resto. Estable
+// dentro de cada nivel. Sin el nivel 0, una burbuja ejecutando empataba con
+// cuatro idle que solo tenían archivos modificados y quedaba abajo.
+function activeFirst(items: Bubble[], workingIds: Set<string>, activeIds: Set<string>): Bubble[] {
   return items
-    .map((b, i) => ({ b, i, rank: activeIds.has(b.id) ? 0 : 1 }))
+    .map((b, i) => ({ b, i, rank: workingIds.has(b.id) ? 0 : activeIds.has(b.id) ? 1 : 2 }))
     .sort((x, y) => x.rank - y.rank || x.i - y.i)
     .map((x) => x.b);
+}
+
+const WORKING_STATES = new Set<string>(['thinking', 'executing', 'running', 'pending']);
+function useWorkingBubbleIds(bubbles: Bubble[]): Set<string> {
+  const busyPty = useBusyBubbleIds();
+  const set = new Set<string>();
+  for (const b of bubbles) {
+    if (busyPty.has(b.id) || WORKING_STATES.has(b.status ?? '')) set.add(b.id);
+  }
+  return set;
 }
 
 // ──────────────────── Vista Kanban ─────────────────────────────────────────
@@ -1881,6 +1895,7 @@ function KanbanView({
 
   const { categories } = useCategories();
   const activeIds = useActiveBubbleIds(bubbles);
+  const workingIds = useWorkingBubbleIds(bubbles);
 
   type ColumnDef = { id: string; label: string; color: string; items: Bubble[] };
   const known = new Set(categories.map((c) => c.id));
@@ -1888,13 +1903,13 @@ function KanbanView({
     id: c.id,
     label: c.name,
     color: c.color,
-    items: activeFirst(bubbles.filter((b) => (b.categoryIds ?? []).includes(c.id)), activeIds),
+    items: activeFirst(bubbles.filter((b) => (b.categoryIds ?? []).includes(c.id)), workingIds, activeIds),
   }));
   // Sin categoría conocida (incluye categorías de otros usuarios en la vista
   // admin "todos", cuyos ids no resuelven acá).
   const loose = bubbles.filter((b) => !(b.categoryIds ?? []).some((id) => known.has(id)));
   const uncategorized: ColumnDef = {
-    id: '__none__', label: tr('dash.col.uncategorized'), color: t.text2, items: activeFirst(loose, activeIds),
+    id: '__none__', label: tr('dash.col.uncategorized'), color: t.text2, items: activeFirst(loose, workingIds, activeIds),
   };
   columns.push(uncategorized);
   // Solo tableros con agentes; sin ninguno, queda el de "Sin categoría" vacío.
@@ -1909,7 +1924,7 @@ function KanbanView({
       {nameDialog}
       {visibleCols.map((col) => {
         const items = col.items;
-        const hasActive = items.some((b) => activeIds.has(b.id));
+        const hasActive = items.some((b) => workingIds.has(b.id));
         return (
           <motion.div
             key={col.id}
