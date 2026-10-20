@@ -898,7 +898,7 @@ function getHome(): string {
 }
 
 // Hook + modal compartido para naming de agente nuevo. Lo usan el botón
-// del header del Dashboard y la columna idle del Kanban.
+// del header del Dashboard y la columna "Sin categoría" del Kanban.
 function useNameAgentDialog(
   onCreate: (title?: string, workspace?: string, baseBranch?: string) => void,
   workspaces: string[],
@@ -1728,11 +1728,13 @@ function GridView({
 }) {
   const t = useTokens();
   const tr = useT();
+  const activeIds = useActiveBubbleIds(bubbles);
+  const ordered = activeFirst(bubbles, activeIds);
 
   // Modo admin "todos": una sección por dueño. Modo normal: por workspace (si 2+).
   const groups = (() => {
     const map = new Map<string, Bubble[]>();
-    for (const b of bubbles) {
+    for (const b of ordered) {
       const key = groupByOwner
         ? (b.ownerId || '__none__')
         : (b.workspace || '__none__');
@@ -1807,7 +1809,7 @@ function GridView({
     return (
       <div style={gridStyle}>
         <AnimatePresence initial={false} mode="popLayout">
-          {bubbles.map(renderCard)}
+          {ordered.map(renderCard)}
         </AnimatePresence>
         {newCard}
       </div>
@@ -1846,9 +1848,19 @@ function GridView({
   );
 }
 
+// Activas primero (mismo criterio que el card "Agentes en vivo"), estable
+// para el resto: lo que estaba trabajando sube, el orden de entrada se respeta.
+function activeFirst(items: Bubble[], activeIds: Set<string>): Bubble[] {
+  return items
+    .map((b, i) => ({ b, i, rank: activeIds.has(b.id) ? 0 : 1 }))
+    .sort((x, y) => x.rank - y.rank || x.i - y.i)
+    .map((x) => x.b);
+}
+
 // ──────────────────── Vista Kanban ─────────────────────────────────────────
-// Columnas por estado. Cada agente es una card chiquita arrastrable visualmente
-// (drag real es feature aparte — por ahora click para abrir).
+// Un tablero por categoría (+ "Sin categoría"). Un agente con varias
+// categorías aparece en cada una: son etiquetas, no estados. Dentro de cada
+// columna, las activas van primero. Click para abrir (sin drag real).
 function KanbanView({
   bubbles, onOpenAgent, onCreateAgent, workspaces,
   ownerNames, readOnlyOwnerId = null,
@@ -1867,65 +1879,27 @@ function KanbanView({
   const ownerLabelFor = (b: Bubble): string | undefined =>
     ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
 
-  type ColumnDef = {
-    id: string;
-    label: string;
-    color: string;
-    match: (b: Bubble) => boolean;
+  const { categories } = useCategories();
+  const activeIds = useActiveBubbleIds(bubbles);
+
+  type ColumnDef = { id: string; label: string; color: string; items: Bubble[] };
+  const known = new Set(categories.map((c) => c.id));
+  const columns: ColumnDef[] = categories.map((c) => ({
+    id: c.id,
+    label: c.name,
+    color: c.color,
+    items: activeFirst(bubbles.filter((b) => (b.categoryIds ?? []).includes(c.id)), activeIds),
+  }));
+  // Sin categoría conocida (incluye categorías de otros usuarios en la vista
+  // admin "todos", cuyos ids no resuelven acá).
+  const loose = bubbles.filter((b) => !(b.categoryIds ?? []).some((id) => known.has(id)));
+  const uncategorized: ColumnDef = {
+    id: '__none__', label: tr('dash.col.uncategorized'), color: t.text2, items: activeFirst(loose, activeIds),
   };
-
-  const columns: ColumnDef[] = [
-    {
-      id: 'active',
-      label: tr('dash.col.active'),
-      color: t.accent,
-      match: (b) =>
-        b.status === 'thinking' || b.status === 'executing' || b.status === 'running',
-    },
-    {
-      id: 'waiting',
-      label: tr('dash.col.waiting'),
-      color: t.warn,
-      match: (b) => b.status === 'waiting' || b.status === 'paused' || b.status === 'pending',
-    },
-    {
-      id: 'idle',
-      label: tr('dash.col.idle'),
-      color: t.text2,
-      match: (b) =>
-        (b.status === 'idle' || !b.status) &&
-        !(b.ptyOpen) /* idle puros, sin shell abierto */,
-    },
-    {
-      id: 'shell',
-      label: tr('dash.col.shell'),
-      color: t.busy,
-      match: (b) => (b.status === 'idle' || !b.status) && !!b.ptyOpen,
-    },
-    {
-      id: 'done',
-      label: tr('dash.col.done'),
-      color: t.ok,
-      match: (b) => b.status === 'done',
-    },
-    {
-      id: 'error',
-      label: tr('dash.col.error'),
-      color: t.err,
-      match: (b) => b.status === 'error',
-    },
-  ];
-
-  // Asignamos cada agente a la primera columna que matchee.
-  const byColumn = new Map<string, Bubble[]>();
-  for (const col of columns) byColumn.set(col.id, []);
-  for (const b of bubbles) {
-    for (const col of columns) {
-      if (col.match(b)) { byColumn.get(col.id)!.push(b); break; }
-    }
-  }
-  // Mostramos solo columnas con al menos un agente, excepto Activos que siempre.
-  const visibleCols = columns.filter((c) => c.id === 'active' || (byColumn.get(c.id)?.length ?? 0) > 0);
+  columns.push(uncategorized);
+  // Solo tableros con agentes; sin ninguno, queda el de "Sin categoría" vacío.
+  const visibleCols = columns.filter((c) => c.items.length > 0);
+  if (visibleCols.length === 0) visibleCols.push(uncategorized);
 
   return (
     <div style={{
@@ -1934,7 +1908,8 @@ function KanbanView({
     }}>
       {nameDialog}
       {visibleCols.map((col) => {
-        const items = byColumn.get(col.id) ?? [];
+        const items = col.items;
+        const hasActive = items.some((b) => activeIds.has(b.id));
         return (
           <motion.div
             key={col.id}
@@ -1961,7 +1936,7 @@ function KanbanView({
             }}>
               <span style={{
                 width: 8, height: 8, borderRadius: '50%', background: col.color,
-                boxShadow: col.id === 'active' ? `0 0 6px ${col.color}` : 'none',
+                boxShadow: hasActive ? `0 0 6px ${col.color}` : 'none',
               }}/>
               <span style={{
                 fontFamily: t.fontSans, fontSize: 12.5, color: t.text0, fontWeight: 600,
@@ -1999,7 +1974,7 @@ function KanbanView({
                 }}>{tr('dash.empty.cell')}</div>
               )}
             </div>
-            {col.id === 'idle' && (
+            {col.id === '__none__' && (
               <button
                 type="button"
                 onClick={openNameDialog}

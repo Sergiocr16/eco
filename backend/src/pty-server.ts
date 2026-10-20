@@ -51,6 +51,7 @@ function scheduleAgentLaunch(session: PtySession): void {
   setTimeout(() => {
     if (session.exited) return;
     try { session.pty.write(`${command}\r`); } catch { /* noop */ }
+    session.launchedAt = Date.now();
   }, 350);
 }
 
@@ -93,6 +94,11 @@ type PtySession = {
   // BUSY_IDLE_MS sin output → idle, broadcast event para notificar al user.
   lastOutputAt: number;
   busy: boolean;
+  startedAt: number;
+  // Cuándo se escribió el comando del CLI (`claude`/`codex`) y si hubo output
+  // desde entonces — base de la detección de "CLI listo" tras un cold start.
+  launchedAt: number | null;
+  outputSinceLaunch: boolean;
 };
 
 // Key compuesto: `${bubbleId}:${ptyId}` — permite varios terminales por burbuja
@@ -129,6 +135,7 @@ function broadcastPtyBusy(bubbleId: string, busy: boolean) {
 
 function markBusy(s: PtySession) {
   s.lastOutputAt = Date.now();
+  if (s.launchedAt !== null) s.outputSinceLaunch = true;
   if (!s.busy) {
     s.busy = true;
     broadcastPtyBusy(s.bubbleId, true);
@@ -225,6 +232,7 @@ export function ensureBubblePty(
     pty, bubbleId, ptyId, agent, ownerId, cwd, buffer: '', exited: false,
     activeWs: null, clients: new Set(),
     lastOutputAt: Date.now(), busy: false,
+    startedAt: Date.now(), launchedAt: null, outputSinceLaunch: false,
   };
   sessions.set(key, session);
 
@@ -254,35 +262,162 @@ export function ensureBubblePty(
   return session;
 }
 
-// Spawnea (o reusa) el PTY del agente pedido y le inyecta `text` como input
-// del CLI. Si la sesión es fresca, espera el cold start para que zsh termine
-// de exec'ear el CLI y este imprima su prompt; sino, escribe casi inmediato.
-// Fire-and-forget — para el flujo de /bubble/create con initialPrompt.
-export function injectPromptToBubble(
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// Tope del cold start de un CLI de agente (zsh exec + init + primer dibujo).
+const READY_TIMEOUT_MS = 15_000;
+
+// Espera a que un PTY recién spawneado tenga el CLI listo para recibir input:
+// hubo output DESPUÉS de escribir el comando de arranque y luego BUSY_IDLE_MS
+// de silencio. La primera transición a idle no sirve sola: puede ser el prompt
+// de zsh antes de que el CLI empiece a dibujar. Con el tope vencido se escribe
+// igual (el CLI encola el input).
+async function waitForPtyReady(session: PtySession, timeoutMs = READY_TIMEOUT_MS): Promise<boolean> {
+  const t0 = Date.now();
+  if (!LAUNCH_COMMAND[session.agent] || process.env.ECO_PTY_AUTOCLAUDE === '0') {
+    await sleep(400);
+    return true;
+  }
+  while (Date.now() - t0 < timeoutMs) {
+    if (session.exited) return false;
+    if (session.outputSinceLaunch && !session.busy && Date.now() - session.lastOutputAt >= BUSY_IDLE_MS) return true;
+    await sleep(100);
+  }
+  return false;
+}
+
+export type InjectResult = {
+  spawned: boolean;
+  ptyId: string;
+  agentWasBusy: boolean;
+  readyAfterMs: number;
+  ready: boolean;
+};
+
+// Spawnea (o reusa) el PTY del agente pedido y le inyecta `text` como prompt.
+// El texto va envuelto en bracketed paste (`ESC[200~ … ESC[201~`), que es lo
+// mismo que hace el driver del propio Claude CLI: así un prompt multilínea
+// entra como UN mensaje (cada `\r` suelto submitearía una línea). El Enter va
+// en un write aparte con un gap para que no se pegue al paste.
+export async function injectPromptToBubble(
   bubbleId: string,
   ownerId: string | undefined,
   workspace: string,
   text: string,
   agent: AgentCli = 'claude',
-): void {
+): Promise<InjectResult> {
   const beforeKey = sessionKey(bubbleId, ptyIdForAgent(agent));
-  const wasExisting = !!sessions.get(beforeKey) && !sessions.get(beforeKey)!.exited;
+  const before = sessions.get(beforeKey);
+  const wasExisting = !!before && !before.exited;
   const session = ensureBubblePty(bubbleId, workspace, ownerId, agent);
-  // Cold start del CLI ~3-4 s desde el spawn (zsh exec + init del agente).
-  // Si la sesión ya existía, asumimos que el CLI está listo y vamos rápido.
-  const delay = wasExisting ? 200 : 5000;
-  setTimeout(() => {
-    if (session.exited) return;
-    // Texto y Enter en escrituras separadas con un gap. Si los mandamos en
-    // un solo chunk (`text\r`), claude CLI a veces interpreta el `\r` como
-    // newline dentro del input multilínea (estilo paste) y no submitea.
-    // Dos writes con delay → primer write = "typing", segundo = "Enter".
-    try { session.pty.write(text.replace(/\n/g, '\r')); } catch { /* noop */ }
-    setTimeout(() => {
-      if (session.exited) return;
-      try { session.pty.write('\r'); } catch { /* noop */ }
-    }, 250);
-  }, delay);
+  const t0 = Date.now();
+  let ready = true;
+  if (wasExisting) await sleep(200);
+  else ready = await waitForPtyReady(session);
+  const agentWasBusy = wasExisting && session.busy;
+  if (session.exited) {
+    return { spawned: !wasExisting, ptyId: session.ptyId, agentWasBusy, readyAfterMs: Date.now() - t0, ready: false };
+  }
+  const payload = session.agent === 'none'
+    ? text.replace(/\n/g, '\r')
+    : `\x1b[200~${text}\x1b[201~`;
+  try { session.pty.write(payload); } catch { /* noop */ }
+  await sleep(250);
+  if (!session.exited) { try { session.pty.write('\r'); } catch { /* noop */ } }
+  return { spawned: !wasExisting, ptyId: session.ptyId, agentWasBusy, readyAfterMs: Date.now() - t0, ready };
+}
+
+export type PtySessionInfo = {
+  ptyId: string;
+  agent: AgentCli;
+  busy: boolean;
+  idleForMs: number;
+  startedAt: number;
+  cwd: string;
+};
+
+export function listPtySessions(bubbleId: string): PtySessionInfo[] {
+  const now = Date.now();
+  const out: PtySessionInfo[] = [];
+  for (const s of sessions.values()) {
+    if (s.bubbleId !== bubbleId || s.exited) continue;
+    out.push({ ptyId: s.ptyId, agent: s.agent, busy: s.busy, idleForMs: now - s.lastOutputAt, startedAt: s.startedAt, cwd: s.cwd });
+  }
+  return out.sort((a, b) => a.ptyId.localeCompare(b.ptyId));
+}
+
+export function getPtySession(bubbleId: string, ptyId: string): PtySessionInfo | null {
+  const s = sessions.get(sessionKey(bubbleId, ptyId));
+  if (!s || s.exited) return null;
+  return { ptyId: s.ptyId, agent: s.agent, busy: s.busy, idleForMs: Date.now() - s.lastOutputAt, startedAt: s.startedAt, cwd: s.cwd };
+}
+
+// Últimos `maxBytes` del ring buffer crudo (con ANSI) de un terminal.
+export function getPtyTail(bubbleId: string, ptyId: string, maxBytes = 32 * 1024): string | null {
+  const s = sessions.get(sessionKey(bubbleId, ptyId));
+  if (!s) return null;
+  return s.buffer.slice(-maxBytes);
+}
+
+export function writeToPty(bubbleId: string, ptyId: string, data: string): boolean {
+  const s = sessions.get(sessionKey(bubbleId, ptyId));
+  if (!s || s.exited) return false;
+  try { s.pty.write(data); } catch { return false; }
+  return true;
+}
+
+// Teclas con nombre que un caller externo puede mandar al CLI (prompts de
+// permiso, cancelar, navegar opciones). Cualquier otro string es texto literal
+// seguido de Enter.
+const NAMED_KEYS: Record<string, string> = {
+  enter: '\r', esc: '\x1b', escape: '\x1b', up: '\x1b[A', down: '\x1b[B',
+  left: '\x1b[D', right: '\x1b[C', tab: '\t', ctrl_c: '\x03', ctrl_d: '\x04', backspace: '\x7f',
+};
+
+export async function sendKeysToPty(bubbleId: string, ptyId: string, keys: string[]): Promise<{ ok: boolean; sent: string[] }> {
+  const sent: string[] = [];
+  for (const key of keys) {
+    const named = NAMED_KEYS[key.toLowerCase()];
+    if (named !== undefined) {
+      if (!writeToPty(bubbleId, ptyId, named)) return { ok: false, sent };
+      sent.push(key.toLowerCase());
+    } else {
+      if (!writeToPty(bubbleId, ptyId, key)) return { ok: false, sent };
+      await sleep(200);
+      if (!writeToPty(bubbleId, ptyId, '\r')) return { ok: false, sent };
+      sent.push(`"${key}"+enter`);
+    }
+    await sleep(150);
+  }
+  return { ok: true, sent };
+}
+
+export type WaitIdleResult = { idle: boolean; busy: boolean; sawOutput: boolean; waitedMs: number; running: boolean };
+
+// Espera a que el terminal quede quieto (`settleMs` sin output). Con
+// `requireActivity`, primero exige ver output nuevo desde que empezó la espera:
+// tras un send, el idle previo al prompt no cuenta como "terminó".
+export async function waitForPtyIdle(
+  bubbleId: string,
+  ptyId: string,
+  opts: { timeoutMs: number; settleMs?: number; requireActivity?: boolean },
+): Promise<WaitIdleResult> {
+  const t0 = Date.now();
+  const settle = Math.max(BUSY_IDLE_MS, opts.settleMs ?? BUSY_IDLE_MS);
+  let sawOutput = false;
+  for (;;) {
+    const s = sessions.get(sessionKey(bubbleId, ptyId));
+    if (!s || s.exited) return { idle: true, busy: false, sawOutput, waitedMs: Date.now() - t0, running: false };
+    if (s.lastOutputAt >= t0) sawOutput = true;
+    const quiet = Date.now() - s.lastOutputAt >= settle;
+    if (quiet && (!opts.requireActivity || sawOutput)) {
+      return { idle: true, busy: s.busy, sawOutput, waitedMs: Date.now() - t0, running: true };
+    }
+    if (Date.now() - t0 >= opts.timeoutMs) {
+      return { idle: false, busy: s.busy, sawOutput, waitedMs: Date.now() - t0, running: true };
+    }
+    await sleep(250);
+  }
 }
 
 // Lista de bubbleIds con PTY corriendo — para snapshot al conectar.
@@ -478,6 +613,9 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
       clients: new Set([ws]),
       lastOutputAt: Date.now(),
       busy: false,
+      startedAt: Date.now(),
+      launchedAt: null,
+      outputSinceLaunch: false,
     };
     if (bubbleId) {
       const wasFirst = !hasRunningPtyForBubble(bubbleId);

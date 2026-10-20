@@ -24,14 +24,22 @@ type ServerMsg =
   | { type: 'doc_deleted'; key: string }
   | { type: 'heartbeat' };
 
-export type ClientAction = {
-  kind: 'open_bubble';
-  id: string;
-  title: string;
-  focus: boolean;
-  workspace?: string;
-  baseBranch?: string;
-};
+// Espejo de `backend/src/protocol.ts:ClientAction`. Las acciones las emite el
+// MCP server externo (vía los endpoints `/bubble/*`) y las aplica la UI.
+export type ClientAction =
+  | {
+    kind: 'open_bubble';
+    id: string;
+    title: string;
+    focus: boolean;
+    workspace?: string;
+    baseBranch?: string;
+  }
+  | { kind: 'archive_bubble'; id: string }
+  | { kind: 'delete_bubble'; id: string }
+  | { kind: 'rename_bubble'; id: string; title: string }
+  | { kind: 'focus_bubble'; id: string }
+  | { kind: 'set_bubble_categories'; id: string; categoryIds: string[] };
 
 export type SocketHandlers = {
   onPtyStatus?: (bubbleId: string, running: boolean) => void;

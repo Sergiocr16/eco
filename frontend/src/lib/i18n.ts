@@ -2369,12 +2369,7 @@ const DICT = {
   'dash.filter.idle': { es: 'En espera', en: 'Idle' },
   'dash.filter.shell_open': { es: 'Con shell abierto', en: 'Shell open' },
   'dash.filter.error': { es: 'Con error', en: 'Error' },
-  'dash.col.active': { es: 'Activos', en: 'Active' },
-  'dash.col.waiting': { es: 'En espera', en: 'Waiting' },
-  'dash.col.idle': { es: 'Inactivos', en: 'Idle' },
-  'dash.col.shell': { es: 'Con shell abierto', en: 'Shell open' },
-  'dash.col.done': { es: 'Terminados', en: 'Done' },
-  'dash.col.error': { es: 'Con error', en: 'With error' },
+  'dash.col.uncategorized': { es: 'Sin categoría', en: 'Uncategorized' },
 
   // ─────────────────────────── AgentDetail (strings nuevos del merge)
   'detail.action.files_tooltip': { es: 'Ver archivos modificados', en: 'View modified files' },

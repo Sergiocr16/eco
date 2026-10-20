@@ -38,7 +38,13 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
     token: TOKEN,
     handlers: {
       ...bubbleStreamHandlers(bubbles),
-      onClientAction: () => { /* la ventana solo no crea otros bubbles */ },
+      onClientAction: (action) => {
+        // La ventana solo no crea ni gestiona otros bubbles; solo reacciona si
+        // el MCP cierra el suyo (la ventana principal aplica el archivado).
+        if ((action.kind === 'archive_bubble' || action.kind === 'delete_bubble') && action.id === bubbleId) {
+          closeThisWindow(bubbleId);
+        }
+      },
     },
   });
 

@@ -4,6 +4,7 @@ import { translate, loadLang } from '@/lib/i18n';
 import { apiFetch } from '@/lib/api';
 import { hydrateDocs, saveDoc, deleteDoc, shouldApplyRemote } from '@/lib/user-sync';
 import { on as ecoOn } from '@/lib/eco-bus';
+import { getCategories, subscribeCategories } from '@/hooks/useCategories';
 
 const STORAGE_KEY = 'eco.bubbles.v1';
 const ACTIVE_KEY = 'eco.bubbles.active';
@@ -161,6 +162,8 @@ export type UseBubblesResult = {
   setBubbleWorkspace: (id: string, workspace: string) => void;
   // Toggle de una categoría en la burbuja (agrega/quita). `undefined` limpia todas.
   toggleBubbleCategory: (id: string, categoryId: string | undefined) => void;
+  // Reemplaza el set completo de categorías (acciones del MCP server).
+  setBubbleCategories: (id: string, categoryIds: string[]) => void;
   setBubblePtyOpen: (id: string, open: boolean) => void;
 };
 
@@ -229,6 +232,11 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
   // tener acceso al localStorage. Debouncea para no spamear el endpoint
   // durante streaming de mensajes (status flips de thinking → executing →
   // idle disparan varios re-renders por turn).
+  // Las categorías viajan con nombre y color para que el MCP pueda resolver
+  // "Backend" → id sin acceso al store del navegador; un cambio en la lista
+  // (renombrar, crear) re-dispara el sync.
+  const [categoriesTick, setCategoriesTick] = useState(0);
+  useEffect(() => subscribeCategories(() => setCategoriesTick((n) => n + 1)), []);
   useEffect(() => {
     const summary = bubbles.map((b) => {
       const lastText = b.messages[b.messages.length - 1]?.text;
@@ -241,17 +249,19 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
         updatedAt: b.updatedAt,
         ...(lastText ? { lastMsgPreview: lastText.slice(0, 160) } : {}),
         ...(b.categoryIds && b.categoryIds.length > 0 ? { categoryIds: b.categoryIds } : {}),
+        ...(b.baseBranch ? { baseBranch: b.baseBranch } : {}),
       };
     });
+    const categories = getCategories().map((c) => ({ id: c.id, name: c.name, color: c.color }));
     const handle = setTimeout(() => {
       void apiFetch('/bubbles/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bubbles: summary }),
+        body: JSON.stringify({ bubbles: summary, categories }),
       }).catch(() => { /* sync best-effort */ });
     }, 800);
     return () => clearTimeout(handle);
-  }, [bubbles]);
+  }, [bubbles, categoriesTick]);
 
   // ─── Sync cross-device (servidor anfitrión = ÚNICA fuente de verdad) ─────
   // Al loguear cargamos SOLO lo del servidor. NO mergeamos el localStorage:
@@ -529,6 +539,13 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
     }));
   }, []);
 
+  const setBubbleCategories = useCallback((id: string, categoryIds: string[]) => {
+    setBubbles((prev) => prev.map((b) => b.id === id
+      ? { ...b, categoryIds: categoryIds.length > 0 ? [...categoryIds] : undefined, updatedAt: Date.now() }
+      : b,
+    ));
+  }, []);
+
   const activeBubble = bubbles.find((b) => b.id === activeBubbleId) ?? null;
 
   return {
@@ -545,6 +562,7 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
     togglePin,
     setBubbleWorkspace,
     toggleBubbleCategory,
+    setBubbleCategories,
     setBubblePtyOpen,
   };
 }

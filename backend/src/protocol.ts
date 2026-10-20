@@ -2,17 +2,25 @@
 // Conversación (que era el único que mandaba `prompt`/`interrupt`) se removió,
 // y con él el Claude Agent SDK. Los agentes ahora viven en el PTY (`/ws/pty`).
 
-// Acción que el backend le pide al frontend. Su único productor es
-// `POST /bubble/create` (MCP server externo) vía `broadcastClientAction`.
-// `rename_bubble`/`close_bubble` murieron con los tools MCP in-process del SDK.
-export type ClientAction = {
-  kind: 'open_bubble';
-  id: string;
-  title: string;
-  focus: boolean;
-  workspace?: string;
-  baseBranch?: string;
-};
+// Acciones que el backend le pide al frontend. El productor es el MCP server
+// externo vía los endpoints `/bubble/*`: el estado de las burbujas vive en
+// Firestore a través del frontend, así que cerrar/renombrar/categorizar desde
+// afuera se delega a la UI (que confirma vía /bubbles/sync). Se emiten SOLO a
+// las conexiones del dueño (`broadcastClientActionToUser`).
+export type ClientAction =
+  | {
+    kind: 'open_bubble';
+    id: string;
+    title: string;
+    focus: boolean;
+    workspace?: string;
+    baseBranch?: string;
+  }
+  | { kind: 'archive_bubble'; id: string }
+  | { kind: 'delete_bubble'; id: string }
+  | { kind: 'rename_bubble'; id: string; title: string }
+  | { kind: 'focus_bubble'; id: string }
+  | { kind: 'set_bubble_categories'; id: string; categoryIds: string[] };
 
 export type ServerMessage =
   | { type: 'client_action'; action: ClientAction }

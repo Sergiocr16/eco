@@ -6,6 +6,7 @@
 import { spawnSync } from 'node:child_process';
 import { buildSafeEnv } from './security.js';
 import { config } from './config.js';
+import { stripAnsi } from './strip-ansi.js';
 
 const MAX_MESSAGES = 30;          // últimos N (chat opcional)
 const MAX_TEXT_PER_MSG = 2000;    // caracteres por message
@@ -21,16 +22,6 @@ export type SummaryMessage = {
 export type SummaryResult =
   | { ok: true; markdown: string }
   | { ok: false; error: string };
-
-// Limpia escapes ANSI del output del PTY — códigos de color, cursor-move,
-// clear-line, etc. Sin esto el modelo recibe basura visual.
-function stripAnsi(s: string): string {
-  // ESC[ … letra (CSI) + ESC] … BEL/ST (OSC) + ESC + simple letras.
-  // Patrón estándar de "ansi-regex" pero inline para no agregar dep.
-  // eslint-disable-next-line no-control-regex
-  const re = /[][[\]()#;?]*(?:(?:(?:[a-zA-Z0-9*;]*)?)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[0-9A-PRZcf-ntqry=><~]))/g;
-  return s.replace(re, '');
-}
 
 export function summarizeBubble(args: {
   bubbleTitle: string;
