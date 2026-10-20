@@ -124,6 +124,17 @@ function newId(): string {
   return `cat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// Acceso fuera de React (el sync a /bubbles/sync corre en un efecto y necesita
+// la lista actual sin suscribirse como componente).
+export function getCategories(): Category[] {
+  return categories;
+}
+
+export function subscribeCategories(fn: () => void): () => void {
+  subs.add(fn);
+  return () => { subs.delete(fn); };
+}
+
 export type UseCategoriesResult = {
   categories: Category[];
   add: (name: string, color: string) => Category;

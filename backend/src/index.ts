@@ -8,13 +8,22 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { config, isAllowedWorkspace, hostAllowed, workspacesForUser } from './config.js';
-import { attachWebSocket, broadcastClientAction, broadcastToUser, wsClientCount } from './ws-server.js';
+import { attachWebSocket, broadcastClientAction, broadcastClientActionToUser, broadcastToUser, wsClientCount, wsClientCountForUser } from './ws-server.js';
+import type { ClientAction } from './protocol.js';
 import { listDocs, writeDoc, deleteDoc } from './user-docs.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
-import { setBubblesSnapshot, getBubblesSnapshot, findBubble, getAllSnapshots, type BubbleSummary } from './bubbles-index.js';
+import {
+  setBubblesSnapshot, getBubblesSnapshot, findBubble, getAllSnapshots, type BubbleSummary,
+  setCategoriesSnapshot, getCategories, resolveCategory, waitForBubble,
+} from './bubbles-index.js';
 import { logEvent, queryEvents, AUDIT_EVENT_TYPES, type AuditEventType } from './audit-log.js';
-import { attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble, runningPtyBubbleIds } from './pty-server.js';
-import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees } from './worktree-manager.js';
+import {
+  attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble, runningPtyBubbleIds,
+  busyPtyBubbleIds, listPtySessions, getPtySession, getPtyTail, sendKeysToPty, waitForPtyIdle, ptyIdForAgent, type AgentCli,
+} from './pty-server.js';
+import { getClaudeTranscriptState, readConversation } from './claude-transcript.js';
+import { ptyTailToText } from './strip-ansi.js';
+import { getWorktree, removeWorktree, ensureWorktree, pruneCleanWorktrees, worktreeBranchName } from './worktree-manager.js';
 import * as gitOps from './git-ops.js';
 import * as gitHistory from './git-history.js';
 import * as gitAdv from './git-ops-advanced.js';
@@ -42,7 +51,7 @@ import {
   recover as recoverUser, deleteUser, getUser, getUserByUsername,
   listUsers, createMember, setRole, setWorkspaceGrants,
   issueClaim, claimAccount, setDisabled,
-  mintRefresh, verifyRefresh, migrateLegacyUserIfNeeded, firstAdminId,
+  mintRefresh, verifyRefresh, migrateLegacyUserIfNeeded,
   type Role,
 } from './users-store.js';
 import { createSession, destroySession, getSession } from './sessions.js';
@@ -139,6 +148,19 @@ const MCP_FREE: Array<{ method: string; path: string }> = [
   { method: 'POST', path: '/bubble/send' },
   { method: 'GET', path: '/bubbles' },
   { method: 'GET', path: '/workspaces' },
+  // Tools MCP v2 — todos validan id + dueño (`resolveOwnedBubble`) y los que
+  // cambian estado lo delegan a la UI del dueño vía client_action.
+  { method: 'GET', path: '/bubble/status' },
+  { method: 'GET', path: '/bubble/transcript' },
+  { method: 'POST', path: '/bubble/wait' },
+  { method: 'POST', path: '/bubble/keys' },
+  { method: 'POST', path: '/bubble/request-close' },
+  { method: 'POST', path: '/bubble/rename' },
+  { method: 'POST', path: '/bubble/focus' },
+  { method: 'POST', path: '/bubble/categories' },
+  { method: 'GET', path: '/categories' },
+  { method: 'POST', path: '/bubble/dev' },
+  { method: 'POST', path: '/bubble/diff' },
 ];
 function isMcpFreePath(method: string, path: string): boolean {
   return MCP_FREE.some((r) => r.method === method && r.path === path);
@@ -1833,14 +1855,15 @@ app.post('/bubble/create', (req: Request, res: Response) => {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const { title, workspace, baseBranch, initialPrompt, agent } = parsed.data;
-  // Dueño: el usuario de la sesión, o el primer admin para callers MCP sin
-  // sesión (F4 agrega token MCP por usuario).
-  const creatorId = req.ecoUser?.id ?? firstAdminId() ?? undefined;
+  // Dueño: el usuario de la sesión, o el usuario de máquina (último login)
+  // para el MCP server, que entra con el token de máquina.
+  const creatorId = req.ecoUser?.id ?? getMachineUser() ?? undefined;
 
   if (workspace && !isAllowedWorkspace(workspace, creatorId)) {
     return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
   }
-  if (wsClientCount() === 0) {
+  const uiOpen = creatorId ? wsClientCountForUser(creatorId) > 0 : wsClientCount() > 0;
+  if (!uiOpen) {
     return errResponse(res, 409, 'eco.no_clients', 'Abrí Eco para que reciba el comando');
   }
 
@@ -1855,14 +1878,16 @@ app.post('/bubble/create', (req: Request, res: Response) => {
     }
   }
 
-  broadcastClientAction({
+  const openAction: ClientAction = {
     kind: 'open_bubble',
     id: bubbleId,
     title: title.trim(),
     focus: true,
     ...(workspace ? { workspace } : {}),
     ...(baseBranch ? { baseBranch } : {}),
-  });
+  };
+  if (creatorId) broadcastClientActionToUser(creatorId, openAction);
+  else broadcastClientAction(openAction);
   // La creación se audita en /bubbles/sync (el frontend materializa la bubble y
   // la sincroniza) para no duplicar el evento.
 
@@ -1872,11 +1897,9 @@ app.post('/bubble/create', (req: Request, res: Response) => {
   // foco con un switch automático. Requiere worktreePath (worktree creado
   // arriba) o cae al primer workspace permitido. Fire-and-forget.
   if (initialPrompt && workspace) {
-    try {
-      injectPromptToBubble(bubbleId, creatorId, workspace, initialPrompt, agent ?? 'claude');
-    } catch (e) {
+    injectPromptToBubble(bubbleId, creatorId, workspace, initialPrompt, agent ?? 'claude').catch((e) => {
       console.error('[bubble/create] injectPromptToBubble failed:', e);
-    }
+    });
   }
 
   res.json({
@@ -1898,25 +1921,48 @@ const BubbleSendSchema = z.object({
   // A qué terminal de agente se tipea. Omitirlo = 'claude'.
   agent: z.enum(['claude', 'codex']).optional(),
 });
-app.post('/bubble/send', (req: Request, res: Response) => {
+// Valida id + existencia + propiedad. Responde el error y devuelve null si
+// falla. Un caller con sesión solo opera SUS bubbles (admin todas); el MCP
+// entra como el usuario de máquina.
+function resolveOwnedBubble(req: Request, res: Response, rawId: unknown): BubbleSummary | null {
+  const bubbleId = typeof rawId === 'string' ? rawId : '';
+  if (!isValidBubbleId(bubbleId)) {
+    errResponse(res, 400, 'bubble.invalid_id', 'bubbleId inválido');
+    return null;
+  }
+  const caller = req.ecoUser;
+  const bubble = findBubble(bubbleId, caller?.id);
+  if (!bubble) {
+    errResponse(res, 404, 'bubble.not_found', 'No existe una bubble con ese id');
+    return null;
+  }
+  if (caller && caller.role !== 'admin' && bubble.ownerId !== caller.id) {
+    errResponse(res, 403, 'bubble.not_owner', 'Esa bubble no es tuya');
+    return null;
+  }
+  return bubble;
+}
+
+// Las acciones que cambian estado las aplica la UI del dueño; sin ella abierta
+// no hay quién las materialice.
+function requireUiForOwner(res: Response, ownerId: string): boolean {
+  if (wsClientCountForUser(ownerId) > 0) return true;
+  errResponse(res, 409, 'eco.no_clients', 'Abrí Eco para que reciba el comando');
+  return false;
+}
+
+function parseAgent(raw: unknown): AgentCli {
+  return raw === 'codex' ? 'codex' : 'claude';
+}
+
+app.post('/bubble/send', async (req: Request, res: Response) => {
   const parsed = BubbleSendSchema.safeParse(req.body);
   if (!parsed.success) {
     return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
   }
   const { bubbleId, text, agent } = parsed.data;
-  if (!isValidBubbleId(bubbleId)) {
-    return errResponse(res, 400, 'bubble.invalid_id', 'bubbleId inválido');
-  }
-  // Buscamos la bubble entre TODOS los usuarios (la identidad/workspace salen de
-  // su dueño). Un caller con sesión solo puede mandar a SUS bubbles (admin a todas).
-  const bubble = findBubble(bubbleId);
-  if (!bubble) {
-    return errResponse(res, 404, 'bubble.not_found', 'No existe una bubble con ese id');
-  }
-  const caller = req.ecoUser;
-  if (caller && caller.role !== 'admin' && bubble.ownerId !== caller.id) {
-    return errResponse(res, 403, 'bubble.not_owner', 'Esa bubble no es tuya');
-  }
+  const bubble = resolveOwnedBubble(req, res, bubbleId);
+  if (!bubble) return;
   if (bubble.archived) {
     return errResponse(res, 409, 'bubble.archived', 'La bubble está archivada — desarchivala antes de mandarle input');
   }
@@ -1924,12 +1970,475 @@ app.post('/bubble/send', (req: Request, res: Response) => {
     return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
   }
   try {
-    injectPromptToBubble(bubbleId, bubble.ownerId, bubble.workspace, text, agent ?? 'claude');
+    const t0 = Date.now();
+    const r = await injectPromptToBubble(bubbleId, bubble.ownerId, bubble.workspace, text, agent ?? 'claude');
+    const delivery = await confirmPromptDelivery(bubbleId, r.ptyId, agent ?? 'claude', t0, r.agentWasBusy);
+    res.json({ ok: true, bubbleId, workspace: bubble.workspace || null, ...r, ...delivery });
   } catch (e) {
     console.error('[bubble/send] injectPromptToBubble failed:', e);
     return errResponse(res, 500, 'bubble.send_failed', 'No se pudo inyectar el prompt al PTY');
   }
-  res.json({ ok: true, bubbleId, workspace: bubble.workspace || null });
+});
+
+// "Listo" (output y luego quieto) no garantiza que el CLI estuviera en el
+// prompt: Claude Code abre diálogos al arrancar (nuevo MCP server del proyecto,
+// confianza en la carpeta, etc.) que se tragan la pasta y responden al Enter.
+// La única prueba de entrega es que el transcript registre el prompt; si no
+// aparece, se devuelve la pantalla para que el caller resuelva el diálogo con
+// /bubble/keys y reenvíe. Con el agente ocupado el prompt queda encolado y el
+// transcript no lo ve hasta que empieza el turno → no se puede confirmar.
+// 20 s porque el CLI escribe la entrada "user" recién cuando terminan los
+// hooks UserPromptSubmit del usuario (medido: >8 s con hooks de Obsidian/Orca);
+// el caso normal corta en 1-4 s.
+const DELIVERY_CONFIRM_MS = 20_000;
+async function confirmPromptDelivery(
+  bubbleId: string,
+  ptyId: string,
+  agent: AgentCli,
+  sentAt: number,
+  agentWasBusy: boolean,
+): Promise<{ delivered: boolean | null; terminal?: string }> {
+  if (agent !== 'claude' || agentWasBusy) return { delivered: null };
+  const session = getPtySession(bubbleId, ptyId);
+  if (!session) return { delivered: null };
+  const deadline = sentAt + DELIVERY_CONFIRM_MS;
+  for (;;) {
+    const state = getClaudeTranscriptState(session.cwd, session.startedAt);
+    const userAt = state?.lastUserAt ? Date.parse(state.lastUserAt) : NaN;
+    // 2 s de tolerancia: el timestamp del transcript lo pone el CLI, no nosotros.
+    if (Number.isFinite(userAt) && userAt >= sentAt - 2000) return { delivered: true };
+    if (Date.now() >= deadline) break;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return { delivered: false, terminal: ptyTailToText(getPtyTail(bubbleId, ptyId) ?? '', 25) };
+}
+
+// ─── Estado exacto de una bubble (tools MCP get_bubble / wait_for_bubble) ──
+type BubbleState = 'archived' | 'offline' | 'working' | 'waiting_permission' | 'waiting_input' | 'idle';
+
+async function gitSummaryFor(dir: string, bubbleId: string) {
+  const [branchR, lastR, abR, changes, prR] = await Promise.all([
+    gitCapture(dir, ['rev-parse', '--abbrev-ref', 'HEAD']),
+    gitCapture(dir, ['log', '-1', '--format=%h%x09%s']),
+    gitCapture(dir, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']),
+    computeFileChanges(dir).catch(() => ({ workspace: dir, files: [], git: false })),
+    gitOps.currentPullRequest(dir).catch(() => null),
+  ]);
+  const branch = branchR.ok && branchR.out.trim() ? branchR.out.trim() : null;
+  const lastLine = lastR.ok ? lastR.out.trim().split('\n')[0] ?? '' : '';
+  const [sha, ...subjectParts] = lastLine.split('\t');
+  const ab = abR.ok ? abR.out.trim().split(/\s+/) : [];
+  const aheadBehind = ab.length === 2 && /^\d+$/.test(ab[0]!) && /^\d+$/.test(ab[1]!)
+    ? { ahead: Number(ab[0]), behind: Number(ab[1]) }
+    : null;
+  return {
+    branch,
+    expectedBranch: worktreeBranchName(bubbleId),
+    lastCommit: sha ? { sha, subject: subjectParts.join('\t') } : null,
+    aheadBehind,
+    changedFiles: { count: changes.files.length, sample: changes.files.slice(0, 20) },
+    pr: prR && prR.ok ? prR.pr : null,
+  };
+}
+
+async function buildBubbleStatus(
+  bubble: BubbleSummary,
+  opts: { lines: number; transcript: boolean; git: boolean; agent: AgentCli },
+) {
+  const worktree = getWorktree(bubble.id);
+  const terminals = listPtySessions(bubble.id);
+  const agentPtyId = ptyIdForAgent(opts.agent);
+  const agentPty = terminals.find((t) => t.ptyId === agentPtyId) ?? null;
+  const cwd = agentPty?.cwd ?? worktree ?? bubble.workspace;
+  const devServers = (['main', 'frontend', 'backend'] as devServer.ServerRole[]).flatMap((role) => {
+    const s = devServer.devStatus(bubble.id, role);
+    if (!s) return [];
+    return [{ role, status: s.status, port: s.port, url: s.url, command: s.command, exitCode: s.exitCode, startedAt: s.startedAt, exitedAt: s.exitedAt }];
+  });
+  const transcript = opts.transcript && opts.agent === 'claude' && cwd
+    ? getClaudeTranscriptState(cwd, agentPty?.startedAt)
+    : null;
+  const anyBusy = terminals.some((t) => t.busy);
+  let state: BubbleState;
+  let reason: string;
+  if (bubble.archived) { state = 'archived'; reason = 'La bubble está archivada'; }
+  else if (terminals.length === 0) { state = 'offline'; reason = 'Sin terminal abierto (el agente no está corriendo)'; }
+  else if (anyBusy) { state = 'working'; reason = 'El terminal está produciendo output ahora mismo'; }
+  else if (transcript?.turnState === 'tool_pending') {
+    state = 'waiting_permission';
+    reason = `Tool pendiente sin resultado (${transcript.pendingToolNames.join(', ') || 'tool'}) con el terminal quieto: probablemente un prompt de permiso`;
+  }
+  else if (transcript?.turnState === 'end_turn') { state = 'waiting_input'; reason = 'El agente terminó su turno y espera un prompt'; }
+  else if (transcript?.turnState === 'user_prompted' || transcript?.turnState === 'in_progress') {
+    state = 'working';
+    reason = 'Hay un turno en curso en el transcript aunque el terminal esté quieto';
+  }
+  else { state = 'idle'; reason = `Terminal quieto desde hace ${Math.round((agentPty?.idleForMs ?? terminals[0]!.idleForMs) / 1000)} s, sin transcript para precisar`; }
+
+  const tailSource = agentPty ? agentPtyId : terminals[0]?.ptyId;
+  const lastOutput = tailSource ? ptyTailToText(getPtyTail(bubble.id, tailSource) ?? '', opts.lines) : '';
+  const categories = getCategories(bubble.ownerId);
+  const gitDir = worktree ?? (bubble.workspace || null);
+  const git = opts.git && gitDir && existsSync(gitDir) ? await gitSummaryFor(gitDir, bubble.id) : null;
+
+  return {
+    bubble: {
+      id: bubble.id,
+      title: bubble.title,
+      workspace: bubble.workspace || null,
+      worktree,
+      baseBranch: bubble.baseBranch ?? null,
+      archived: bubble.archived,
+      updatedAt: bubble.updatedAt,
+      categories: (bubble.categoryIds ?? []).map((id) => categories.find((c) => c.id === id) ?? { id, name: id, color: '' }),
+    },
+    state,
+    reason,
+    terminals,
+    devServers,
+    transcript: transcript
+      ? {
+        turnState: transcript.turnState,
+        lastAssistantText: transcript.lastAssistantText,
+        lastAssistantAt: transcript.lastAssistantAt,
+        lastUserAt: transcript.lastUserAt,
+        pendingToolNames: transcript.pendingToolNames,
+        sessionId: transcript.sessionId,
+      }
+      : null,
+    lastOutput,
+    git,
+  };
+}
+
+function clampQueryInt(raw: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+app.get('/bubble/status', async (req: Request, res: Response) => {
+  const bubble = resolveOwnedBubble(req, res, req.query.bubbleId);
+  if (!bubble) return;
+  const lines = clampQueryInt(req.query.lines, 1, 400, 40);
+  const transcript = req.query.transcript !== '0';
+  const git = req.query.git !== '0';
+  try {
+    res.json({ ok: true, ...(await buildBubbleStatus(bubble, { lines, transcript, git, agent: parseAgent(req.query.agent) })) });
+  } catch (e) {
+    console.error('[bubble/status]', e);
+    errResponse(res, 500, 'bubble.status_failed', 'No se pudo armar el estado de la bubble');
+  }
+});
+
+const BubbleWaitSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  agent: z.enum(['claude', 'codex']).optional(),
+  timeoutMs: z.number().int().min(1000).max(600_000).default(55_000),
+  settleMs: z.number().int().min(1500).max(30_000).optional(),
+  // Exigir output nuevo antes de aceptar el idle (tras un send).
+  requireActivity: z.boolean().optional(),
+  lines: z.number().int().min(1).max(400).optional(),
+});
+app.post('/bubble/wait', async (req: Request, res: Response) => {
+  const parsed = BubbleWaitSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+  }
+  const bubble = resolveOwnedBubble(req, res, parsed.data.bubbleId);
+  if (!bubble) return;
+  const agent = parsed.data.agent ?? 'claude';
+  req.setTimeout(parsed.data.timeoutMs + 10_000);
+  try {
+    const wait = await waitForPtyIdle(bubble.id, ptyIdForAgent(agent), {
+      timeoutMs: parsed.data.timeoutMs,
+      settleMs: parsed.data.settleMs,
+      requireActivity: parsed.data.requireActivity,
+    });
+    const status = await buildBubbleStatus(bubble, { lines: parsed.data.lines ?? 40, transcript: true, git: false, agent });
+    res.json({ ok: true, timedOut: !wait.idle, waitedMs: wait.waitedMs, sawOutput: wait.sawOutput, ...status });
+  } catch (e) {
+    console.error('[bubble/wait]', e);
+    errResponse(res, 500, 'bubble.status_failed', 'No se pudo esperar a la bubble');
+  }
+});
+
+const BubbleKeysSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  agent: z.enum(['claude', 'codex']).optional(),
+  keys: z.array(z.string().min(1).max(200)).min(1).max(10),
+});
+app.post('/bubble/keys', async (req: Request, res: Response) => {
+  const parsed = BubbleKeysSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+  }
+  const bubble = resolveOwnedBubble(req, res, parsed.data.bubbleId);
+  if (!bubble) return;
+  const ptyId = ptyIdForAgent(parsed.data.agent ?? 'claude');
+  const r = await sendKeysToPty(bubble.id, ptyId, parsed.data.keys);
+  if (!r.ok) {
+    return errResponse(res, 409, 'pty.not_running', `El terminal "${ptyId}" de la bubble no está corriendo`);
+  }
+  res.json({ ok: true, bubbleId: bubble.id, ptyId, sent: r.sent });
+});
+
+// Confirmación de una acción delegada a la UI: el frontend aplica el cambio y
+// lo refleja en el próximo /bubbles/sync; esperamos ese sync hasta 4 s.
+// 10 s: archivar espera a que el frontend mate PTY + dev servers antes de
+// actualizar su estado y disparar el sync (medido: >4 s con un PTY vivo).
+const UI_CONFIRM_MS = 10_000;
+
+const BubbleRequestCloseSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  permanent: z.boolean().optional(),
+});
+app.post('/bubble/request-close', async (req: Request, res: Response) => {
+  const parsed = BubbleRequestCloseSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+  }
+  const bubble = resolveOwnedBubble(req, res, parsed.data.bubbleId);
+  if (!bubble) return;
+  const permanent = !!parsed.data.permanent;
+  if (bubble.archived && !permanent) {
+    return res.json({ ok: true, bubbleId: bubble.id, archived: true, confirmed: true, alreadyArchived: true });
+  }
+  if (!requireUiForOwner(res, bubble.ownerId)) return;
+  broadcastClientActionToUser(bubble.ownerId, permanent
+    ? { kind: 'delete_bubble', id: bubble.id }
+    : { kind: 'archive_bubble', id: bubble.id });
+  const r = await waitForBubble(bubble.ownerId, bubble.id, (b) => (permanent ? b === null : !!b?.archived), UI_CONFIRM_MS);
+  res.json({ ok: true, bubbleId: bubble.id, permanent, confirmed: r.confirmed, archived: r.bubble?.archived ?? permanent });
+});
+
+const BubbleRenameSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  title: z.string().trim().min(1).max(120),
+});
+app.post('/bubble/rename', async (req: Request, res: Response) => {
+  const parsed = BubbleRenameSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+  }
+  const bubble = resolveOwnedBubble(req, res, parsed.data.bubbleId);
+  if (!bubble) return;
+  if (!requireUiForOwner(res, bubble.ownerId)) return;
+  const title = parsed.data.title;
+  broadcastClientActionToUser(bubble.ownerId, { kind: 'rename_bubble', id: bubble.id, title });
+  const r = await waitForBubble(bubble.ownerId, bubble.id, (b) => b?.title === title, UI_CONFIRM_MS);
+  res.json({ ok: true, bubbleId: bubble.id, title, confirmed: r.confirmed });
+});
+
+app.post('/bubble/focus', (req: Request, res: Response) => {
+  const bubble = resolveOwnedBubble(req, res, req.body?.bubbleId);
+  if (!bubble) return;
+  if (!requireUiForOwner(res, bubble.ownerId)) return;
+  broadcastClientActionToUser(bubble.ownerId, { kind: 'focus_bubble', id: bubble.id });
+  res.json({ ok: true, bubbleId: bubble.id });
+});
+
+const BubbleCategoriesSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  category: z.string().trim().min(1).max(80).optional(),
+  mode: z.enum(['set', 'add', 'remove', 'clear']).default('set'),
+});
+app.post('/bubble/categories', async (req: Request, res: Response) => {
+  const parsed = BubbleCategoriesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+  }
+  const bubble = resolveOwnedBubble(req, res, parsed.data.bubbleId);
+  if (!bubble) return;
+  const { mode, category } = parsed.data;
+  const current = bubble.categoryIds ?? [];
+  let next: string[];
+  if (mode === 'clear') {
+    next = [];
+  } else {
+    if (!category) return errResponse(res, 400, 'http.invalid_body', 'category requerida salvo en mode=clear');
+    const r = resolveCategory(bubble.ownerId, category);
+    if (!r.ok) {
+      const list = r.available.length > 0 ? r.available.join(', ') : '(ninguna)';
+      return errResponse(res, r.code === 'category.ambiguous' ? 409 : 404, r.code,
+        r.code === 'category.ambiguous'
+          ? `Varias categorías se llaman "${category}"; usá el id. Disponibles: ${list}`
+          : `No existe la categoría "${category}". Disponibles: ${list}`);
+    }
+    const id = r.category.id;
+    if (mode === 'set') next = [id];
+    else if (mode === 'add') next = current.includes(id) ? current : [...current, id];
+    else next = current.filter((c) => c !== id);
+  }
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+  const categories = getCategories(bubble.ownerId);
+  const names = (ids: string[]) => ids.map((id) => categories.find((c) => c.id === id)?.name ?? id);
+  if (same(current, next)) {
+    return res.json({ ok: true, bubbleId: bubble.id, confirmed: true, unchanged: true, categoryIds: next, categories: names(next) });
+  }
+  if (!requireUiForOwner(res, bubble.ownerId)) return;
+  broadcastClientActionToUser(bubble.ownerId, { kind: 'set_bubble_categories', id: bubble.id, categoryIds: next });
+  const r = await waitForBubble(bubble.ownerId, bubble.id, (b) => !!b && same(b.categoryIds ?? [], next), UI_CONFIRM_MS);
+  res.json({ ok: true, bubbleId: bubble.id, confirmed: r.confirmed, categoryIds: next, categories: names(next) });
+});
+
+app.get('/categories', (req: Request, res: Response) => {
+  const uid = req.ecoUser?.id ?? getMachineUser();
+  res.json({ ok: true, categories: uid ? getCategories(uid) : [] });
+});
+
+// Dev server de la bubble con la config del workspace (la define el admin en
+// Settings → Folders; acá solo se arranca/para, nunca se inventa un comando).
+const BubbleDevSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  action: z.enum(['start', 'stop', 'restart', 'status']),
+  role: z.enum(['main', 'frontend', 'backend']).optional(),
+});
+const DEV_READY_WAIT_MS = 60_000;
+app.post('/bubble/dev', async (req: Request, res: Response) => {
+  const parsed = BubbleDevSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+  }
+  const bubble = resolveOwnedBubble(req, res, parsed.data.bubbleId);
+  if (!bubble) return;
+  const { action, role } = parsed.data;
+  if (!bubble.workspace) return errResponse(res, 409, 'dev.no_workspace', 'La bubble no tiene workspace');
+  if (!isAllowedWorkspace(bubble.workspace, bubble.ownerId)) {
+    return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
+  }
+  const cfg = workspaceConfig.getFor(bubble.workspace).server;
+  const roles: devServer.ServerRole[] = role ? [role] : (cfg.dual ? ['backend', 'frontend'] : ['main']);
+  const commandFor = (r: devServer.ServerRole): string => (cfg.dual ? (r === 'main' ? cfg.main : cfg[r]) : cfg.main).trim();
+  const snapshot = () => roles.map((r) => {
+    const s = devServer.devStatus(bubble.id, r);
+    return s
+      ? { role: r, status: s.status, port: s.port, url: s.url, command: s.command, exitCode: s.exitCode }
+      : { role: r, status: 'idle' as devServer.DevStatus, port: 0, url: '', command: commandFor(r), exitCode: null };
+  });
+  const logs = () => Object.fromEntries(roles.map((r) => [r, ptyTailToText(devServer.devLogs(bubble.id, r), 40)]));
+  const results: Array<{ role: devServer.ServerRole; ok: boolean; error?: string }> = [];
+
+  const waitRunning = async (r: devServer.ServerRole): Promise<boolean> => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < DEV_READY_WAIT_MS) {
+      const s = devServer.devStatus(bubble.id, r);
+      if (s?.status === 'running') return true;
+      if (!s || s.status === 'error' || s.status === 'stopped') return false;
+      await new Promise((ok) => setTimeout(ok, 500));
+    }
+    return false;
+  };
+  const startAll = async () => {
+    const dir = ensureWorktree(bubble.id, bubble.workspace);
+    for (const r of roles) {
+      const command = commandFor(r);
+      if (!command) { results.push({ role: r, ok: false, error: 'dev.not_configured' }); continue; }
+      const started = await devServer.startDevServer(bubble.id, dir, command, r);
+      results.push(started.ok ? { role: r, ok: true } : { role: r, ok: false, error: started.error });
+      // En dual el frontend proxea al backend: esperamos a que este bindee
+      // antes de arrancar el frontend (mismo orden que el ServerPanel).
+      if (started.ok && r === 'backend' && roles.includes('frontend')) await waitRunning(r);
+    }
+  };
+
+  if (action !== 'status' && action !== 'stop' && roles.every((r) => !commandFor(r))) {
+    return errResponse(res, 409, 'dev.not_configured', 'El workspace no tiene comando de dev server configurado (Settings → Folders, lo define el admin)');
+  }
+  req.setTimeout(DEV_READY_WAIT_MS * 2 + 10_000);
+  try {
+    if (action === 'stop' || action === 'restart') {
+      for (const r of [...roles].reverse()) {
+        const stopped = await devServer.stopDevServer(bubble.id, r);
+        results.push({ role: r, ok: stopped.ok, ...(stopped.ok ? {} : { error: stopped.error }) });
+      }
+    }
+    if (action === 'start' || action === 'restart') await startAll();
+    if (action === 'start' || action === 'restart') {
+      // Dar tiempo a que el último server reporte running antes de responder.
+      const last = roles[roles.length - 1]!;
+      if (results.find((x) => x.role === last)?.ok) await waitRunning(last);
+    }
+    res.json({ ok: true, bubbleId: bubble.id, action, dual: cfg.dual, results, servers: snapshot(), logs: logs() });
+  } catch (e) {
+    console.error('[bubble/dev]', e);
+    errResponse(res, 500, 'dev.action_failed', 'Falló la acción sobre el dev server');
+  }
+});
+
+const BubbleDiffSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  path: z.string().min(1).max(4096).optional(),
+  maxBytes: z.number().int().min(1000).max(512 * 1024).default(200_000),
+});
+app.post('/bubble/diff', async (req: Request, res: Response) => {
+  const parsed = BubbleDiffSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+  }
+  const bubble = resolveOwnedBubble(req, res, parsed.data.bubbleId);
+  if (!bubble) return;
+  if (!bubble.workspace) return errResponse(res, 409, 'dev.no_workspace', 'La bubble no tiene workspace');
+  if (!isAllowedWorkspace(bubble.workspace, bubble.ownerId)) {
+    return errResponse(res, 403, 'workspace.not_allowed', 'Workspace no permitido');
+  }
+  const { path: filePath, maxBytes } = parsed.data;
+  try {
+    if (filePath) {
+      const r = await fileDiff({ path: filePath, workspace: bubble.workspace, bubbleId: bubble.id });
+      const truncated = r.diff.length > maxBytes;
+      return res.json({ ok: true, scope: 'file', path: filePath, mode: r.mode, hasChanges: r.hasChanges, diff: r.diff.slice(0, maxBytes), truncated, message: r.message ?? null });
+    }
+    const dir = getWorktree(bubble.id) ?? ensureWorktree(bubble.id, bubble.workspace);
+    const [stat, diff, changes] = await Promise.all([
+      gitCapture(dir, ['diff', 'HEAD', '--stat'], undefined, 10_000),
+      gitCapture(dir, ['diff', 'HEAD'], undefined, 15_000),
+      computeFileChanges(dir).catch(() => ({ workspace: dir, files: [], git: false })),
+    ]);
+    const untracked = changes.files.filter((f) => f.change === 'created' && f.unstaged).map((f) => f.path);
+    const full = diff.ok ? diff.out : '';
+    res.json({
+      ok: true, scope: 'worktree', dir, git: changes.git,
+      stat: stat.ok ? stat.out.trim() : '',
+      untracked,
+      diff: full.slice(0, maxBytes),
+      truncated: full.length > maxBytes,
+      hasChanges: full.length > 0 || untracked.length > 0,
+    });
+  } catch (e) {
+    console.error('[bubble/diff]', e);
+    errResponse(res, 500, 'file.diff_failed', 'No se pudo calcular el diff');
+  }
+});
+
+// Conversación de la bubble desde el transcript de Claude Code. Funciona con
+// el agente offline (el archivo sigue ahí); para Codex o sin transcript cae a
+// la cola del terminal.
+app.get('/bubble/transcript', (req: Request, res: Response) => {
+  const bubble = resolveOwnedBubble(req, res, req.query.bubbleId);
+  if (!bubble) return;
+  const agent = parseAgent(req.query.agent);
+  const lastTurns = clampQueryInt(req.query.lastTurns, 1, 100, 10);
+  const includeTools = req.query.includeTools === '1';
+  const maxChars = clampQueryInt(req.query.maxChars, 1000, 200_000, 20_000);
+  const terminals = listPtySessions(bubble.id);
+  const agentPtyId = ptyIdForAgent(agent);
+  const agentPty = terminals.find((t) => t.ptyId === agentPtyId) ?? null;
+  const cwd = agentPty?.cwd ?? getWorktree(bubble.id) ?? bubble.workspace;
+  const conversation = agent === 'claude' && cwd
+    ? readConversation(cwd, { lastTurns, includeTools, maxChars, notBefore: agentPty?.startedAt })
+    : null;
+  if (conversation) {
+    return res.json({ ok: true, bubbleId: bubble.id, source: 'transcript', ...conversation });
+  }
+  const raw = agentPty ? getPtyTail(bubble.id, agentPtyId, 128 * 1024) ?? '' : getBubblePtyBuffer(bubble.id);
+  const text = ptyTailToText(raw, 400).slice(-maxChars);
+  res.json({
+    ok: true, bubbleId: bubble.id, source: 'pty', text,
+    note: agent === 'claude'
+      ? 'No se encontró transcript de Claude Code para esta bubble; se devuelve la cola del terminal.'
+      : 'Codex no tiene lector de transcript; se devuelve la cola del terminal.',
+  });
 });
 
 // Lista de bubbles activas según el último snapshot que sincronizó el
@@ -1937,11 +2446,21 @@ app.post('/bubble/send', (req: Request, res: Response) => {
 // que arrancó el backend, devuelve lista vacía y lastSync=0 para que el
 // caller MCP pueda mostrar un mensaje útil ("Eco aún no sincronizó").
 app.get('/bubbles', (req: Request, res: Response) => {
-  // Browser con sesión → sus bubbles (admin: las suyas). MCP sin sesión todavía
-  // → cae al primer admin (F4 agrega token MCP por usuario).
-  const uid = req.ecoUser?.id ?? firstAdminId() ?? undefined;
+  // Browser con sesión → sus bubbles. MCP → el usuario de máquina (último login).
+  const uid = req.ecoUser?.id ?? getMachineUser() ?? undefined;
   const snap = uid ? getBubblesSnapshot(uid) : { bubbles: [], lastSync: 0 };
-  res.json({ ok: true, bubbles: snap.bubbles, lastSync: snap.lastSync });
+  // Enriquecido con el estado vivo del PTY y los nombres de categoría para que
+  // el MCP liste sin una consulta por bubble. El frontend ignora los extras.
+  const running = new Set(runningPtyBubbleIds());
+  const busy = new Set(busyPtyBubbleIds());
+  const categories = uid ? getCategories(uid) : [];
+  const bubbles = snap.bubbles.map((b) => ({
+    ...b,
+    running: running.has(b.id),
+    busy: busy.has(b.id),
+    categories: (b.categoryIds ?? []).map((id) => categories.find((c) => c.id === id)?.name ?? id),
+  }));
+  res.json({ ok: true, bubbles, lastSync: snap.lastSync });
 });
 
 // Sync interno frontend → backend. El frontend debouncea y postea su lista
@@ -1958,7 +2477,13 @@ const BubblesSyncSchema = z.object({
     updatedAt: z.number(),
     lastMsgPreview: z.string().max(400).optional(),
     categoryIds: z.array(z.string().max(64)).max(20).optional(),
+    baseBranch: z.string().max(256).optional(),
   })).max(500),
+  categories: z.array(z.object({
+    id: z.string().min(1).max(64),
+    name: z.string().max(80),
+    color: z.string().max(32),
+  })).max(200).optional(),
 });
 app.post('/bubbles/sync', (req: Request, res: Response) => {
   const uid = req.ecoUser?.id;
@@ -1978,7 +2503,9 @@ app.post('/bubbles/sync', (req: Request, res: Response) => {
       updatedAt: b.updatedAt,
       ...(b.lastMsgPreview ? { lastMsgPreview: b.lastMsgPreview.slice(0, 160) } : {}),
       ...(b.categoryIds ? { categoryIds: b.categoryIds } : {}),
+      ...(b.baseBranch ? { baseBranch: b.baseBranch } : {}),
     }));
+  if (parsed.data.categories) setCategoriesSnapshot(uid, parsed.data.categories);
   // Detección de creación de agente: bubbles nuevas en este sync → bitácora.
   // El frontend crea las bubbles localmente (no vía /bubble/create), así que el
   // sync es el único punto donde el backend ve un agente nuevo de la UI.
@@ -2150,6 +2677,9 @@ try {
 }
 
 const server = createServer(app);
+// Node corta las requests a los 300 s por defecto; /bubble/wait y /bubble/dev
+// pueden quedarse esperando más (tope propio por endpoint vía req.setTimeout).
+server.requestTimeout = 0;
 attachWebSocket(server, authToken);
 attachPtyServer(server, authToken);
 

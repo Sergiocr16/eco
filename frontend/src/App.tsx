@@ -281,16 +281,39 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     handlers: {
       ...bubbleStreamHandlers(bubbles),
       onClientAction: (action) => {
-        // Viene del MCP server externo (POST /bubble/create), que ya trae
-        // id/workspace/baseBranch resueltos. Si omite baseBranch caemos al
-        // default del usuario.
-        bubbles.createBubble({
-          id: action.id,
-          title: action.title,
-          focus: action.focus,
-          workspace: action.workspace,
-          baseBranch: action.baseBranch ?? defaultBaseBranchForWorkspace(),
-        });
+        // Vienen del MCP server externo (endpoints /bubble/*). El backend ya
+        // validó id y dueño; acá solo se aplica con los mismos hooks que usa
+        // la UI, y el próximo /bubbles/sync le confirma el cambio al backend.
+        switch (action.kind) {
+          case 'open_bubble':
+            // Si omite baseBranch caemos al default del usuario.
+            bubbles.createBubble({
+              id: action.id,
+              title: action.title,
+              focus: action.focus,
+              workspace: action.workspace,
+              baseBranch: action.baseBranch ?? defaultBaseBranchForWorkspace(),
+            });
+            return;
+          case 'archive_bubble':
+            // Sin diálogo de confirmación: el caller remoto ya decidió.
+            bubbles.archiveBubble(action.id);
+            finishCloseUi(action.id);
+            return;
+          case 'delete_bubble':
+            bubbles.deletePermanently(action.id);
+            finishCloseUi(action.id);
+            return;
+          case 'rename_bubble':
+            bubbles.renameBubble(action.id, action.title);
+            return;
+          case 'focus_bubble':
+            handleOpenAgent(action.id);
+            return;
+          case 'set_bubble_categories':
+            bubbles.setBubbleCategories(action.id, action.categoryIds);
+            return;
+        }
       },
     },
   });
@@ -466,16 +489,22 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     opts?.afterClose?.();
   }
 
-  function confirmCloseNow() {
-    if (!confirmCloseId) return;
-    const id = confirmCloseId;
-    setConfirmCloseId(null);
-    bubbles.removeBubble(id);
+  // Limpieza de UI tras cerrar una burbuja (desde el diálogo o desde el MCP):
+  // la saca de las visitadas y, si era la abierta, vuelve al dashboard.
+  function finishCloseUi(id: string) {
     setVisitedBubbleIds((prev) => prev.filter((x) => x !== id));
     if (detailBubbleId === id) {
       setDetailBubbleId(null);
       handleBackFromDetail();
     }
+  }
+
+  function confirmCloseNow() {
+    if (!confirmCloseId) return;
+    const id = confirmCloseId;
+    setConfirmCloseId(null);
+    bubbles.removeBubble(id);
+    finishCloseUi(id);
   }
 
   function startTerminalDictation(bubbleId: string) {

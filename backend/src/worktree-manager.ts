@@ -13,6 +13,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { isValidBubbleId } from './bubble-ids.js';
 import { isAllowedWorkspace } from './config.js';
 import { githubEnvOverrides } from './github-runtime.js';
 
@@ -134,6 +135,10 @@ function shortId(bubbleId: string): string {
   return bubbleId.replace(/[^a-zA-Z0-9]/g, '').slice(-12) || 'b';
 }
 
+export function worktreeBranchName(bubbleId: string): string {
+  return `eco/${shortId(bubbleId)}`;
+}
+
 function ensureRoot() {
   if (!existsSync(WORKTREES_ROOT)) {
     mkdirSync(WORKTREES_ROOT, { recursive: true, mode: 0o700 });
@@ -162,7 +167,7 @@ export function ensureWorktree(
 
   ensureRoot();
   const target = join(WORKTREES_ROOT, bubbleId);
-  const branch = `eco/${shortId(bubbleId)}`;
+  const branch = worktreeBranchName(bubbleId);
 
   // Si el directorio target ya existe (por restart anterior), intentamos reusarlo
   // sin crear una rama nueva.
@@ -229,7 +234,7 @@ export function removeWorktree(bubbleId: string): boolean {
   if (!path) return false;
   worktrees.delete(bubbleId);
   // Calcular el nombre de la rama que creamos al spawnear el worktree.
-  const branch = `eco/${shortId(bubbleId)}`;
+  const branch = worktreeBranchName(bubbleId);
   if (!existsSync(path)) {
     // El worktree dir ya no está pero la rama puede seguir viva si el user
     // borró el dir manualmente. Intentamos limpiar la rama de todos modos.
@@ -267,6 +272,15 @@ function tryDeleteBranchFromAnyRepo(branch: string): void {
 export function getWorktree(bubbleId: string): string | null {
   const path = worktrees.get(bubbleId);
   if (path && existsSync(path)) return path;
+  // El Map solo conoce los worktrees que creó ESTE proceso; tras un restart
+  // del backend los de disco seguían ahí pero se reportaban como inexistentes
+  // (status/transcript caían al repo padre). Adoptar el de disco si existe.
+  if (!isValidBubbleId(bubbleId)) return null;
+  const onDisk = join(WORKTREES_ROOT, bubbleId);
+  if (existsSync(join(onDisk, '.git'))) {
+    worktrees.set(bubbleId, onDisk);
+    return onDisk;
+  }
   return null;
 }
 

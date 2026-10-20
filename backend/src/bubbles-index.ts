@@ -24,7 +24,10 @@ export type BubbleSummary = {
   ownerId: string;
   lastMsgPreview?: string;
   categoryIds?: string[];
+  baseBranch?: string;
 };
+
+export type Category = { id: string; name: string; color: string };
 
 export type BubblesSnapshot = {
   bubbles: BubbleSummary[];
@@ -35,7 +38,16 @@ type Store = {
   version: 2;
   byUser: Record<string, BubbleSummary[]>;
   lastSync: Record<string, number>;
+  // Categorías (id → nombre/color) que el frontend sincroniza junto a las
+  // bubbles. Opcional para leer stores viejos sin migración.
+  categoriesByUser?: Record<string, Category[]>;
 };
+
+// Suscriptores a cada sync: los endpoints MCP que delegan un cambio a la UI
+// esperan acá a que el snapshot lo refleje (confirmación real, sin escritura
+// optimista que el sync en vuelo pisaría).
+type SnapshotListener = (userId: string) => void;
+const listeners = new Set<SnapshotListener>();
 
 let cache: Store | null = null;
 
@@ -97,7 +109,75 @@ export function setBubblesSnapshot(userId: string, bubbles: Omit<BubbleSummary, 
   s.byUser[userId] = next;
   s.lastSync[userId] = Date.now();
   persist();
+  for (const fn of listeners) { try { fn(userId); } catch { /* noop */ } }
   return added;
+}
+
+export function setCategoriesSnapshot(userId: string, categories: Category[]): void {
+  const s = store();
+  if (!s.categoriesByUser) s.categoriesByUser = {};
+  s.categoriesByUser[userId] = categories;
+  persist();
+}
+
+export function getCategories(userId: string): Category[] {
+  return store().categoriesByUser?.[userId] ?? [];
+}
+
+function foldName(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+}
+
+export type CategoryResolution =
+  | { ok: true; category: Category }
+  | { ok: false; code: 'category.not_found' | 'category.ambiguous'; available: string[] };
+
+/** Resuelve una categoría por id exacto o por nombre (sin distinguir mayúsculas ni acentos). */
+export function resolveCategory(userId: string, nameOrId: string): CategoryResolution {
+  const cats = getCategories(userId);
+  const available = cats.map((c) => c.name);
+  const byId = cats.find((c) => c.id === nameOrId);
+  if (byId) return { ok: true, category: byId };
+  const wanted = foldName(nameOrId);
+  const matches = cats.filter((c) => foldName(c.name) === wanted);
+  if (matches.length === 1) return { ok: true, category: matches[0]! };
+  if (matches.length > 1) return { ok: false, code: 'category.ambiguous', available };
+  return { ok: false, code: 'category.not_found', available };
+}
+
+export function onSnapshotChange(fn: SnapshotListener): () => void {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
+}
+
+/**
+ * Espera a que la bubble del usuario cumpla `predicate` (null = ya no está en
+ * el snapshot). Chequea de inmediato y luego en cada sync, hasta `timeoutMs`.
+ */
+export function waitForBubble(
+  userId: string,
+  bubbleId: string,
+  predicate: (bubble: BubbleSummary | null) => boolean,
+  timeoutMs: number,
+): Promise<{ confirmed: boolean; bubble: BubbleSummary | null }> {
+  const current = () => (store().byUser[userId] ?? []).find((b) => b.id === bubbleId) ?? null;
+  const now = current();
+  if (predicate(now)) return Promise.resolve({ confirmed: true, bubble: now });
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (confirmed: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve({ confirmed, bubble: current() });
+    };
+    const unsubscribe = onSnapshotChange((uid) => {
+      if (uid !== userId) return;
+      if (predicate(current())) finish(true);
+    });
+    const timer = setTimeout(() => finish(false), timeoutMs);
+  });
 }
 
 export function getBubblesSnapshot(userId: string): BubblesSnapshot {
@@ -111,9 +191,17 @@ export function getAllSnapshots(): { byUser: Record<string, BubbleSummary[]>; la
   return { byUser: s.byUser, lastSync: s.lastSync };
 }
 
-/** Busca una bubble por id en TODOS los usuarios (devuelve con ownerId). */
-export function findBubble(bubbleId: string): BubbleSummary | null {
+/**
+ * Busca una bubble por id. Mira primero la lista de `preferUser`: el mismo id
+ * puede existir bajo un uid legacy (pre-Firebase) y bajo el uid actual, y el
+ * primer match global devolvía el dueño viejo → 403 para el dueño real.
+ */
+export function findBubble(bubbleId: string, preferUser?: string | null): BubbleSummary | null {
   const s = store();
+  if (preferUser) {
+    const own = s.byUser[preferUser]?.find((b) => b.id === bubbleId);
+    if (own) return own;
+  }
   for (const list of Object.values(s.byUser)) {
     const found = list.find((b) => b.id === bubbleId);
     if (found) return found;

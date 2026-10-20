@@ -114,7 +114,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 | `POST /voice/transcribed` + mensaje WS `voice_transcribed` | Nada | Solo lo usaba el listener Python. |
 | Paso "Voice" del OnboardingWizard | Nada | No hay preferencia de voz que configurar. |
 | Sub-tabs `Shell \| Agente \| Comandos` del tab Terminal (`TerminalPanel`, `SubTabBtn`, `AgentBashLog`, `SimulatedTerminal`, `TermLineRow`, `TermLine`, claves `detail.term.*` + `detail.terminal.tab.*`) | `TerminalTabs` directo (Claude \| Codex \| Shell N) | Nadie los usaba. La terminal real (xterm+PTY) reemplaza a la simulada. **`POST /shell` + `backend/src/shell.ts` quedaron sin caller** — candidatos a borrar. |
-| **Tab "Conversación" + todo el Claude Agent SDK**: `backend/src/{agent,agent-tools}.ts`, el handler `prompt`/`interrupt` de `ws-server.ts`, `ClientMessageSchema`, los `ServerMessage` `sdk_message`/`session_started`/`done`/`error`/`inject_prompt`, `client_action` `rename_bubble`/`close_bubble`; `ChatPanel`/`ChatBubble`/`ToolCallRow`/`ThinkingBubble`/`EmptyChat`, `HistoryScreen` + screen `history`, `NextActionsPanel`, `Sparkline`, `copyTranscriptToClipboard`, `collectFilesChanged`, `useEcoSocket.send`/`.interrupt`, `useBubbles.{appendMessage,updateMessage,setBubbleMessages,setBubbleSessionId,setBubbleStatus}`, eventos `eco:set_chat_draft`/`eco:focus_chat_input`, env `ECO_MODEL`/`ECO_RATE_LIMIT`/`ECO_PROMPT_TIMEOUT_MS`/`ECO_MAX_PROMPT_BYTES`, `config.model` + campo `model` de `/info` | Los agentes viven en el **PTY** (tabs Claude/Codex) | No se usaba. El SDK era la única razón del canal cliente→servidor de `/ws`. **Se conservan**: el campo `bubble.messages` (para que los docs viejos de Firestore sigan parseando), `config.anthropicApiKey` (la usan los `claude -p` de notes-summary / commit con IA / dev-server). La dependencia `@anthropic-ai/claude-agent-sdk` se eliminó después (solo aportaba el ripgrep bundleado; hoy viene de `@vscode/ripgrep`). |
+| **Tab "Conversación" + todo el Claude Agent SDK**: `backend/src/{agent,agent-tools}.ts`, el handler `prompt`/`interrupt` de `ws-server.ts`, `ClientMessageSchema`, los `ServerMessage` `sdk_message`/`session_started`/`done`/`error`/`inject_prompt`, `client_action` `rename_bubble`/`close_bubble` (**volvieron en 2026-10 con nombres explícitos y el MCP server como único productor** — ver Appendix C); `ChatPanel`/`ChatBubble`/`ToolCallRow`/`ThinkingBubble`/`EmptyChat`, `HistoryScreen` + screen `history`, `NextActionsPanel`, `Sparkline`, `copyTranscriptToClipboard`, `collectFilesChanged`, `useEcoSocket.send`/`.interrupt`, `useBubbles.{appendMessage,updateMessage,setBubbleMessages,setBubbleSessionId,setBubbleStatus}`, eventos `eco:set_chat_draft`/`eco:focus_chat_input`, env `ECO_MODEL`/`ECO_RATE_LIMIT`/`ECO_PROMPT_TIMEOUT_MS`/`ECO_MAX_PROMPT_BYTES`, `config.model` + campo `model` de `/info` | Los agentes viven en el **PTY** (tabs Claude/Codex) | No se usaba. El SDK era la única razón del canal cliente→servidor de `/ws`. **Se conservan**: el campo `bubble.messages` (para que los docs viejos de Firestore sigan parseando), `config.anthropicApiKey` (la usan los `claude -p` de notes-summary / commit con IA / dev-server). La dependencia `@anthropic-ai/claude-agent-sdk` se eliminó después (solo aportaba el ripgrep bundleado; hoy viene de `@vscode/ripgrep`). |
 
 If you spot any of these in live code, it's residue to clean.
 
@@ -395,13 +395,15 @@ El Claude Agent SDK se removió con el tab de Conversación (§2). `/ws` quedó 
 ### MCP Server (Claude Code)
 - `mcp-server/` — paquete standalone que se bundlea en el .dmg (ver §C)
 - `backend/src/mcp-config.ts` — resolve path + install/uninstall vía `claude mcp`
-- `backend/src/index.ts` `GET/POST/DELETE /config/mcp`
+- `backend/src/claude-transcript.ts` — lector del transcript JSONL de Claude Code (estado del turno + conversación)
+- `backend/src/strip-ansi.ts` — `stripAnsi` + `ptyTailToText` (cola legible del PTY)
+- `backend/src/index.ts` `GET/POST/DELETE /config/mcp` + todos los endpoints `MCP_FREE` (ver Appendix C)
 - `frontend/src/hooks/useMcpConfig.ts`
 - `frontend/src/screens/Settings.tsx` `McpCard` (en `SectionIntegrations`)
 - `electron/scripts/prepare-mcp.cjs` — build pre-empaquetado (tsc + prune dev deps)
 
 ### Dashboard
-- `frontend/src/screens/Dashboard.tsx` — grid + kanban + graph views, satellite pulses. **Toggle admin "Mis agentes / Todos los usuarios"** (`eco.dashboard.scope`, solo admin): en modo "todos" las 3 vistas usan `teamBubbles` (de `useTeamBubbles`, `components/AdminGraph.tsx`) — grilla agrupada por dueño, kanban con badge de dueño, graph en `groupMode="owner"`; agentes ajenos read-only y clic inerte. Tarjetas ajenas usan `lastMsgPreview`+`categoryIds` (no tienen `messages`).
+- `frontend/src/screens/Dashboard.tsx` — grid + kanban + graph views, satellite pulses. **Kanban = un tablero por categoría** (+ "Sin categoría"; un agente con varias categorías aparece en cada una; solo tableros con agentes). Grid y kanban ordenan **activas primero** (`activeFirst` sobre `useActiveBubbleIds`, estable para el resto). **Toggle admin "Mis agentes / Todos los usuarios"** (`eco.dashboard.scope`, solo admin): en modo "todos" las 3 vistas usan `teamBubbles` (de `useTeamBubbles`, `components/AdminGraph.tsx`) — grilla agrupada por dueño, kanban con badge de dueño, graph en `groupMode="owner"`; agentes ajenos read-only y clic inerte. Tarjetas ajenas usan `lastMsgPreview`+`categoryIds` (no tienen `messages`).
 - `frontend/src/components/AdminGraph.tsx` — `useTeamBubbles(ownBubbles, userId, enabled)`: combina bubbles propias (reales) + ajenas sintetizadas de `/admin/overview` (poll 5 s), con `ownerNames`.
 
 ---
@@ -436,6 +438,7 @@ Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources
 | `~/.eco/openai-api-key` | Optional OpenAI API key (global, compartida). Inyectada como `OPENAI_API_KEY` **solo** en el PTY con `agent=codex`. |
 | `~/.eco/dev-sessions.<port>.json` | `[{bubbleId, role, pgid, port, command, ...}]` — namespaced by backend port (7050/7100/7200) so parallel backends don't clobber each other. |
 | `~/.eco/obsidian.json` | `{vaultPath, enabled}` |
+| `~/.eco/bubbles-index.json` | Snapshot por usuario de las bubbles (`byUser`) **+ categorías** (`categoriesByUser`), lo sube el frontend vía `POST /bubbles/sync`. Es lo único que el MCP server "ve" del estado (la autoridad sigue siendo Firestore). |
 | `~/.eco/backup.json` | `{enabled, folder?, retention, lastBackup?, lastError?}` — config del auto-backup (cada 2h, retención 30) |
 | `~/.eco/worktrees/<bubbleId>` | Per-agent git worktree |
 | **legacy** `~/.eco/users/index.json` + `~/.eco/users/<id>/user.json` | Registro de usuarios local argon2id/BIP39 — **inerte** (solo fallback PIN / migración). |
@@ -546,7 +549,7 @@ Auth via subprotocol: **`eco.idtoken.<jwt>`** (Firebase ID token). `verifyClient
 **Client → server**: nada. Es un canal **unidireccional** desde que se removió el tab de Conversación (era el único emisor de `prompt`/`interrupt`). Los frames entrantes se ignoran; no hay `ClientMessageSchema`.
 
 **Server → client**:
-- `{type:'client_action', action}` — solo `open_bubble`, emitido por `POST /bubble/create` (MCP server externo)
+- `{type:'client_action', action}` — `open_bubble` | `archive_bubble` | `delete_bubble` | `rename_bubble` | `focus_bubble` | `set_bubble_categories`. Único productor: los endpoints del MCP server (`/bubble/create`, `/bubble/request-close`, `/bubble/rename`, `/bubble/focus`, `/bubble/categories`). Se emiten **solo a las conexiones del dueño** (`broadcastClientActionToUser`); el frontend las aplica con sus hooks (`App.tsx:onClientAction`) y el backend confirma esperando el siguiente `/bubbles/sync` (`waitForBubble`, cap 10 s).
 - `{type:'pty_status', bubbleId, running}` — PTY open/closed
 - `{type:'pty_busy_change', bubbleId, busy}` — inactividad del output del PTY. **Es por-burbuja, no por-terminal**: cualquier sesión (Claude, Codex o un shell plano) marca la burbuja como ocupada, así que la notificación de "terminó" no significa estrictamente "Claude terminó".
 - `{type:'dev_status', bubbleId, role, status, port, url, command, exitCode, skill?}` — dev server state change
@@ -1464,27 +1467,39 @@ Paquete standalone en `mcp-server/` que expone tools MCP por stdio para
 que Claude Code (u otro cliente MCP) pueda crear bubbles en Eco desde
 cualquier terminal o sesión.
 
-### Tools v1
+### Dónde está documentado (para que cualquier Claude lo encuentre)
 
-- `create_bubble({ title, workspace?, base_branch?, initial_prompt?, agent? })` —
-  Crea una bubble en Eco. Si viene `initial_prompt`, el backend spawnea el
-  PTY de la bubble + el CLI del agente server-side y tipea el prompt en el
-  terminal. Si `workspace` se omite, el server detecta el cwd con el que
-  arrancó y busca un workspace permitido que lo contenga.
-  `agent` (`claude` | `codex`, default heredado del caller — ver "Herencia de
-  agente" abajo) elige qué CLI arranca. El PTY headless usa el **mismo `ptyId`
-  que la pestaña de la UI** (`ptyIdForAgent`: `claude`→`main`, `codex`→`codex`),
-  así al abrir la bubble cada pestaña reengancha a su sesión y Codex nunca
-  aparece corriendo dentro de la pestaña rotulada "Claude".
-- `list_bubbles()` — Lista las bubbles activas (id, título, workspace,
-  status). Requiere que el frontend haya sincronizado al menos una vez.
-- `send_to_bubble({ bubble_id, text, agent? })` — Envía un prompt al agente
-  de una bubble existente: el backend lo tipea en el PTY de la bubble vía
-  `injectPromptToBubble` (mismo camino que `initial_prompt`; si el PTY no
-  estaba corriendo lo spawnea). Fire-and-forget — no devuelve la respuesta
-  del agente. El workspace sale del snapshot sincronizado, no del caller.
-  Rechaza bubbles archivadas (`bubble.archived`) e ids desconocidos
-  (`bubble.not_found`).
+1. **`mcp-server/src/index.ts:INSTRUCTIONS`** — el manual de uso que el server
+   manda al cliente MCP al conectar (`Server` option `instructions`); Claude Code
+   lo muestra al modelo junto con las tools en cada sesión. Flujo típico,
+   estados, reglas. **Si cambiás el comportamiento de una tool, actualizá esto.**
+2. Las `description` de cada tool en `mcp-server/src/tools.ts` (lo que el
+   modelo lee al decidir qué llamar).
+3. `mcp-server/README.md` — referencia humana de tools, args, instalación.
+4. `~/.claude/CLAUDE.md` de Sergio (global, todos los proyectos) — tabla
+   resumen "MCP de Eco" con reglas de uso.
+5. Esta sección — arquitectura, endpoints y decisiones.
+
+### Tools (v1.1 — 15 tools)
+
+Todas validan el id contra el snapshot (`bubble.invalid_id` / `bubble.not_found`)
+y el dueño (`bubble.not_owner`, salvo admin). Las que cambian estado las aplica
+la **UI del dueño** (si no hay cliente WS del dueño → `409 eco.no_clients`).
+
+| Tool | Endpoint | Qué hace |
+|---|---|---|
+| `create_bubble` | `POST /bubble/create` | Crea la bubble (worktree + `open_bubble` a la UI). Con `initial_prompt` arranca el PTY server-side y tipea el prompt. `agent` hereda del caller. |
+| `list_bubbles` | `GET /bubbles` | Lista con `running`/`busy` (PTY vivo) y nombres de categorías. `include_archived`, filtro por `workspace`/`category`. |
+| `get_bubble` | `GET /bubble/status` | Estado exacto (`archived`/`offline`/`working`/`waiting_permission`/`waiting_input`/`idle`), terminales, dev servers, transcript (último mensaje del agente), git (rama, ahead/behind, archivos cambiados, último commit, PR), cola del terminal sin ANSI. |
+| `read_bubble_conversation` | `GET /bubble/transcript` | Últimos N turnos Usuario/Agente desde el transcript de Claude Code (funciona con el agente offline). `include_tools` lista cada tool con input/resultado resumidos. Codex → cola del PTY. |
+| `send_to_bubble` | `POST /bubble/send` | Tipea un prompt (multilínea = un solo mensaje, bracketed paste). Arranca el PTY si hace falta y espera a que el CLI esté listo. **Confirma la entrega** contra el transcript (`delivered`); si no aparece devuelve la pantalla. `wait_s` encadena `/bubble/wait`. |
+| `wait_for_bubble` | `POST /bubble/wait` | Espera a que el terminal se aquiete (`timeoutMs` ≤ 600 s) y devuelve el status. |
+| `answer_bubble` / `interrupt_bubble` | `POST /bubble/keys` | Teclas con nombre (`enter`, `esc`, `up`, `down`, `tab`, `ctrl_c`, …) o texto corto + Enter. `409 pty.not_running` sin PTY. |
+| `close_bubble` | `POST /bubble/request-close` | `archive_bubble` (default) o `delete_bubble` (`permanent`) a la UI del dueño; confirma vía sync. |
+| `rename_bubble` / `focus_bubble` | `POST /bubble/rename` / `POST /bubble/focus` | `rename_bubble` / `focus_bubble` a la UI. |
+| `set_bubble_category` / `list_categories` | `POST /bubble/categories` / `GET /categories` | Por nombre (case/acento-insensible) o id; `mode` set/add/remove/clear. Inexistente → `category.not_found` con la lista; no se crean desde el MCP. |
+| `dev_server` | `POST /bubble/dev` | start/stop/restart/status con el comando del workspace (`workspace-config`); dual arranca backend → frontend. Sin config → `409 dev.not_configured`. |
+| `get_bubble_diff` | `POST /bubble/diff` | Diff del worktree vs HEAD (stat + diff + untracked) o de un archivo (`fileDiff`). |
 
 ### Setup desde Eco (recomendado)
 
@@ -1539,6 +1554,35 @@ codex mcp add eco --env ECO_MCP_AGENT=codex -- node /Applications/Eco.app/Conten
 - `backend/src/mcp-config.ts` — detect path + install/uninstall delegado
   al binario `claude` (lee `claude mcp get eco` para status). NO parsea
   `~/.claude.json` directamente.
+- `backend/src/claude-transcript.ts` — `getClaudeTranscriptState(cwd, notBefore?)`
+  (turno `end_turn`/`tool_pending`/`in_progress`, último texto del agente,
+  tools pendientes) y `readConversation(cwd, {lastTurns, includeTools, maxChars})`.
+  Dir del proyecto = `$CLAUDE_CONFIG_DIR ?? ~/.claude` + `/projects/` +
+  `cwd.replace(/[^A-Za-z0-9]/g, '-')` (verificado contra 118 dirs reales).
+  Solo `.jsonl` de primer nivel (subdirs = subagentes); el más nuevo con
+  `mtime >= notBefore` (el `startedAt` del PTY). Lee solo la cola del archivo
+  (256 KB → 1 MB → 4 MB) — hay transcripts de 14 MB. Limpia los bloques que
+  Claude Code inyecta en los mensajes "user" (`<system-reminder>`,
+  `<command-message>`, `<task-notification>`, …).
+- `backend/src/strip-ansi.ts` — `stripAnsi` (trata `ESC[nC` como espacios: las
+  TUIs pintan los huecos con cursor-forward) + `ptyTailToText`.
+- `backend/src/bubbles-index.ts` — `findBubble(id, preferUser)` (el mismo id
+  puede existir bajo un uid legacy pre-Firebase y bajo el uid actual: mirar
+  primero la lista del caller), categorías por usuario (`resolveCategory`),
+  `onSnapshotChange` + `waitForBubble` (confirmación vía sync).
+- `backend/src/pty-server.ts` — además de `injectPromptToBubble`:
+  `waitForPtyReady`, `waitForPtyIdle`, `sendKeysToPty` (`NAMED_KEYS`),
+  `listPtySessions`, `getPtySession`, `getPtyTail`.
+- `backend/src/worktree-manager.ts` — `getWorktree` adopta el worktree de
+  disco si existe (el Map solo conocía los creados por ESTE proceso; tras un
+  restart status/transcript caían al repo padre).
+- `backend/src/ws-server.ts` — `broadcastClientActionToUser`, `wsClientCountForUser`.
+- `frontend/src/App.tsx:onClientAction` — aplica `archive_bubble`/`delete_bubble`
+  (`finishCloseUi`), `rename_bubble`, `focus_bubble`, `set_bubble_categories`.
+  `SoloBubbleShell` cierra su ventana ante archive/delete de su propia bubble.
+- `frontend/src/hooks/useBubbles.ts` — el sync (`POST /bubbles/sync`) manda
+  `baseBranch` por bubble + `categories` (nombres), y se re-dispara al cambiar
+  categorías (`subscribeCategories`).
 - `backend/src/pty-server.ts` `ensureBubblePty` + `injectPromptToBubble`
   — spawn server-side del PTY + escritura del prompt cuando claude CLI
   cold-startea (~5 s desde spawn; texto y Enter en writes separados con
@@ -1564,6 +1608,14 @@ codex mcp add eco --env ECO_MCP_AGENT=codex -- node /Applications/Eco.app/Conten
 - `GET /bubbles` — Lee snapshot que el frontend sincroniza periódicamente.
 - `POST /bubbles/sync` — Solo lo llama el frontend (debounce 800ms) para
   mantener el snapshot actualizado.
+- `GET /bubble/status`, `GET /bubble/transcript`, `POST /bubble/wait`,
+  `POST /bubble/keys`, `POST /bubble/request-close`, `POST /bubble/rename`,
+  `POST /bubble/focus`, `POST /bubble/categories`, `GET /categories`,
+  `POST /bubble/dev`, `POST /bubble/diff` — ver la tabla de tools. **Todos
+  están en `MCP_FREE`** (`index.ts`, match exacto method+path): es lo único
+  que el token de máquina puede tocar. `/bubble/close` y `/bubble/archive`
+  siguen siendo solo del frontend (no validan id ni dueño) — el MCP usa
+  `/bubble/request-close`, que delega en la UI.
 - `GET/POST/DELETE /config/mcp` — Status / install / uninstall consumidos
   por Settings.
 
@@ -1607,11 +1659,45 @@ mucha complejidad para v1. El push periódico desde el frontend (8 KB cada
 y el caller MCP siempre obtiene una respuesta inmediata sin esperar al
 frontend.
 
-#### "¿Por qué texto y Enter en `pty.write` separados con 250 ms de gap?"
-Si los mandamos juntos (`text\r` en un solo chunk), claude CLI a veces
-interpreta el `\r` como newline dentro de un input multilínea estilo paste
-y no submitea. Dos writes con gap → primer write = "typing", segundo =
-"Enter discreto" → submit confiable.
+#### "¿Por qué el prompt viaja como bracketed paste y el Enter aparte?"
+`injectPromptToBubble` escribe `\x1b[200~<texto>\x1b[201~` y, 250 ms después,
+`\r`. Es exactamente lo que hace el driver del propio CLI de Claude (verificado
+en el binario): dentro del paste los `\n` son saltos de línea del mismo mensaje,
+así que un prompt multilínea llega como UN mensaje (antes `\n`→`\r` producía N
+submits). El Enter separado evita que el CLI trate el `\r` como newline
+multilínea estilo paste y no submitee. Con `agent:'none'` (shell pelado) se
+manda texto + `\r` sin bracketed paste.
+
+#### "¿Por qué `send_to_bubble` confirma la entrega contra el transcript?"
+"Listo" (hubo output tras el launch y luego quietud ≥ 1.5 s, cap 15 s —
+`waitForPtyReady`) no garantiza que el CLI esté en el prompt: Claude Code abre
+diálogos al arrancar ("New MCP server found in this project", confianza en la
+carpeta, …) que se tragan la pasta y responden al Enter. Pasó en la primera
+prueba real. La única prueba de entrega es que el transcript registre el
+prompt (`lastUserAt >= sentAt`, poll hasta 20 s — el CLI escribe la entrada
+"user" recién cuando terminan los hooks `UserPromptSubmit`): `delivered:true`; si no aparece,
+`delivered:false` + la pantalla, y la tool le dice al caller que resuelva el
+diálogo con `answer_bubble` y reenvíe. Con Codex o con el agente ocupado (el
+prompt queda encolado y el transcript no lo ve hasta que empieza el turno) es
+`null`.
+
+#### "¿Por qué los cambios de estado pasan por la UI y se confirman esperando el sync?"
+La autoridad del estado es Firestore vía el frontend; el backend solo tiene el
+snapshot de `bubbles-index`. Archivar/renombrar/categorizar desde el MCP emite
+un `client_action` **solo al dueño** (`broadcastClientActionToUser`), el
+frontend lo aplica con los mismos hooks que la UI, y el endpoint espera (cap
+10 s, `waitForBubble` — archivar mata PTY y dev servers antes de sincronizar) a que el siguiente `POST /bubbles/sync` refleje el cambio
+→ `confirmed:true`. NO se escribe optimista en el snapshot: el sync debounced
+en vuelo lo revertiría. Sin UI del dueño → `409 eco.no_clients`.
+
+#### "¿De dónde sale el `state` de `get_bubble`?"
+`bubble.status` del snapshot siempre es `'idle'` (campo muerto). El estado real
+combina el PTY (`busy` = hubo output en los últimos 1.5 s) con el transcript
+de Claude Code: `archived` | `offline` (sin PTY) | `working` (busy) |
+`waiting_permission` (quieto + `tool_use` sin `tool_result`) | `waiting_input`
+(`end_turn`) | `idle` (quieto, sin transcript). Codex no tiene transcript
+soportado (queda `working`/`idle` por PTY; `~/.codex/sessions/**/rollout-*.jsonl`
+es follow-up).
 
 #### "¿Por qué `claude mcp get eco` y no parsear `~/.claude.json`?"
 El formato de `~/.claude.json` es interno de Claude Code y puede cambiar

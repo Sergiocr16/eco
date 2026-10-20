@@ -88,6 +88,20 @@ export function broadcastClientAction(action: ClientAction): void {
   broadcastFn?.({ type: 'client_action', action });
 }
 
+/** client_action solo a los dispositivos del usuario dueño de la bubble. */
+export function broadcastClientActionToUser(userId: string, action: ClientAction): void {
+  broadcastToUser(userId, { type: 'client_action', action });
+}
+
+/** Conexiones /ws abiertas de un usuario — 0 significa que no tiene la UI abierta. */
+export function wsClientCountForUser(userId: string): number {
+  const conns = wsByUser.get(userId);
+  if (!conns) return 0;
+  let n = 0;
+  for (const c of conns) if (c.readyState === c.OPEN) n += 1;
+  return n;
+}
+
 // Devuelve cuántos clientes WS hay actualmente conectados al `/ws` (frontend
 // del Electron app o el dev en :5173). Usado por /bubble/create para decidir
 // si vale la pena disparar la acción o devolver `eco.no_clients`.
