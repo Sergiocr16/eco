@@ -8,14 +8,14 @@ name: release-win
 # Requisito: la versión en electron/package.json debe coincidir con el tag
 # (electron-updater compara app.getVersion() contra latest.yml).
 #
-# La subida NO la hace electron-builder (`--publish always`): en v1.0.15 su
-# uploader arrancó dos flujos de publish para el mismo release, el segundo vio
-# "already exists", borró el .exe y latest.yml recién subidos y el proceso
-# terminó con exit 0 sin volver a subirlos. Quedó un release "Latest" con solo
-# el .blockmap y ningún error en CI. Acá electron-builder solo construye (y
-# genera latest.yml porque hay un `publish` provider en la config) y la subida
-# la hace `gh release upload`, que falla fuerte; el último paso verifica que
-# los tres assets estén en estado `uploaded`.
+# La subida NO la hace electron-builder (`--publish always`): en v1.0.15 y
+# v1.0.16 arrancó dos publishers para la misma versión, cada uno creó SU
+# release con el mismo tag (GitHub lo permite) y los assets quedaron repartidos
+# entre los dos: la URL releases/download/<tag>/latest.yml resuelve a uno solo
+# y daba 404 mientras el job terminaba en verde. Acá electron-builder solo
+# construye (y genera latest.yml porque hay un `publish` provider en la config)
+# y la subida la hace `gh release upload` sobre un único release por tag; el
+# último paso verifica que los tres assets estén en estado `uploaded`.
 
 on:
   push:
