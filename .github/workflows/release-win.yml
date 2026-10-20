@@ -59,7 +59,14 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-        run: npm run dist:win
+        # `--publish never` es obligatorio: en CI electron-builder asume
+        # `onTagOrDraft` y, sin GH_TOKEN, aborta el build entero. latest.yml se
+        # genera igual (depende del `publish` provider de la config, no del flag).
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build:all
+          npm --workspace electron run build:win -- --publish never
 
       - name: Publish to GitHub Release
         shell: bash
