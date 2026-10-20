@@ -39,6 +39,9 @@ export type Bubble = {
   pinned: boolean;
   createdAt: number;
   updatedAt: number;
+  // Última vez que el usuario abrió la burbuja (detalle o ventana solo). El
+  // Dashboard ordena por esto, última abierta arriba, tipo pila.
+  lastOpenedAt?: number;
   // True si hay un PTY (shell) abierto en el backend para esta burbuja. NO implica
   // que esté ejecutando un comando — el shell zsh queda vivo entre comandos.
   ptyOpen?: boolean;

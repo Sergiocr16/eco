@@ -1728,9 +1728,7 @@ function GridView({
 }) {
   const t = useTokens();
   const tr = useT();
-  const activeIds = useActiveBubbleIds(bubbles);
-  const workingIds = useWorkingBubbleIds(bubbles);
-  const ordered = activeFirst(bubbles, workingIds, activeIds);
+  const ordered = lastOpenedFirst(bubbles);
 
   // Modo admin "todos": una sección por dueño. Modo normal: por workspace (si 2+).
   const groups = (() => {
@@ -1849,15 +1847,15 @@ function GridView({
   );
 }
 
-// Orden: (0) el agente está trabajando ahora (Claude procesando o PTY con
-// output), (1) actividad secundaria — dev server, browser, cambios sin
-// commitear (el criterio del card "Agentes en vivo"), (2) el resto. Estable
-// dentro de cada nivel. Sin el nivel 0, una burbuja ejecutando empataba con
-// cuatro idle que solo tenían archivos modificados y quedaba abajo.
-function activeFirst(items: Bubble[], workingIds: Set<string>, activeIds: Set<string>): Bubble[] {
+// Orden tipo pila: la última burbuja que el usuario abrió queda arriba
+// (`lastOpenedAt`, lo setea `focusBubble`). Las que nunca se abrieron desde
+// que existe el campo caen por `updatedAt`; empate → orden de entrada.
+// Se probó "activas primero" y no servía: lo que importa es lo que estoy
+// usando, no lo que tiene un dev server o archivos modificados.
+function lastOpenedFirst(items: Bubble[]): Bubble[] {
   return items
-    .map((b, i) => ({ b, i, rank: workingIds.has(b.id) ? 0 : activeIds.has(b.id) ? 1 : 2 }))
-    .sort((x, y) => x.rank - y.rank || x.i - y.i)
+    .map((b, i) => ({ b, i, at: b.lastOpenedAt ?? 0 }))
+    .sort((x, y) => y.at - x.at || y.b.updatedAt - x.b.updatedAt || x.i - y.i)
     .map((x) => x.b);
 }
 
@@ -1874,7 +1872,7 @@ function useWorkingBubbleIds(bubbles: Bubble[]): Set<string> {
 // ──────────────────── Vista Kanban ─────────────────────────────────────────
 // Un tablero por categoría (+ "Sin categoría"). Un agente con varias
 // categorías aparece en cada una: son etiquetas, no estados. Dentro de cada
-// columna, las activas van primero. Click para abrir (sin drag real).
+// columna, la última abierta arriba. Click para abrir (sin drag real).
 function KanbanView({
   bubbles, onOpenAgent, onCreateAgent, workspaces,
   ownerNames, readOnlyOwnerId = null,
@@ -1894,7 +1892,6 @@ function KanbanView({
     ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
 
   const { categories } = useCategories();
-  const activeIds = useActiveBubbleIds(bubbles);
   const workingIds = useWorkingBubbleIds(bubbles);
 
   type ColumnDef = { id: string; label: string; color: string; items: Bubble[] };
@@ -1903,13 +1900,13 @@ function KanbanView({
     id: c.id,
     label: c.name,
     color: c.color,
-    items: activeFirst(bubbles.filter((b) => (b.categoryIds ?? []).includes(c.id)), workingIds, activeIds),
+    items: lastOpenedFirst(bubbles.filter((b) => (b.categoryIds ?? []).includes(c.id))),
   }));
   // Sin categoría conocida (incluye categorías de otros usuarios en la vista
   // admin "todos", cuyos ids no resuelven acá).
   const loose = bubbles.filter((b) => !(b.categoryIds ?? []).some((id) => known.has(id)));
   const uncategorized: ColumnDef = {
-    id: '__none__', label: tr('dash.col.uncategorized'), color: t.text2, items: activeFirst(loose, workingIds, activeIds),
+    id: '__none__', label: tr('dash.col.uncategorized'), color: t.text2, items: lastOpenedFirst(loose),
   };
   columns.push(uncategorized);
   // Solo tableros con agentes; sin ninguno, queda el de "Sin categoría" vacío.
@@ -3569,7 +3566,7 @@ function DashboardRail({
 }) {
   const t = useTokens();
   const tr = useT();
-  const recent = [...bubbles].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
+  const recent = lastOpenedFirst(bubbles).slice(0, 6);
   // Cambios git por burbuja (archivos modificados sin commitear). Lo sumamos
   // por carpeta para mostrar cuántos cambios pendientes hay en cada workspace.
   const changeCounts = useBubbleChangeCountMap(bubbles);
