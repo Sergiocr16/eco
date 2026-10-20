@@ -16,17 +16,21 @@ type KeyDef = { label: string; seq: string; wide?: boolean };
 
 // Los rótulos son nombres de tecla, no texto de interfaz: no pasan por i18n
 // (misma regla que 'OPEN' o 'HARD RESET' en el resto del producto).
+// Orden por frecuencia de uso en el teléfono: Shift+Tab (cambiar de modo en
+// Claude/Codex) es lo que más se toca, después Tab, / y navegar el historial
+// y Enter. Esc y Ctrl+C se usan poco; las flechas laterales casi nunca, por
+// eso quedan al final (hay que desplazar la barra para verlas).
 const KEYS: KeyDef[] = [
-  { label: 'Esc', seq: '\x1b', wide: true },
+  { label: 'Shift+Tab', seq: '\x1b[Z', wide: true },
   { label: 'Tab', seq: '\t', wide: true },
-  { label: '⇧Tab', seq: '\x1b[Z', wide: true },
-  { label: 'Ctrl+C', seq: '\x03', wide: true },
   { label: '/', seq: '/' },
   { label: '↑', seq: '\x1b[A' },
   { label: '↓', seq: '\x1b[B' },
+  { label: '⏎', seq: '\r' },
+  { label: 'Esc', seq: '\x1b', wide: true },
+  { label: 'Ctrl+C', seq: '\x03', wide: true },
   { label: '←', seq: '\x1b[D' },
   { label: '→', seq: '\x1b[C' },
-  { label: '⏎', seq: '\r' },
 ];
 
 export function TerminalKeyBar({
