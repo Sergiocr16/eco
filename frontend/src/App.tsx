@@ -11,6 +11,7 @@ import { FileExplorer } from './screens/FileExplorer';
 import { ArchivedScreen } from './screens/ArchivedScreen';
 import { useVoice } from './hooks/useVoice';
 import { useBubbles } from './hooks/useBubbles';
+import { useDashboardFocus } from './hooks/useDashboardFocus';
 import { usePtyBusyTracker } from './hooks/usePtyBusyNotifier';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
@@ -749,6 +750,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                     onRemove={(id) => requestCloseBubble(id)}
                     onChangeWorkspace={(id, ws) => bubbles.setBubbleWorkspace(id, ws)}
                     onToggleCategory={(id, catId) => bubbles.toggleBubbleCategory(id, catId)}
+                    onSetCategories={(id, ids) => bubbles.setBubbleCategories(id, ids)}
                     availableWorkspaces={workspacesHook.list.workspaces}
                   />
                 ) : null}
@@ -841,11 +843,13 @@ function FloatingBubbleDock({
 }) {
   const enabled = useDockPref();
   const isPhone = useIsPhone();
+  // El modo focus del Dashboard también filtra el dock.
+  const { applyFocus } = useDashboardFocus();
   // El dock es un affordance de escritorio: `left: 64` asume el rail lateral,
   // el resize es solo-mouse y los tooltips son por hover. En el teléfono el
   // cambio de agente es el Dashboard, a un toque en la barra inferior.
   if (!enabled || isPhone) return null;
-  const visible = bubbles.filter((b) => !b.archived);
+  const visible = applyFocus(bubbles.filter((b) => !b.archived));
   return (
     <BubbleDock
       bubbles={visible} activeBubbleId={activeBubbleId}

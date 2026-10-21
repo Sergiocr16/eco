@@ -140,6 +140,8 @@ export type UseCategoriesResult = {
   add: (name: string, color: string) => Category;
   update: (id: string, patch: Partial<Omit<Category, 'id'>>) => void;
   remove: (id: string) => void;
+  /** Mueve `id` a la posición de `targetId` (o al final si es null). */
+  move: (id: string, targetId: string | null) => void;
   byId: (id: string | undefined) => Category | null;
 };
 
@@ -163,6 +165,18 @@ export function useCategories(): UseCategoriesResult {
     },
     remove: (id: string) => {
       setCategories(categories.filter((c) => c.id !== id));
+    },
+    move: (id: string, targetId: string | null) => {
+      const from = categories.findIndex((c) => c.id === id);
+      if (from === -1 || id === targetId) return;
+      const next = [...categories];
+      const [cat] = next.splice(from, 1);
+      const to = targetId === null ? next.length : next.findIndex((c) => c.id === targetId);
+      if (to === -1) return;
+      // Hacia la derecha queda después del destino; hacia la izquierda, antes.
+      const target = targetId === null ? to : categories.findIndex((c) => c.id === targetId);
+      next.splice(from < target ? to + 1 : to, 0, cat!);
+      setCategories(next);
     },
     byId: (id: string | undefined) => {
       if (!id) return null;

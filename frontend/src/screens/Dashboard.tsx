@@ -20,7 +20,8 @@ import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useProfile } from '@/hooks/useProfile';
 import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
-import { useCategories, getCategoryById, sortByCategory } from '@/hooks/useCategories';
+import { useCategories, getCategoryById, sortByCategory, type Category } from '@/hooks/useCategories';
+import { useDashboardFocus } from '@/hooks/useDashboardFocus';
 import { getWorkspaceConfig } from '@/lib/workspace-config';
 import { useBubbleHasFilesMap, useBubbleChangeCountMap } from '@/hooks/useGitChanges';
 import { workspaceName } from '@/lib/workspace-name';
@@ -41,6 +42,7 @@ type Props = {
   onRemove: (id: string) => void;
   onChangeWorkspace: (id: string, workspace: string) => void;
   onToggleCategory: (id: string, categoryId: string | undefined) => void;
+  onSetCategories: (id: string, categoryIds: string[]) => void;
   availableWorkspaces: string[];
   role?: 'admin' | 'member' | null;
   userId?: string | null;
@@ -49,7 +51,7 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, availableWorkspaces, role, userId } = props;
+  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, onSetCategories, availableWorkspaces, role, userId } = props;
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
@@ -98,8 +100,15 @@ export function Dashboard(props: Props) {
   // Más recientes arriba. `updatedAt` ya refleja el último uso real del
   // agente, así que no hace falta un orden manual persistido: los que estás
   // usando suben solos y los viejos se hunden.
-  const viewBubbles = [...(showAll ? teamBubbles : bubbles)]
+  // Modo focus (grilla, kanban y grafo): deja solo los agentes con alguna de
+  // las categorías elegidas. Persistido; los ids de categorías borradas se
+  // ignoran.
+  const { categories } = useCategories();
+  const { activeFocus, setFocus, applyFocus } = useDashboardFocus();
+  const scopeBubbles = showAll ? teamBubbles : bubbles;
+  const viewBubbles = applyFocus([...scopeBubbles])
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const focusEmpty = activeFocus.length > 0 && viewBubbles.length === 0;
   // Clic inerte sobre agentes ajenos: el admin solo abre los que realmente posee.
   const openGuarded = (id: string) => { if (!showAll || bubbles.some((b) => b.id === id)) onOpenAgent(id); };
 
@@ -193,6 +202,15 @@ export function Dashboard(props: Props) {
                 <ScopeBtn active={scope === 'all'} onClick={() => setScope('all')}>{tr('dash.scope.all')}</ScopeBtn>
               </div>
             )}
+            {categories.length > 0 && (
+              <FocusControl
+                categories={categories}
+                selected={activeFocus}
+                onChange={setFocus}
+                shown={viewBubbles.length}
+                total={scopeBubbles.length}
+              />
+            )}
             <div style={{ display: 'flex', gap: 4 }}>
               <IconBtn icon={IconGrid} size={28} active={effectiveView === 'grid'} onClick={() => setView('grid')}/>
               <IconBtn icon={IconColumns} size={28} active={effectiveView === 'kanban'} onClick={() => setView('kanban')}/>
@@ -202,7 +220,12 @@ export function Dashboard(props: Props) {
           </div>
         }>{tr('dash.section.agents')}</SectionLabel>
 
-        {effectiveView === 'grid' ? (
+        {focusEmpty && effectiveView !== 'graph' ? (
+          <div style={{
+            padding: '40px 16px', textAlign: 'center',
+            fontFamily: t.fontSans, fontSize: 13, color: t.text2,
+          }}>{tr('graph.focus.empty')}</div>
+        ) : effectiveView === 'grid' ? (
           <GridView
             bubbles={viewBubbles}
             workspaces={availableWorkspaces}
@@ -221,6 +244,8 @@ export function Dashboard(props: Props) {
             bubbles={viewBubbles}
             onOpenAgent={openGuarded}
             onCreateAgent={onCreateAgent}
+            onSetCategories={onSetCategories}
+            focusIds={activeFocus}
             workspaces={availableWorkspaces}
             ownerNames={showAll ? ownerNames : undefined}
             readOnlyOwnerId={showAll ? (userId ?? null) : null}
@@ -229,13 +254,14 @@ export function Dashboard(props: Props) {
           // Admin en modo "todos": el MISMO GraphView agrupado por usuario
           // (Eco → usuario → sus bubbles), con todas las animaciones/controles.
           <GraphView
-            bubbles={teamBubbles}
+            bubbles={applyFocus(teamBubbles)}
+            focusIds={activeFocus}
             groupMode="owner"
             ownerNames={ownerNames}
             onOpenAgent={openGuarded}
           />
         ) : (
-          <GraphView bubbles={bubbles} onOpenAgent={onOpenAgent}/>
+          <GraphView bubbles={applyFocus(bubbles)} focusIds={activeFocus} onOpenAgent={onOpenAgent}/>
         )}
       </div>
 
@@ -1872,14 +1898,20 @@ function useWorkingBubbleIds(bubbles: Bubble[]): Set<string> {
 // ──────────────────── Vista Kanban ─────────────────────────────────────────
 // Un tablero por categoría (+ "Sin categoría"). Un agente con varias
 // categorías aparece en cada una: son etiquetas, no estados. Dentro de cada
-// columna, la última abierta arriba. Click para abrir (sin drag real).
+// columna, la última abierta arriba. Arrastrar una tarjeta a otro tablero le
+// cambia la categoría de ESE tablero por la del destino (las demás quedan);
+// soltarla en "Sin categoría" le quita todas. Arrastrar el encabezado de un
+// tablero reordena las categorías ("Sin categoría" queda siempre al final).
+const NONE_COL = '__none__';
 function KanbanView({
-  bubbles, onOpenAgent, onCreateAgent, workspaces,
+  bubbles, onOpenAgent, onCreateAgent, onSetCategories, focusIds = [], workspaces,
   ownerNames, readOnlyOwnerId = null,
 }: {
   bubbles: Bubble[];
   onOpenAgent: (id: string) => void;
   onCreateAgent: (title?: string, workspace?: string, baseBranch?: string) => void;
+  onSetCategories: (id: string, categoryIds: string[]) => void;
+  focusIds?: string[];
   workspaces: string[];
   ownerNames?: Record<string, string>;
   readOnlyOwnerId?: string | null;
@@ -1891,8 +1923,24 @@ function KanbanView({
   const ownerLabelFor = (b: Bubble): string | undefined =>
     ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
 
-  const { categories } = useCategories();
+  const { categories, move: moveCategory } = useCategories();
   const workingIds = useWorkingBubbleIds(bubbles);
+  type Drag = { kind: 'card'; id: string; from: string } | { kind: 'col'; id: string };
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [overCol, setOverCol] = useState<string | null>(null);
+  // En la vista admin "todos" solo se mueven los agentes propios.
+  const canDrag = (b: Bubble) => !readOnlyOwnerId || b.ownerId === readOnlyOwnerId;
+
+  const moveTo = (bubbleId: string, from: string, to: string) => {
+    if (from === to) return;
+    const b = bubbles.find((x) => x.id === bubbleId);
+    if (!b) return;
+    const current = (b.categoryIds ?? []).filter((id) => known.has(id));
+    const next = to === NONE_COL
+      ? []
+      : [...current.filter((id) => id !== from && id !== to), to];
+    onSetCategories(bubbleId, next);
+  };
 
   type ColumnDef = { id: string; label: string; color: string; items: Bubble[] };
   const known = new Set(categories.map((c) => c.id));
@@ -1906,11 +1954,16 @@ function KanbanView({
   // admin "todos", cuyos ids no resuelven acá).
   const loose = bubbles.filter((b) => !(b.categoryIds ?? []).some((id) => known.has(id)));
   const uncategorized: ColumnDef = {
-    id: '__none__', label: tr('dash.col.uncategorized'), color: t.text2, items: lastOpenedFirst(loose),
+    id: NONE_COL, label: tr('dash.col.uncategorized'), color: t.text2, items: lastOpenedFirst(loose),
   };
   columns.push(uncategorized);
   // Solo tableros con agentes; sin ninguno, queda el de "Sin categoría" vacío.
-  const visibleCols = columns.filter((c) => c.items.length > 0);
+  // Mientras se arrastra una tarjeta se muestran todos, para poder soltarla en
+  // uno vacío.
+  // Con focus activo, solo los tableros de las categorías elegidas.
+  const visibleCols = drag?.kind === 'card'
+    ? columns
+    : columns.filter((c) => c.items.length > 0 && (focusIds.length === 0 || focusIds.includes(c.id)));
   if (visibleCols.length === 0) visibleCols.push(uncategorized);
 
   return (
@@ -1922,10 +1975,33 @@ function KanbanView({
       {visibleCols.map((col) => {
         const items = col.items;
         const hasActive = items.some((b) => workingIds.has(b.id));
+        const isTarget = drag?.kind === 'card'
+          ? drag.from !== col.id
+          : drag?.kind === 'col' && drag.id !== col.id;
+        const isOver = isTarget && overCol === col.id;
+        const colDraggable = col.id !== NONE_COL && !readOnlyOwnerId;
         return (
           <motion.div
             key={col.id}
             layout
+            onDragOver={(e: React.DragEvent) => {
+              if (!isTarget) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              if (overCol !== col.id) setOverCol(col.id);
+            }}
+            onDragLeave={(e: React.DragEvent) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+              if (overCol === col.id) setOverCol(null);
+            }}
+            onDrop={(e: React.DragEvent) => {
+              e.preventDefault();
+              if (drag && isTarget) {
+                if (drag.kind === 'card') moveTo(drag.id, drag.from, col.id);
+                else moveCategory(drag.id, col.id === NONE_COL ? null : col.id);
+              }
+              setDrag(null); setOverCol(null);
+            }}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 280, damping: 28 }}
@@ -1935,17 +2011,29 @@ function KanbanView({
               // la pantalla y asoma la que sigue, que es la señal de que hay
               // más para scrollear al costado.
               flex: isPhone ? `0 0 ${vw(85)}` : '0 0 280px',
-              background: t.bg2,
-              border: `1px solid ${t.glassBorder}`,
+              background: isOver ? `color-mix(in oklch, ${col.color} 10%, ${t.bg2})` : t.bg2,
+              border: `1px ${isTarget ? 'dashed' : 'solid'} ${isOver ? col.color : t.glassBorder}`,
+              opacity: drag?.kind === 'col' && drag.id === col.id ? 0.45 : 1,
               borderRadius: 14,
               padding: 12,
               minHeight: 200,
+              transition: 'background 140ms, border-color 140ms',
               display: 'flex', flexDirection: 'column', gap: 10,
             }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '2px 4px',
-            }}>
+            <div
+              draggable={colDraggable}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', col.id);
+                setDrag({ kind: 'col', id: col.id });
+              }}
+              onDragEnd={() => { setDrag(null); setOverCol(null); }}
+              title={colDraggable ? tr('dash.kanban.reorder_hint') : undefined}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '2px 4px',
+                cursor: colDraggable ? 'grab' : undefined,
+              }}>
               <span style={{
                 width: 8, height: 8, borderRadius: '50%', background: col.color,
                 boxShadow: hasActive ? `0 0 6px ${col.color}` : 'none',
@@ -1975,7 +2063,22 @@ function KanbanView({
                     }}
                     whileHover={{ y: -2 }}
                   >
-                    <KanbanCard bubble={b} onOpen={() => onOpenAgent(b.id)} ownerLabel={ownerLabelFor(b)}/>
+                    <div
+                      draggable={canDrag(b)}
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', b.id);
+                        setDrag({ kind: 'card', id: b.id, from: col.id });
+                      }}
+                      onDragEnd={() => { setDrag(null); setOverCol(null); }}
+                      style={{
+                        opacity: drag?.kind === 'card' && drag.id === b.id && drag.from === col.id ? 0.4 : 1,
+                        cursor: canDrag(b) ? 'grab' : undefined,
+                      }}
+                    >
+                      <KanbanCard bubble={b} onOpen={() => onOpenAgent(b.id)} ownerLabel={ownerLabelFor(b)}/>
+                    </div>
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -1983,10 +2086,10 @@ function KanbanView({
                 <div style={{
                   padding: '14px 8px', textAlign: 'center',
                   fontSize: 11.5, color: t.text3, fontFamily: t.fontSans,
-                }}>{tr('dash.empty.cell')}</div>
+                }}>{tr(drag?.kind === 'card' && isTarget ? 'dash.kanban.drop_here' : 'dash.empty.cell')}</div>
               )}
             </div>
-            {col.id === '__none__' && (
+            {col.id === NONE_COL && (
               <button
                 type="button"
                 onClick={openNameDialog}
@@ -2285,8 +2388,127 @@ function KanbanCard({ bubble, onOpen, ownerLabel }: { bubble: Bubble; onOpen: ()
   );
 }
 
-function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }: {
+// Selector múltiple de categorías del modo focus (barra de vistas del Dashboard).
+function FocusControl({ categories, selected, onChange, shown, total }: {
+  categories: Category[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+  shown: number;
+  total: number;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  const active = selected.length > 0;
+  const toggle = (id: string) =>
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button type="button" onClick={() => setOpen((v) => !v)}
+          title={tr('graph.focus.title')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '5px 10px', borderRadius: 999,
+            background: active ? `color-mix(in oklch, ${t.accent} 16%, ${t.bg2})` : t.bg2,
+            border: `1px solid ${active ? t.accent : t.glassBorder}`,
+            color: active ? t.text0 : t.text1, fontFamily: t.fontSans, fontSize: 11,
+            cursor: 'pointer', boxShadow: t.shadowMd, whiteSpace: 'nowrap',
+          }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 5h18l-7 8v6l-4-2v-4z"/>
+          </svg>
+          {active
+            ? tr('graph.focus.active', { shown, total })
+            : tr('graph.focus.label')}
+        </button>
+        {active && (
+          <button type="button" onClick={() => onChange([])}
+            title={tr('graph.focus.clear')}
+            style={{
+              width: 26, height: 26, borderRadius: 999,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: t.bg2, border: `1px solid ${t.glassBorder}`,
+              color: t.text1, cursor: 'pointer', boxShadow: t.shadowMd,
+            }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M6 6l12 12 M18 6L6 18"/>
+            </svg>
+          </button>
+        )}
+      </div>
+      {open && (
+        <div style={{
+          position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30,
+          minWidth: 220, maxHeight: 320, overflowY: 'auto',
+          padding: 6, borderRadius: 12,
+          ...glassEffect(t, { intensity: 'strong' }),
+          boxShadow: t.shadowLg,
+          display: 'flex', flexDirection: 'column', gap: 2,
+        }}>
+          <div style={{
+            padding: '4px 8px 6px', fontFamily: t.fontSans, fontSize: 11,
+            color: t.text3,
+          }}>{tr('graph.focus.hint')}</div>
+          {categories.map((c) => {
+            const on = selected.includes(c.id);
+            return (
+              <button key={c.id} type="button" onClick={() => toggle(c.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 8px', borderRadius: 8, border: 'none',
+                  background: on ? `color-mix(in oklch, ${c.color} 14%, transparent)` : 'transparent',
+                  color: t.text0, fontFamily: t.fontSans, fontSize: 12.5,
+                  cursor: 'pointer', textAlign: 'left',
+                }}>
+                <span style={{
+                  width: 14, height: 14, borderRadius: 4, flexShrink: 0,
+                  border: `1.5px solid ${on ? c.color : t.glassBorder}`,
+                  background: on ? c.color : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {on && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                      stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12l5 5 9-10"/>
+                    </svg>
+                  )}
+                </span>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }}/>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {c.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace', ownerNames }: {
   bubbles: Bubble[];
+  // Categorías del modo focus (las bubbles ya llegan filtradas): tiñen la
+  // animación del núcleo.
+  focusIds?: string[];
   onOpenAgent: (id: string) => void;
   // 'workspace' (default): clusters por carpeta. 'owner': clusters por usuario
   // (grafo de equipo del admin) — usa b.ownerId + ownerNames para el label.
@@ -2300,7 +2522,8 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   // user agrega/edita/borra una categoría o reasigna agentes. `getCategoryById`
   // (lectura sync) se usa dentro del map, pero necesitamos este hook para
   // que React sepa que tiene que re-pintar.
-  useCategories();
+  const { categories } = useCategories();
+  const activeFocus = focusIds;
   // Estados live de servers por (bubbleId, role) — un agente puede tener
   // frontend y backend corriendo a la vez; cada role se trackea por separado
   // para que parar uno no apague el indicador del otro.
@@ -2583,6 +2806,15 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
   // En el grafo de admin el núcleo "eco" es más grande para diferenciarse de
   // los nodos de usuario (que también son círculos con acento).
   const ECO_HUB_R = ownerMode ? 46 : 34;
+
+  // Modo focus: el núcleo se "concentra" en las categorías elegidas (anillos
+  // de su color que convergen hacia el centro) y les despacha trabajo
+  // (pulsos que viajan núcleo → carpeta → agente).
+  const focusSet = new Set(activeFocus);
+  const focusCats = categories.filter((c) => focusSet.has(c.id));
+  const focusColorOf = (b: Bubble): string | null =>
+    focusCats.find((c) => (b.categoryIds ?? []).includes(c.id))?.color ?? null;
+  const anyWorking = useWorkingBubbleIds(bubbles).size > 0;
 
   // Tier de USUARIO (solo owner mode): un nodo por dueño, en arco horizontal
   // alrededor de Eco. Los workspaces de cada usuario orbitan SU nodo.
@@ -3016,6 +3248,35 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
           animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.3, 0, 0.3] }}
           transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity, delay: 1.2 }}
         />
+        {/* Focus: brillo interior teñido y anillos que CONVERGEN hacia el
+            núcleo, uno por categoría elegida (la idea es "concentración",
+            no expansión). */}
+        {focusCats.length > 0 && (
+          <motion.circle
+            cx={cx} cy={cy} r={ECO_HUB_R - 2}
+            fill={focusCats[0]!.color}
+            style={{ pointerEvents: 'none', filter: `blur(${ECO_HUB_R * 0.5}px)` }}
+            animate={{ opacity: anyWorking ? [0.18, 0.42, 0.18] : [0.12, 0.3, 0.12] }}
+            transition={{ duration: anyWorking ? 1.2 : 2, ease: 'easeInOut', repeat: Infinity }}
+          />
+        )}
+        {focusCats.slice(0, 6).flatMap((c, i, arr) => [0, 1].map((k) => (
+          <motion.circle key={`focus-ring-${c.id}-${k}`}
+            cx={cx} cy={cy} r={ECO_HUB_R + 34} fill="none"
+            stroke={c.color} strokeWidth="1.4"
+            style={{ pointerEvents: 'none', filter: 'blur(2px)' }}
+            animate={{
+              r: [ECO_HUB_R + 34, ECO_HUB_R + 2],
+              opacity: [0, 0.75, 0],
+              strokeWidth: [0.6, 1.8, 2.4],
+            }}
+            transition={{
+              duration: anyWorking ? 1.6 : 2.4, ease: 'easeIn', repeat: Infinity,
+              times: [0, 0.6, 1],
+              delay: ((anyWorking ? 1.6 : 2.4) / (arr.length * 2)) * (i * 2 + k),
+            }}
+          />
+        )))}
         {/* Wordmark "eco" dentro del hub — replica /assets/eco-wordmark.svg.
             SF Pro Display, weight 300, tracking sutil. Más limpio que el arco
             para el centro del modelo de Bohr. */}
@@ -3232,6 +3493,28 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
         {/* Electrones — fijos en sus orbitales (como modelo de Bohr). Sin
             rotación. Wobble local muy leve para que se sientan "vivos"
             sin moverse del orbital. */}
+        {/* Focus: pulsos de trabajo del núcleo a cada agente de las
+            categorías elegidas, siguiendo el camino de los enlaces. */}
+        {focusCats.length > 0 && nodes.slice(0, 40).map((n, i) => {
+          const color = focusColorOf(n);
+          if (!color) return null;
+          const viaParent = n.parentX !== cx || n.parentY !== cy;
+          const xs = viaParent ? [cx, n.parentX, n.x] : [cx, n.x];
+          const ys = viaParent ? [cy, n.parentY, n.y] : [cy, n.y];
+          const dur = anyWorking ? 1.3 : 2;
+          return (
+            <motion.circle key={`work-${n.id}`}
+              r={3.5} fill={color}
+              style={{ pointerEvents: 'none', filter: `blur(1.6px) drop-shadow(0 0 7px ${color})` }}
+              initial={{ cx, cy, opacity: 0 }}
+              animate={{ cx: xs, cy: ys, opacity: viaParent ? [0, 1, 1, 0] : [0, 1, 0] }}
+              transition={{
+                duration: dur, ease: 'easeInOut', repeat: Infinity,
+                repeatDelay: 0.6, delay: (i % 8) * 0.22,
+              }}
+            />
+          );
+        })}
         {nodes.map((n, i) => {
           const isActive = n.isActive;
           const isHover = hover === n.id;
@@ -3407,6 +3690,14 @@ function GraphView({ bubbles, onOpenAgent, groupMode = 'workspace', ownerNames }
             </button>
           )}
         </div>
+      )}
+
+      {activeFocus.length > 0 && bubbles.length === 0 && (
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: t.fontSans, fontSize: 13, color: t.text2,
+        }}>{tr('graph.focus.empty')}</div>
       )}
 
       {/* Pantalla completa — esquina inferior derecha. */}
