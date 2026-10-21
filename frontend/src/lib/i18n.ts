@@ -1039,6 +1039,12 @@ const DICT = {
   'graph.ws.agents_one': { es: '{{n}} agente', en: '{{n}} agent' },
   'graph.ws.agents_many': { es: '{{n}} agentes', en: '{{n}} agents' },
   'graph.recenter': { es: 'Centrar vista', en: 'Recenter view' },
+  'graph.focus.label': { es: 'Focus', en: 'Focus' },
+  'graph.focus.title': { es: 'Focus: mostrar solo los agentes de ciertas categorías', en: 'Focus: show only agents in certain categories' },
+  'graph.focus.active': { es: 'Focus · {{shown}} de {{total}}', en: 'Focus · {{shown}} of {{total}}' },
+  'graph.focus.clear': { es: 'Salir del modo focus', en: 'Exit focus mode' },
+  'graph.focus.hint': { es: 'Mostrar agentes con alguna de estas categorías', en: 'Show agents with any of these categories' },
+  'graph.focus.empty': { es: 'Ningún agente tiene esas categorías.', en: 'No agent has those categories.' },
   'graph.reset_layout': { es: 'Restablecer disposición', en: 'Reset layout' },
   'graph.zoom_in': { es: 'Acercar', en: 'Zoom in' },
   'graph.zoom_out': { es: 'Alejar', en: 'Zoom out' },
@@ -2370,6 +2376,8 @@ const DICT = {
   'dash.filter.shell_open': { es: 'Con shell abierto', en: 'Shell open' },
   'dash.filter.error': { es: 'Con error', en: 'Error' },
   'dash.col.uncategorized': { es: 'Sin categoría', en: 'Uncategorized' },
+  'dash.kanban.drop_here': { es: 'Soltá acá para mover.', en: 'Drop here to move.' },
+  'dash.kanban.reorder_hint': { es: 'Arrastrá para reordenar las categorías', en: 'Drag to reorder categories' },
 
   // ─────────────────────────── AgentDetail (strings nuevos del merge)
   'detail.action.files_tooltip': { es: 'Ver archivos modificados', en: 'View modified files' },
