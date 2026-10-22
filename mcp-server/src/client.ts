@@ -287,8 +287,11 @@ export async function sendToBubble(bubbleId: string, text: string, agent?: Agent
   return (await call('/bubble/send', { method: 'POST', body, timeoutMs: 30_000 })) as SendToBubbleResult;
 }
 
-export async function listBubbles(): Promise<{ bubbles: BubbleSummary[]; lastSync: number }> {
-  return (await call('/bubbles')) as { bubbles: BubbleSummary[]; lastSync: number };
+export type SyncError = { at: number; message: string; hint: string };
+export type ListBubblesResult = { bubbles: BubbleSummary[]; lastSync: number; syncError?: SyncError | null };
+
+export async function listBubbles(): Promise<ListBubblesResult> {
+  return (await call('/bubbles')) as ListBubblesResult;
 }
 
 export async function listWorkspaces(): Promise<string[]> {

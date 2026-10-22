@@ -254,11 +254,17 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
     });
     const categories = getCategories().map((c) => ({ id: c.id, name: c.name, color: c.color }));
     const handle = setTimeout(() => {
+      // Best-effort, pero un rechazo tiene que verse: un 400 silencioso dejó el
+      // índice del MCP congelado durante días (cap de bubbles del backend).
       void apiFetch('/bubbles/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bubbles: summary, categories }),
-      }).catch(() => { /* sync best-effort */ });
+      }).then(async (r) => {
+        if (r.ok) return;
+        const body = await r.text().catch(() => '');
+        console.warn(`[bubbles/sync] rechazado ${r.status} (${summary.length} bubbles):`, body.slice(0, 300));
+      }).catch((e) => { console.warn('[bubbles/sync] falló:', e instanceof Error ? e.message : e); });
     }, 800);
     return () => clearTimeout(handle);
   }, [bubbles, categoriesTick]);

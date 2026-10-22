@@ -86,7 +86,8 @@ function friendlyError(e: unknown): string {
       case 'workspace.not_allowed':
         return 'Workspace no está en la whitelist de Eco. Agregalo desde Ajustes → Carpetas.';
       case 'bubble.not_found':
-        return 'No existe una bubble con ese id. Usá list_bubbles para ver las activas.';
+        // El backend agrega al mensaje si el snapshot está congelado (sync rechazado).
+        return `${e.message} Usá list_bubbles para ver las activas.`;
       case 'bubble.invalid_id':
         return 'El bubble_id no tiene el formato esperado (b_xxx). Usá list_bubbles para copiar uno válido.';
       case 'bubble.not_owner':
@@ -276,10 +277,13 @@ const listBubblesTool = defineTool(
       const wanted = args.category.trim().toLowerCase();
       list = list.filter((b) => (b.categories ?? []).some((c) => c.toLowerCase() === wanted));
     }
-    if (list.length === 0) return textResult('No hay bubbles que coincidan.');
+    // Un sync rechazado congela el snapshot: avisar siempre, aunque haya lista.
+    const warning = r.syncError ? `${r.syncError.hint}\n\n` : '';
+    const synced = r.lastSync ? ` · último sync ${relMs(r.lastSync)}` : '';
+    if (list.length === 0) return textResult(`${warning}No hay bubbles que coincidan.${synced}`);
     const order = (b: BubbleSummary) => (b.archived ? 3 : b.busy ? 0 : b.running ? 1 : 2);
     list = [...list].sort((a, b) => order(a) - order(b) || b.updatedAt - a.updatedAt);
-    return textResult(`Bubbles en Eco (${list.length}):\n${list.map(summaryLine).join('\n')}`);
+    return textResult(`${warning}Bubbles en Eco (${list.length}${synced}):\n${list.map(summaryLine).join('\n')}`);
   },
 );
 
