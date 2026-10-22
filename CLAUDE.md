@@ -514,6 +514,7 @@ These were tuned in 2026-05-12/13 after observing renderer growth to 1–2 GB wi
 | `AUDIT_MAX_BYTES` (audit log) | **5 MB** | `audit-log.ts` | Bitácora append-only; al superarlo rota a `.1.jsonl` (una generación, sin historia infinita). |
 | File diff bytes | **512 KB** | `file-diff.ts`, `git-history.ts` | UI can't render bigger diffs usefully. |
 | FS tree entries per scan | **5000** | `fs-tree.ts:MAX_ENTRIES` | Lazy-loaded; cap protects huge repos. |
+| `POST /bubbles/sync` bubbles per user | **5000** | `index.ts:BubblesSyncSchema` | Archived bubbles are in the payload too (the MCP lists/deletes/confirms against this snapshot). Was 500: a real user hit it exactly (478 archived) and every sync 400'd silently → `bubbles-index.json` frozen, new bubbles invisible to the MCP. A rejected sync is now logged (backend + browser console), recorded per user (`bubbles-index.ts:noteSyncFailure`) and surfaced by `GET /bubbles` (`syncError`) and in `bubble.not_found` messages. |
 | Notes summarizer context | **30 msgs**, **2 KB**/msg, **60 KB** PTY | `notes-summary.ts` | Keep prompt under Claude limits. |
 | Notes summarizer timeout | **90 s** | `notes-summary.ts` | Long enough for Sonnet, short enough to fail loud. |
 
@@ -1659,6 +1660,16 @@ mucha complejidad para v1. El push periódico desde el frontend (8 KB cada
 ~800 ms cuando algo cambia) es trivial, sobrevive reinicios del backend,
 y el caller MCP siempre obtiene una respuesta inmediata sin esperar al
 frontend.
+
+El riesgo de ese diseño es un snapshot **congelado**: si el `POST /bubbles/sync`
+falla, la UI sigue funcionando y el MCP ve una foto vieja (`get_bubble` →
+`bubble.not_found` para bubbles que sí existen). Pasó con el cap de 500 bubbles
+del schema. Por eso un sync rechazado se loguea en el backend y en la consola
+del navegador, queda registrado por usuario (`noteSyncFailure`) y `GET /bubbles`
+lo devuelve como `syncError` — `list_bubbles` lo muestra como advertencia y el
+404 de `bubble.not_found` lo incluye en el mensaje. Diagnóstico rápido:
+`python3 -c "import json;d=json.load(open('$HOME/.eco/bubbles-index.json'));print({k:len(v) for k,v in d['byUser'].items()})"`
+y comparar `lastSync` con la hora actual.
 
 #### "¿Por qué el prompt viaja como bracketed paste y el Enter aparte?"
 `injectPromptToBubble` escribe `\x1b[200~<texto>\x1b[201~` y, 250 ms después,

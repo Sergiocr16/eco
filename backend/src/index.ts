@@ -14,6 +14,7 @@ import { listDocs, writeDoc, deleteDoc } from './user-docs.js';
 import { newBubbleId, isValidBubbleId } from './bubble-ids.js';
 import {
   setBubblesSnapshot, getBubblesSnapshot, findBubble, getAllSnapshots, type BubbleSummary,
+  noteSyncFailure, getSyncFailure,
   setCategoriesSnapshot, getCategories, resolveCategory, waitForBubble,
 } from './bubbles-index.js';
 import { logEvent, queryEvents, AUDIT_EVENT_TYPES, type AuditEventType } from './audit-log.js';
@@ -1933,7 +1934,13 @@ function resolveOwnedBubble(req: Request, res: Response, rawId: unknown): Bubble
   const caller = req.ecoUser;
   const bubble = findBubble(bubbleId, caller?.id);
   if (!bubble) {
-    errResponse(res, 404, 'bubble.not_found', 'No existe una bubble con ese id');
+    // Si el último sync de la UI fue rechazado, el snapshot está congelado y
+    // "no existe" probablemente significa "no llegó": decirlo acá evita que el
+    // caller MCP persiga un id que sí es válido.
+    const uid = caller?.id ?? getMachineUser();
+    const failure = uid ? getSyncFailure(uid) : null;
+    const hint = failure ? ` ${syncFailureHint(failure)}` : '';
+    errResponse(res, 404, 'bubble.not_found', `No existe una bubble con ese id.${hint}`);
     return null;
   }
   if (caller && caller.role !== 'admin' && bubble.ownerId !== caller.id) {
@@ -2441,6 +2448,12 @@ app.get('/bubble/transcript', (req: Request, res: Response) => {
   });
 });
 
+function syncFailureHint(f: { at: number; message: string }): string {
+  const mins = Math.max(0, Math.round((Date.now() - f.at) / 60_000));
+  return `ATENCIÓN: el último sync de la UI de Eco fue rechazado hace ${mins} min (${f.message}), ` +
+    'así que la lista de bubbles que ve el MCP está congelada y puede faltar alguna reciente.';
+}
+
 // Lista de bubbles activas según el último snapshot que sincronizó el
 // frontend (POST /bubbles/sync). Si el frontend no se conectó nunca desde
 // que arrancó el backend, devuelve lista vacía y lastSync=0 para que el
@@ -2460,7 +2473,8 @@ app.get('/bubbles', (req: Request, res: Response) => {
     busy: busy.has(b.id),
     categories: (b.categoryIds ?? []).map((id) => categories.find((c) => c.id === id)?.name ?? id),
   }));
-  res.json({ ok: true, bubbles, lastSync: snap.lastSync });
+  const failure = uid ? getSyncFailure(uid) : null;
+  res.json({ ok: true, bubbles, lastSync: snap.lastSync, syncError: failure ? { ...failure, hint: syncFailureHint(failure) } : null });
 });
 
 // Sync interno frontend → backend. El frontend debouncea y postea su lista
@@ -2478,7 +2492,11 @@ const BubblesSyncSchema = z.object({
     lastMsgPreview: z.string().max(400).optional(),
     categoryIds: z.array(z.string().max(64)).max(20).optional(),
     baseBranch: z.string().max(256).optional(),
-  })).max(500),
+  // Las archivadas viajan también (el MCP las lista, las borra en permanente y
+  // confirma archivados contra este snapshot), así que el cap tiene que
+  // aguantar el total histórico del usuario. Con 500 un usuario real quedó
+  // justo en el límite y cada sync daba 400 → índice congelado.
+  })).max(5000),
   categories: z.array(z.object({
     id: z.string().min(1).max(64),
     name: z.string().max(80),
@@ -2490,7 +2508,12 @@ app.post('/bubbles/sync', (req: Request, res: Response) => {
   if (!uid) return errResponse(res, 401, 'auth.session_invalid', 'Sesión inválida');
   const parsed = BubblesSyncSchema.safeParse(req.body);
   if (!parsed.success) {
-    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+    const issue = parsed.error.issues[0];
+    const message = issue ? `${issue.path.join('.') || 'body'}: ${issue.message}` : 'Cuerpo inválido';
+    const count = Array.isArray((req.body as { bubbles?: unknown })?.bubbles) ? (req.body as { bubbles: unknown[] }).bubbles.length : '?';
+    noteSyncFailure(uid, message);
+    console.warn(`[bubbles/sync] rechazado para ${uid} (${count} bubbles): ${message}`);
+    return errResponse(res, 400, 'http.invalid_body', message);
   }
   const sanitized: Omit<BubbleSummary, 'ownerId'>[] = parsed.data.bubbles
     .filter((b) => isValidBubbleId(b.id))

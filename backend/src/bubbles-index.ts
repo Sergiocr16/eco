@@ -51,6 +51,20 @@ const listeners = new Set<SnapshotListener>();
 
 let cache: Store | null = null;
 
+// Último sync rechazado por usuario (en memoria: un sync exitoso lo borra y un
+// reinicio obliga a la UI a re-sincronizar). Sin esto un 400 dejaba el snapshot
+// congelado en silencio y el MCP no veía bubbles nuevas.
+export type SyncFailure = { at: number; message: string };
+const syncFailures = new Map<string, SyncFailure>();
+
+export function noteSyncFailure(userId: string, message: string): void {
+  syncFailures.set(userId, { at: Date.now(), message });
+}
+
+export function getSyncFailure(userId: string): SyncFailure | null {
+  return syncFailures.get(userId) ?? null;
+}
+
 function ensureDir() {
   const dir = dirname(STORE_PATH);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -108,6 +122,7 @@ export function setBubblesSnapshot(userId: string, bubbles: Omit<BubbleSummary, 
   const added = next.filter((b) => !b.archived && !prevIds.has(b.id));
   s.byUser[userId] = next;
   s.lastSync[userId] = Date.now();
+  syncFailures.delete(userId);
   persist();
   for (const fn of listeners) { try { fn(userId); } catch { /* noop */ } }
   return added;
