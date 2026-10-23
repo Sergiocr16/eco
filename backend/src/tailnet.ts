@@ -14,6 +14,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { config } from './config.js';
 import { servePublic, servePublicOff, tailnetProbe, tailscaleBin } from './tailscale.js';
+import { resyncPublicExposure } from './dev-server.js';
 
 const CONFIG_PATH = join(homedir(), '.eco', 'tailnet.json');
 
@@ -87,6 +88,7 @@ export async function startTailnet(port: number): Promise<TailnetStatus> {
   lastError = undefined;
   activeHost = host;
   servePublic(port, (detail) => { lastError = detail; });
+  resyncPublicExposure();
   return tailnetStatus();
 }
 
@@ -102,6 +104,7 @@ export function stopTailnet(): void {
   activeHost = null;
   lastError = undefined;
   servePublicOff();
+  resyncPublicExposure();
 }
 
 // Llamado al arrancar el backend. Si el toggle quedó activado en la corrida

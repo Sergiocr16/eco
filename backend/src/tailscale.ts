@@ -48,8 +48,11 @@ function runServe(args: string[], onWarn: (detail: string) => void): void {
   }
 }
 
-export function serveOn(port: number): void {
-  runServe(['--bg', `--https=${port}`, `http://127.0.0.1:${port}`], (detail) => {
+// `proxyPort`: el proxy h2 de dev-proxy.ts que está delante del dev server.
+// Sin él (no pudo arrancar) se apunta directo al dev server, como antes.
+export function serveOn(port: number, proxyPort?: number): void {
+  const target = proxyPort ? `https+insecure://127.0.0.1:${proxyPort}` : `http://127.0.0.1:${port}`;
+  runServe(['--bg', `--https=${port}`, target], (detail) => {
     console.warn(`[tailscale] no se pudo exponer el puerto ${port}: ${detail}`);
   });
 }

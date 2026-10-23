@@ -27,6 +27,7 @@ import { buildSafeEnv } from './security.js';
 import * as workspaceConfig from './workspace-config.js';
 import { broadcastServerMessage, registerSnapshotProvider } from './ws-server.js';
 import { serveOn, serveOff } from './tailscale.js';
+import { startDevProxy, type DevProxy } from './dev-proxy.js';
 import { shellRun, detachForGroup, pidsOnPort, killTree, killPid, IS_WIN } from './platform.js';
 
 export type DevStatus = 'idle' | 'starting' | 'running' | 'stopped' | 'error';
@@ -85,16 +86,53 @@ function urlFor(port: number): string {
 // Mantiene el `tailscale serve` alineado con el puerto del server. ADITIVO:
 // lee s.port y lo expone. Solo modo server. Sin conflicto PORQUE el dev server
 // bindea 127.0.0.1 (ver HOST/server.address) y tailscale escucha en 100.x.
+// Tailscale apunta al proxy h2 de dev-proxy.ts, no al dev server: directo, una
+// carga con cientos de archivos desborda el backlog de listen() y da 502.
 // Async/no bloqueante (tailscale.ts).
 const servedPorts = new Map<string, number>();
+const proxies = new Map<string, Promise<DevProxy | null>>();
 function syncServe(s: Session): void {
   if (!config.publicHost) return;
   const key = sessionKey(s.bubbleId, s.role);
   const want = (s.status === 'starting' || s.status === 'running') && s.port > 0 ? s.port : null;
   const current = servedPorts.get(key) ?? null;
   if (current === want) return;
-  if (current !== null) { serveOff(current); servedPorts.delete(key); }
-  if (want !== null) { serveOn(want); servedPorts.set(key, want); }
+  if (current !== null) unserve(key);
+  if (want === null) return;
+  servedPorts.set(key, want);
+  const log = (line: string) => { const live = sessions.get(key); if (live) appendOutput(live, line); };
+  const pending = startDevProxy(want, log).catch((e: unknown) => {
+    log(`[eco proxy] no arrancó, la preview va directo al dev server: ${e instanceof Error ? e.message : String(e)}\n`);
+    return null;
+  });
+  proxies.set(key, pending);
+  void pending.then((proxy) => {
+    // El server cambió de puerto o se bajó mientras el proxy arrancaba.
+    if (proxies.get(key) !== pending || servedPorts.get(key) !== want) { proxy?.close(); return; }
+    serveOn(want, proxy?.port);
+  });
+}
+
+// restoreSessions corre al cargar el módulo, antes de que la tailnet resuelva
+// publicHost (sale de `tailscale status`, que tarda): sin esto los servers
+// re-adoptados quedaban con URL local y sin exposición propia. Lo llama
+// tailnet.ts al prender y al apagar el toggle.
+export function resyncPublicExposure(): void {
+  for (const [key, s] of sessions) {
+    if (!config.publicHost) unserve(key);
+    if (s.port > 0) s.url = urlFor(s.port);
+    broadcastStatus(s);
+  }
+}
+
+function unserve(key: string): void {
+  const port = servedPorts.get(key);
+  if (port === undefined) return;
+  serveOff(port);
+  servedPorts.delete(key);
+  const pending = proxies.get(key);
+  proxies.delete(key);
+  void pending?.then((proxy) => proxy?.close());
 }
 
 function sessionKey(bubbleId: string, role: ServerRole = 'main'): string {
@@ -963,8 +1001,7 @@ export function forgetSession(bubbleId: string): number {
     // Liberar también el batch buffer pendiente (si quedó algún timer en flight,
     // su callback será no-op porque la session ya no existe).
     logBuffers.delete(key);
-    const served = servedPorts.get(key);
-    if (served !== undefined) { serveOff(served); servedPorts.delete(key); }
+    unserve(key);
   }
   if (removed > 0) persistSessions();
   return removed;
