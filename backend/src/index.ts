@@ -33,6 +33,7 @@ import * as obsidian from './obsidian.js';
 import * as tailnet from './tailnet.js';
 import * as nosleep from './nosleep.js';
 import { getClaudeAuthStatus } from './claude-auth.js';
+import { applyClaudeTheme, currentClaudeTheme, startClaudeThemeWatch } from './claude-theme.js';
 import { getCodexAuthStatus, invalidateCodexAuthCache } from './codex-auth.js';
 import { extractBearer, getOrCreateToken, tokensMatch } from './auth.js';
 import { listSkills } from './skills.js';
@@ -638,6 +639,26 @@ app.get('/config/api-key', (_req: Request, res: Response) => {
 // Estado completo de autenticación: CLI logueado + API key + cuál usa el SDK.
 app.get('/config/claude-auth', (_req: Request, res: Response) => {
   res.json(getClaudeAuthStatus());
+});
+
+app.get('/config/claude-theme', (_req: Request, res: Response) => {
+  res.json(currentClaudeTheme());
+});
+
+// Escribe el tema del CLI de Claude (recurso del host, como Folders).
+const ClaudeThemeSchema = z.object({
+  theme: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+  fallback: z.enum(['dark', 'light']).default('dark'),
+});
+app.post('/config/claude-theme', requireAdmin, (req: Request, res: Response) => {
+  const parsed = ClaudeThemeSchema.safeParse(req.body);
+  if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
+  try {
+    res.json(applyClaudeTheme(parsed.data.theme, parsed.data.fallback));
+  } catch (e) {
+    console.error('[claude-theme] write failed', e);
+    errResponse(res, 500, 'claude_theme.write_failed', 'No se pudo escribir el tema de Claude');
+  }
 });
 
 app.post('/config/api-key', async (req: Request, res: Response) => {
@@ -2704,6 +2725,7 @@ const server = createServer(app);
 // pueden quedarse esperando más (tope propio por endpoint vía req.setTimeout).
 server.requestTimeout = 0;
 attachWebSocket(server, authToken);
+startClaudeThemeWatch();
 attachPtyServer(server, authToken);
 
 // Fallo al bindear el puerto (ej. una instancia anterior aún lo ocupa). Sin

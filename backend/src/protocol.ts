@@ -36,6 +36,9 @@ export type ServerMessage =
   // guarda un doc. `key` es la clave del doc (p.ej. "bubble:b_1", "prefs").
   | { type: 'doc_updated'; key: string; value: unknown; updatedAt: number }
   | { type: 'doc_deleted'; key: string }
+  // Tema activo del CLI de Claude (`/theme`); la terminal pinta el fondo que
+  // ese tema espera. Snapshot al conectar + push cuando cambia settings.json.
+  | { type: 'claude_theme'; theme: { id: string; base: 'dark' | 'light'; background: string | null } }
   // Señal de vida del server cada HEARTBEAT_MS. El cliente la usa para saber si
   // el socket sigue vivo sin depender de sus propios timers (Chromium los
   // estrangula en background).

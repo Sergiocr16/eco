@@ -1,6 +1,7 @@
 import { vw } from '@/lib/ui-zoom';
 import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider, useTokens } from './design/theme';
+import { useClaudeThemeSync } from '@/hooks/useClaudeThemeSync';
 import { AppSidebar, MOBILE_NAV_HEIGHT, type Screen } from './components/AppSidebar';
 import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
@@ -184,6 +185,7 @@ function SoloLockedScreen() {
 
 function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const t = useTokens();
+  useClaudeThemeSync();
 
   // Dictado a la terminal: el botón de la cabecera de la burbuja enciende el
   // mic en modo dictado. Cada frase final se acumula en `dictationBuffer` (en
