@@ -12,6 +12,10 @@ import { verifyFirebaseIdToken } from './firebase-auth.js';
 import { setMachineUser } from './machine-user.js';
 import { openaiEnvOverrides } from './codex-auth.js';
 import { defaultShell } from './platform.js';
+import { claudeThemePickerRows, currentClaudeTheme, type PickerRow } from './claude-theme.js';
+import { getClaudeTranscriptState } from './claude-transcript.js';
+import { stripAnsi } from './strip-ansi.js';
+import { renderScreen, promptRow } from './pty-screen.js';
 
 // uid resuelto en verifyClient (verificación async del ID token de Firebase).
 type ReqWithUid = IncomingMessage & { ecoUid?: string };
@@ -99,6 +103,15 @@ type PtySession = {
   // desde entonces — base de la detección de "CLI listo" tras un cold start.
   launchedAt: number | null;
   outputSinceLaunch: boolean;
+  // Última tecla del usuario (WS o MCP). El sync de tema no toca un PTY donde
+  // alguien acaba de escribir.
+  lastInputAt: number;
+  // Tema de Claude que esta sesión está pintando (el CLI lo lee solo al
+  // arrancar). Null para shells planos y Codex.
+  claudeThemeId: string | null;
+  themeSyncing: boolean;
+  themeAttempts: number;
+  themeSkipReason: string | null;
 };
 
 // Key compuesto: `${bubbleId}:${ptyId}` — permite varios terminales por burbuja
@@ -155,6 +168,7 @@ function startIdleScanner() {
       if (now - s.lastOutputAt >= BUSY_IDLE_MS) {
         s.busy = false;
         broadcastPtyBusy(s.bubbleId, false);
+        if (wantedClaudeTheme && s.agent === 'claude' && s.claudeThemeId !== wantedClaudeTheme) scheduleClaudeThemeSync(THEME_IDLE_DELAY_MS);
       }
     }
   }, 500);
@@ -233,6 +247,9 @@ export function ensureBubblePty(
     activeWs: null, clients: new Set(),
     lastOutputAt: Date.now(), busy: false,
     startedAt: Date.now(), launchedAt: null, outputSinceLaunch: false,
+    lastInputAt: 0,
+    claudeThemeId: agent === 'claude' ? (wantedClaudeTheme ?? currentClaudeTheme().id) : null,
+    themeSyncing: false, themeAttempts: 0, themeSkipReason: null,
   };
   sessions.set(key, session);
 
@@ -321,6 +338,7 @@ export async function injectPromptToBubble(
   const payload = session.agent === 'none'
     ? text.replace(/\n/g, '\r')
     : `\x1b[200~${text}\x1b[201~`;
+  session.lastInputAt = Date.now();
   try { session.pty.write(payload); } catch { /* noop */ }
   await sleep(250);
   if (!session.exited) { try { session.pty.write('\r'); } catch { /* noop */ } }
@@ -362,6 +380,7 @@ export function getPtyTail(bubbleId: string, ptyId: string, maxBytes = 32 * 1024
 export function writeToPty(bubbleId: string, ptyId: string, data: string): boolean {
   const s = sessions.get(sessionKey(bubbleId, ptyId));
   if (!s || s.exited) return false;
+  s.lastInputAt = Date.now();
   try { s.pty.write(data); } catch { return false; }
   return true;
 }
@@ -390,6 +409,164 @@ export async function sendKeysToPty(bubbleId: string, ptyId: string, keys: strin
     await sleep(150);
   }
   return { ok: true, sent };
+}
+
+// ---------------------------------------------------------------------------
+// Tema de Claude en sesiones ya abiertas.
+//
+// El CLI lee `theme` de settings.json solo al arrancar: cambiarlo no repinta
+// nada, y `/theme <nombre>` ignora el argumento. Lo único que lo cambia en
+// vivo es el picker de `/theme`, así que lo manejamos por el PTY: abrirlo,
+// ir al tope (sin wrap: Up de sobra = fila 0), bajar hasta la fila del tema
+// (`claudeThemePickerTarget`), verificar en la pantalla que la fila
+// seleccionada es la pedida y recién ahí Enter. Si algo no cuadra, Esc.
+// Solo en sesiones quietas, con el prompt vacío y sin tecleo reciente.
+// ---------------------------------------------------------------------------
+
+let wantedClaudeTheme: string | null = null;
+let themeSyncTimer: NodeJS.Timeout | null = null;
+let themeSyncRunning = false;
+const THEME_IDLE_DELAY_MS = 2500;
+const THEME_RETRY_MS = 15_000;
+const THEME_MAX_ATTEMPTS = 2;
+// Tope para ir a la fila 0 cuando la fila actual no se reconoce: las filas
+// conocidas + el bloque de plugins (≤ 48 en la galería) + extras.
+const PICKER_EXTRA_ROWS = 60;
+// Una tecla por write y con pausa: una ráfaga de flechas dispara en el CLI
+// la heurística "Scroll wheel is sending arrow keys" y pierde teclas.
+const PICKER_KEY_GAP_MS = 70;
+const PICKER_TITLE = 'Choose the text style';
+
+export function setWantedClaudeTheme(themeId: string): void {
+  wantedClaudeTheme = themeId;
+  scheduleClaudeThemeSync(300);
+}
+
+function scheduleClaudeThemeSync(delayMs: number): void {
+  if (themeSyncTimer) return;
+  themeSyncTimer = setTimeout(() => {
+    themeSyncTimer = null;
+    void syncClaudeSessionsTheme();
+  }, delayMs);
+  themeSyncTimer.unref?.();
+}
+
+async function syncClaudeSessionsTheme(): Promise<void> {
+  if (themeSyncRunning || !wantedClaudeTheme) return;
+  if (process.env.ECO_THEME_DEBUG) console.log(`[claude-theme] sync → ${wantedClaudeTheme}; sesiones: ${[...sessions.values()].map((s) => `${s.bubbleId}/${s.ptyId}=${s.claudeThemeId}`).join(', ')}`);
+  themeSyncRunning = true;
+  let postponed = false;
+  try {
+    for (const s of [...sessions.values()]) {
+      const want = wantedClaudeTheme;
+      if (!want || s.exited || s.agent !== 'claude' || s.claudeThemeId === want) continue;
+      if (s.themeAttempts >= THEME_MAX_ATTEMPTS) { s.claudeThemeId = want; continue; }
+      const why = await claudeSessionNotQuiet(s);
+      if (why) {
+        postponed = true;
+        if (why !== s.themeSkipReason) console.log(`[claude-theme] ${s.bubbleId}/${s.ptyId}: se pospone (${why})`);
+        s.themeSkipReason = why;
+        continue;
+      }
+      s.themeSkipReason = null;
+      await applyThemeViaPicker(s, want);
+    }
+  } finally {
+    themeSyncRunning = false;
+  }
+  // Una sesión con borrador o tecleo reciente no genera transición busy→idle;
+  // se reintenta despacio hasta que quede libre.
+  if (postponed) scheduleClaudeThemeSync(THEME_RETRY_MS);
+}
+
+// Quieta = sin output ni tecleo reciente, y según el transcript no hay turno
+// en curso ni permiso pendiente (ahí un Enter confirmaría el diálogo).
+// Devuelve el motivo si no lo está.
+async function claudeSessionNotQuiet(s: PtySession): Promise<string | null> {
+  const now = Date.now();
+  if (s.busy) return 'con output';
+  if (s.themeSyncing) return 'sync en curso';
+  if (!s.outputSinceLaunch) return 'CLI sin arrancar';
+  if (now - s.lastOutputAt < 2000) return 'output reciente';
+  if (now - s.lastInputAt < 3000) return 'tecleo reciente';
+  const tx = getClaudeTranscriptState(s.cwd, s.startedAt);
+  if (tx && tx.turnState !== 'end_turn' && tx.turnState !== 'unknown') return `transcript ${tx.turnState}`;
+  const line = await promptLine(s);
+  if (line === null) return 'sin prompt en pantalla';
+  // Vacío = `❯` solo o con el placeholder `Try "…"`. Con texto escrito,
+  // `/theme` se pegaría al borrador y Enter lo mandaría como prompt.
+  if (line !== '' && !/^Try "/.test(line)) return `prompt no vacío: "${line.slice(0, 40)}"`;
+  return null;
+}
+
+async function promptLine(s: PtySession): Promise<string | null> {
+  return promptRow(await renderScreen(s.buffer, s.pty.cols, s.pty.rows));
+}
+
+// Fila cuyo nombre encabeza el texto seleccionado ("✔ Dark mode (ANSI colors
+// only)" → la más larga que calce, para no confundir "Dark mode" con sus
+// variantes). -1 si no es ninguna conocida (tema de plugin).
+function resolvePickerRow(rows: PickerRow[], line: string): number {
+  const text = line.replace(/^[✔✓]\s*/, '');
+  let best = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const name = rows[i]!.name;
+    if (text.startsWith(name) && (best < 0 || name.length > rows[best]!.name.length)) best = i;
+  }
+  return best;
+}
+
+async function applyThemeViaPicker(s: PtySession, themeId: string): Promise<void> {
+  const rows = claudeThemePickerRows();
+  const target = rows.findIndex((r) => r.id === themeId);
+  if (target < 0) { s.claudeThemeId = themeId; return; }
+  s.themeSyncing = true;
+  s.themeAttempts += 1;
+  const write = (data: string) => { if (!s.exited) { try { s.pty.write(data); } catch { /* noop */ } } };
+  const keys = async (seq: string, n: number) => {
+    for (let i = 0; i < n; i++) {
+      write(seq);
+      await sleep(PICKER_KEY_GAP_MS);
+    }
+  };
+  try {
+    const mark = s.buffer.length;
+    write('/theme');
+    await sleep(300);
+    write('\r');
+    await sleep(1200);
+    const opened = stripAnsi(s.buffer.slice(Math.max(0, mark - 1))).includes(PICKER_TITLE)
+      || stripAnsi(s.buffer.slice(-16 * 1024)).includes(PICKER_TITLE);
+    if (!opened) {
+      console.warn(`[claude-theme] ${s.bubbleId}: el picker no abrió, se deja la sesión como está`);
+      return;
+    }
+    // El picker abre sobre el tema actual: si lo reconocemos, movemos la
+    // diferencia; si no (plugin), subimos de sobra hasta la fila 0 y bajamos.
+    const cur = resolvePickerRow(rows, (await promptLine(s)) ?? '');
+    if (cur >= 0) {
+      const delta = target - cur;
+      await keys(delta > 0 ? '\x1b[B' : '\x1b[A', Math.abs(delta));
+    } else {
+      await keys('\x1b[A', rows.length + PICKER_EXTRA_ROWS);
+      await keys('\x1b[B', target);
+    }
+    await sleep(500);
+    const line = (await promptLine(s)) ?? '';
+    if (resolvePickerRow(rows, line) !== target) {
+      console.warn(`[claude-theme] ${s.bubbleId}: fila seleccionada "${line}" ≠ "${rows[target]!.name}", Esc`);
+      write('\x1b');
+      return;
+    }
+    write('\r');
+    await sleep(800);
+    s.claudeThemeId = themeId;
+    console.log(`[claude-theme] ${s.bubbleId}: sesión abierta pasada a ${themeId}`);
+  } finally {
+    s.themeSyncing = false;
+    // El picker marcó la sesión como ocupada; no cuenta como tecleo del user.
+    s.lastInputAt = 0;
+  }
 }
 
 export type WaitIdleResult = { idle: boolean; busy: boolean; sawOutput: boolean; waitedMs: number; running: boolean };
@@ -616,6 +793,11 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
       startedAt: Date.now(),
       launchedAt: null,
       outputSinceLaunch: false,
+      lastInputAt: 0,
+      claudeThemeId: agent === 'claude' ? (wantedClaudeTheme ?? currentClaudeTheme().id) : null,
+      themeSyncing: false,
+      themeAttempts: 0,
+      themeSkipReason: null,
     };
     if (bubbleId) {
       const wasFirst = !hasRunningPtyForBubble(bubbleId);
@@ -669,6 +851,7 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
       try { msg = JSON.parse(raw.toString()) as PtyInput; } catch { return; }
       if (!msg || typeof msg !== 'object') return;
       if (msg.type === 'input' && typeof msg.data === 'string') {
+        session.lastInputAt = Date.now();
         try { session.pty.write(msg.data); } catch { /* noop */ }
       } else if (msg.type === 'resize') {
         const c = clampInt(msg.cols, 24, 400, 100);

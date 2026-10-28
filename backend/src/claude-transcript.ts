@@ -152,6 +152,16 @@ function blocksOf(e: TranscriptEntry): ContentBlock[] {
   return Array.isArray(c) ? c : [];
 }
 
+// Un slash command local (`/theme`, `/clear`, …) queda en el transcript como
+// un `user` con solo `<command-name>` (+ caveat y stdout en entradas hermanas).
+// No es un prompt: el modelo nunca lo ve y no abre turno.
+const COMMAND_NAME_RE = /<command-name>[\s\S]*?<\/command-name>/g;
+function isLocalCommandEntry(e: TranscriptEntry): boolean {
+  const raw = blocksOf(e).filter((b): b is { type: 'text'; text?: string } => b.type === 'text').map((b) => b.text ?? '').join('\n');
+  if (!/<command-name>/.test(raw)) return false;
+  return raw.replace(COMMAND_NAME_RE, '').replace(INJECTED_BLOCK_RE, '').trim() === '';
+}
+
 // Un mensaje `user` cuyo contenido son solo tool_result es la respuesta de una
 // tool, no un prompt del usuario.
 function userPromptText(e: TranscriptEntry): string | null {
@@ -246,7 +256,7 @@ export function summarizeTranscript(entries: TranscriptEntry[]): Omit<Transcript
           onlyResults = false;
         }
       }
-      if (!onlyResults && userPromptText(e)) {
+      if (!onlyResults && userPromptText(e) && !isLocalCommandEntry(e)) {
         lastUserAt = e.timestamp ?? null;
         last = 'user';
         lastStop = null;
