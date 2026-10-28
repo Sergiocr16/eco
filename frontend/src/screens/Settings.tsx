@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { useTheme, useTokens } from '@/design/theme';
-import { ACCENT_HUES, THEME_VARIANTS, defaultHueForTheme } from '@/design/tokens';
+import { terminalBg, terminalFg } from '@/lib/terminal-theme';
+import { CLAUDE_THEME_SYNC_EVENT, CLAUDE_THEME_SYNC_KEY } from '@/hooks/useClaudeThemeSync';
+import { ClaudeThemePickerButton } from '@/components/ClaudeThemePicker';
+import { ACCENT_HUES, THEME_VARIANTS, defaultHueForTheme, isLightTheme } from '@/design/tokens';
 import {
   Glass, Btn, StatusDot, SectionLabel, Toggle, fieldStyle, scrimStyle, dialogSurface,
 } from '@/design/primitives';
@@ -1724,20 +1727,25 @@ function SectionAppearance() {
       <SectionLabel>{tr('settings.appearance.theme')}</SectionLabel>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
         {basicModes.map((m) => (
-          <button key={m.id} type="button" onClick={() => setMode(m.id)} style={{
+          <div key={m.id} style={{
             padding: 14, border: `1px solid ${mode === m.id ? t.accentDim : t.glassBorder}`,
             borderRadius: 14, background: mode === m.id ? t.accentFaint : t.bg2,
-            cursor: 'pointer', textAlign: 'left',
           }}>
-            <div style={{
-              height: 56, borderRadius: 8, marginBottom: 10,
-              background: m.preview, border: `1px solid ${t.glassBorder}`,
-            }}/>
-            <div style={{
-              fontSize: 13, color: mode === m.id ? t.accent : t.text0, fontWeight: 500,
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>{mode === m.id && <IconCheck size={12} strokeWidth={3}/>}{m.label}</div>
-          </button>
+            <button type="button" onClick={() => setMode(m.id)} style={{
+              display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent',
+              cursor: 'pointer', textAlign: 'left', fontFamily: t.fontSans,
+            }}>
+              <div style={{
+                height: 56, borderRadius: 8, marginBottom: 10,
+                background: m.preview, border: `1px solid ${t.glassBorder}`,
+              }}/>
+              <div style={{
+                fontSize: 13, color: mode === m.id ? t.accent : t.text0, fontWeight: 500,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>{mode === m.id && <IconCheck size={12} strokeWidth={3}/>}{m.label}</div>
+            </button>
+            {m.id !== 'system' && <ClaudeThemePickerButton mode={m.id}/>}
+          </div>
         ))}
       </div>
 
@@ -1749,11 +1757,14 @@ function SectionAppearance() {
           // tema antes de seleccionarlo (cada tema trae su acento coordinado).
           const sig = `oklch(76% ${v.defaultChroma ?? 0.13} ${v.defaultHue})`;
           return (
-            <button key={v.id} type="button" onClick={() => setMode(v.id)} style={{
+            <div key={v.id} style={{
               padding: 8, border: `1px solid ${selected ? t.accentDim : t.glassBorder}`,
               borderRadius: 12, background: selected ? t.accentFaint : t.bg2,
-              cursor: 'pointer', textAlign: 'left',
               transition: 'all 140ms',
+            }}>
+            <button type="button" onClick={() => setMode(v.id)} style={{
+              display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent',
+              cursor: 'pointer', textAlign: 'left', fontFamily: t.fontSans,
             }}>
               <div style={{
                 height: 44, borderRadius: 6, marginBottom: 6,
@@ -1779,6 +1790,8 @@ function SectionAppearance() {
                 </span>
               </div>
             </button>
+            <ClaudeThemePickerButton mode={v.id}/>
+            </div>
           );
         })}
       </div>
@@ -1838,6 +1851,14 @@ function SectionAppearance() {
       </div>
 
       <SectionLabel>{tr('settings.appearance.terminal')}</SectionLabel>
+      <GeneralToggleRow
+        icon={IconTerminal}
+        title={tr('settings.appearance.terminal.claude_sync')}
+        desc={tr('settings.appearance.terminal.claude_sync_desc')}
+        storageKey={CLAUDE_THEME_SYNC_KEY}
+        defaultOn
+        broadcastEvent={CLAUDE_THEME_SYNC_EVENT}
+      />
       <div style={{ marginBottom: 22 }}>
         <TerminalFontRows/>
       </div>
@@ -1851,109 +1872,194 @@ function SectionAppearance() {
   );
 }
 
-// Editor de categorías — lista con nombre + color picker + borrar, y un
-// botón para agregar. Persiste vía useCategories (localStorage compartido).
+// Editor de categorías: alta arriba y tarjetas en grilla (una por categoría)
+// con barra lateral del color, nombre editable, paleta y borrar. Persiste vía
+// useCategories (sincronizado a Firestore).
 function CategoryManager() {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const { categories, add, update, remove } = useCategories();
   const [draftName, setDraftName] = useState('');
+  const nextColor = CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length]!;
+  const submit = () => {
+    if (!draftName.trim()) return;
+    add(draftName.trim(), nextColor);
+    setDraftName('');
+  };
 
   return (
-    <div style={{ marginBottom: 22, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {categories.length === 0 && (
-        <div style={{
-          padding: '10px 12px', borderRadius: 10,
-          background: t.bg2, border: `1px dashed ${t.glassBorder}`,
-          fontSize: 11.5, color: t.text2,
-        }}>
-          {tr('settings.categories.empty')}
-        </div>
-      )}
-      {categories.map((c) => (
-        <div key={c.id} style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 10px', borderRadius: 10,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        }}>
-          {/* Swatches de color — envuelven en varias filas con paleta amplia. */}
-          <div style={{
-            display: 'flex', gap: 4, flexWrap: 'wrap', flexShrink: 0,
-            maxWidth: 198,
-          }}>
-            {CATEGORY_PALETTE.map((col) => (
-              <button
-                key={col}
-                type="button"
-                onClick={() => update(c.id, { color: col })}
-                title={col}
-                style={{
-                  width: 15, height: 15, borderRadius: '50%',
-                  background: col, cursor: 'pointer', padding: 0,
-                  border: c.color === col ? `2px solid ${t.text0}` : `2px solid transparent`,
-                  boxShadow: c.color === col ? `0 0 0 1px ${col}` : 'none',
-                }}
-              />
-            ))}
-          </div>
-          <input
-            value={c.name}
-            onChange={(e) => update(c.id, { name: e.target.value })}
-            placeholder={tr('settings.categories.name_placeholder')}
-            style={{
-              flex: 1, minWidth: 0, boxSizing: 'border-box',
-              background: t.bg3, border: `1px solid ${t.glassBorder}`,
-              borderRadius: 8, padding: '5px 9px',
-              fontFamily: t.fontSans, fontSize: 12.5, color: t.text0,
-              outline: 'none',
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => remove(c.id)}
-            title={tr('settings.categories.delete_tooltip')}
-            style={{
-              width: 26, height: 26, borderRadius: 7, border: 0,
-              background: 'transparent', color: t.text3, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = t.err; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = t.text3; }}>
-            <IconTrash size={13}/>
-          </button>
-        </div>
-      ))}
-      {/* Fila para agregar */}
-      <div style={{ display: 'flex', gap: 8 }}>
+    <div style={{ marginBottom: 22 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+        padding: '8px 10px 8px 14px', borderRadius: 12,
+        background: t.bg2, border: `1px solid ${t.glassBorder}`,
+      }}>
+        <span style={{
+          width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
+          background: nextColor, boxShadow: `0 0 6px ${nextColor}88`,
+        }}/>
         <input
           value={draftName}
           onChange={(e) => setDraftName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && draftName.trim()) {
-              add(draftName.trim(), CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length]!);
-              setDraftName('');
-            }
-          }}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           placeholder={tr('settings.categories.new_placeholder')}
           style={{
-            flex: 1, boxSizing: 'border-box',
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            borderRadius: 8, padding: '7px 10px',
-            fontFamily: t.fontSans, fontSize: 12.5, color: t.text0,
-            outline: 'none',
+            flex: 1, minWidth: 0, boxSizing: 'border-box',
+            background: 'transparent', border: 0, outline: 'none',
+            fontFamily: t.fontSans, fontSize: isMobileNow() ? 16 : 13, color: t.text0,
           }}
         />
-        <Btn
-          kind="primary" size="sm"
-          disabled={!draftName.trim()}
-          onClick={() => {
-            add(draftName.trim(), CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length]!);
-            setDraftName('');
-          }}>
+        <Btn kind="primary" size="sm" disabled={!draftName.trim()} onClick={submit}>
           {tr('common.add')}
         </Btn>
       </div>
+
+      {categories.length === 0 ? (
+        <div style={{
+          padding: '14px 12px', borderRadius: 12, textAlign: 'center',
+          background: t.bg2, border: `1px dashed ${t.glassBorder}`,
+          fontSize: 12, color: t.text2, lineHeight: 1.5,
+        }}>
+          {tr('settings.categories.empty')}
+        </div>
+      ) : (
+        <div style={{
+          display: 'grid', gap: 10,
+          gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+        }}>
+          {categories.map((c) => (
+            <CategoryCard key={c.id} name={c.name} color={c.color}
+              onName={(name) => update(c.id, { name })}
+              onColor={(color) => update(c.id, { color })}
+              onRemove={() => remove(c.id)}/>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tarjeta de una categoría: el chip (igual al de la cabecera de la burbuja)
+// es el selector de color — clic → popover con la paleta y un color
+// personalizado (color picker nativo). El nombre se edita al lado.
+function CategoryCard({ name, color, onName, onColor, onRemove }: {
+  name: string; color: string;
+  onName: (name: string) => void; onColor: (color: string) => void; onRemove: () => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} style={{
+      position: 'relative', borderRadius: 12,
+      background: t.bg2, border: `1px solid ${t.glassBorder}`,
+      padding: '10px 10px 10px 12px',
+      display: 'flex', alignItems: 'center', gap: 10,
+    }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title={tr('settings.categories.pick_color')}
+        aria-label={tr('settings.categories.pick_color')}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          borderRadius: 999, padding: '3px 10px',
+          background: `color-mix(in oklch, ${color} 16%, transparent)`,
+          border: `1px solid color-mix(in oklch, ${color} 45%, transparent)`,
+          color, fontSize: 11.5, fontWeight: 500, fontFamily: t.fontSans,
+          cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, maxWidth: 160,
+        }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }}/>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {name.trim() || tr('settings.categories.name_placeholder')}
+        </span>
+      </button>
+      <input
+        value={name}
+        onChange={(e) => onName(e.target.value)}
+        placeholder={tr('settings.categories.name_placeholder')}
+        style={{
+          flex: 1, minWidth: 0, boxSizing: 'border-box',
+          background: 'transparent', border: 0, outline: 'none',
+          borderBottom: '1px solid transparent',
+          fontFamily: t.fontSans, fontSize: isMobileNow() ? 16 : 13, color: t.text0,
+          padding: '2px 0',
+        }}
+        onFocus={(e) => { e.currentTarget.style.borderBottomColor = t.accentDim; }}
+        onBlur={(e) => { e.currentTarget.style.borderBottomColor = 'transparent'; }}
+      />
+      <button
+        type="button"
+        onClick={onRemove}
+        title={tr('settings.categories.delete_tooltip')}
+        aria-label={tr('settings.categories.delete_tooltip')}
+        style={{
+          width: 28, height: 28, borderRadius: 8, border: 0,
+          background: 'transparent', color: t.text3, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = t.err; e.currentTarget.style.background = t.bg3; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = t.text3; e.currentTarget.style.background = 'transparent'; }}>
+        <IconTrash size={13}/>
+      </button>
+
+      {open && (
+        <div role="dialog" aria-label={tr('settings.categories.pick_color')} style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 10, zIndex: 50,
+          padding: 10, borderRadius: 12, width: 196,
+          ...dialogSurface(t), boxShadow: t.shadowLg,
+        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
+            {CATEGORY_PALETTE.map((col) => {
+              const on = color.toLowerCase() === col.toLowerCase();
+              return (
+                <button
+                  key={col}
+                  type="button"
+                  onClick={() => { onColor(col); setOpen(false); }}
+                  title={col}
+                  aria-label={col}
+                  style={{
+                    width: 18, height: 18, borderRadius: '50%', padding: 0, cursor: 'pointer',
+                    background: col,
+                    border: `2px solid ${on ? t.text0 : 'transparent'}`,
+                    boxShadow: on ? `0 0 0 1.5px ${col}` : 'none',
+                  }}
+                />
+              );
+            })}
+          </div>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, paddingTop: 10,
+            borderTop: `1px solid ${t.glassBorder}`,
+            fontSize: 11.5, color: t.text1, fontFamily: t.fontSans, cursor: 'pointer',
+          }}>
+            <input
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#888888'}
+              onChange={(e) => onColor(e.target.value)}
+              style={{ width: 22, height: 22, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
+            />
+            {tr('settings.categories.custom_color')}
+            <span style={{ marginLeft: 'auto', fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>{color}</span>
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -2025,7 +2131,8 @@ function UiZoomRow() {
 }
 
 function TerminalFontRows() {
-  const t = useTokens();
+  const { t, effectiveMode } = useTheme();
+  const isLight = isLightTheme(effectiveMode);
   const tr = useT();
   const prefs = useTermPrefs();
   // Medición por canvas una vez por montaje: barata, pero no gratis.
@@ -2069,7 +2176,7 @@ function TerminalFontRows() {
           acá antes de abrir una burbuja. */}
       <div style={{
         marginTop: 12, padding: '10px 14px', borderRadius: 10,
-        background: '#0c0e14', color: '#e5e7eb',
+        background: terminalBg(t, isLight), color: terminalFg(t, isLight),
         fontFamily: termFontStack(prefs.fontFamilyId), fontSize: prefs.fontSize, lineHeight: 1.25,
         whiteSpace: 'pre', overflowX: 'auto',
       }}>

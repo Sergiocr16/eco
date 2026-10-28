@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '@/lib/api';
-import { useTokens } from '@/design/theme';
+import { useTokens, useTheme } from '@/design/theme';
+import { terminalBg, terminalFg } from '@/lib/terminal-theme';
+import { isLightTheme } from '@/design/tokens';
 import { RealTerminal, type AgentCli } from '@/components/RealTerminal';
 import { SkillsPicker } from '@/components/SkillsPicker';
 import { useSkills, type SkillInfo } from '@/hooks/useSkills';
@@ -860,7 +862,8 @@ function TerminalTabs({ bubble }: { bubble: Bubble }) {
 // Si el CLI de Codex no está instalado no spawneamos PTY: un `command not
 // found` crudo en una pestaña fija es peor que decir cómo instalarlo.
 function CodexPane({ bubble, mounted }: { bubble: Bubble; mounted: boolean }) {
-  const t = useTokens();
+  const { t, effectiveMode } = useTheme();
+  const isLight = isLightTheme(effectiveMode);
   const tr = useT();
   const codex = useCliAuth('codex');
   const [retrying, setRetrying] = useState(false);
@@ -879,12 +882,12 @@ function CodexPane({ bubble, mounted }: { bubble: Bubble; mounted: boolean }) {
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', gap: 12,
-        padding: 24, background: '#0c0e14', color: '#e5e7eb',
+        padding: 24, background: terminalBg(t, isLight), color: terminalFg(t, isLight),
       }}>
         <div style={{ fontFamily: t.fontSans, fontSize: 14, fontWeight: 600 }}>
           {tr('detail.terminal.codex.missing.title')}
         </div>
-        <div style={{ fontFamily: t.fontSans, fontSize: 12.5, color: '#9ca3af', textAlign: 'center', maxWidth: 420, lineHeight: 1.6 }}>
+        <div style={{ fontFamily: t.fontSans, fontSize: 12.5, color: t.text2, textAlign: 'center', maxWidth: 420, lineHeight: 1.6 }}>
           {tr('detail.terminal.codex.missing.desc')}
         </div>
         <code style={{

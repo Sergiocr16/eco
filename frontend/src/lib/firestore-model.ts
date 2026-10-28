@@ -80,6 +80,8 @@ export type PrefsDoc = {
   themeMode?: string;
   accentHue?: number;
   lang?: string;
+  // Apariencia de Eco → tema de Claude Code elegido (sobrescribe el recomendado).
+  claudeThemes?: Record<string, string>;
 };
 
 export type AuditEventDoc = {

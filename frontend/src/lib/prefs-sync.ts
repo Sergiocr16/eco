@@ -10,7 +10,12 @@ const DOC_KEY = 'prefs';
 
 // photo: data-URL JPEG chiquito (128px, <8KB) de la foto de perfil. Va en prefs
 // para sincronizar cross-device como el resto. null = sin foto (limpiada).
-export type Prefs = { themeMode?: string; accentHue?: number; lang?: string; photo?: string | null };
+export type Prefs = {
+  themeMode?: string; accentHue?: number; lang?: string; photo?: string | null;
+  // Apariencia de Eco → tema de Claude Code elegido por el usuario (sin
+  // entrada = el recomendado de design/claude-theme-map.ts).
+  claudeThemes?: Record<string, string>;
+};
 
 let current: Prefs = {};
 const subs = new Set<(p: Prefs) => void>();
@@ -20,6 +25,11 @@ export function getPrefs(): Prefs { return current; }
 export function subscribePrefs(fn: (p: Prefs) => void): () => void {
   subs.add(fn);
   return () => { subs.delete(fn); };
+}
+
+function isStringMap(x: unknown): x is Record<string, string> {
+  return !!x && typeof x === 'object' && !Array.isArray(x)
+    && Object.values(x as Record<string, unknown>).every((v) => typeof v === 'string');
 }
 
 function emit() { for (const fn of subs) { try { fn(current); } catch { /* noop */ } } }
@@ -32,6 +42,7 @@ function applyFromServer(value: unknown) {
     accentHue: typeof v.accentHue === 'number' ? v.accentHue : current.accentHue,
     lang: typeof v.lang === 'string' ? v.lang : current.lang,
     photo: typeof v.photo === 'string' ? v.photo : (v.photo === null ? null : current.photo),
+    claudeThemes: isStringMap(v.claudeThemes) ? v.claudeThemes : current.claudeThemes,
   };
   emit();
 }
@@ -46,6 +57,7 @@ export function hydratePrefs(value: unknown, updatedAt: number): void {
 export function updatePrefs(patch: Prefs): void {
   current = { ...current, ...patch };
   saveDoc(DOC_KEY, current);
+  emit();
 }
 
 // Push en vivo desde otros dispositivos del usuario.

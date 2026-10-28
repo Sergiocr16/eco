@@ -6,7 +6,10 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { currentIdToken, hasSignedInUser } from '@/lib/firebase';
 import { useT } from '@/hooks/useI18n';
-import { useTokens } from '@/design/theme';
+import { useTheme } from '@/design/theme';
+import { isLightTheme } from '@/design/tokens';
+import { buildXtermTheme, terminalBg, type TerminalTone } from '@/lib/terminal-theme';
+import { useClaudeTheme } from '@/hooks/useClaudeTheme';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { TerminalKeyBar } from './TerminalKeyBar';
 import { getTermPrefs, setTermFontSize, termFontStack, useTermPrefs } from '@/lib/terminal-prefs';
@@ -38,7 +41,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollTrackRef = useRef<HTMLDivElement>(null);
   const scrollThumbRef = useRef<HTMLDivElement>(null);
-  const t = useTokens();
+  const { t, effectiveMode } = useTheme();
   const isMobile = useIsMobile();
   const tr = useT();
   // El efecto del socket no se re-corre al cambiar de idioma; lee la traducción vigente vía ref.
@@ -60,6 +63,15 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
   // reconectaría el PTY en cada toque de A+.
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const isLight = isLightTheme(effectiveMode);
+  const claudeTheme = useClaudeTheme();
+  // Solo la terminal de Claude tiene un tema propio que respetar.
+  const tone: TerminalTone | undefined = agent === 'claude'
+    ? { base: claudeTheme.base, background: claudeTheme.background }
+    : undefined;
+  const xtermTheme = buildXtermTheme(t, isLight, t.accent, tone);
+  const xtermThemeRef = useRef(xtermTheme);
+  xtermThemeRef.current = xtermTheme;
   const sendInputRef = useRef<(data: string) => void>(() => { /* noop */ });
   const doResizeRef = useRef<() => void>(() => { /* noop */ });
 
@@ -67,12 +79,8 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     const container = containerRef.current;
     if (!container) return;
 
-    // La terminal SIEMPRE es oscura — no la teñimos con el tema del shell
-    // porque convencionalmente las terminales son negras y un fondo claro
-    // arruina la legibilidad de los códigos ANSI de colores. Solo el cursor
-    // y la selección heredan el accent para que se sienta parte de Eco.
-    const TERMINAL_BG = '#0c0e14';        // negro sutil con micro-tinte azulado
-    const TERMINAL_FG = '#e5e7eb';        // gris claro siempre legible
+    // El tema inicial sale del ref: el efecto de tema de más abajo lo
+    // actualiza en vivo sin recrear el terminal ni reconectar el socket.
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: termFontStack(),
@@ -80,13 +88,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       lineHeight: 1.25,
       scrollback: 2000,
       allowTransparency: false,
-      theme: {
-        background: TERMINAL_BG,
-        foreground: TERMINAL_FG,
-        cursor: t.accent,
-        cursorAccent: TERMINAL_BG,
-        selectionBackground: `${t.accent}55`,
-      },
+      theme: xtermThemeRef.current,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -479,6 +481,16 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     doResizeRef.current();
   }, [fontPx, fontStack]);
 
+  // Cambiar de tema tampoco recrea el terminal: xterm repinta solo al
+  // reasignar `options.theme`.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = xtermTheme;
+    // xtermTheme es un objeto nuevo en cada render; lo que importa es el tema.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t, effectiveMode, agent, claudeTheme]);
+
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Wrapper propio para posicionar la barra de scroll: el contenedor de
@@ -496,7 +508,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
             // Mismo color que el background del Terminal — así no se ve un marco
             // de otro color alrededor cuando hay padding o cuando el shell aún
             // no se conectó.
-            background: '#0c0e14',
+            background: terminalBg(t, isLight, tone),
             borderRadius: 10,
             overflow: 'hidden',
             // Bajo zoom CSS (web) xterm mide las celdas con getBoundingClientRect,

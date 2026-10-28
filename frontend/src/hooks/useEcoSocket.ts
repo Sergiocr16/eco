@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SocketStatus } from '@/lib/types';
 import { currentIdToken, hasSignedInUser } from '@/lib/firebase';
 import { emit as ecoEmit } from '@/lib/eco-bus';
+import { setClaudeTheme, type ClaudeThemeInfo } from '@/hooks/useClaudeTheme';
 
 const RECONNECT_BACKOFF_MS = [500, 1500, 3000, 5000, 10_000];
 
@@ -22,6 +23,7 @@ type ServerMsg =
   | { type: 'dev_log'; bubbleId: string; role: 'main' | 'frontend' | 'backend'; chunk: string }
   | { type: 'doc_updated'; key: string; value: unknown; updatedAt: number }
   | { type: 'doc_deleted'; key: string }
+  | { type: 'claude_theme'; theme: ClaudeThemeInfo }
   | { type: 'heartbeat' };
 
 // Espejo de `backend/src/protocol.ts:ClientAction`. Las acciones las emite el
@@ -179,6 +181,9 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         }
         else if (msg.type === 'doc_deleted') {
           ecoEmit('eco:doc_deleted', { key: msg.key });
+        }
+        else if (msg.type === 'claude_theme') {
+          setClaudeTheme(msg.theme);
         }
       } catch (e) {
         console.warn('WS parse error', e);

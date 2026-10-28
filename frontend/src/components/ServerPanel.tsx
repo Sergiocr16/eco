@@ -14,7 +14,9 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { useTokens } from '@/design/theme';
+import { useTokens, useTheme } from '@/design/theme';
+import { isLightTheme } from '@/design/tokens';
+import { buildXtermTheme, terminalBg } from '@/lib/terminal-theme';
 import {
   IconPlay, IconStop, IconResume, IconCpu, IconAlert,
   IconTrash, IconSettings, IconChevD, IconChevR, IconExt, IconGlobe,
@@ -820,7 +822,8 @@ function LogsPane({
   // en dual, el slot no minimizado). Al pasar a visible, xterm baja al fondo.
   visible?: boolean;
 }) {
-  const t = useTokens();
+  const { t, effectiveMode } = useTheme();
+  const isLight = isLightTheme(effectiveMode);
   const tr = useT();
   // El buffer de logs ya NO vive en React — xterm es el dueño del stream
   // (ver TerminalLogs). Acá solo guardamos un contador throttled para el
@@ -869,7 +872,7 @@ function LogsPane({
     <div style={{
       borderRadius: 10, overflow: 'hidden',
       border: `1px solid ${t.glassBorder}`,
-      background: '#0c0e14',
+      background: terminalBg(t, isLight),
       display: 'flex', flexDirection: 'column',
       height: minimized ? 'auto' : paneHeight,
     }}>
@@ -980,11 +983,15 @@ function TerminalLogs({
   clearRef?: MutableRefObject<(() => void) | null>;
   visible?: boolean;
 }) {
-  const t = useTokens();
+  const { t, effectiveMode } = useTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const isLight = isLightTheme(effectiveMode);
+  const xtermTheme = buildXtermTheme(t, isLight, accent);
+  const xtermThemeRef = useRef(xtermTheme);
+  xtermThemeRef.current = xtermTheme;
   // "stick to bottom": si el user scrollea arriba para leer, dejamos de
   // arrastrarlo al fondo; cuando vuelve abajo, se reanuda el auto-scroll.
   const stickyRef = useRef(true);
@@ -1000,8 +1007,6 @@ function TerminalLogs({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const TERMINAL_BG = '#0c0e14';
-    const TERMINAL_FG = '#e5e7eb';
     const term = new Terminal({
       cursorBlink: false,
       disableStdin: true,
@@ -1014,13 +1019,8 @@ function TerminalLogs({
       // el tab Server está montado.
       scrollback: 10_000,
       allowTransparency: false,
-      theme: {
-        background: TERMINAL_BG,
-        foreground: TERMINAL_FG,
-        cursor: TERMINAL_BG,
-        cursorAccent: TERMINAL_BG,
-        selectionBackground: `${accent}55`,
-      },
+      // Sin cursor visible: es un visor de logs, no una terminal interactiva.
+      theme: { ...xtermThemeRef.current, cursor: xtermThemeRef.current.background },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -1183,6 +1183,14 @@ function TerminalLogs({
     try { fitRef.current?.fit(); } catch { /* noop */ }
   }, [cssZ]);
 
+  // Cambio de tema en vivo sin recrear el terminal (se perdería el buffer).
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = { ...xtermTheme, cursor: xtermTheme.background };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t, effectiveMode, accent]);
+
   // Auto-clear del feedback después de 2.5s.
   useEffect(() => {
     if (!feedback) return;
@@ -1228,7 +1236,7 @@ function TerminalLogs({
     <div ref={wrapperRef} style={{
       flex: 1, minHeight: 0,
       padding: 8,
-      background: '#0c0e14',
+      background: terminalBg(t, isLight),
       overflow: 'hidden',
       position: 'relative',
     }}>
