@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { IconBranch } from '@/design/icons';
-import { apiFetch } from '@/lib/api';
-import { emit as ecoEmit, on as ecoOn } from '@/lib/eco-bus';
+import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useBranches } from '@/hooks/useBranches';
+import { useCurrentPr } from '@/hooks/useCurrentPr';
 import { useGitOpStatus } from '@/hooks/useGitOpStatus';
 import { useT } from '@/hooks/useI18n';
 
@@ -23,19 +23,6 @@ type Props = {
   onGoToGit: () => void;
 };
 
-type CurrentPr = {
-  number: number;
-  title: string;
-  state: string;
-  isDraft: boolean;
-  mergeable: string;
-  url: string;
-};
-
-type CurrentPrResult =
-  | { ok: true; pr: CurrentPr | null }
-  | { ok: false; error: string };
-
 const STATE_COLOR: Record<string, string> = {
   OPEN: '#22c55e',
   MERGED: '#a855f7',
@@ -49,45 +36,14 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
   const op = useGitOpStatus(workspace, bubbleId);
   const [hover, setHover] = useState(false);
   const [hoverPr, setHoverPr] = useState(false);
-  const [currentPr, setCurrentPr] = useState<CurrentPr | null>(null);
+  const { pr: currentPr, refresh: refreshPr } = useCurrentPr(workspace, bubbleId);
 
   const branchName = branchesData?.current ?? tr('common.empty_dash');
   const detached = branchesData?.detached ?? false;
 
-  // Detección de PR asociado a la rama actual. Se refetch cuando cambia
-  // el branch (eco:git_refresh tras checkout) o al recibir eventos del bus.
-  useEffect(() => {
-    if (!workspace || !bubbleId) { setCurrentPr(null); return; }
-    let cancelled = false;
-    let followUp: ReturnType<typeof setTimeout> | null = null;
-    const fetchPr = async () => {
-      try {
-        const params = new URLSearchParams({ workspace, bubbleId });
-        const r = await apiFetch(`/git/pr/current?${params}`);
-        if (!r.ok) return;
-        const data = await r.json() as CurrentPrResult;
-        if (cancelled) return;
-        if (data.ok) setCurrentPr(data.pr); else setCurrentPr(null);
-      } catch { /* gh puede no estar disponible — silenciamos */ }
-    };
-    void fetchPr();
-    // Refetch cuando algo cambia el estado git (checkout, commit, etc.).
-    // Además agendamos un segundo fetch ~1.5 s después: tras `gh pr merge`
-    // la API de GitHub a veces tarda en propagar y la primera consulta
-    // todavía devuelve OPEN. El follow-up captura el estado ya propagado
-    // sin que el user tenga que colapsar/expandir el panel.
-    const offBus = ecoOn('eco:git_refresh', (e) => {
-      if (e.bubbleId !== bubbleId) return;
-      void fetchPr();
-      if (followUp) clearTimeout(followUp);
-      followUp = setTimeout(() => { followUp = null; void fetchPr(); }, 1500);
-    });
-    return () => {
-      cancelled = true;
-      offBus();
-      if (followUp) clearTimeout(followUp);
-    };
-  }, [workspace, bubbleId, branchesData?.current]);
+  // El store ya refresca con eco:git_refresh, al aquietarse el PTY y por
+  // poll; acá solo cubrimos un cambio de rama detectado por useBranches.
+  useEffect(() => { void refreshPr(); }, [refreshPr, branchesData?.current]);
 
   function openPrDetail(e: React.MouseEvent) {
     e.stopPropagation();

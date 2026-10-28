@@ -20,7 +20,7 @@ import {
 import { logEvent, queryEvents, AUDIT_EVENT_TYPES, type AuditEventType } from './audit-log.js';
 import {
   attachPtyServer, killBubblePty, killBubbleTerminal, getBubblePtyBuffer, injectPromptToBubble, runningPtyBubbleIds,
-  busyPtyBubbleIds, listPtySessions, getPtySession, getPtyTail, sendKeysToPty, waitForPtyIdle, ptyIdForAgent, type AgentCli,
+  busyPtyBubbleIds, listPtySessions, getPtySession, getPtyTail, sendKeysToPty, waitForPtyIdle, ptyIdForAgent, setWantedClaudeTheme, type AgentCli,
 } from './pty-server.js';
 import { getClaudeTranscriptState, readConversation } from './claude-transcript.js';
 import { ptyTailToText } from './strip-ansi.js';
@@ -654,7 +654,9 @@ app.post('/config/claude-theme', requireAdmin, (req: Request, res: Response) => 
   const parsed = ClaudeThemeSchema.safeParse(req.body);
   if (!parsed.success) return errResponse(res, 400, 'http.invalid_body', 'Cuerpo inválido');
   try {
-    res.json(applyClaudeTheme(parsed.data.theme, parsed.data.fallback));
+    const next = applyClaudeTheme(parsed.data.theme, parsed.data.fallback);
+    setWantedClaudeTheme(next.id);
+    res.json(next);
   } catch (e) {
     console.error('[claude-theme] write failed', e);
     errResponse(res, 500, 'claude_theme.write_failed', 'No se pudo escribir el tema de Claude');

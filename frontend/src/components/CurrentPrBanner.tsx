@@ -4,9 +4,9 @@ import { cssZoom } from '@/lib/ui-zoom';
 // está, ofrece acciones: ver en GitHub, mergear (con dropdown de método)
 // y cerrar el PR sin merge.
 //
-// Carga vía `GET /git/pr/current` al montar + cuando se emite
-// `eco:git_refresh` (típicamente tras un checkout de PR o cambio de rama
-// vía BranchPicker).
+// El PR sale del store compartido `useCurrentPr` (mismo fetch que el bloque
+// Git del sidebar): se refresca con `eco:git_refresh`, cuando el PTY del
+// agente se aquieta (`gh pr create` desde la terminal) y por poll.
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -17,24 +17,9 @@ import {
   IconBranch, IconCheck, IconX, IconAlert, IconExt, IconChevD,
 } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
-import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
+import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useT } from '@/hooks/useI18n';
-
-type CurrentPr = {
-  number: number;
-  title: string;
-  url: string;
-  state: 'OPEN' | 'CLOSED' | 'MERGED' | string;
-  isDraft: boolean;
-  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | string;
-  headRefName: string;
-  baseRefName: string;
-  author: string;
-};
-
-type CurrentResult =
-  | { ok: true; pr: CurrentPr | null }
-  | { ok: false; error: string };
+import { useCurrentPr, type CurrentPr } from '@/hooks/useCurrentPr';
 
 type MergeMethod = 'merge' | 'squash' | 'rebase';
 
@@ -48,43 +33,13 @@ type Props = {
 export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
   const t = useTokens();
   const tr = useT();
-  const [pr, setPr] = useState<CurrentPr | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { pr, loading, refresh: fetchCurrent } = useCurrentPr(workspace, bubbleId);
   const [busy, setBusy] = useState<'merging' | 'closing' | 'readying' | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [showMergeMenu, setShowMergeMenu] = useState(false);
   const [confirming, setConfirming] = useState<'close' | 'ready' | { method: MergeMethod } | null>(null);
   const mergeBtnRef = useRef<HTMLDivElement | null>(null);
   const mergeMenuRef = useRef<HTMLDivElement | null>(null);
-
-  const fetchCurrent = async () => {
-    if (!workspace) { setLoading(false); return; }
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ workspace, bubbleId });
-      const r = await apiFetch(`/git/pr/current?${params}`);
-      const d = (await r.json()) as CurrentResult;
-      if (d.ok) setPr(d.pr);
-      else setPr(null);
-    } catch {
-      setPr(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void fetchCurrent();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, bubbleId]);
-
-  useEffect(() => {
-    return ecoOn('eco:git_refresh', (e) => {
-      if (e.bubbleId !== bubbleId) return;
-      void fetchCurrent();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bubbleId]);
 
   // Cerrar el dropdown de merge al hacer click afuera.
   useEffect(() => {

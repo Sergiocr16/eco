@@ -1404,8 +1404,8 @@ const DICT = {
   'settings.appearance.terminal': { es: 'Terminal', en: 'Terminal' },
   'settings.appearance.terminal.claude_sync': { es: 'Tema de Claude Code a juego', en: 'Match Claude Code theme' },
   'settings.appearance.terminal.claude_sync_desc': {
-    es: 'Al cambiar la apariencia, Eco pone en Claude Code el tema que le corresponde (escribe ~/.claude/settings.json).',
-    en: 'When the appearance changes, Eco sets the matching theme in Claude Code (writes ~/.claude/settings.json).',
+    es: 'Al cambiar la apariencia, Eco pone en Claude Code el tema que le corresponde (escribe ~/.claude/settings.json) y lo aplica también a las sesiones de Claude ya abiertas en cuanto están quietas, con el prompt vacío.',
+    en: 'When the appearance changes, Eco sets the matching theme in Claude Code (writes ~/.claude/settings.json) and also applies it to Claude sessions already open as soon as they are idle with an empty prompt.',
   },
   'settings.appearance.claude_theme.label': { es: 'Tema de Claude Code', en: 'Claude Code theme' },
   'settings.appearance.claude_theme.recommended': { es: 'recomendado', en: 'recommended' },

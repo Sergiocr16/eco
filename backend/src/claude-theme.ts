@@ -113,6 +113,37 @@ export function stopClaudeThemeWatch(): void {
   try { unwatchFile(settingsPath()); } catch { /* noop */ }
 }
 
+// Orden del picker de `/theme` (verificado en 2.1.312): los 6 built-in, los
+// temas de `<config>/themes/*.json` por nombre, los de plugins ("from
+// theme-gallery") y "New custom theme…". No hay wrap en los extremos.
+const BUILTIN_PICKER: Array<[string, string]> = [
+  ['dark', 'Dark mode'],
+  ['light', 'Light mode'],
+  ['dark-daltonized', 'Dark mode (colorblind-friendly)'],
+  ['light-daltonized', 'Light mode (colorblind-friendly)'],
+  ['dark-ansi', 'Dark mode (ANSI colors only)'],
+  ['light-ansi', 'Light mode (ANSI colors only)'],
+];
+
+export type PickerRow = { id: string; name: string };
+
+// Filas del picker que se pueden derivar del disco: built-in + custom del
+// config dir. Las de plugins ("from theme-gallery") van después y no se
+// listan: una sesión parada ahí se navega desde el tope.
+export function claudeThemePickerRows(): PickerRow[] {
+  const rows: PickerRow[] = BUILTIN_PICKER.map(([id, name]) => ({ id, name }));
+  const dir = join(configDir(), 'themes');
+  let files: string[] = [];
+  try { files = readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { /* sin temas custom */ }
+  const custom = files.map((f) => {
+    const id = f.slice(0, -5);
+    const name = readJson(join(dir, f))?.name;
+    return { id: `custom:${id}`, name: typeof name === 'string' && name.trim() ? name.trim() : id };
+  });
+  custom.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  return rows.concat(custom);
+}
+
 export function currentClaudeTheme(): ClaudeTheme {
   current = readClaudeTheme();
   return current;
