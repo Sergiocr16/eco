@@ -1,7 +1,7 @@
 {
   "name": "eco-desktop",
   "productName": "Eco",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "Eco — asistente local para macOS/Windows/Linux",
   "main": "main.cjs",
   "private": true,
