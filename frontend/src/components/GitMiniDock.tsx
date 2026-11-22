@@ -29,6 +29,17 @@ const STATE_COLOR: Record<string, string> = {
   CLOSED: '#ef4444',
 };
 
+// Los PR de una tarea llevan su id y nombre en el título, separados por " | "
+// ("HOTFIX | PROD | TAR-1306 | Importar consumos…").
+const TASK_ID_RE = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
+
+export function taskFromPrTitle(title: string): { id: string; name: string } | null {
+  const parts = title.split('|').map((p) => p.trim()).filter(Boolean);
+  const at = parts.findIndex((p) => TASK_ID_RE.test(p));
+  if (at < 0) return null;
+  return { id: parts[at]!, name: parts.slice(at + 1).join(' | ') };
+}
+
 export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Props) {
   const t = useTokens();
   const tr = useT();
@@ -40,6 +51,9 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
 
   const branchName = branchesData?.current ?? tr('common.empty_dash');
   const detached = branchesData?.detached ?? false;
+  const task = currentPr ? taskFromPrTitle(currentPr.title) : null;
+  const checks = currentPr?.checks ?? { total: 0, passed: 0, failed: 0, pending: 0 };
+  const conflicting = currentPr?.mergeable === 'CONFLICTING';
 
   // El store ya refresca con eco:git_refresh, al aquietarse el PTY y por
   // poll; acá solo cubrimos un cambio de rama detectado por useBranches.
@@ -119,23 +133,24 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
             onMouseLeave={() => setHoverPr(false)}
             title={tr('git.minidock.pr_tooltip', { n: currentPr.number, title: currentPr.title })}
             style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '5px 8px', borderRadius: 8,
+              display: 'flex', flexDirection: 'column', gap: 5,
+              padding: '6px 8px', borderRadius: 8,
               background: hoverPr ? t.accentFaint : t.bg3,
               border: `1px solid ${hoverPr ? t.accent : t.glassBorder}`,
               color: t.text0,
               cursor: 'pointer',
               transition: 'background 120ms, border-color 120ms',
             }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{
               fontFamily: t.fontMono, fontSize: 10.5, fontWeight: 700,
               color: STATE_COLOR[currentPr.state] ?? t.accent,
               flexShrink: 0,
-            }}>#{currentPr.number}</span>
-            <span style={{
-              flex: 1, minWidth: 0, fontSize: 11.5, color: t.text0,
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>{currentPr.title}</span>
+            }}>{task ? task.id : `#${currentPr.number}`}</span>
+            <span style={{ flex: 1 }}/>
+            {task && (
+              <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3, flexShrink: 0 }}>#{currentPr.number}</span>
+            )}
             <span style={{
               padding: '1px 5px', borderRadius: 4,
               background: `color-mix(in oklch, ${STATE_COLOR[currentPr.state] ?? t.accent} 18%, transparent)`,
@@ -143,6 +158,29 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
               fontSize: 9, fontWeight: 700, letterSpacing: 0.4,
               flexShrink: 0,
             }}>{currentPr.isDraft ? 'DRAFT' : currentPr.state}</span>
+            </div>
+            <span style={{
+              fontSize: 12, lineHeight: 1.35, color: t.text0,
+              overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+            }}>{task?.name || currentPr.title}</span>
+            {currentPr.state === 'OPEN' && (checks.total > 0 || conflicting) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: t.text2 }}>
+                {checks.total > 0 && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      background: checks.failed > 0 ? t.err : checks.pending > 0 ? t.warn : t.ok,
+                    }}/>
+                    {checks.failed > 0
+                      ? tr('git.minidock.checks_failed', { n: checks.failed, total: checks.total })
+                      : checks.pending > 0
+                        ? tr('git.minidock.checks_pending', { n: checks.passed, total: checks.total })
+                        : tr('git.minidock.checks_ok', { total: checks.total })}
+                  </span>
+                )}
+                {conflicting && <span style={{ color: t.err }}>{tr('git.minidock.conflicts')}</span>}
+              </div>
+            )}
           </div>
         )}
 

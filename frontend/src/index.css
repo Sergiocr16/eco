@@ -17,6 +17,12 @@ html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; }
   }
 }
 
+/* Teléfono acostado: sin barra de estado, el colchón anti-esmerilado de
+   SAFE_TOP (lib/platform.ts) se apaga. */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root { --eco-frost: 0; }
+}
+
 /* Fondo a sangre que se desborda del viewport por arriba y por abajo. Todo el
    shell es `position: fixed`, así que si el área visible resulta ser más alta
    que el viewport de layout —safe area del indicador de home en la PWA

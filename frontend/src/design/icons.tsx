@@ -218,3 +218,15 @@ export const IconMoon = (p: IconProps) => (
 export const IconCopy = (p: IconProps) => (
   <Base {...p}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></Base>
 );
+export const IconPin = (p: IconProps) => (
+  <Base {...p}><path d="M9 3h6l-1 6 3 4H7l3-4z"/><path d="M12 13v8"/></Base>
+);
+export const IconSwap = (p: IconProps) => (
+  <Base {...p}><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></Base>
+);
+export const IconSplitH = (p: IconProps) => (
+  <Base {...p}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></Base>
+);
+export const IconSplitV = (p: IconProps) => (
+  <Base {...p}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/></Base>
+);

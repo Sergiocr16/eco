@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'n
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Duplex } from 'node:stream';
+import { EMULATION_SCRIPT, EMULATION_SCRIPT_PATH, rewriteBody, rewriteKindFor } from './dev-emulation.js';
 
 const MAX_UPSTREAM_SOCKETS = 32;
 const ECO_DIR = join(homedir(), '.eco');
@@ -176,6 +177,11 @@ export async function startDevProxy(targetPort: number, log: (line: string) => v
   };
 
   const onRequest = (req: AnyReq, res: AnyRes) => {
+    if (req.url === EMULATION_SCRIPT_PATH) {
+      res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-cache' });
+      res.end(EMULATION_SCRIPT);
+      return;
+    }
     const up = http.request({
       host: '127.0.0.1',
       port: targetPort,
@@ -185,6 +191,39 @@ export async function startDevProxy(targetPort: number, log: (line: string) => v
       agent,
     });
     up.on('response', (upRes) => {
+      const kind = rewriteKindFor(req.method, upRes);
+      if (kind) {
+        // HTML y CSS se juntan enteros para la emulación de dispositivo
+        // (dev-emulation.ts). El resto sigue por pipe, sin tocar.
+        const chunks: Buffer[] = [];
+        upRes.on('data', (c: Buffer) => chunks.push(c));
+        upRes.on('error', () => res.destroy());
+        upRes.on('end', () => {
+          const original = Buffer.concat(chunks);
+          const headers = downstreamHeaders(upRes);
+          let body: Buffer = original;
+          try {
+            const rewritten = rewriteBody(kind, original, String(upRes.headers['content-encoding'] ?? ''));
+            if (rewritten) {
+              body = rewritten;
+              delete headers['content-encoding'];
+              delete headers['accept-ranges'];
+              // El cuerpo cambió: el validador del dev server ya no lo describe.
+              delete headers.etag;
+            }
+          } catch (e) {
+            logError(`emulación ${req.url}: ${(e as Error).message}`);
+          }
+          headers['content-length'] = body.length;
+          try {
+            res.writeHead(upRes.statusCode ?? 502, headers);
+            (res as unknown as NodeJS.WritableStream).end(body);
+          } catch (e) {
+            res.destroy(e as Error);
+          }
+        });
+        return;
+      }
       try {
         res.writeHead(upRes.statusCode ?? 502, downstreamHeaders(upRes));
       } catch (e) {

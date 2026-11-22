@@ -415,6 +415,7 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
   const PERSISTENT_PREFIXES = [
     'eco.browser.zoom.',
     'eco.detail.tab.',
+    'eco.detail.split.',
     'eco.git.subtab.',
     'eco.git.splitter.changes.', 'eco.git.splitter.history.',
     'eco.git.pending_pr.', 'eco.git.selected_pr.',

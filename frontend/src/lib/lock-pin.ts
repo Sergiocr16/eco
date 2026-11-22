@@ -11,6 +11,18 @@ async function hash(uid: string, pin: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Preferencia del dispositivo: pedir el PIN al abrir o recargar la app. Por
+// defecto sí. Apagada, el PIN solo se pide al bloquear a mano o por inactividad.
+const LOCK_ON_START_KEY = 'eco.security.lockOnStart';
+
+export function lockOnStartEnabled(): boolean {
+  try { return window.localStorage.getItem(LOCK_ON_START_KEY) !== '0'; } catch { return true; }
+}
+
+export function setLockOnStart(enabled: boolean): void {
+  try { window.localStorage.setItem(LOCK_ON_START_KEY, enabled ? '1' : '0'); } catch { /* noop */ }
+}
+
 export function hasLockPin(uid: string): boolean {
   try { return !!window.localStorage.getItem(KEY(uid)); } catch { return false; }
 }

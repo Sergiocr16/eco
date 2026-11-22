@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Sirve para http(s):// y también URI schemes custom como vscode://,
   // idea://, cursor:// — útil para el botón "Open in IDE" del FileEditor.
   openExternal: (url) => ipcRenderer.invoke('eco:open-external', url),
+  // Emulación de dispositivo en un <webview>: márgenes de env(safe-area-inset-*).
+  // `insets` null la apaga.
+  setWebviewSafeArea: (webContentsId, insets) =>
+    ipcRenderer.invoke('eco:webview-safe-area', webContentsId, insets),
   // Notificación nativa de macOS via electron.Notification (funciona en
   // .dmg unsigned, a diferencia de la Web API). Click trae la app al frente
   // y dispara onNotificationClicked con el bubbleId.

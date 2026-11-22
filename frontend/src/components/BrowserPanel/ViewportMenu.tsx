@@ -1,45 +1,38 @@
 import { useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Monitor, Tablet, Smartphone, Check, RotateCcw } from 'lucide-react';
+import { Monitor, Tablet, Smartphone, Check, RotateCcw, ChevronRight } from 'lucide-react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
-import { viewportDims, type ViewportPreset } from './types';
+import {
+  DEVICE_COLORS, DEVICE_FAMILIES, DEVICE_MODELS, deviceColor, deviceFamily, deviceModel, deviceSpec,
+  familyPreset, isAndroidFamily, isTabletFamily, usesButtons,
+  type BrowserTab, type DeviceFamily, type DeviceSelection,
+} from './types';
 
 type Props = {
-  viewport: ViewportPreset;
-  customViewport?: { width: number; height: number };
+  selection: DeviceSelection;
   disabled?: boolean;
-  onChange: (next: ViewportPreset, custom?: { width: number; height: number }) => void;
-  onRotate: () => void;
+  onChange: (patch: Partial<BrowserTab>) => void;
 };
 
-const PRESETS: Array<{ key: Exclude<ViewportPreset, 'custom'>; Icon: typeof Monitor; labelKey: string }> = [
-  { key: 'desktop', Icon: Monitor, labelKey: 'browser.viewport.desktop' },
-  { key: 'tablet', Icon: Tablet, labelKey: 'browser.viewport.tablet' },
-  { key: 'mobile', Icon: Smartphone, labelKey: 'browser.viewport.mobile' },
-];
-
-export function ViewportMenu({ viewport, customViewport, disabled, onChange, onRotate }: Props) {
+export function ViewportMenu({ selection, disabled, onChange }: Props) {
   const t = useTokens();
   const tr = useT();
+  const { viewport, customViewport } = selection;
   const [open, setOpen] = useState(false);
   const [customMode, setCustomMode] = useState(false);
   const [draftW, setDraftW] = useState<number>(customViewport?.width ?? 1200);
   const [draftH, setDraftH] = useState<number>(customViewport?.height ?? 800);
 
-  // Icono del trigger: refleja el preset activo.
-  const TriggerIcon = viewport === 'mobile' ? Smartphone
-    : viewport === 'tablet' ? Tablet
-    : Monitor;
+  const family = deviceFamily(viewport);
+  const spec = deviceSpec(selection);
+  const TriggerIcon = !family ? Monitor : isTabletFamily(family) ? Tablet : Smartphone;
+  const label = viewport === 'desktop' ? tr('browser.viewport.desktop')
+    : spec?.name ?? (spec ? `${spec.width}×${spec.height}` : '');
 
-  const dim = viewportDims(viewport, customViewport);
-  const label = viewport === 'custom' && dim
-    ? `${dim.width}×${dim.height}`
-    : viewport === 'desktop'
-      ? tr('browser.viewport.desktop')
-      : viewport === 'tablet'
-        ? '768×1024'
-        : '390×844';
+  // Cambiar de preset endereza el dispositivo; modelo y color se conservan
+  // (si son de otra familia caen al default de la nueva).
+  const pick = (next: BrowserTab['viewport']) => onChange({ viewport: next, rotated: false });
 
   return (
     <DropdownMenu.Root open={open} onOpenChange={(v) => { setOpen(v); if (!v) setCustomMode(false); }}>
@@ -56,7 +49,7 @@ export function ViewportMenu({ viewport, customViewport, disabled, onChange, onR
             color: viewport === 'desktop' ? t.text1 : t.accent,
             cursor: disabled ? 'not-allowed' : 'pointer',
             opacity: disabled ? 0.4 : 1,
-            fontFamily: t.fontMono, fontSize: 10.5,
+            fontFamily: t.fontMono, fontSize: 10.5, whiteSpace: 'nowrap',
           }}
         >
           <TriggerIcon size={12}/>
@@ -64,29 +57,13 @@ export function ViewportMenu({ viewport, customViewport, disabled, onChange, onR
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={6}
-          style={{
-            minWidth: 200,
-            background: t.windowBg,
-            border: `1px solid ${t.glassBorder}`,
-            borderRadius: t.r2,
-            boxShadow: t.shadowLg,
-            padding: 4,
-            zIndex: 200,
-          }}
-        >
+        <DropdownMenu.Content align="end" sideOffset={6} style={{ ...contentStyle(t), minWidth: 200 }}>
           {!customMode ? (
             <>
-              {PRESETS.map(({ key, Icon, labelKey }) => (
-                <PresetItem
-                  key={key}
-                  Icon={Icon}
-                  label={tr(labelKey)}
-                  active={viewport === key}
-                  onSelect={() => onChange(key)}
-                />
+              <PresetItem Icon={Monitor} label={tr('browser.viewport.desktop')}
+                active={viewport === 'desktop'} onSelect={() => pick('desktop')}/>
+              {DEVICE_FAMILIES.map((f) => (
+                <FamilyMenu key={f} family={f} label={tr(`browser.viewport.${f}`)} selection={selection} onChange={onChange}/>
               ))}
               <DropdownMenu.Item
                 onSelect={(e) => { e.preventDefault(); setCustomMode(true); }}
@@ -98,11 +75,11 @@ export function ViewportMenu({ viewport, customViewport, disabled, onChange, onR
                 <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{tr('browser.viewport.custom')}</span>
                 {viewport === 'custom' && <Check size={13} color={t.accent}/>}
               </DropdownMenu.Item>
-              {dim && (
+              {spec && (
                 <>
                   <DropdownMenu.Separator style={{ height: 1, background: t.glassBorder, margin: '4px 0' }}/>
                   <DropdownMenu.Item
-                    onSelect={(e) => { e.preventDefault(); onRotate(); setOpen(false); }}
+                    onSelect={(e) => { e.preventDefault(); onChange({ rotated: !selection.rotated }); setOpen(false); }}
                     style={itemStyle(t)}
                     onMouseEnter={hoverIn(t)}
                     onMouseLeave={hoverOut(t)}
@@ -130,7 +107,7 @@ export function ViewportMenu({ viewport, customViewport, disabled, onChange, onR
               <button
                 type="button"
                 onClick={() => {
-                  onChange('custom', { width: draftW, height: draftH });
+                  onChange({ viewport: 'custom', customViewport: { width: draftW, height: draftH }, rotated: false });
                   setOpen(false);
                   setCustomMode(false);
                 }}
@@ -148,6 +125,111 @@ export function ViewportMenu({ viewport, customViewport, disabled, onChange, onR
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
+}
+
+// Submenú de una familia de dispositivos: modelo, navegación (solo Android) y
+// color del canto. Elegir modelo o navegación activa la familia; el color se
+// puede cambiar sin cerrar el menú.
+function FamilyMenu({ family, label, selection, onChange }: {
+  family: DeviceFamily;
+  label: string;
+  selection: DeviceSelection;
+  onChange: (patch: Partial<BrowserTab>) => void;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  const active = deviceFamily(selection.viewport) === family;
+  const model = deviceModel(family, selection.deviceModel);
+  const color = deviceColor(family, selection.frameColor);
+  // Preset con el que se entra a la familia: en Android conserva el modo de
+  // navegación ya elegido.
+  const buttons = usesButtons(selection.viewport);
+  const preset = familyPreset(family, buttons);
+  const FamilyIcon = isTabletFamily(family) ? Tablet : Smartphone;
+  const enter = (patch: Partial<BrowserTab>) => onChange({
+    viewport: preset,
+    rotated: active ? selection.rotated : false,
+    // Al venir de la otra familia su color no existe acá: se fija el default.
+    frameColor: color.id,
+    deviceModel: model.id,
+    ...patch,
+  });
+  return (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
+        <FamilyIcon size={13} color={active ? t.accent : t.text2}/>
+        <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{label}</span>
+        {active && <Check size={13} color={t.accent}/>}
+        <ChevronRight size={13} color={t.text3}/>
+      </DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent sideOffset={6} style={{ ...contentStyle(t), minWidth: 210 }}>
+          <GroupLabel>{tr('browser.device.model')}</GroupLabel>
+          {DEVICE_MODELS[family].map((m) => (
+            <DropdownMenu.Item key={m.id} onSelect={() => enter({ deviceModel: m.id })}
+              style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
+              <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{m.name}</span>
+              <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>{m.width}×{m.height}</span>
+              <span style={{ width: 13, display: 'inline-flex' }}>
+                {active && model.id === m.id && <Check size={13} color={t.accent}/>}
+              </span>
+            </DropdownMenu.Item>
+          ))}
+          {isAndroidFamily(family) && (
+            <>
+              <DropdownMenu.Separator style={{ height: 1, background: t.glassBorder, margin: '4px 0' }}/>
+              <GroupLabel>{tr('browser.device.nav')}</GroupLabel>
+              {[false, true].map((withButtons) => (
+                <DropdownMenu.Item key={String(withButtons)}
+                  onSelect={() => enter({ viewport: familyPreset(family, withButtons) })}
+                  style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
+                  <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>
+                    {tr(withButtons ? 'browser.device.nav.buttons' : 'browser.device.nav.gestures')}
+                  </span>
+                  {active && buttons === withButtons && <Check size={13} color={t.accent}/>}
+                </DropdownMenu.Item>
+              ))}
+            </>
+          )}
+          <DropdownMenu.Separator style={{ height: 1, background: t.glassBorder, margin: '4px 0' }}/>
+          <GroupLabel>{tr('browser.device.color')}</GroupLabel>
+          {DEVICE_COLORS[family].map((c) => (
+            <DropdownMenu.Item key={c.id}
+              onSelect={(e) => { e.preventDefault(); enter({ frameColor: c.id }); }}
+              style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
+              <span style={{
+                width: 13, height: 13, borderRadius: '50%', flexShrink: 0,
+                background: c.hex, boxShadow: `0 0 0 1px ${t.glassBorderHi}`,
+              }}/>
+              <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{tr(c.labelKey)}</span>
+              {active && color.id === c.id && <Check size={13} color={t.accent}/>}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.SubContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Sub>
+  );
+}
+
+function GroupLabel({ children }: { children: React.ReactNode }) {
+  const t = useTokens();
+  return (
+    <div style={{
+      padding: '4px 10px 2px', fontFamily: t.fontSans, fontSize: 10.5, fontWeight: 600,
+      letterSpacing: 0.4, textTransform: 'uppercase', color: t.text3,
+    }}>{children}</div>
+  );
+}
+
+function contentStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
+  return {
+    background: t.windowBg,
+    border: `1px solid ${t.glassBorder}`,
+    borderRadius: t.r2,
+    boxShadow: t.shadowLg,
+    padding: 4,
+    zIndex: 200,
+  };
 }
 
 function PresetItem({ Icon, label, active, onSelect }: {

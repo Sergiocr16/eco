@@ -29,6 +29,8 @@ type TranscriptEntry = {
     role?: string;
     content?: string | ContentBlock[];
     stop_reason?: string | null;
+    model?: string;
+    usage?: { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
   };
 };
 
@@ -44,6 +46,9 @@ export type TranscriptState = {
   lastUserAt: string | null;
   pendingToolNames: string[];
   gitBranch: string | null;
+  // Tokens que entraron al modelo en la última respuesta: lo que ocupa el contexto.
+  contextTokens: number | null;
+  model: string | null;
 };
 
 export type ConversationTool = { name: string; inputSummary: string; resultPreview: string | null; isError: boolean };
@@ -229,11 +234,18 @@ export function summarizeTranscript(entries: TranscriptEntry[]): Omit<Transcript
   let lastStop: string | null = null;
   let sessionId: string | null = null;
   let gitBranch: string | null = null;
+  let contextTokens: number | null = null;
+  let model: string | null = null;
 
   for (const e of entries) {
     if (e.sessionId) sessionId = e.sessionId;
     if (e.gitBranch) gitBranch = e.gitBranch;
     if (e.type === 'assistant') {
+      const u = e.message?.usage;
+      if (u) {
+        const used = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+        if (used > 0) { contextTokens = used; model = e.message?.model ?? model; }
+      }
       const blocks = blocksOf(e);
       for (const b of blocks) {
         if (b.type === 'tool_use') {
@@ -274,7 +286,7 @@ export function summarizeTranscript(entries: TranscriptEntry[]): Omit<Transcript
 
   return {
     sessionId, turnState, lastAssistantText, lastAssistantAt, lastUserAt,
-    pendingToolNames: [...pending.values()], gitBranch,
+    pendingToolNames: [...pending.values()], gitBranch, contextTokens, model,
   };
 }
 

@@ -91,8 +91,6 @@ const extraResources = [
   { from: '../backend/node_modules', to: 'backend/node_modules', filter: backendNmFilter },
   { from: '../backend/package.json', to: 'backend/package.json' },
   { from: '../frontend/dist', to: 'frontend/dist' },
-  // eco-stt es un binario solo-macOS (Apple Speech). No lo metemos en Windows/Linux.
-  ...(target === 'mac' ? [{ from: 'build/bin', to: 'bin', filter: ['eco-stt'] }] : []),
   { from: '../mcp-server/dist', to: 'mcp-server/dist' },
   { from: '../mcp-server/node_modules', to: 'mcp-server/node_modules', filter: mcpNmFilter },
   { from: '../mcp-server/package.json', to: 'mcp-server/package.json' },
@@ -133,8 +131,9 @@ module.exports = {
     gatekeeperAssess: false,
     identity: null,
     extendInfo: {
-      NSMicrophoneUsageDescription: 'Eco usa el micrófono para dictar a la terminal (transcripción local con el motor de Apple en el dispositivo).',
-      NSSpeechRecognitionUsageDescription: 'Eco transcribe tu dictado a la terminal usando el reconocimiento on-device de Apple — el audio no sale de tu Mac.',
+      // Eco no usa el micrófono, pero una página del navegador embebido puede
+      // pedirlo: sin este texto macOS mata la app en vez de preguntar.
+      NSMicrophoneUsageDescription: 'Una página abierta en el navegador de Eco quiere usar el micrófono.',
     },
     electronLanguages: ['en', 'es'],
   },

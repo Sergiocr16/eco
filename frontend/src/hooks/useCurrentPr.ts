@@ -12,6 +12,7 @@ export type CurrentPr = {
   headRefName: string;
   baseRefName: string;
   author: string;
+  checks?: { total: number; passed: number; failed: number; pending: number };
 };
 
 type CurrentPrResult =
@@ -68,7 +69,9 @@ function samePr(a: CurrentPr | null, b: CurrentPr | null): boolean {
   if (!a || !b) return false;
   return a.number === b.number && a.title === b.title && a.url === b.url
     && a.state === b.state && a.isDraft === b.isDraft && a.mergeable === b.mergeable
-    && a.headRefName === b.headRefName && a.baseRefName === b.baseRefName && a.author === b.author;
+    && a.headRefName === b.headRefName && a.baseRefName === b.baseRefName && a.author === b.author
+    && a.checks?.total === b.checks?.total && a.checks?.passed === b.checks?.passed
+    && a.checks?.failed === b.checks?.failed && a.checks?.pending === b.checks?.pending;
 }
 
 function fetchNow(e: Entry, workspace: string, bubbleId: string): Promise<void> {

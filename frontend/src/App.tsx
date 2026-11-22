@@ -10,14 +10,12 @@ import { Settings, FoldersManager } from './screens/Settings';
 import { AdminScreen } from './screens/AdminScreen';
 import { FileExplorer } from './screens/FileExplorer';
 import { ArchivedScreen } from './screens/ArchivedScreen';
-import { useVoice } from './hooks/useVoice';
 import { useBubbles } from './hooks/useBubbles';
 import { useDashboardFocus } from './hooks/useDashboardFocus';
 import { usePtyBusyTracker } from './hooks/usePtyBusyNotifier';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { emit as ecoEmit } from './lib/eco-bus';
-import { writeToBubblePty } from './lib/pty-bridge';
 import { hydrateDocs, startUserDocListeners } from './lib/user-sync';
 import { hydrateCategories } from './hooks/useCategories';
 import { hydratePrefs } from './lib/prefs-sync';
@@ -36,8 +34,10 @@ import type { Bubble } from './lib/types';
 import { ecoBackend, ecoToken } from './lib/eco-config';
 import { getTopInset, SAFE_TOP } from './lib/platform';
 import { DOCK_RESERVED_BOTTOM } from './components/BubbleDock';
+import { DockBubbleStatus } from './components/DockStatusBar';
 import { useIsPhone } from './hooks/useMediaQuery';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
+import { useSideInsets } from './hooks/useSideInsets';
 import { getSoloBubbleId } from './lib/solo';
 import { IconLock } from './design/icons';
 import { scrimStyle, dialogSurface } from './design/primitives';
@@ -187,15 +187,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const t = useTokens();
   useClaudeThemeSync();
 
-  // Dictado a la terminal: el botón de la cabecera de la burbuja enciende el
-  // mic en modo dictado. Cada frase final se acumula en `dictationBuffer` (en
-  // vez de rutearse a chat/pty/meta) y se muestra como burbuja arriba. Con
-  // "Enviar a terminal" se escribe en el PTY principal sin Enter.
-  const [dictationActive, setDictationActive] = useState(false);
-  const [dictationBuffer, setDictationBuffer] = useState('');
-  const dictationActiveRef = useRef(false);
-  const dictationBubbleIdRef = useRef<string | null>(null);
-  useEffect(() => { dictationActiveRef.current = dictationActive; }, [dictationActive]);
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [detailBubbleId, setDetailBubbleId] = useState<string | null>(null);
   // IDs de bubbles "visitadas" — mantenemos un AgentDetail montado por cada
@@ -319,21 +310,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         }
       },
     },
-  });
-
-  function handleIncomingVoiceText(text: string) {
-    // El mic solo se enciende en modo dictado a la terminal: todo lo dictado se
-    // acumula en el buffer y se muestra como burbuja arriba para revisar antes
-    // de enviarlo al PTY.
-    if (!dictationActiveRef.current) return;
-    const clean = text.trim();
-    if (clean) setDictationBuffer((prev) => (prev ? `${prev} ${clean}` : clean));
-  }
-
-  const voice = useVoice({
-    language: 'es-419',
-    onPhrase: (text: string) => handleIncomingVoiceText(text),
-    isLongForm: () => true,
   });
 
   // ─── Auto-lock por inactividad ──────────────────────────────────────────
@@ -510,41 +486,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     finishCloseUi(id);
   }
 
-  function startTerminalDictation(bubbleId: string) {
-    dictationBubbleIdRef.current = bubbleId;
-    setDictationBuffer('');
-    dictationActiveRef.current = true;
-    setDictationActive(true);
-    if (voice.state !== 'listening') voice.start();
-  }
-
-  function cancelTerminalDictation() {
-    dictationActiveRef.current = false;
-    setDictationActive(false);
-    setDictationBuffer('');
-    dictationBubbleIdRef.current = null;
-    // En la burbuja el mic queda apagado por defecto — lo dejamos como estaba.
-    voice.stop();
-  }
-
-  function sendDictationToTerminal() {
-    const bubbleId = dictationBubbleIdRef.current;
-    const text = dictationBuffer.trim();
-    // El guard NO mira `ecoToken()`. Ese es el token de máquina de
-    // ~/.eco/token, que Electron inyecta por IPC pero que un navegador remoto
-    // no tiene: sobre Tailscale quedaba vacío, el guard fallaba y el dictado
-    // se descartaba en silencio. Además `writeToBubblePty` lo ignora — la
-    // auth del WS sale del ID token de Firebase.
-    if (bubbleId && text) {
-      const bubble = bubbles.bubbles.find((b) => b.id === bubbleId);
-      ecoEmit('eco:switch_tab', { tab: 'terminal', bubbleId });
-      // Sin '\n': se escribe en el PTY principal (Claude) y el user revisa
-      // antes de ejecutar.
-      void writeToBubblePty({ bubbleId, workspace: bubble?.workspace ?? '', text });
-    }
-    cancelTerminalDictation();
-  }
-
   // Helper compartido: devuelve la rama base por defecto para crear un
   // worktree, basada en el workspace default + favoritos del user. Sin
   // workspace default o sin favoritos → undefined (backend cae a HEAD).
@@ -602,6 +543,8 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // isPhoneNow() actualizado.
   const isPhone = useIsPhone();
   const keyboardInset = useKeyboardInset();
+  // Acostado, la Dynamic Island tapa el borde del shell; fuera de iOS da 0.
+  const sideInsets = useSideInsets();
 
   // Con el dock activo y agentes, el shell reserva DOCK_RESERVED_BOTTOM (alto
   // del dock + margen + su inset de safe area) para que el contenido no quede
@@ -611,11 +554,24 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // tooltips por hover son affordances de escritorio. El cambio de agente en
   // el teléfono es el Dashboard, a un toque en la barra inferior.
   const dockEnabled = useDockPref();
-  const dockVisible = dockEnabled && bubbles.bubbles.length > 0 && !isPhone;
+  const dockVisible = dockEnabled && bubbles.bubbles.some((b) => !b.archived) && !isPhone;
 
   // Patrón iOS: entrar al detalle de un agente esconde la barra inferior. En
   // el terminal cada píxel vertical cuenta y el header ya tiene "volver".
   const showMobileNav = isPhone && screen !== 'detail';
+
+  // Dentro del detalle de una bubble (escritorio y tablet) el rail lateral no
+  // se dibuja: el panel gana sus 64px y el header trae el botón de inicio.
+  const hideRail = !isPhone && screen === 'detail';
+  const sidebarProps = {
+    onScreenChange: handleScreenChange,
+    agentCount: activeCount,
+    username: auth.state.username,
+    role: auth.state.role,
+    onLock: auth.lock,
+    onSignOut: auth.signOut,
+    onChangePassword: auth.changePassword,
+  };
 
   return (
     <>
@@ -646,7 +602,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
       <div style={{
         position: 'fixed',
         top: `calc(${topInset}px + ${SAFE_TOP})`,
-        left: 0, right: 0,
+        left: sideInsets.left, right: sideInsets.right,
         bottom: dockVisible ? `calc(${keyboardInset}px + ${DOCK_RESERVED_BOTTOM})` : keyboardInset,
         zIndex: 1,
         display: 'flex',
@@ -656,18 +612,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         flexDirection: 'row',
         transition: 'bottom 200ms ease',
       }}>
-        {!isPhone && (
-          <AppSidebar
-            screen={screen === 'detail' ? 'dashboard' : screen}
-            onScreenChange={handleScreenChange}
-            agentCount={activeCount}
-            username={auth.state.username}
-            role={auth.state.role}
-            onLock={auth.lock}
-            onSignOut={auth.signOut}
-            onChangePassword={auth.changePassword}
-          />
-        )}
+        {!isPhone && !hideRail && <AppSidebar screen={screen} {...sidebarProps}/>}
         <div style={{
           flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', position: 'relative',
           ...(showMobileNav ? { paddingBottom: MOBILE_NAV_HEIGHT } : null),
@@ -706,19 +651,13 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                         bubble={b}
                         workspaces={workspacesHook.list.workspaces}
                         onBack={handleBackFromDetail}
+                        homeInDock={dockVisible}
                         onRename={(title) => bubbles.renameBubble(b.id, title)}
                         onClose={() => {
                           requestCloseBubble(b.id, { afterClose: handleBackFromDetail });
                         }}
                         onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(b.id, ws)}
                         onToggleCategory={(catId) => bubbles.toggleBubbleCategory(b.id, catId)}
-                        dictationSupported={voice.isSupported}
-                        dictationActive={dictationActive && dictationBubbleIdRef.current === b.id}
-                        dictationText={dictationActive && dictationBubbleIdRef.current === b.id ? (dictationBuffer + (voice.interimText ? ` ${voice.interimText}` : '')).trim() : ''}
-                        onStartDictation={() => startTerminalDictation(b.id)}
-                        onSendDictation={sendDictationToTerminal}
-                        onCancelDictation={cancelTerminalDictation}
-                        onClearDictation={() => setDictationBuffer('')}
                         onOpenInNewWindow={() => handleOpenInNewWindow(b.id)}
                       />
                     </div>
@@ -782,24 +721,17 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         <AppSidebar
           // showMobileNav ya excluye 'detail', así que no hace falta mapearlo.
           screen={screen}
-          onScreenChange={handleScreenChange}
-          agentCount={activeCount}
-          username={auth.state.username}
-          role={auth.state.role}
-          onLock={auth.lock}
-          onSignOut={auth.signOut}
-          onChangePassword={auth.changePassword}
+          {...sidebarProps}
         />
       )}
       <FloatingBubbleDock
         bubbles={bubbles.bubbles}
-        // En dashboard ningún agente está "activo" en el dock — el dot
-        // pertenece al botón Home. Solo cuando estamos dentro del detalle
-        // de un agente marcamos esa burbuja.
+        // Solo dentro del detalle de un agente se marca esa burbuja.
         activeBubbleId={screen === 'detail' ? detailBubbleId : null}
         onOpenAgent={handleOpenAgent}
+        railWidth={hideRail ? 0 : undefined}
         onGoHome={handleBackFromDetail}
-        atHome={screen === 'dashboard'}
+        detailBubble={screen === 'detail' ? bubbles.bubbles.find((b) => b.id === detailBubbleId) ?? null : null}
       />
       {showOnboarding && (
         <OnboardingWizard
@@ -835,13 +767,14 @@ function useDockPref(): boolean {
 
 // Dock flotante en bottom-center, controlado por la pref `eco.dock.enabled`.
 function FloatingBubbleDock({
-  bubbles, activeBubbleId, onOpenAgent, onGoHome, atHome,
+  bubbles, activeBubbleId, onOpenAgent, railWidth, detailBubble, onGoHome,
 }: {
   bubbles: ReturnType<typeof useBubbles>['bubbles'];
   activeBubbleId: string | null;
   onOpenAgent: (id: string) => void;
+  railWidth?: number;
+  detailBubble: ReturnType<typeof useBubbles>['bubbles'][number] | null;
   onGoHome: () => void;
-  atHome: boolean;
 }) {
   const enabled = useDockPref();
   const isPhone = useIsPhone();
@@ -852,12 +785,16 @@ function FloatingBubbleDock({
   // cambio de agente es el Dashboard, a un toque en la barra inferior.
   if (!enabled || isPhone) return null;
   const visible = applyFocus(bubbles.filter((b) => !b.archived));
+  // Sin agentes no hay dock. Se decide acá y no dentro de BubbleDock: un
+  // return temprano allá queda antes de sus hooks.
+  if (visible.length === 0) return null;
   return (
     <BubbleDock
       bubbles={visible} activeBubbleId={activeBubbleId}
       onOpenAgent={onOpenAgent}
-      onGoHome={onGoHome}
-      atHome={atHome}
+      railWidth={railWidth}
+      left={detailBubble ? <DockBubbleStatus bubble={detailBubble}/> : null}
+      onGoHome={detailBubble ? onGoHome : undefined}
     />
   );
 }

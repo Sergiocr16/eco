@@ -98,7 +98,9 @@ function isIOS(): boolean {
 // quitarlo: CLAUDE.md, Appendix F → "iOS 27 workarounds — the revert checklist".
 const IOS_FROST_REACH = '80px';
 const IOS_FROST_EXTRA = OWNS_FULL_SCREEN && isIOS()
-  ? ` + clamp(0px, ${IOS_FROST_REACH} - env(safe-area-inset-top, 0px), 40px)`
+  // --eco-frost vale 0 con el teléfono acostado (index.css): ahí iOS esconde
+  // la barra de estado y el colchón eran 40px de un alto de ~400.
+  ? ` + clamp(0px, ${IOS_FROST_REACH} - env(safe-area-inset-top, 0px), 40px) * var(--eco-frost, 1)`
   : '';
 // Bajo zoom CSS (web) los env() llegan en px visuales; lib/ui-zoom.ts publica
 // el factor en --eco-zoom para que el shell no reserve Z veces el inset.
