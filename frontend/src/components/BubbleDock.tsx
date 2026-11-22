@@ -1,8 +1,9 @@
 import { vw } from '@/lib/ui-zoom';
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { useTokens } from '@/design/theme';
+import { IconCommand } from '@/design/icons';
 import { cssZoom } from '@/lib/ui-zoom';
 import { isMobileNow } from '@/hooks/useMediaQuery';
 
@@ -18,7 +19,6 @@ export const DOCK_RESERVED_BOTTOM = `calc(var(--eco-dock-h, 62px) + ${DOCK_MARGI
 import { stateColor, type AgentState } from '@/design/tokens';
 import type { Bubble } from '@/lib/types';
 import { bubbleLetter } from '@/design/primitives';
-import { IconCommand } from '@/design/icons';
 import { useBubbleBusy } from '@/hooks/usePtyBusyNotifier';
 import { useCategories, sortByCategory } from '@/hooks/useCategories';
 import { useT } from '@/hooks/useI18n';
@@ -27,8 +27,20 @@ type Props = {
   bubbles: Bubble[];
   activeBubbleId: string | null;
   onOpenAgent: (id: string) => void;
+  // Ancho del rail lateral a esquivar. 0 dentro del detalle de una bubble,
+  // donde el rail no se dibuja.
+  railWidth?: number;
+  // Contenido de los lados libres de la franja (ver DockStatusBar).
+  left?: ReactNode;
+  right?: ReactNode;
+  // Con valor, el dock abre con un ícono de inicio (dentro de una bubble).
   onGoHome?: () => void;
-  atHome?: boolean;
+};
+
+// Los lados ceden ante el dock: se achican y recortan, nunca lo empujan.
+const SIDE_STYLE: CSSProperties = {
+  flex: '1 1 0', minWidth: 0, overflow: 'hidden', pointerEvents: 'auto',
+  display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px',
 };
 
 // Persistencia del orden custom del dock. Lista plana de bubbleIds — se
@@ -70,7 +82,7 @@ function loadIconSize(): number {
 // Dock estilo macOS — flotante en bottom-center, horizontal, con blur y
 // magnificación que crece hacia arriba (sin empujar vecinos). Los iconos
 // son reordenables con drag.
-export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atHome }: Props) {
+export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, railWidth = 64, left, right, onGoHome }: Props) {
   const t = useTokens();
   const tr = useT();
   const [customOrder, setCustomOrder] = useState<string[]>(loadOrder);
@@ -92,9 +104,6 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
     ro.observe(el);
     return () => { ro.disconnect(); root.style.removeProperty('--eco-dock-h'); };
   }, []);
-  // Mostramos el dock si hay agentes O si hay home button (para navegar
-  // siempre desde cualquier vista).
-  if (bubbles.length === 0 && !onGoHome) return null;
 
   const sortFn = (a: Bubble, b: Bubble) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -208,39 +217,42 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
       style={{
         position: 'fixed',
         bottom: DOCK_MARGIN,
-        left: 64,
+        left: railWidth,
         right: 0,
         display: 'flex',
         justifyContent: 'center',
+        alignItems: 'center',
         pointerEvents: 'none',
         zIndex: 80,
       }}>
+      <div style={SIDE_STYLE}>{left}</div>
       <div ref={containerRef} style={{
         pointerEvents: 'auto',
         position: 'relative',
+        flexShrink: 0,
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'flex-end',
         gap,
+        backdropFilter: 'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        overflow: 'visible',
         padding: `${padV}px ${padH}px`,
         borderRadius: containerRadius,
         background: t.glassBg,
-        backdropFilter: 'blur(28px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
         border: `1px solid ${t.glassBorder}`,
         boxShadow: [
           'inset 0 1px 0 rgba(255,255,255,0.08)',
           '0 8px 32px rgba(0,0,0,0.35)',
           '0 2px 6px rgba(0,0,0,0.2)',
         ].join(', '),
-        overflow: 'visible',
         maxWidth: `calc(${vw(100)} - 96px)`,
       }}>
         <ResizeHandle iconSize={iconSize} onChange={setIconSize}/>
         {onGoHome && (
           <>
-            <HomeDockIcon active={!!atHome} onClick={onGoHome} iconSize={iconSize}/>
-            {bubbles.length > 0 && divider}
+            <HomeDockIcon iconSize={iconSize} onClick={onGoHome}/>
+            {divider}
           </>
         )}
         <div
@@ -320,7 +332,40 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, onGoHome, atH
           )}
         </div>
       </div>
+      <div style={{ ...SIDE_STYLE, justifyContent: 'flex-end' }}>{right}</div>
     </motion.div>
+  );
+}
+
+// Primer ícono del dock dentro de una bubble: vuelve al inicio. Mismo slot
+// que DockIcon para quedar alineado con los agentes.
+function HomeDockIcon({ iconSize, onClick }: { iconSize: number; onClick: () => void }) {
+  const t = useTokens();
+  const tr = useT();
+  return (
+    <div style={{
+      width: Math.round(iconSize * 1.2), height: iconSize + 17, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <motion.button
+        type="button"
+        onClick={onClick}
+        title={tr('nav.dashboard')}
+        aria-label={tr('nav.dashboard')}
+        whileHover={{ scale: 1.35, y: -6 }}
+        whileTap={{ scale: 0.92 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+        style={{
+          width: iconSize, height: iconSize, padding: 0, border: 0, cursor: 'pointer',
+          borderRadius: Math.round(iconSize * 0.28),
+          background: 'rgba(255,255,255,0.04)', color: t.text1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transformOrigin: 'bottom center',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+        }}>
+        <IconCommand size={Math.round(iconSize * 0.5)}/>
+      </motion.button>
+    </div>
   );
 }
 
@@ -395,66 +440,6 @@ function ResizeHandle({
         opacity: dragging || hover ? 0.9 : 0.45,
         transition: 'opacity 140ms, background 140ms',
       }}/>
-    </div>
-  );
-}
-
-function HomeDockIcon({
-  active, onClick, iconSize,
-}: {
-  active: boolean;
-  onClick: () => void;
-  iconSize: number;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [hover, setHover] = useState(false);
-  const HOME_SLOT = Math.round(iconSize * 1.2);
-  const SLOT_HEIGHT = iconSize + 17;
-  const iconGlyph = Math.round(iconSize * 0.6);
-  return (
-    <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        width: HOME_SLOT, height: SLOT_HEIGHT,
-        position: 'relative',
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-      <motion.button
-        type="button"
-        onClick={onClick}
-        title={tr('dock.home_tooltip')}
-        whileHover={{ scale: 1.35, y: -6 }}
-        whileTap={{ scale: 0.92 }}
-        transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-        style={{
-          width: iconSize, height: iconSize,
-          padding: 0, border: 0, cursor: 'pointer',
-          borderRadius: Math.round(iconSize * 0.28),
-          background: active ? t.bg3 : (hover ? t.bg2 : 'rgba(255,255,255,0.04)'),
-          color: active ? t.accent : t.text2,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          position: 'relative',
-          transformOrigin: 'bottom center',
-          transition: 'background 140ms',
-          boxShadow: active
-            ? `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px ${t.accent}33`
-            : 'inset 0 1px 0 rgba(255,255,255,0.05)',
-        }}>
-        <IconCommand size={iconGlyph} strokeWidth={1.6}/>
-      </motion.button>
-      {active && (
-        <span style={{
-          position: 'absolute', bottom: -6, left: '50%',
-          transform: 'translateX(-50%)',
-          width: 4, height: 4, borderRadius: '50%',
-          background: t.accent,
-          boxShadow: `0 0 4px ${t.accent}`,
-          pointerEvents: 'none',
-        }}/>
-      )}
     </div>
   );
 }

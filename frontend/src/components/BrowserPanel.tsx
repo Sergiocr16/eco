@@ -6,17 +6,22 @@ import { canEmbedArbitrarySites } from '@/lib/platform';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { useT } from '@/hooks/useI18n';
-import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
+import { useIsPhone, useIsPhoneLandscape, isPhoneNow, isPhoneLandscapeNow } from '@/hooks/useMediaQuery';
 import { BrowserTabBar } from './BrowserPanel/BrowserTabBar';
 import { ViewportMenu } from './BrowserPanel/ViewportMenu';
 import {
   type BrowserTab, type NewTabMode,
-  viewportDims, genTabId, defaultPartition, isolatedPartition,
+  deviceSpec, genTabId, defaultPartition, isolatedPartition,
 } from './BrowserPanel/types';
+import { DeviceFrame } from './BrowserPanel/DeviceFrame';
 
 type Props = {
   bubbleId: string;
   workspace?: string;
+  // Pantalla completa en el teléfono: el dueño (AgentDetail) esconde su header
+  // y acá se esconden las barras. Sin `onToggleImmersive` no se ofrece.
+  immersive?: boolean;
+  onToggleImmersive?: () => void;
 };
 
 const legacyUrlKey  = (id: string) => `eco.browser.url.${id}`;
@@ -101,10 +106,14 @@ function persistState(bubbleId: string, state: StoredState) {
 
 // ─── Componente principal ─────────────────────────────────────────────────
 
-export function BrowserPanel({ bubbleId, workspace }: Props) {
+export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleImmersive }: Props) {
   const t = useTokens();
   const tr = useT();
   const isPhone = useIsPhone();
+  // Teléfono acostado: una sola fila de controles. La tira de pestañas se
+  // abre a demanda desde el contador.
+  const compact = useIsPhoneLandscape();
+  const [tabStripOpen, setTabStripOpen] = useState(false);
   const hasNativeDevTools = canEmbedArbitrarySites();
 
   const initial = useMemo(() => loadInitial(bubbleId), [bubbleId]);
@@ -153,11 +162,16 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
     ecoEmit('eco:browser_url_changed', { bubbleId, hasUrl: !!activeTab?.url });
   }, [activeTab?.url, bubbleId]);
 
+  // Un dispositivo emulado va a su tamaño real y se ajusta solo al panel: el
+  // zoom manual no aplica ahí (se conserva para cuando vuelva a escritorio).
+  const emulating = !isPhone && !!activeTab && deviceSpec(activeTab) !== null;
+  const effectiveZoom = emulating ? 1 : zoom;
+
   // Aplicar zoom al webview activo cuando cambia.
   useEffect(() => {
-    activeRef()?.setZoom(zoom);
+    activeRef()?.setZoom(effectiveZoom);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom, activeTabId]);
+  }, [effectiveZoom, activeTabId]);
 
   // ─── Acciones sobre tabs ────────────────────────────────────────────────
   const updateTab = useCallback((id: string, patch: Partial<BrowserTab>) => {
@@ -322,23 +336,25 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
       background: t.bg0,
     }}>
       {/* Tab bar */}
-      <BrowserTabBar
-        tabs={tabs}
-        activeTabId={activeTabId}
-        onActivate={setActiveTabId}
-        onClose={closeTab}
-        onNewTab={(mode) => addTab(mode)}
-      />
+      {!immersive && (!compact || tabStripOpen) && (
+        <BrowserTabBar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onActivate={setActiveTabId}
+          onClose={closeTab}
+          onNewTab={(mode) => addTab(mode)}
+        />
+      )}
 
       {/* URL bar. Son ~11 controles en una fila que pide ~600px: en el
           teléfono envuelve, y los que solo tienen sentido en escritorio
           (chip de path, presets de viewport, zoom) no se dibujan. */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '8px 12px',
+        display: immersive ? 'none' : 'flex', alignItems: 'center', gap: compact ? 4 : 6,
+        padding: compact ? '4px 8px' : '8px 12px',
         borderBottom: `1px solid ${t.glassBorder}`,
         background: t.bg1,
-        flexWrap: isPhone ? 'wrap' : 'nowrap',
+        flexWrap: isPhone && !compact ? 'wrap' : 'nowrap',
       }}>
         <button
           type="button"
@@ -356,7 +372,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           <IconResume size={12}/>
         </button>
         <div style={{
-          flex: 1, display: 'flex', alignItems: 'center', gap: 6,
+          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
           padding: '4px 10px', borderRadius: 8,
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
         }}>
@@ -410,12 +426,27 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           onClick={() => setActiveUrl(draft)}
           disabled={!draft.trim()}
           style={{
-            padding: '4px 12px', height: 26, borderRadius: 8, border: 0,
+            padding: '4px 12px', height: compact ? 32 : 26, flexShrink: 0, borderRadius: 8, border: 0,
             background: t.accent, color: t.accentOn,
             fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
             cursor: draft.trim() ? 'pointer' : 'not-allowed',
             opacity: draft.trim() ? 1 : 0.5,
           }}>{tr('browser.go')}</button>
+        {compact && (
+          <button
+            type="button"
+            onClick={() => setTabStripOpen((v) => !v)}
+            title={tr('browser.tabs.toggle')}
+            aria-label={tr('browser.tabs.toggle')}
+            aria-pressed={tabStripOpen}
+            style={{
+              ...navBtnStyle(t),
+              fontFamily: t.fontMono, fontSize: 12, fontWeight: 600,
+              color: tabStripOpen ? t.accent : t.text1,
+              border: `1.5px solid ${tabStripOpen ? t.accent : t.text3}`,
+              background: 'transparent',
+            }}>{tabs.length}</button>
+        )}
         <button
           type="button"
           onClick={() => void copyUrl()}
@@ -442,30 +473,17 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
         </button>
         {activeTab && !isPhone && (
           <ViewportMenu
-            viewport={activeTab.viewport}
-            customViewport={activeTab.customViewport}
-            onChange={(next, custom) => updateTab(activeTabId, {
-              viewport: next,
-              customViewport: next === 'custom' ? custom : activeTab.customViewport,
-            })}
-            onRotate={() => {
-              const dim = viewportDims(activeTab.viewport, activeTab.customViewport);
-              if (!dim) return;
-              const swapped = { width: dim.height, height: dim.width };
-              updateTab(activeTabId, {
-                viewport: 'custom',
-                customViewport: swapped,
-              });
-            }}
+            selection={activeTab}
+            onChange={(patch) => updateTab(activeTabId, patch)}
           />
         )}
         {/* El zoom SÍ importa en el teléfono, y más que en escritorio: como se
             aplica escalando un viewport más ancho (no es el pinch del
             sistema), bajarlo hace que el sitio se renderice con ancho de
             desktop y entre entero en la pantalla. */}
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 2,
-          padding: '2px 4px', borderRadius: 6,
+        {!emulating && <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0,
+          padding: compact ? '0 2px' : '2px 4px', borderRadius: 6,
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
         }}>
           <button type="button" onClick={() => bumpZoom('out')} title={tr('browser.zoom_out')}
@@ -478,7 +496,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
             }}>{Math.round(zoom * 100)}%</button>
           <button type="button" onClick={() => bumpZoom('in')} title={tr('browser.zoom_in')}
             style={{ ...zoomBtnStyle(t) }}>+</button>
-        </div>
+        </div>}
         {hasNativeDevTools && (
           <button
             type="button"
@@ -500,6 +518,16 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
           style={{ ...navBtnStyle(t), opacity: activeTab?.url ? 1 : 0.4 }}>
           <IconExt size={11}/>
         </button>
+        {onToggleImmersive && (
+          <button
+            type="button"
+            onClick={onToggleImmersive}
+            title={tr('browser.immersive.enter')}
+            aria-label={tr('browser.immersive.enter')}
+            style={navBtnStyle(t)}>
+            <ImmersiveIcon exit={false}/>
+          </button>
+        )}
       </div>
 
       {/* Contenido: render TODOS los webviews, solo el activo visible */}
@@ -510,7 +538,7 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
               key={tab.id}
               tab={tab}
               visible={tab.id === activeTabId}
-              zoom={tab.id === activeTabId ? zoom : 1}
+              zoom={tab.id === activeTabId ? effectiveZoom : 1}
               onNavigate={(u) => updateTab(tab.id, { url: u })}
               onTitleChange={(title) => updateTab(tab.id, { title })}
               onLoadFail={() => { if (tab.id === activeTabId) setLoadFailed(true); }}
@@ -522,6 +550,24 @@ export function BrowserPanel({ bubbleId, workspace }: Props) {
               }}
             />
           ))}
+          {immersive && onToggleImmersive && (
+            <button
+              type="button"
+              onClick={onToggleImmersive}
+              title={tr('browser.immersive.exit')}
+              aria-label={tr('browser.immersive.exit')}
+              style={{
+                position: 'absolute', top: 8, right: 8, zIndex: 11,
+                width: 40, height: 40, borderRadius: 20, padding: 0,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(20, 22, 28, 0.55)', color: '#fff',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                cursor: 'pointer',
+              }}>
+              <ImmersiveIcon exit/>
+            </button>
+          )}
           {loadFailed && activeTab?.url && (
             <div style={{
               position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
@@ -612,45 +658,43 @@ function TabContent({
       </div>
     );
   }
-  // Viewport wrapper — desktop = fluid, otro = caja centrada con sombra.
-  // En el teléfono siempre fluido: emular una caja de 768x1024 dentro de una
-  // pantalla de 390 no sirve para nada, y el selector ni se muestra.
-  const dim = isPhoneNow() ? null : viewportDims(tab.viewport, tab.customViewport);
+  // Escritorio = fluido; cualquier otro preset = dispositivo con marco,
+  // escalado para entrar en el panel. En el teléfono siempre fluido: emular
+  // una caja de 768x1024 dentro de una pantalla de 390 no sirve para nada, y
+  // el selector ni se muestra.
+  const spec = isPhoneNow() ? null : deviceSpec(tab);
   return (
-    <div style={{
-      position: 'absolute', inset: 0,
-      display: visible ? 'flex' : 'none',
-      alignItems: dim ? 'center' : 'stretch',
-      justifyContent: dim ? 'center' : 'stretch',
-      background: dim ? t.bg1 : 'transparent',
-      overflow: dim ? 'auto' : 'hidden',
-    }}>
-      <div style={dim ? {
-        width: dim.width, height: dim.height,
-        maxWidth: '100%', maxHeight: '100%',
-        boxShadow: t.shadowLg,
-        borderRadius: t.r2,
-        overflow: 'hidden',
+    <DeviceFrame spec={spec} visible={visible}>
+      <div style={{
+        width: `${100 / zoom}%`, height: `${100 / zoom}%`,
+        transform: `scale(${zoom})`,
+        transformOrigin: '0 0',
         background: 'white',
-      } : { flex: 1, height: '100%', width: '100%' }}>
-        <div style={{
-          width: `${100 / zoom}%`, height: `${100 / zoom}%`,
-          transform: `scale(${zoom})`,
-          transformOrigin: '0 0',
-          background: 'white',
-        }}>
-          <SmartBrowserView
-            ref={registerRef}
-            src={tab.url}
-            partition={tab.partition}
-            onNavigate={onNavigate}
-            onTitleChange={onTitleChange}
-            onLoadFail={onLoadFail}
-            onLoadSuccess={onLoadSuccess}
-          />
-        </div>
+      }}>
+        <SmartBrowserView
+          ref={registerRef}
+          src={tab.url}
+          partition={tab.partition}
+          userAgent={spec?.userAgent}
+          safeArea={spec?.safeArea}
+          nativeHints={spec?.nativeHints}
+          onNavigate={onNavigate}
+          onTitleChange={onTitleChange}
+          onLoadFail={onLoadFail}
+          onLoadSuccess={onLoadSuccess}
+        />
       </div>
-    </div>
+    </DeviceFrame>
+  );
+}
+
+function ImmersiveIcon({ exit }: { exit: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {exit
+        ? <path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"/>
+        : <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/>}
+    </svg>
   );
 }
 
@@ -665,7 +709,7 @@ function zoomBtnStyle(t: ReturnType<typeof useTokens>): CSSProperties {
 }
 
 function navBtnStyle(t: ReturnType<typeof useTokens>): CSSProperties {
-  const size = isPhoneNow() ? 36 : 26;
+  const size = isPhoneLandscapeNow() ? 32 : isPhoneNow() ? 36 : 26;
   return {
     width: size, height: size, borderRadius: 6, border: 0,
     flexShrink: 0,

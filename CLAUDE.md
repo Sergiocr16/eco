@@ -10,7 +10,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 4. [File map by feature](#filemap)
 5. [Processes & storage](#storage)
 6. [WebSocket protocol](#ws)
-7. [Voice pipeline (terminal dictation only)](#voice)
+7. [Voice pipeline — REMOVED](#voice)
 8. [ServerPanel — dev server per agent](#serverpanel)
 9. [BrowserPanel — webview per agent](#browserpanel)
 10. [Git tab — changes, history, PRs, review](#gittab)
@@ -39,7 +39,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 - **Eco** is a **cross-platform** desktop app (macOS Apple Silicon + Windows x64 + Linux x64 experimental) that orchestrates Claude conversations. Each conversation ("agent" / "bubble") gets its own git worktree, PTY, files, dev server, browser, notes. **Local-first compute** (worktrees/PTY/dev-servers/git/files never leave the host) but **cloud identity + state**: login via **Firebase Auth**, multi-tenant app state in **Firestore** (gated by `firestore.rules`). External calls: Anthropic API + Firebase (Auth + Firestore).
 - **Packaged** via Electron 44 + electron-builder 26. macOS → `.dmg` arm64 (~112 MB). Windows → NSIS `.exe` x64 (~96 MB). The OS-dependent backend primitives (shell, ports, process-kill) live in `backend/src/platform.ts`; the build config is `electron/electron-builder.config.cjs` (conditional native prebuilds per target). **Full Windows + packaging detail in Appendix E — read it before touching spawn/shell/port/kill code, the electron-builder config, or the prepare scripts.**
 - **User**: Sergio Castro (Florida, USA). Rules in §2 + the global `~/.claude/CLAUDE.md` apply (Obsidian vault, no auto-commits, Spanish UI but English docs).
-- **Voice**: the ONLY voice feature is **terminal dictation** (on-device STT via Swift + Apple Speech in the .dmg, Web Speech in the browser, macOS-only). Everything else voice-related was removed (wake word, voice commands, TTS, voice settings — see the Removed table in §2). Dev servers persist across reloads.
+- **Voice**: there is NO voice feature. Terminal dictation (the last one) was removed too — see the Removed table in §2. Dev servers persist across reloads.
 - **Dev logs flow via WS push** (`dev_log` batched every 80 ms), not polling.
 - **Multi-tenant = Firebase Auth + Firestore.** Login es **Firebase Auth** (email/password); el ID token viaja como `Authorization: Bearer <jwt>` (HTTP) y subprotocolo WS `eco.idtoken.<jwt>`. El backend local **verifica el ID token stateless** (JWKS de Google, `firebase-auth.ts`) y **NO autoriza** — `requireAdmin` solo exige que haya `req.ecoUser`. La **autorización real son las Firestore Security Rules** (`firestore.rules`); el **estado de la app vive en Firestore** (users/role, bubbles+messages, categories, notes, review, prefs, auditLog). El backend local hace solo **cómputo** (worktrees/PTY/git/dev-servers/files/voz/backup). El PIN local es un **lock** de dispositivo (SHA-256), no auth de cuenta. **Todo el detalle en Appendix D — leelo antes de tocar auth/usuarios/sync/workspace-config.** El modelo local anterior (PIN/argon2id/BIP39/sessions/doc-store) quedó **inerte** (ver §2 Removed/Legacy).
 
@@ -112,6 +112,7 @@ Operations manual for any agent working in this repo. Source of truth for rules,
 | `lib/voice-router.ts` (target chat/pty live) + `registerPtyWriter` en RealTerminal | Botón "Hablar a la terminal" → buffer → `writeToBubblePty` | El dictado a la terminal es autocontenido vía `pty-bridge`. |
 | `listener/` (sidecar Python: openWakeWord + faster-whisper) + scripts `npm run listener*` | Nada | El dictado usa Apple Speech (.dmg) / Web Speech (browser), sin Python. |
 | `POST /voice/transcribed` + mensaje WS `voice_transcribed` | Nada | Solo lo usaba el listener Python. |
+| Dictado a la terminal: botón "Hablar a la terminal", `DictationBar`, `hooks/useVoice.ts`, `startTerminalDictation`/`sendDictationToTerminal`, `POST /voice/transcribe-blob`, `electron/native/eco-stt.swift` + `build.sh` + `build/bin/eco-stt`, `NSSpeechRecognitionUsageDescription`, claves `detail.btn.dictat*` / `detail.dictation.*` / `voice.err.*` | Nada | No se usaba. Era la última función de voz. `NSMicrophoneUsageDescription` y el `setPermissionRequestHandler` de `main.cjs` se conservan: una página del navegador embebido puede pedir el micrófono y sin el texto macOS mata la app. |
 | Paso "Voice" del OnboardingWizard | Nada | No hay preferencia de voz que configurar. |
 | Sub-tabs `Shell \| Agente \| Comandos` del tab Terminal (`TerminalPanel`, `SubTabBtn`, `AgentBashLog`, `SimulatedTerminal`, `TermLineRow`, `TermLine`, claves `detail.term.*` + `detail.terminal.tab.*`) | `TerminalTabs` directo (Claude \| Codex \| Shell N) | Nadie los usaba. La terminal real (xterm+PTY) reemplaza a la simulada. **`POST /shell` + `backend/src/shell.ts` quedaron sin caller** — candidatos a borrar. |
 | **Tab "Conversación" + todo el Claude Agent SDK**: `backend/src/{agent,agent-tools}.ts`, el handler `prompt`/`interrupt` de `ws-server.ts`, `ClientMessageSchema`, los `ServerMessage` `sdk_message`/`session_started`/`done`/`error`/`inject_prompt`, `client_action` `rename_bubble`/`close_bubble` (**volvieron en 2026-10 con nombres explícitos y el MCP server como único productor** — ver Appendix C); `ChatPanel`/`ChatBubble`/`ToolCallRow`/`ThinkingBubble`/`EmptyChat`, `HistoryScreen` + screen `history`, `NextActionsPanel`, `Sparkline`, `copyTranscriptToClipboard`, `collectFilesChanged`, `useEcoSocket.send`/`.interrupt`, `useBubbles.{appendMessage,updateMessage,setBubbleMessages,setBubbleSessionId,setBubbleStatus}`, eventos `eco:set_chat_draft`/`eco:focus_chat_input`, env `ECO_MODEL`/`ECO_RATE_LIMIT`/`ECO_PROMPT_TIMEOUT_MS`/`ECO_MAX_PROMPT_BYTES`, `config.model` + campo `model` de `/info` | Los agentes viven en el **PTY** (tabs Claude/Codex) | No se usaba. El SDK era la única razón del canal cliente→servidor de `/ws`. **Se conservan**: el campo `bubble.messages` (para que los docs viejos de Firestore sigan parseando), `config.anthropicApiKey` (la usan los `claude -p` de notes-summary / commit con IA / dev-server). La dependencia `@anthropic-ai/claude-agent-sdk` se eliminó después (solo aportaba el ripgrep bundleado; hoy viene de `@vscode/ripgrep`). |
@@ -254,18 +255,6 @@ Accepted caveats (fase 0, NOT multi-tenant): single shared identity (token + PIN
 
 If you're touching X, the key files are:
 
-### Terminal dictation (the ONLY voice feature)
-The "Hablar a la terminal" button in the bubble header turns the mic on, accumulates the dictated text in a buffer (shown in `DictationBar`), and "Enviar a terminal" writes it to the main PTY (no Enter — the user reviews before running). Self-contained: no wake word, no chat routing, no meta-commands.
-- `electron/native/eco-stt.swift` — Swift CLI using `SFSpeechRecognizer` (on-device)
-- `electron/native/build.sh` — compiles to universal arm64+x64 binary
-- `electron/build/bin/eco-stt` — build output (bundled in .app)
-- `electron/main.cjs:setPermissionRequestHandler` — grants mic/audioCapture (load-bearing — keep)
-- `electron/package.json:mac.extendInfo` — `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription` (keep)
-- `frontend/src/hooks/useVoice.ts` — STT capture engine (Web Speech in browser, PCM+WAV+POST in .dmg). `onPhrase` only; no wake detection.
-- `backend/src/index.ts` `/voice/transcribe-blob` — endpoint that spawns eco-stt
-- `frontend/src/lib/pty-bridge.ts:writeToBubblePty` — writes the dictation buffer to the bubble's PTY
-- `frontend/src/App.tsx` — `startTerminalDictation` / `sendDictationToTerminal` / `cancelTerminalDictation`; `frontend/src/screens/AgentDetail.tsx:DictationBar` + the dictate button
-
 ### Dev server per agent
 - `backend/src/dev-server.ts` — session manager, spawn/kill, persistence, `scheduleLogFlush`, `forgetSession`, `urlFor`/`syncServe` (server-mode tailnet exposure). Env injected per spawn: `HOST=127.0.0.1`, `-Dserver.port`/`-Dspring.devtools.restart.enabled=false` (always) + `-Dserver.address=127.0.0.1`/`-Dserver.forward-headers-strategy=framework` + Vite allowed-hosts (server mode only).
 - `backend/src/tailscale.ts` — `serveOn`/`serveOff`/`tailscaleBin` (async, non-blocking `tailscale serve` wrappers). Only used in server mode.
@@ -281,6 +270,11 @@ The "Hablar a la terminal" button in the bubble header turns the mic on, accumul
 - `backend/src/index.ts` — static serving with split cache headers (`index.html` no-cache, hashed assets immutable); `POST /bubble/send`.
 - `frontend/src/screens/AuthScreen.tsx:ConnectView` + `frontend/src/lib/eco-config.ts:readStoredToken/writeStoredToken` (key `eco.token`) + `useAuth` `needs_token` state.
 
+### Bubble detail layout (split view)
+- `frontend/src/hooks/useSplitPanels.ts` — up to TWO panels open at once per bubble (`open[0]` = left/top, `ratio` = its share, clamped 0.2–0.8). A tab click toggles its panel; with both slots taken, a third tab replaces the one that is NOT pinned (the second if none is). Phones get one panel (`allowSplit = !isPhone`). Orientation is a module store shared by every mounted `AgentDetail`.
+- `frontend/src/screens/AgentDetail.tsx` — one 48px header row (title, state, categories, path) + tab row (pin on each open tab, swap and orientation buttons at the right). **The panel slots are siblings in a FIXED DOM order and are placed with CSS `order`** (`slotStyle`): moving a `<webview>`/iframe node in the DOM reloads it, so swapping sides must never reorder the JSX. While the divider is dragged an overlay covers the panels, because an iframe/webview under the cursor swallows pointer events.
+- Inside the detail (non-phone) the 64px left rail is not rendered (`App.tsx:hideRail`, `BubbleDock railWidth={0}`); the header's first button is the home icon (`onBack` → Dashboard; in the solo window it stays a back arrow). Other screens keep the rail.
+
 ### Categories (multi)
 - `frontend/src/hooks/useCategories.ts` — store + subscribers for `eco.categories` (id, name, color). Read sync via `getCategoryById`.
 - Bubble field is `categoryIds: string[]` (was single `categoryId` — auto-migrated in `useBubbles.loadStored`). Setter: `toggleBubbleCategory(id, catId)` (add/remove; `undefined` clears all).
@@ -295,6 +289,7 @@ The "Hablar a la terminal" button in the bubble header turns the mic on, accumul
 ### Browser per agent
 - `frontend/src/components/BrowserPanel.tsx` — UI + DevTools + persisted zoom
 - `frontend/src/components/SmartBrowserView.tsx` — `<webview>` (Electron) / `<iframe>` (web) wrapper
+- `frontend/src/components/BrowserPanel/DeviceFrame.tsx` + `types.ts` (`deviceSpec`, `DEVICE_MODELS`, `DEVICE_COLORS`) + `ViewportMenu.tsx` — device emulation. Presets: desktop (fluid), iPhone family (`mobile`, the legacy key), iPad family (`tablet`, the legacy key), Android phone family (`android_gestures` / `android_buttons` = navigation mode), Android tablet family (`android_tablet_gestures` / `android_tablet_buttons`), custom. Tablets have lower bars (`TABLET_BARS`), no island/punch-hole (`cutout: 'none'`), their own user agents (iPad; Android without `Mobile`) and keep the status bar when rotated. Each family has a submenu with models (`tab.deviceModel`) and frame colors (`tab.frameColor`); an id from the other family falls back to the family default. Viewport sizes come from public viewport tables, not vendor specs. The device is drawn at its real CSS size (the page keeps its true viewport width) and scaled DOWN with `transform` to fit the panel (`useFitScale`, never above 1), so it follows the split divider. **The page fills the whole device screen**; the status bar and the nav bar (home indicator / gesture pill / 3 buttons) are transparent overlays with `pointer-events: none` — no safe area is reserved. `tab.rotated` swaps the sides and hides the status bar. The tree shape is identical for desktop and device, so switching presets never remounts the `<webview>`. **What the page sees** (Electron `<webview>` only; the web iframe cannot do either): phone presets carry a `userAgent` (iPhone WebView; Android WebView + the `SWVAndroid AditumEdgeToEdge` suffixes the Aditum Android app appends, which aditum-jh reads) and `safeArea` insets equal to the drawn bars. `SmartBrowserView` applies the UA with `webview.setUserAgent` + reload (only when it changes) and the insets through IPC `eco:webview-safe-area` → `webContents.debugger` `Emulation.setSafeAreaInsetsOverride` in `main.cjs` (no public API; verified on Electron 44: survives navigations and coexists with the webview's DevTools). The handler only accepts a webview whose `hostWebContents` is the sender. **In the browser (iframe)** the same emulation is done by the tailnet preview proxy (`backend/src/dev-emulation.ts`, called from `dev-proxy.ts`): it buffers GET 200 `text/html` and `text/css` (UTF-8, ≤ 8 MB; gzip/deflate/br decoded, sent back uncompressed without `etag`), rewrites every `env(safe-area-inset-X[, f])` to `var(--eco-safe-area-inset-X, env(safe-area-inset-X[, f]))` (undefined variable = the real value, so a real phone through the same proxy is unaffected) and injects `<script src="/__eco/emulation.js">` after `<head>` (same origin, passes a `'self'` CSP; partials without `<head>` get no script). The script reads `window.name` (`eco-emu:<json>`, set by `SmartBrowserView` as the iframe `name`), redefines `navigator.userAgent`/`platform`/`maxTouchPoints` and sets the variables; inset changes arrive by `postMessage` (`eco-emulation`), a UA change remounts the iframe (`key`). Everything else still streams through `pipe`. Not covered: the HTTP `User-Agent` header the server sees, `env()` built from JS, and previews that do not go through the proxy (local `http://127.0.0.1:<port>` without the tailnet toggle, arbitrary sites). **`nativeHints`** (both paths: `webview.executeJavaScript` on dom-ready / the injected script) reproduce what the Aditum Android app injects besides the UA (`aditum-android` `MainActivity.injectSafeAreaInsets`): class `ad-android-nav-buttons` on `<html>` in 3-button mode — aditum-jh's `device-safe-area.css` then paints its own glass veil behind the buttons, so Eco draws none — and `--aditum-safe-top`.
 
 ### Agent CLIs (Claude + Codex)
 Cada burbuja tiene DOS terminales de agente: `main` (auto-arranca `claude`) y `codex` (auto-arranca `codex`), más los shells planos que agregue el user. El PTY es el único lugar donde corre Codex — el tab Chat (SDK), "Commit con IA" y el resumidor de Notes siguen siendo Claude-only.
@@ -429,7 +424,7 @@ Eco.app (electron main, main.cjs)
      └─ spawn dev-server bash (one or two per agent in dual mode)
 ```
 
-Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources/frontend/dist/`. Swift CLI in `Resources/bin/eco-stt`.
+Backend lives in `Resources/backend/dist/`. Frontend static bundle in `Resources/frontend/dist/`.
 
 ### Disk state (chmod 600)
 
@@ -461,9 +456,12 @@ All keys use prefix `eco.`. Maintain this prefix when adding new keys:
 ```
 eco.lock.pin.<uid>                       ← hash SHA-256 del PIN de lock por usuario (lib/lock-pin.ts)
 eco.lockedUser                           ← uid/email recordado por el lock screen (pide solo PIN)
+eco.security.lockOnStart                 ← '0' = no pedir el PIN de lock al abrir/recargar (Settings → Seguridad; default pide). El lock manual y por inactividad siguen pidiéndolo.
 eco.onboarded                            ← '1' once the wizard finished
 # Firebase maneja la sesión (ID token en IndexedDB del SDK); NO hay eco.session/eco.token/eco.refresh.
 eco.detail.tab.<bubbleId>                ← last active tab (terminal|git|browser|server|files|notes). Valores legacy ('chat', 'plan') caen al default 'terminal'.
+eco.detail.split.<bubbleId>              ← split view of the detail: {open:[tab, tab?], ratio, pinned} (hooks/useSplitPanels.ts). Falls back to the legacy eco.detail.tab.<bubbleId>.
+eco.detail.splitdir                      ← 'row' | 'column', split orientation, global
 eco.git.subtab.<bubbleId>                ← Git sub-tab (changes|history|prs); legacy 'branches' auto-migrates to 'changes'.
 eco.git.splitter.{changes,history}.<bubbleId>  ← left column width
 eco.terminals.<bubbleId>                 ← extra terminals (no Claude) [{id,label}]
@@ -595,68 +593,9 @@ Query params: `bubble`, `workspace`, `pty` (terminal id within the bubble, defau
 ---
 
 <a id="voice"></a>
-## 7. Voice pipeline (terminal dictation only)
+## 7. Voice pipeline — REMOVED
 
-This is the ONLY voice feature. The mic runs ONLY while dictation is active (the "Hablar a la terminal" button → `startTerminalDictation` → `voice.start()`). There is no wake word, no always-on listening, no chat routing and no voice commands — `useVoice` just calls `onPhrase`, which appends to the dictation buffer.
-
-### Browser mode (`npm run web` in Chrome/Safari)
-
-- `window.SpeechRecognition` (Web Speech API). Chrome supplies the Google API key.
-- `useVoice` starts a `SpeechRecognition` with `continuous=true, interimResults=true` for the duration of the dictation.
-
-### .dmg mode
-
-Web Speech doesn't work (Chromium-Electron has no Google API key → start/end loop). Explicitly disabled via `isElectron` check.
-
-**Own pipeline in .dmg:**
-
-1. `getUserMedia({audio:true})` — macOS asks for **Microphone** and **Speech Recognition** on first run (2 prompts).
-2. `AudioContext` + `MediaStreamAudioSourceNode` + `ScriptProcessor` (bufSize 4096) → captures Float32 PCM at native rate.
-3. Resample native → 16 kHz mono. If `nativeRate ≥ 32k`, 3-tap anti-alias before decimation.
-4. **Adaptive VAD** per 50 ms frame (800 samples). States `idle | recording`:
-   - `idle`: RMS → smoothed EMA noise floor (`noiseFloor = 0.95·prev + 0.05·rms`). 300 ms pre-roll buffer. Trigger when `rms > max(0.01, noiseFloor·3)` → switch to `recording` and prepend the pre-roll.
-   - `recording`: accumulate; count consecutive silent frames; close phrase after **700 ms** silence or at the **8 s** cap; drop phrases <400 ms.
-5. On phrase close: trim trailing 700 ms (silence), `encodeWav()` → WAV PCM16 mono 16 kHz, POST.
-6. `apiFetch('/voice/transcribe-blob', { body: blob, headers: 'Content-Type': 'audio/wav' })`.
-7. Backend writes `/tmp/eco-stt-<uniq>.wav`, spawns `eco-stt /tmp/... es-MX`.
-8. Swift CLI: `SFSpeechURLRecognitionRequest`, `requiresOnDeviceRecognition = true`, `recognitionTask` callback that stops `CFRunLoop`.
-9. stdout → backend → `{ok:true, text}` → renderer → `onPhraseRef.current(text)`.
-
-Effective latency: ~700 ms after you stop talking. Pre-roll catches the attack of the phrase; adaptive noise floor handles noisy rooms without calibration. Dictation uses the long-form VAD tolerance (`isLongForm` always true).
-
-### Gotchas
-
-- **`MediaRecorder` is NOT viable.** Chromium 130 emits webm/opus (or unstable audio/mp4). macOS `AVFoundation` can't decode webm/opus. We use **raw PCM + manual WAV** instead. If anyone suggests MediaRecorder again, say no.
-- **`CFRunLoop` is required in the Swift CLI.** `SFSpeechRecognizer.recognitionTask` delivers callbacks that need an active run loop. `DispatchSemaphore.wait()` blocks the loop → callbacks never fire → silent timeout. Correct pattern:
-  ```swift
-  while !done && Date() < deadline {
-    CFRunLoopRunInMode(.defaultMode, 0.5, true)
-  }
-  ```
-- **`__dirname` doesn't exist in ESM.** Backend is ESM. For module path:
-  ```ts
-  const moduleDir = path.dirname(new URL(import.meta.url).pathname);
-  ```
-- **`setPermissionRequestHandler` in main.cjs unblocks the macOS prompt.** Without it, Chromium auto-rejects `getUserMedia`. We grant `media`, `audioCapture`, `videoCapture`, `microphone`, `clipboard-read`, `clipboard-sanitized-write`.
-- **`NSMicrophoneUsageDescription` + `NSSpeechRecognitionUsageDescription`** in `mac.extendInfo` of `electron/package.json`. Without them, macOS terminates the process when asking permission.
-- **Apple Speech works without code-signing.** `hardenedRuntime: false` + `identity: null` is fine for personal use. To distribute, sign + notarize.
-
-### Reset permissions when debugging
-
-```bash
-tccutil reset Microphone com.aditum.eco
-tccutil reset SpeechRecognition com.aditum.eco
-```
-
-Then relaunch Eco.app — next `getUserMedia` re-prompts.
-
-### Rebuild the Swift CLI
-
-```bash
-./electron/native/build.sh
-```
-
-Output: `electron/build/bin/eco-stt` (universal arm64+x64, ~150 KB). Run this whenever you modify `eco-stt.swift`, BEFORE `npm run dmg`.
+Terminal dictation, the last voice feature, was removed (see the Removed table in §2). There is no mic capture, no STT endpoint and no Swift CLI. Do NOT reintroduce it.
 
 ---
 
@@ -806,6 +745,7 @@ See §4 "Git tab" for the full file list. Highlights:
 - **History**: paginated log + per-commit cherry-pick / revert / reset (hard requires typing `HARD RESET`).
 - **PRs**: list + checkout. `CurrentPrBanner` appears in `GitMiniDock` when the branch has an open PR. **Requires `gh` (GitHub CLI) installed** on the host (`brew install gh`); without it, every PR endpoint returns `code: 'pr.gh_missing'`. The GitHub PAT (§14) is injected as `GH_TOKEN` so `gh` authenticates without `gh auth login`, but it does NOT replace the `gh` binary.
 - **GitMiniDock** (right rail in non-Git tabs): branch chip + ahead/behind + quick commit + push + `CurrentPrBanner`.
+- **Bubble side panel** (`AgentDetail.tsx:AgentSidebar`, section order `git, agent, skills, obsidian`): `GitMiniDock` (branch + the branch's PR: task id and name parsed from the PR title by `taskFromPrTitle`, check summary and conflicts; `currentPullRequest` asks `gh` for `statusCheckRollup` and `summarizeChecks` counts only the latest run of each check), then `components/AgentSidebarCards.tsx:AgentStateCard`: real agent state (opens the terminal), a segmented ring with the context used and the count of changed files (opens the Git tab). State and context come from `GET /bubble/status?git=0` (refetched on `eco:pty_busy_change`, every 15 s and on `visibilitychange`; needs the bubble in the `/bubbles/sync` snapshot). `contextTokens` = input + cache tokens of the last assistant entry in the transcript; the window is assumed 200k, or 1M once usage exceeds 200k, because the transcript does not record it. The old Stats, quick-action and changed-file-list sections were removed.
 - **GitBusyToast**: floating toast for in-flight ops; listens to `eco:git_busy { bubbleId, busy, kind, label }`; clears only when matching `kind` ends (FIFO if two ops overlap).
 
 ### Cursor-style review
@@ -1111,7 +1051,7 @@ Back/Next nav, each step optional. `eco.onboarded=1` flag prevents re-showing. O
 <a id="metacommands"></a>
 ## 16. Voice/text meta-commands — REMOVED
 
-The whole meta-command system (wake word + `Eco …` navigation/agent/tab/server/confirm/obsidian voice commands, `meta-commands.ts`, `handleMetaAction`, `parseMetaCommand`, `CommandFeedback`, the `StatusOverlay` "estado/ayuda" overlay) was **removed**. Do NOT reintroduce it (see the Removed table in §2). There is no wake word and no typed-command parser. The only voice that remains is **terminal dictation** — see §7.
+The whole meta-command system (wake word + `Eco …` navigation/agent/tab/server/confirm/obsidian voice commands, `meta-commands.ts`, `handleMetaAction`, `parseMetaCommand`, `CommandFeedback`, the `StatusOverlay` "estado/ayuda" overlay) was **removed**. Do NOT reintroduce it (see the Removed table in §2). There is no wake word and no typed-command parser. Terminal dictation was removed later as well — see §7.
 
 ---
 
@@ -1215,13 +1155,12 @@ If any fails, the PR is not ready.
 2. `cd backend && npx tsc --noEmit` → 0 errors
 3. `npm run check:i18n` → 0 hits
 4. `npm run web` boots; frontend loads; login works
-5. Terminal dictation in browser (Web Speech): open a bubble → "Hablar a la terminal" → speak → text appears in the `DictationBar` → "Enviar a terminal" → text lands in the PTY (not executed)
 5b. Terminales de agente: abrir el tab Terminal → arranca directo en la barra Claude | Codex | (+ Nueva), sin sub-tabs. **Solo** spawnea el PTY `main` (`ps aux | grep "[c]odex"` → vacío; el montaje es perezoso). Click en la tab **Codex** → si `codex` no está instalado, aviso de instalación **sin** PTY; si lo está, arranca `codex` dentro del worktree. `+ Nueva` sigue dando un shell pelado. En el tab Claude, `/resume` lista sesiones (denylist `CLAUDE_CODE_*` intacto).
 6. ServerPanel single: `echo hola` → starts → idle (echo exits) → no crash
 7. ServerPanel dual: toggle on, valid commands → backend boots first, frontend follows with correct `API_PORT`
 8. Browser panel: navigate to `localhost:7100/health` → JSON → switch tab → return → no reload
-9. `npm run dmg` produces `.dmg` without errors; bundle contains `Resources/bin/eco-stt` and `Resources/mcp-server/dist/index.js`
-10. Installed .app launches; login works; terminal dictation works (with macOS Mic + Speech Recognition prompts first time). The mic does NOT start on its own — only when "Hablar a la terminal" is pressed.
+9. `npm run dmg` produces `.dmg` without errors; bundle contains `Resources/mcp-server/dist/index.js`
+10. Installed .app launches; login works.
 11. Dev server persistence: with a server running, kill backend → `~/.eco/dev-sessions.json` has the entry → relaunch backend → server appears as running
 12. Git tab: in a worktree-bubble, open Git → cycle the 3 sub-tabs (Changes/History/PRs) with no console errors. Cherry-pick a commit → green. Trigger cherry-pick with conflict → `OpInProgressBanner` appears → Abort → state clean. Reset hard requires typing `HARD RESET`. PRs sub-tab requires `gh` installed (`which gh` from terminal); without it, `pr.gh_missing` is the expected error.
 13. Language toggle: Settings → EN; cycle Dashboard / AgentDetail / Git / Server / Browser — no Spanish leftover. Back to ES — no English leftover.
@@ -1338,7 +1277,6 @@ open /Applications/Eco.app
 
 ```bash
 # Swift CLI present
-ls release/mac-arm64/Eco.app/Contents/Resources/bin/eco-stt
 
 # BOTH macOS permission strings in Info.plist
 /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" \
@@ -1374,7 +1312,6 @@ grep -c '"<unique-string-from-your-change>"' \
 | Mic doesn't activate in .dmg | (a) macOS permissions not granted / (b) `setPermissionRequestHandler` missing / (c) `NSMicrophoneUsageDescription` missing | Verify all 3. `tccutil reset Microphone com.aditum.eco` to re-prompt. |
 | Listening animation but no transcription | (a) Backend crash in endpoint (check log) / (b) AVFoundation can't decode the format | Check `[voice/transcribe-blob]` log. If CT is webm → switch to WAV PCM. |
 | `__dirname is not defined` in backend | Backend is ESM | `path.dirname(new URL(import.meta.url).pathname)` |
-| `Transcription timeout` in eco-stt | CLI has no active CFRunLoop | `CFRunLoopRunInMode(.defaultMode, 0.5, true)` in a loop |
 | BrowserPanel reloads every N seconds | `<webview>` recreated by parent re-render with inline callbacks in deps | Move callbacks to `cbRef`, remove from deps |
 | ServerPanel: status `starting` forever | `READY_RE` doesn't match the framework's output | Add the pattern to the regex in `dev-server.ts:244` |
 | Dev servers lost on close/recompile | Missing persistence | Already implemented via `~/.eco/dev-sessions.json` + pgid re-adopt |
@@ -1462,7 +1399,6 @@ To understand features without flailing:
 
 - **Persistent PTY**: `backend/src/pty-server.ts` (ring buffer + reattach)
 - **Commit with AI**: `backend/src/git-ops.ts:commitSuggest` (calls `claude -p`)
-- **Terminal dictation**: `frontend/src/hooks/useVoice.ts` (STT capture) + `App.tsx:startTerminalDictation` + `pty-bridge.ts:writeToBubblePty`
 - **WS reconnect**: `frontend/src/hooks/useEcoSocket.ts` — backoff + activeBubbleId tracking
 - **Worktree manager**: `backend/src/worktree-manager.ts` — prune cron + auto-recovery on conflicts
 - **Dashboard graph**: `Dashboard.tsx` ~1190–1500 — SVG animations, particles, satellite pulses
@@ -1840,7 +1776,6 @@ Wired into: `pty-server.ts` (`defaultShell`), `dev-server.ts` (spawn via `shellR
 - **`mcp-config.ts` + `index.ts`** — module paths via `fileURLToPath(import.meta.url)` (the old `new URL(...).pathname` returns `/C:/…` on Windows and breaks `path.resolve`; it also leaves `%20` for spaces, so this is a latent fix on macOS too).
 - **`fs-search.ts`** — uses **`platform.ts:resolveRipgrepPath()`** to spawn the **bundled** ripgrep by absolute path (`@vscode/ripgrep-<platform>-<arch>/bin/rg[.exe]`), NOT a bare `rg` on PATH. This is the Windows fix: the packaged `rg.exe` is in `node_modules`, not on PATH, so the old `spawn('rg')` failed and fell back to `grep` (absent on Windows → search silently dead). Now ripgrep works on both OSes without a global install; the `grep` fallback is POSIX-only, and on Windows-without-ripgrep the endpoint returns `search.no_engine` instead of spawning a missing binary.
 - **`auth.ts`** — `chmodSync` calls wrapped in try/catch (no-op on NTFS).
-- **Voice (`useVoice.ts`)** — terminal dictation STT is **macOS-only** (the Swift `eco-stt` + Apple Speech). `isSupported` is forced `false` on non-darwin Electron via `ecoPlatform()` so `AgentDetail` hides the "Hablar a la terminal" button. The `/voice/transcribe-blob` endpoint already 501s off-darwin. To add Windows dictation you'd need a Windows STT helper (System.Speech / Windows.Media.SpeechRecognition) + re-enable the gate.
 - **`getTopInset()` (`frontend/lib/platform.ts`)** — returns 36px **only on macOS** (traffic-light inset for `titleBarStyle: hiddenInset`). On Windows/Linux it returns 0 — the native frame already owns the top, so reserving 36px left an empty strip ("border") that looked wrong, especially maximized/fullscreen.
 
 ### `electron/main.cjs` (shared lifecycle)
@@ -1856,7 +1791,6 @@ The build config moved from the `build` block in `electron/package.json` to a **
 
 - **node-pty** `prebuilds/<os-arch>/` — keep `darwin-arm64` (mac) / `win32-x64` (win); exclude the rest + `src`/`scripts`/`tools`/`build`/`deps` + `*.pdb`.
 - **ripgrep** needs no filter: `@vscode/ripgrep` installs only `@vscode/ripgrep-<host platform>` (darwin-arm64 on the Mac, win32-x64 on the Windows runner).
-- **`eco-stt`** (mac-only Swift binary) is added to `extraResources` only for the mac target.
 
 The mac `dmg`/`win` `nsis`/`linux` `AppImage` blocks coexist; only the relevant one runs per target. `electron/package.json` `build:*` scripts all pass `--config electron-builder.config.cjs`. **The mac build is byte-for-byte equivalent to the old inline config** (same dmg arm64, icon.icns, both `NS*UsageDescription`, eco-stt, prebuild filters).
 
@@ -1919,6 +1853,8 @@ So the responsive mechanism is a **JS breakpoint hook whose boolean is spread in
 
 The `min-height: 700px` in the tablet query is load-bearing: an iPhone 16 Pro Max in landscape is 932×430, so it passes the min-width but fails the min-height. An iPad is 820×1180 portrait / 1180×820 landscape and passes either way.
 
+**Phone landscape is a third layout** (`useIsPhoneLandscape()` = `isPhone` + `(orientation: landscape) and (max-height: 500px)`): ~800px wide, ~400px tall. Stacked bars are merged into single rows instead of collapsed: `AgentDetail` puts back + title + tabs + actions in one row (category chips hidden, still in the "⋯" menu), and `BrowserPanel` drops to one toolbar row with the tab strip behind a tab-count button. The browser also has a **full-screen toggle** on phones (`immersive` / `onToggleImmersive`, state owned by `AgentDetail`, in memory only) that hides the bubble header and both browser bars; a floating button restores them. In this orientation the shell applies side insets (`hooks/useSideInsets.ts`: full `env(safe-area-inset-*)` on the Dynamic Island side, read from `window.orientation`, and a 10px corner allowance on the other) and `--eco-frost: 0` (`index.css`) switches off the `IOS_FROST_EXTRA` cushion, which was 40px of dead space with the status bar hidden.
+
 **Rule of thumb:** sizing → `isMobile`; layout → `isPhone`. Getting this backwards is why the dock and the graph were briefly missing on iPads.
 - **`isMobileNow()` is not reactive on its own.** It relies on an ancestor having called `useIsMobile()` to re-render. `App.tsx:Shell` does, which covers the whole tree. Screens rendered *outside* Shell (`AuthScreen`, `LockScreen`) won't re-evaluate on a live breakpoint change — irrelevant on a real phone, cosmetic on desktop resize.
 
@@ -1929,6 +1865,8 @@ The `min-height: 700px` in the tablet query is load-bearing: an iPhone 16 Pro Ma
 - `index.html` already had `viewport-fit=cover`; **nothing consumed it** until now. `lib/platform.ts` exports `SAFE_TOP` / `SAFE_BOTTOM` (`env(safe-area-inset-*)` strings — inline styles accept any CSS value, including `calc()`).
 - **`SAFE_TOP` is not `getTopInset()`.** The latter reserves 36px for macOS traffic lights in Electron; the former compensates for phone hardware. Orthogonal — don't merge them.
 - **`SAFE_TOP` applies everywhere; `SAFE_BOTTOM` only installed.** Since iOS 26 (Liquid Glass) content runs under the status bar in Safari too and the OS blurs whatever sits there, so the top inset is honored unconditionally (`env()` reports 0 whenever the browser already reserves the strip). The bottom stays gated to standalone because Safari's toolbar already occupies that zone. The shell (`App.tsx`) adds `SAFE_TOP` on every device, tablets included — the iPad is `isMobile` but not `isPhone`, and it used to start at `top: 0` with the header under the blur. Installed on iOS 26.1+ (verified on iPadOS 27), `SAFE_TOP` adds a **frost cushion** on top of `env()`: the OS frosts a progressive-blur band over the top edge of the web view, does so with **any** `apple-mobile-web-app-status-bar-style` (opaque `black` was tried and changed nothing), and exposes no API for its height. The band is anchored to the **screen edge, not the status bar**: on a 13" iPad (24pt bar) text reads crisp ~64pt from the edge. So the cushion is `clamp(0px, 80px - env(top), 40px)` (`IOS_FROST_REACH` in `lib/platform.ts`): the iPad still gets 24 + 40 (capped), while an iPhone whose bar already measures ~62pt gets ~18px instead of a flat 40px of wasted screen. 64px was tried first on an iPhone 16 Pro and the greeting still read slightly soft; 80px is the verified value (2026-10). Only the shell background sits under it, and a flat color blurred is invisible; text is not. The meta is `black-translucent` (app background under the clock, no black strip). Opaque `black` shipped briefly: it removes the ~62pt dead band that WebKit bug #301994 leaves under the bottom nav on a portrait iPhone (the system shrinks the web view by the status bar height), but paints a black strip on top — Sergio preferred the continuous background. The band is now closed from CSS instead (see the table below). Known limitation: white status symbols on the light themes. iOS captures that meta when the app is added to the home screen — changing it means removing and re-adding the app.
+- **The free left side of the dock band holds a status bar** (`components/DockStatusBar.tsx`, passed to `BubbleDock` as `left`; `right` exists but is unused). Only inside a bubble: branch + ahead/behind (opens the Git tab), the branch's PR (opens its detail; when the PR title carries a task id such as `TAR-1445 | Name`, the chip shows the task id and name instead of the PR number — `taskFromPrTitle`, no Notion call) and one chip per live dev server (opens the Server tab). The sides are `flex: 1 1 0` with `overflow: hidden`, so they shrink and clip instead of pushing the dock.
+- **Inside a bubble the dock opens with a home icon** (`BubbleDock.tsx:HomeDockIcon`, prop `onGoHome`), same slot as an agent icon and followed by a divider; it is not drawn on the Dashboard. The header always keeps the Eco logo (also a home button) and shows the small home icon next to it only on phones or with the dock disabled (`homeInDock`).
 - **The dock hugs the bottom edge on touch.** `BubbleDock.tsx` uses a 6px margin on touch (14px on desktop) and no safe-area inset at all — iPadOS 26 removed the home indicator, and `14px + env(safe-area-inset-bottom)` left the dock floating over a dead band. It exports `DOCK_RESERVED_BOTTOM` (`calc(var(--eco-dock-h) + margin)`), which the shell uses as its `bottom` while the dock is visible. The dock measures its own container with a `ResizeObserver` and publishes `--eco-dock-h` on `<html>`, because its height depends on the icon size (20–72px) and on whether workspace labels are shown; the earlier flat 62px let the dock cover the terminal's last line at small icon sizes, and before that a flat 76px left it floating over the key bar on an installed iPad.
 - Both constants divide by `--eco-zoom` (see "UI zoom" below): under CSS zoom `env()` values arrive in visual px.
 - `hooks/useKeyboardInset.ts` — the iOS soft keyboard draws *over* the layout viewport, and with `body { overflow: hidden }` + a `position: fixed` shell nothing scrolls the prompt back into view. The hook reads `visualViewport` and its value is subtracted from the shell's `bottom` in `App.tsx`. The 120px threshold exists because Safari's collapsing URL bar also moves `visualViewport` by 50-90px; a real keyboard is never under ~250px.

@@ -73,3 +73,18 @@ export function isTabletNow(): boolean {
 export function isPhoneNow(): boolean {
   return matches(MOBILE_QUERY) && !matches(TABLET_QUERY);
 }
+
+// Teléfono acostado: sobra ancho (~800px) y falta alto (~400px). Es un tercer
+// layout, no el de teléfono vertical: las barras apiladas se funden en una
+// sola fila para devolverle el alto al contenido.
+export const SHORT_LANDSCAPE_QUERY = '(orientation: landscape) and (max-height: 500px)';
+
+export function useIsPhoneLandscape(): boolean {
+  const phone = useIsPhone();
+  const short = useMediaQuery(SHORT_LANDSCAPE_QUERY);
+  return phone && short;
+}
+
+export function isPhoneLandscapeNow(): boolean {
+  return isPhoneNow() && matches(SHORT_LANDSCAPE_QUERY);
+}

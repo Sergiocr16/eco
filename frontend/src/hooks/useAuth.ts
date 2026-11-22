@@ -14,7 +14,7 @@ import {
 import { onSnapshot, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { getEcoAuth, firebaseConfigured } from '@/lib/firebase';
 import { refs } from '@/lib/firestore-model';
-import { hasLockPin, setLockPin, verifyLockPin, clearLockPin } from '@/lib/lock-pin';
+import { hasLockPin, setLockPin, verifyLockPin, clearLockPin, lockOnStartEnabled } from '@/lib/lock-pin';
 import { writeProfileUsername } from './useProfile';
 
 // 'unlocked' = app visible; 'locked' = pide PIN (sesión Firebase viva);
@@ -94,10 +94,11 @@ export function useAuth() {
         setLockState('unlocked');
         return;
       }
-      // Login fresco entra directo; sesión persistida con PIN arranca bloqueada;
-      // sin PIN tras login fresco se ofrece crearlo una vez.
+      // Login fresco entra directo; sesión persistida con PIN arranca bloqueada
+      // (salvo que el usuario apagó "pedir PIN al abrir"); sin PIN tras login
+      // fresco se ofrece crearlo una vez.
       setLockState(hasLockPin(user.uid)
-        ? (justLoggedIn ? 'unlocked' : 'locked')
+        ? (justLoggedIn || !lockOnStartEnabled() ? 'unlocked' : 'locked')
         : (justLoggedIn ? 'setup' : 'unlocked'));
       justLoggedIn = false;
       setState({ status: 'authenticated', username: displayNameOf(user), userId: user.uid, role: null, error: null });

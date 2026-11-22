@@ -98,7 +98,6 @@ export default defineConfig(({ command, mode }) => {
         '/config': { target: HTTP_TARGET, changeOrigin: false },
         '/git': { target: HTTP_TARGET, changeOrigin: false },
         '/pty': { target: HTTP_TARGET, changeOrigin: false },
-        '/voice': { target: HTTP_TARGET, changeOrigin: false },
         '/dev': { target: HTTP_TARGET, changeOrigin: false },
         '/proxy': { target: HTTP_TARGET, changeOrigin: false },
         '/worktree': { target: HTTP_TARGET, changeOrigin: false },

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
+import { lockOnStartEnabled, setLockOnStart } from '@/lib/lock-pin';
 import { useTheme, useTokens } from '@/design/theme';
 import { terminalBg, terminalFg } from '@/lib/terminal-theme';
 import { CLAUDE_THEME_SYNC_EVENT, CLAUDE_THEME_SYNC_KEY } from '@/hooks/useClaudeThemeSync';
@@ -1669,6 +1670,12 @@ function SectionSecurity() {
     } catch { /* noop */ }
   }
 
+  const [lockOnStart, setLockOnStartState] = useState<boolean>(lockOnStartEnabled);
+  function saveLockOnStart(v: boolean) {
+    setLockOnStartState(v);
+    setLockOnStart(v);
+  }
+
   function lockNow() {
     // Lock con PIN (no cierra la sesión de Firebase). App escucha el evento.
     window.dispatchEvent(new CustomEvent('eco:lock-now'));
@@ -1677,6 +1684,10 @@ function SectionSecurity() {
   return (
     <div style={{ width: '100%' }}>
       <Header title={tr('settings.security.title')} sub={tr('settings.security.sub')}/>
+
+      <Row icon={IconLock} title={tr('settings.security.lock_on_start')}
+        desc={tr('settings.security.lock_on_start_desc')}
+        control={<Toggle on={lockOnStart} onChange={saveLockOnStart}/>}/>
 
       {/* Bloqueo por inactividad — guardado en localStorage, App.tsx lee la
           preferencia y dispara `auth.lock` cuando se cumple el tiempo. */}
@@ -3288,7 +3299,6 @@ function PrivacyList() {
   const t = useTokens();
   const tr = useT();
   const rows = [
-    { label: tr('settings.about.priv.audio.label'),    desc: tr('settings.about.priv.audio.desc'),    local: true },
     { label: tr('settings.about.priv.auth.label'),     desc: tr('settings.about.priv.auth.desc'),     local: true },
     { label: tr('settings.about.priv.workspace.label'), desc: tr('settings.about.priv.workspace.desc'), local: true },
     { label: tr('settings.about.priv.history.label'),  desc: tr('settings.about.priv.history.desc'),  local: true },

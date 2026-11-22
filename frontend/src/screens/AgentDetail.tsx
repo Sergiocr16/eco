@@ -15,19 +15,22 @@ import { useGitChanges } from '@/hooks/useGitChanges';
 import { useCategories } from '@/hooks/useCategories';
 import { GitPanel } from '@/components/GitPanel/GitPanel';
 import { GitMiniDock } from '@/components/GitMiniDock';
+import { AgentStateCard } from '@/components/AgentSidebarCards';
 import { BrowserPanel } from '@/components/BrowserPanel';
 import { ServerPanel } from '@/components/ServerPanel';
 import { FilesPanel } from '@/components/FilesPanel/FilesPanel';
 import { NotesPanel } from '@/components/NotesPanel/NotesPanel';
 import { GitBusyToast } from '@/components/GitBusyToast';
+import { EcoMark, EcoMarkHorizontal } from '@/design/EcoMark';
 import {
-  Btn, IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
+  IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import {
-  IconArrowL, IconStop, IconMore,
-  IconTerminal, IconFile, IconLayers, IconSend, IconMic, IconGlobe, IconCpu,
-  IconCheck, IconX, IconGithub, IconEdit, IconTrash,
+  IconArrowL, IconMore,
+  IconTerminal, IconLayers, IconGlobe, IconCpu,
+  IconCheck, IconX, IconGithub, IconEdit,
   IconAgent, IconFolder, IconArchive, IconNewWindow,
+  IconPin, IconSwap, IconSplitH, IconSplitV, IconCommand,
   type IconProps,
 } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
@@ -35,7 +38,8 @@ import { stateColor, type AgentState } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
 import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
-import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
+import { useIsPhone, useIsPhoneLandscape, isPhoneNow, isMobileNow } from '@/hooks/useMediaQuery';
+import { useSplitPanels, useSplitDir, setSplitDir } from '@/hooks/useSplitPanels';
 import type { JSX } from 'react';
 
 function HeaderMenu({
@@ -176,23 +180,13 @@ type Props = {
   onClose: () => void;
   onChangeWorkspace: (workspace: string) => void;
   onToggleCategory: (categoryId: string | undefined) => void;
-  // Dictado a la terminal: el botón de la cabecera enciende el mic en modo
-  // dictado; lo dictado se acumula en `dictationText` y se muestra como burbuja
-  // arriba. "Enviar a terminal" lo escribe en el PTY principal sin Enter.
-  // Soporte de dictado en esta plataforma (false en Windows/Linux empaquetado,
-  // donde no hay STT nativo). Cuando es false se oculta el botón de dictar.
-  dictationSupported?: boolean;
-  dictationActive?: boolean;
-  dictationText?: string;
-  onStartDictation?: () => void;
-  onSendDictation?: () => void;
-  onCancelDictation?: () => void;
-  onClearDictation?: () => void;
   // Presente solo en Electron: abre este bubble en una ventana aparte.
   onOpenInNewWindow?: () => void;
   // True cuando este AgentDetail ES la ventana aparte: oculta el mic y el
   // "abrir en ventana nueva"; el back cierra la ventana.
   solo?: boolean;
+  // El ícono de inicio vive en la franja del dock (App.tsx): la cabecera muestra solo el logo.
+  homeInDock?: boolean;
 };
 
 type Tab = 'terminal' | 'git' | 'browser' | 'server' | 'files' | 'notes';
@@ -230,77 +224,10 @@ const TAB_DEFS: Record<Tab, { labelKey: string; icon: (p: IconProps) => JSX.Elem
   git:      { labelKey: 'Git',                 icon: IconGithub },
 };
 
-// Burbuja de dictado a la terminal. Aparece arriba (encima del contenido de
-// pestañas, visible en cualquier tab) mientras el dictado está activo. Muestra
-// lo dictado en vivo y permite enviarlo al PTY principal sin Enter.
-function DictationBar({
-  text, onSend, onClear, onCancel,
-}: {
-  text: string;
-  onSend: () => void;
-  onClear: () => void;
-  onCancel: () => void;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const isPhone = useIsPhone();
-  const hasText = text.trim().length > 0;
-  return (
-    <div style={{
-      // Tres botones + etiqueta + texto en una fila dejan el texto dictado en
-      // ~40px de ancho en el teléfono. Apilado se lee.
-      display: 'flex', alignItems: isPhone ? 'stretch' : 'flex-start',
-      flexDirection: isPhone ? 'column' : 'row',
-      gap: isPhone ? 8 : 12,
-      padding: isPhone ? '10px 12px' : '12px 24px',
-      borderBottom: `1px solid ${t.glassBorder}`,
-      background: `color-mix(in oklch, ${t.accent} 8%, transparent)`,
-    }}>
-      <span style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        flexShrink: 0, marginTop: 4,
-        color: t.accent, fontSize: 11.5, fontWeight: 600,
-        fontFamily: t.fontSans, whiteSpace: 'nowrap',
-      }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: '50%', background: t.accent,
-          animation: 'eco-pulse 1.2s ease-in-out infinite',
-        }}/>
-        {tr('detail.btn.dictating')}
-      </span>
-      <div style={{
-        flex: 1, minWidth: 0,
-        fontSize: 14, lineHeight: 1.5,
-        color: hasText ? t.text1 : t.text3,
-        fontFamily: t.fontSans,
-        maxHeight: 120, overflowY: 'auto',
-        whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-      }}>
-        {hasText ? text : tr('detail.dictation.placeholder')}
-      </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-        ...(isPhone ? { justifyContent: 'flex-end' } : null),
-      }}>
-        <Btn icon={IconSend} kind="primary" size="sm" onClick={onSend} disabled={!hasText}>
-          {tr('detail.dictation.send')}
-        </Btn>
-        <Btn icon={IconTrash} kind="ghost" size="sm" onClick={onClear} disabled={!hasText}
-          title={tr('detail.dictation.clear')}/>
-        <Btn icon={IconX} kind="secondary" size="sm" onClick={onCancel}>
-          {tr('detail.dictation.cancel')}
-        </Btn>
-      </div>
-    </div>
-  );
-}
-
 export function AgentDetail({
   bubble, workspaces, onBack, onRename, onClose, onChangeWorkspace,
   onToggleCategory,
-  dictationSupported = false, dictationActive = false, dictationText = '',
-  onStartDictation, onSendDictation, onCancelDictation, onClearDictation,
-  onOpenInNewWindow, solo: _solo = false,
+  onOpenInNewWindow, solo = false, homeInDock = false,
 }: Props) {
   const t = useTokens();
   const tr = useT();
@@ -319,21 +246,14 @@ export function AgentDetail({
     thinking: tr('state.thinking'),
     executing: tr('state.executing'),
   };
-  // Tab activo persistido por agente — al volver a entrar al detalle del
-  // mismo agente, recuperamos el último tab que vimos. Las entradas viejas
-  // con 'chat' (tab removido) caen al default.
-  const tabStorageKey = `eco.detail.tab.${bubble.id}`;
-  const [tab, setTabState] = useState<Tab>(() => {
-    try {
-      const saved = window.localStorage.getItem(tabStorageKey);
-      if (saved && (ALL_TABS as ReadonlyArray<string>).includes(saved)) return saved as Tab;
-    } catch { /* noop */ }
-    return 'terminal';
-  });
-  const setTab = (next: Tab) => {
-    setTabState(next);
-    try { window.localStorage.setItem(tabStorageKey, next); } catch { /* noop */ }
-  };
+  const isPhone = useIsPhone();
+  // Paneles abiertos (hasta dos lado a lado), persistidos por agente. En el
+  // teléfono no hay lugar para dos: se muestra uno solo.
+  const split = useSplitPanels<Tab>(bubble.id, ALL_TABS, 'terminal', !isPhone);
+  const splitDir = useSplitDir();
+  const hasSplit = split.open.length === 2;
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const [draggingSplit, setDraggingSplit] = useState(false);
   // Orden global de los tabs (persistido para TODOS los agentes en
   // `eco.detail.tab.order`). El user los reordena por drag-and-drop.
   const [tabOrder, setTabOrder] = useState<Tab[]>(() => loadTabOrder());
@@ -343,7 +263,12 @@ export function AgentDetail({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(bubble.title);
   const [menuOpen, setMenuOpen] = useState(false);
-  const isPhone = useIsPhone();
+  // Teléfono acostado: header y tabs se funden en UNA fila. Apilados se
+  // llevaban ~100px de un alto de ~400.
+  const compact = useIsPhoneLandscape();
+  // Navegador a pantalla completa (solo teléfono): esconde también este header.
+  const [browserImmersive, setBrowserImmersive] = useState(false);
+  const hideChrome = isPhone && browserImmersive && split.open[0] === 'browser';
   // El colapso del panel lateral vive acá porque en móvil el rail no se
   // dibuja inline y el botón que lo abre está en el header. En táctil arranca
   // cerrado siempre: la sheet tapa el panel activo.
@@ -390,24 +315,127 @@ export function AgentDetail({
   // emisor no especificó bubbleId — legacy/voz). Con multi-detail keepalive
   // hay varias AgentDetail montadas a la vez; sin este filtro todas
   // cambiaban de tab cuando una sola lo pedía.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => ecoOn('eco:switch_tab', (e) => {
     if (e.bubbleId && e.bubbleId !== bubble.id) return;
-    setTab(e.tab);
-  }), [bubble.id]);
+    split.show(e.tab);
+  }), [bubble.id, split.show]);
+
+  const tabButtons = tabOrder.map((id) => {
+          const def = TAB_DEFS[id];
+          const badge = id === 'git' ? filesChanged.length : undefined;
+          return (
+            <TabBtn
+              key={id}
+              tabId={id}
+              active={split.open.includes(id)}
+              onClick={() => split.toggle(id)}
+              pinned={split.pinned === id}
+              onTogglePin={hasSplit && split.open.includes(id) ? () => split.togglePin(id) : undefined}
+              compact={!isPhone}
+              label={def.labelKey === 'Git' ? 'Git' : tr(def.labelKey)}
+              icon={def.icon}
+              badge={badge}
+              iconOnly={isPhone}
+              dragOver={dragOverTabId === id}
+              onDragStart={() => setDraggingTabId(id)}
+              onDragEnd={() => { setDraggingTabId(null); setDragOverTabId(null); }}
+              onDragOver={() => setDragOverTabId(id)}
+              onDragLeave={() => setDragOverTabId((v) => v === id ? null : v)}
+              onDrop={() => {
+                if (draggingTabId && draggingTabId !== id) {
+                  const next = [...tabOrder];
+                  const from = next.indexOf(draggingTabId);
+                  const to = next.indexOf(id);
+                  if (from >= 0 && to >= 0) {
+                    next.splice(from, 1);
+                    next.splice(to, 0, draggingTabId);
+                    setTabOrder(next);
+                    saveTabOrder(next);
+                  }
+                }
+                setDraggingTabId(null);
+                setDragOverTabId(null);
+              }}
+            />
+          );
+        });
+
+  // Estilo del hueco de cada panel. Los paneles son hermanos en orden FIJO en
+  // el DOM y se acomodan con `order`: mover el nodo de un <webview> lo recarga.
+  const slotStyle = (id: Tab): React.CSSProperties => {
+    const i = split.open.indexOf(id);
+    if (i < 0) return { display: 'none' };
+    const grow = !hasSplit ? 1 : i === 0 ? split.ratio : 1 - split.ratio;
+    return {
+      display: 'flex', flexDirection: 'column',
+      order: i === 0 ? 1 : 3,
+      flex: `${grow} 1 0`, minWidth: 0, minHeight: 0, overflow: 'hidden',
+    };
+  };
+
+  const onDividerDown = (e: React.PointerEvent) => {
+    const el = splitRef.current;
+    if (!el) return;
+    e.preventDefault();
+    setDraggingSplit(true);
+    const move = (ev: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return;
+      split.setRatio(splitDir === 'column' ? (ev.clientY - r.top) / r.height : (ev.clientX - r.left) / r.width);
+    };
+    const up = () => {
+      setDraggingSplit(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+  const dividerSize = isMobileNow() ? 10 : 5;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
       <GitBusyToast bubbleId={bubble.id}/>
+      {!hideChrome && (
       <div style={{
-        display: 'flex', alignItems: 'center', gap: isPhone ? 8 : 14,
-        padding: isPhone ? '10px 12px' : '14px 24px',
+        display: 'flex', alignItems: 'center', gap: compact ? 6 : isPhone ? 8 : 10,
+        padding: compact ? '0 8px' : isPhone ? '10px 12px' : '0 12px',
+        ...(isPhone ? null : { height: 48, flexShrink: 0 }),
         borderBottom: `1px solid ${t.glassBorder}`,
       }}>
-        <IconBtn icon={IconArrowL} size={32} onClick={onBack}/>
-        <AgentGlyph size={isPhone ? 28 : 40} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {/* Sin rail lateral en el detalle, este botón es la vuelta al inicio.
+            En la ventana aparte cierra la ventana: ahí sigue siendo "atrás". */}
+        {solo ? (
+          <IconBtn icon={IconArrowL} size={32} onClick={onBack}/>
+        ) : (
+          // Dentro del detalle no hay rail lateral: la marca sigue a la vista
+          // acá y lleva al inicio. El ícono de inicio va en la franja del dock
+          // cuando está visible; si no (teléfono, dock apagado), acá al lado.
+          <>
+          <button
+            type="button"
+            onClick={onBack}
+            title={tr('nav.dashboard')}
+            aria-label={tr('nav.dashboard')}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              height: 36, padding: '0 4px', border: 0, borderRadius: t.r2,
+              background: 'transparent', color: t.text0, cursor: 'pointer', flexShrink: 0,
+            }}>
+            {/* En el teléfono no hay ancho para las letras: solo el arco. */}
+            {isPhone ? <EcoMark size={26}/> : <EcoMarkHorizontal size={24}/>}
+            {!isPhone && !homeInDock && <IconCommand size={16} style={{ color: t.text2, marginLeft: 2 }}/>}
+          </button>
+          {!isPhone && (
+            <span aria-hidden style={{ width: 1, height: 22, background: t.glassBorder, flexShrink: 0 }}/>
+          )}
+          </>
+        )}
+        <AgentGlyph size={compact ? 24 : 28} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
+        <div style={compact ? { flex: '0 1 auto', minWidth: 48, maxWidth: '28%' } : { flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: compact || !isPhone ? 'nowrap' : 'wrap', ...(isPhone ? null : { overflow: 'hidden' }) }}>
             {renaming ? (
               <input
                 autoFocus
@@ -420,10 +448,10 @@ export function AgentDetail({
                 }}
                 style={{
                   background: t.bg3, border: `1px solid ${t.accent}`,
-                  borderRadius: 8, padding: '4px 10px',
+                  borderRadius: 8, padding: '3px 10px',
                   fontFamily: t.fontSans, fontWeight: 600,
                   // 16px en móvil evita el auto-zoom de iOS al enfocar.
-                  fontSize: isPhone ? 16 : 18,
+                  fontSize: isPhone ? 16 : 15,
                   color: t.text0, letterSpacing: -0.3, outline: 'none',
                   // El minWidth de 200 empujaba el header entero en el
                   // teléfono, donde el título tiene ~180px de espacio.
@@ -437,14 +465,14 @@ export function AgentDetail({
                 onDoubleClick={() => { setDraft(bubble.title); setRenaming(true); }}
                 title={tr('dash.bubble.rename_tip')}
                 style={{
-                  margin: 0, fontFamily: t.fontSans, fontSize: isPhone ? 15 : 18, fontWeight: 600,
+                  margin: 0, fontFamily: t.fontSans, fontSize: compact ? 13 : 15, fontWeight: 600,
                   color: t.text0, letterSpacing: -0.3, cursor: 'text',
                   // `flex` en vez de `maxWidth: 100%`: así el título cede
                   // ancho y los chips de categoría entran en la MISMA línea
                   // cuando caben, en vez de empujarlos siempre abajo.
                   ...(isPhone
                     ? { flex: '1 1 90px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-                    : null),
+                    : { flex: '0 1 auto', minWidth: 60, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
                 }}>{bubble.title}</h2>
             )}
             {/* El estado ya lo muestra el punto del AgentGlyph al lado: en el
@@ -452,7 +480,7 @@ export function AgentDetail({
             {!isPhone && <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>}
             {/* Chips de categorías — clickeables: abren el menú para cambiarlas.
                 "arriba donde está el nombre", como pidió el user. */}
-            {bubbleCategories.map((category) => (
+            {!compact && bubbleCategories.map((category) => (
               <button
                 key={category.id}
                 type="button"
@@ -482,40 +510,31 @@ export function AgentDetail({
                 {!isPhone && category.name}
               </button>
             ))}
+            {/* Ruta e id en la misma fila: es lo primero que cede ancho. */}
+            {!isPhone && (
+              <span
+                title={`${bubble.workspace || '—'} · ${tr('detail.header.id')} ${bubble.id}`}
+                style={{
+                  flex: '0 9999 auto', minWidth: 0,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  fontFamily: t.fontMono, fontSize: 11.5, color: t.text2,
+                }}>
+                {bubble.workspace || '—'} · {tr('detail.header.id')} {bubble.id.slice(0, 10)}
+              </span>
+            )}
           </div>
-          {/* La fila de meta no tiene flexWrap y son tres bloques de texto:
-              en 326px desborda el header. El workspace se sigue viendo en el
-              menú "⋯" y en el GitMiniDock. */}
-          {!isPhone && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-              <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('detail.header.bubble')}</span>
-              <span style={{ color: t.text3 }}>·</span>
-              <span style={{ fontFamily: t.fontMono, fontSize: 11.5, color: t.text2 }}>
-                {bubble.workspace || '—'}
-              </span>
-              <span style={{ color: t.text3 }}>·</span>
-              <span style={{ fontSize: 11.5, color: t.text2 }}>
-                {tr('detail.header.id')} <span style={{ fontFamily: t.fontMono, color: t.text1 }}>{bubble.id.slice(0, 10)}</span>
-              </span>
-            </div>
-          )}
         </div>
 
-        <div style={{ display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
-          {dictationSupported && (
-            <Btn
-              icon={dictationActive ? IconStop : IconMic}
-              kind={dictationActive ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => { if (dictationActive) onCancelDictation?.(); else onStartDictation?.(); }}
-              title={dictationActive ? tr('detail.btn.dictating_title') : tr('detail.btn.dictate_title')}
-              // Solo-icono en el teléfono: "Hablar a la terminal" al lado del
-              // título y los otros dos botones no entra en el header.
-              style={isPhone ? { padding: '0 10px' } : undefined}
-            >
-              {isPhone ? null : (dictationActive ? tr('detail.btn.dictating') : tr('detail.btn.dictate'))}
-            </Btn>
-          )}
+        {compact && (
+          <div className="eco-dock-scroll" style={{
+            flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 2, overflowX: 'auto',
+          }}>
+            {tabButtons}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: compact ? 2 : 6, position: 'relative', alignItems: 'center' }}>
+          {compact && <RemoteControlNavButton bubble={bubble}/>}
           {isPhone && (
             <IconBtn
               icon={IconLayers}
@@ -541,22 +560,15 @@ export function AgentDetail({
           )}
         </div>
       </div>
-
-      {dictationActive && (
-        <DictationBar
-          text={dictationText}
-          onSend={() => onSendDictation?.()}
-          onClear={() => onClearDictation?.()}
-          onCancel={() => onCancelDictation?.()}
-        />
       )}
 
+      {!compact && !hideChrome && (
       <div
         className={isPhone ? 'eco-dock-scroll' : undefined}
         style={{
           position: 'relative',
           display: 'flex', gap: 2,
-          padding: isPhone ? '0 8px' : '0 24px',
+          padding: isPhone ? '0 8px' : '0 10px',
           borderBottom: `1px solid ${t.glassBorder}`,
           alignItems: 'center',
           // Sin overflowX las 6 tabs (~600px con etiqueta) se cortan sin
@@ -564,72 +576,97 @@ export function AgentDetail({
           // el scroll queda de red de seguridad para el botón remoto.
           ...(isPhone ? { overflowX: 'auto', flexShrink: 0 } : null),
         }}>
-        {tabOrder.map((id) => {
-          const def = TAB_DEFS[id];
-          const badge = id === 'git' ? filesChanged.length : undefined;
-          return (
-            <TabBtn
-              key={id}
-              tabId={id}
-              active={tab === id}
-              onClick={() => setTab(id)}
-              label={def.labelKey === 'Git' ? 'Git' : tr(def.labelKey)}
-              icon={def.icon}
-              badge={badge}
-              iconOnly={isPhone}
-              dragOver={dragOverTabId === id}
-              onDragStart={() => setDraggingTabId(id)}
-              onDragEnd={() => { setDraggingTabId(null); setDragOverTabId(null); }}
-              onDragOver={() => setDragOverTabId(id)}
-              onDragLeave={() => setDragOverTabId((v) => v === id ? null : v)}
-              onDrop={() => {
-                if (draggingTabId && draggingTabId !== id) {
-                  const next = [...tabOrder];
-                  const from = next.indexOf(draggingTabId);
-                  const to = next.indexOf(id);
-                  if (from >= 0 && to >= 0) {
-                    next.splice(from, 1);
-                    next.splice(to, 0, draggingTabId);
-                    setTabOrder(next);
-                    saveTabOrder(next);
-                  }
-                }
-                setDraggingTabId(null);
-                setDragOverTabId(null);
-              }}
-            />
-          );
-        })}
+        {tabButtons}
         <div style={{ flex: 1 }}/>
+        {hasSplit && (
+          <>
+            <IconBtn icon={IconSwap} size={28} title={tr('detail.split.swap')} onClick={split.swap}/>
+            <IconBtn
+              icon={splitDir === 'row' ? IconSplitV : IconSplitH}
+              size={28}
+              title={splitDir === 'row' ? tr('detail.split.stack') : tr('detail.split.side_by_side')}
+              onClick={() => setSplitDir(splitDir === 'row' ? 'column' : 'row')}
+              style={{ marginRight: 6 }}
+            />
+          </>
+        )}
         <RemoteControlNavButton bubble={bubble}/>
       </div>
+      )}
 
       {/* position:relative es el ancla de la sheet del sidebar en móvil, que
           se dibuja como `position:absolute; inset:0` sobre el panel activo. */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {tab === 'terminal' && <TerminalTabs bubble={bubble}/>}
-          {tab === 'git' && (
-            <GitPanel
-              workspace={bubble.workspace}
-              bubbleId={bubble.id}
-              filesChanged={filesChanged}
-              gitChangesLoading={gitChangesLoading}
-              onRename={onRename}
-            />
+        <div ref={splitRef} style={{
+          flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative',
+          display: 'flex', flexDirection: splitDir,
+        }}>
+          {split.open.includes('terminal') && (
+            <div style={slotStyle('terminal')}><TerminalTabs bubble={bubble}/></div>
           )}
-          <KeepAliveFiles visible={tab === 'files'} bubbleId={bubble.id} workspace={bubble.workspace}/>
-          {tab === 'notes' && <NotesPanel bubble={bubble}/>}
+          {split.open.includes('git') && (
+            <div style={slotStyle('git')}>
+              <GitPanel
+                workspace={bubble.workspace}
+                bubbleId={bubble.id}
+                filesChanged={filesChanged}
+                gitChangesLoading={gitChangesLoading}
+                onRename={onRename}
+              />
+            </div>
+          )}
+          <KeepAliveFiles
+            visible={split.open.includes('files')} slot={slotStyle('files')}
+            bubbleId={bubble.id} workspace={bubble.workspace}
+          />
+          {split.open.includes('notes') && (
+            <div style={slotStyle('notes')}><NotesPanel bubble={bubble}/></div>
+          )}
           {/* Navegador queda MONTADO siempre una vez abierto, solo se oculta cuando
               cambiás de pestaña. Así el iframe no recarga y la sesión del browser
               (cookies, localStorage del sitio, scroll position) se preserva. */}
-          <KeepAliveBrowser visible={tab === 'browser'} bubbleId={bubble.id} workspace={bubble.workspace}/>
-          <KeepAliveServer visible={tab === 'server'} bubbleId={bubble.id} workspace={bubble.workspace}/>
+          <KeepAliveBrowser
+            visible={split.open.includes('browser')} slot={slotStyle('browser')}
+            bubbleId={bubble.id} workspace={bubble.workspace}
+            immersive={hideChrome}
+            onToggleImmersive={isPhone ? () => setBrowserImmersive((v) => !v) : undefined}
+          />
+          <KeepAliveServer
+            visible={split.open.includes('server')} slot={slotStyle('server')}
+            bubbleId={bubble.id} workspace={bubble.workspace}
+          />
+          {hasSplit && (
+            <div
+              role="separator"
+              aria-orientation={splitDir === 'row' ? 'vertical' : 'horizontal'}
+              title={tr('detail.split.resize')}
+              onPointerDown={onDividerDown}
+              onDoubleClick={() => split.setRatio(0.5)}
+              onMouseEnter={(e) => { e.currentTarget.style.background = t.accent; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = draggingSplit ? t.accent : t.glassBorder; }}
+              style={{
+                order: 2, flex: 'none', touchAction: 'none',
+                width: splitDir === 'row' ? dividerSize : '100%',
+                height: splitDir === 'row' ? '100%' : dividerSize,
+                cursor: splitDir === 'row' ? 'col-resize' : 'row-resize',
+                background: draggingSplit ? t.accent : t.glassBorder,
+                transition: 'background 140ms',
+              }}
+            />
+          )}
+          {/* Mientras se arrastra, una capa tapa los paneles: un iframe o un
+              <webview> debajo del cursor se traga los eventos del puntero. */}
+          {draggingSplit && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 50,
+              cursor: splitDir === 'row' ? 'col-resize' : 'row-resize',
+            }}/>
+          )}
         </div>
         <AgentSidebar
           bubble={bubble}
-          filesChangedCount={filesChanged.length}
-          onGoTab={(target) => { setTab(target); if (isPhone) setSidebarCollapsed(() => true); }}
+          filesChanged={filesChanged}
+          onGoTab={(target) => { split.show(target); if (isPhone) setSidebarCollapsed(() => true); }}
           onRename={onRename}
           collapsed={sidebarCollapsed}
           setCollapsed={setSidebarCollapsed}
@@ -643,10 +680,16 @@ type FileChange = { path: string; change: string; agent: string; unstaged?: bool
 
 function TabBtn({
   active, onClick, label, icon: Icon, badge, iconOnly = false,
+  pinned = false, onTogglePin, compact = false,
   tabId, dragOver, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
 }: {
   active: boolean; onClick: () => void; label: string; icon: (p: IconProps) => JSX.Element; badge?: number;
   iconOnly?: boolean;
+  // Fijado: se queda al elegir un tercer panel. `onTogglePin` solo viene
+  // cuando hay dos paneles abiertos y este es uno de ellos.
+  pinned?: boolean;
+  onTogglePin?: () => void;
+  compact?: boolean;
   tabId?: string;
   dragOver?: boolean;
   onDragStart?: () => void;
@@ -656,6 +699,8 @@ function TabBtn({
   onDrop?: () => void;
 }) {
   const t = useTokens();
+  const tr = useT();
+  const showPin = pinned && active;
   return (
     <button
       type="button"
@@ -686,9 +731,9 @@ function TabBtn({
       style={{
         position: 'relative', flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 7,
-        padding: iconOnly ? '13px 14px' : '12px 14px',
+        padding: iconOnly ? '13px 14px' : compact ? '11px 14px' : '12px 14px',
         background: 'transparent', border: 0,
-        borderBottom: `2px solid ${active ? t.accent : 'transparent'}`,
+        borderBottom: `2px solid ${showPin ? t.warn : active ? t.accent : 'transparent'}`,
         color: active ? t.text0 : t.text2, cursor: 'pointer',
         fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
         transition: 'color 140ms', marginBottom: -1,
@@ -705,6 +750,26 @@ function TabBtn({
           color: active ? t.accent : t.text2,
           borderRadius: 999, fontSize: 10, fontWeight: 500, fontFamily: t.fontMono,
         }}>{badge}</span>
+      )}
+      {onTogglePin && (
+        <span
+          role="button"
+          tabIndex={0}
+          title={pinned ? tr('detail.split.unpin') : tr('detail.split.pin')}
+          aria-label={pinned ? tr('detail.split.unpin') : tr('detail.split.pin')}
+          aria-pressed={pinned}
+          onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onTogglePin(); }
+          }}
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 18, height: 18, borderRadius: 5, marginRight: -4,
+            color: pinned ? t.warn : t.text3,
+            background: pinned ? `color-mix(in oklch, ${t.warn} 16%, transparent)` : 'transparent',
+          }}>
+          <IconPin size={12}/>
+        </span>
       )}
     </button>
   );
@@ -1202,7 +1267,7 @@ const SIDEBAR_WIDTH_MIN = 280;
 const SIDEBAR_WIDTH_MAX = 520;
 const SIDEBAR_WIDTH_DEFAULT = 360;
 
-type SectionId = 'skills' | 'quick' | 'git' | 'stats' | 'obsidian';
+type SectionId = 'agent' | 'skills' | 'git' | 'obsidian';
 
 function sectionCollapseStorageKey(bubbleId: string): string {
   return `eco.detail.sidebar.sections.${bubbleId}`;
@@ -1295,84 +1360,6 @@ function CollapsibleSection({
   );
 }
 
-// Quick actions inline (sin SectionLabel ni footer fijo). Va como una
-// "sección" más del flow del sidebar.
-function QuickActions({
-  filesChangedCount, onGoTab,
-}: {
-  filesChangedCount: number;
-  onGoTab: (tab: Tab) => void;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  type QA = {
-    label: string; icon: ReactNode; onClick: () => void;
-    badge?: number; disabled?: boolean; tooltip?: string;
-  };
-  const actions: QA[] = [
-    {
-      label: tr('cmd.tab.files'), icon: <IconFile size={12}/>,
-      onClick: () => onGoTab('git'),
-      badge: filesChangedCount > 0 ? filesChangedCount : undefined,
-      tooltip: tr('detail.action.files_tooltip'),
-    },
-    {
-      label: tr('cmd.tab.terminal'), icon: <IconTerminal size={12}/>,
-      onClick: () => onGoTab('terminal'),
-      tooltip: tr('detail.action.terminal_tooltip'),
-    },
-  ];
-  return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: `repeat(${actions.length}, 1fr)`,
-      gap: 6,
-    }}>
-      {actions.map((a, i) => (
-        <button key={i} type="button" onClick={a.onClick} disabled={a.disabled}
-          title={a.tooltip ?? a.label}
-          style={{
-            position: 'relative',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-            padding: '8px 4px',
-            border: `1px solid ${t.glassBorder}`, borderRadius: 8,
-            background: t.bg2,
-            color: t.text1, cursor: a.disabled ? 'not-allowed' : 'pointer',
-            opacity: a.disabled ? 0.4 : 1,
-            fontFamily: t.fontSans, fontSize: 10, fontWeight: 500,
-            transition: 'background 120ms, border-color 120ms',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = t.bg3;
-            e.currentTarget.style.borderColor = t.accent;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = t.bg2;
-            e.currentTarget.style.borderColor = t.glassBorder;
-          }}>
-          <span style={{
-            width: 24, height: 24, borderRadius: 6,
-            background: t.bg3, color: t.text1,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          }}>{a.icon}</span>
-          <span>{a.label}</span>
-          {a.badge != null && (
-            <span style={{
-              position: 'absolute', top: 4, right: 6,
-              minWidth: 16, height: 16, padding: '0 5px',
-              borderRadius: 999,
-              background: t.accent, color: t.accentOn,
-              fontSize: 9, fontWeight: 700,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              boxSizing: 'border-box',
-            }}>{a.badge > 99 ? '99+' : a.badge}</span>
-          )}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubble }) {
   const t = useTokens();
   const tr = useT();
@@ -1411,10 +1398,10 @@ function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubb
 }
 
 function AgentSidebar({
-  bubble, filesChangedCount, onGoTab, collapsed, setCollapsed,
+  bubble, filesChanged, onGoTab, collapsed, setCollapsed,
 }: {
   bubble: Bubble;
-  filesChangedCount: number;
+  filesChanged: FileChange[];
   onGoTab: (tab: Tab) => void;
   onRename: (title: string) => void;
   // El colapso lo controla AgentDetail: en móvil el rail no se dibuja inline
@@ -1423,6 +1410,7 @@ function AgentSidebar({
   collapsed: boolean;
   setCollapsed: (fn: (v: boolean) => boolean) => void;
 }) {
+  const filesChangedCount = filesChanged.length;
   const t = useTokens();
   const tr = useT();
   const isPhone = useIsPhone();
@@ -1489,7 +1477,6 @@ function AgentSidebar({
     return () => window.removeEventListener('keydown', onKey);
   }, [collapsed, toggleCollapsed]);
 
-  const min = Math.max(1, Math.round((Date.now() - bubble.createdAt) / 60_000));
 
   // Detecta "novedades" comparando el último count con el anterior — usado
   // por las secciones para parpadear el accentDot cuando algo cambió.
@@ -1506,7 +1493,7 @@ function AgentSidebar({
 
   // Git va FIJO arriba para que la rama actual sea siempre lo primero
   // que se ve del agente.
-  const sectionOrder: SectionId[] = ['git', 'skills', 'quick', 'stats', 'obsidian'];
+  const sectionOrder: SectionId[] = ['git', 'agent', 'skills', 'obsidian'];
 
   // En móvil colapsado no queda ni la barra de 36px: el disparador está en
   // el header y esos 36px son el 11% del ancho útil del teléfono.
@@ -1524,13 +1511,6 @@ function AgentSidebar({
             onToggle={() => sectionCollapse.toggle('skills')}>
             <SkillsCard bubbleId={bubble.id} workspace={bubble.workspace}/>
           </CollapsibleSection>
-        );
-
-      case 'quick':
-        return (
-          <QuickActions key="quick"
-            filesChangedCount={filesChangedCount}
-            onGoTab={onGoTab}/>
         );
 
       case 'git':
@@ -1554,23 +1534,15 @@ function AgentSidebar({
           </div>
         );
 
-      case 'stats':
+      case 'agent':
         return (
-          <CollapsibleSection key="stats" id="stats"
-            title={tr('detail.sidebar.stats')}
-            collapsed={sectionCollapse.isCollapsed('stats')}
-            onToggle={() => sectionCollapse.toggle('stats')}
+          <CollapsibleSection key="agent" id="agent"
+            title={tr('detail.sidebar.agent')}
+            collapsed={sectionCollapse.isCollapsed('agent')}
+            onToggle={() => sectionCollapse.toggle('agent')}
             accentDot={filesNovel}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <StatBox
-                label={tr('detail.stat.last_activity')}
-                value={fmtAgo(bubble.updatedAt)}
-                sub={`activo ${min}m`}/>
-              <StatBox
-                label={tr('detail.stat.files_changed')}
-                value={String(filesChangedCount)}
-                onClick={filesChangedCount > 0 ? () => onGoTab('git') : undefined}/>
-            </div>
+            <AgentStateCard bubbleId={bubble.id} filesCount={filesChangedCount}
+              onGoToTerminal={() => onGoTab('terminal')} onGoToGit={() => onGoTab('git')}/>
           </CollapsibleSection>
         );
 
@@ -1872,74 +1844,20 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
   );
 }
 
-function StatBox({ label, value, sub, onClick }: {
-  label: string;
-  value: string;
-  sub?: string;
-  onClick?: () => void;
-}) {
-  const t = useTokens();
-  const clickable = !!onClick;
-  return (
-    <div
-      role={clickable ? 'button' : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } } : undefined}
-      style={{
-        padding: 10, background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        borderRadius: 10,
-        cursor: clickable ? 'pointer' : 'default',
-        transition: 'background 140ms, border-color 140ms',
-      }}
-      onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = t.bg3; }}
-      onMouseLeave={(e) => { if (clickable) e.currentTarget.style.background = t.bg2; }}
-    >
-      <div style={{
-        fontSize: 10, color: t.text2, letterSpacing: 0.3,
-        textTransform: 'uppercase', fontWeight: 500,
-      }}>{label}</div>
-      <div style={{
-        marginTop: 4, fontFamily: t.fontSans, fontSize: 17, fontWeight: 600,
-        color: t.text0, letterSpacing: -0.3,
-      }}>{value}</div>
-      {sub && (
-        <div style={{
-          marginTop: 2, fontFamily: t.fontMono, fontSize: 10, color: t.text3,
-        }}>{sub}</div>
-      )}
-    </div>
-  );
-}
-
-function fmtAgo(ts: number): string {
-  if (!ts) return '—';
-  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (s < 5) return 'ahora';
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
-}
-
 // Wrapper que mantiene el BrowserPanel montado entre cambios de pestaña.
 // Solo se monta la PRIMERA vez que el user entra al tab Navegador; después
 // queda vivo y se oculta con display:none cuando cambiás de tab. Eso preserva
 // el iframe (no recarga la página), su scroll, cookies, etc.
-function KeepAliveBrowser({ visible, bubbleId, workspace }: { visible: boolean; bubbleId: string; workspace: string }) {
+function KeepAliveBrowser({ visible, slot, bubbleId, workspace, immersive, onToggleImmersive }: {
+  visible: boolean; slot: React.CSSProperties; bubbleId: string; workspace: string;
+  immersive?: boolean; onToggleImmersive?: () => void;
+}) {
   const [hasMounted, setHasMounted] = useState(visible);
   useEffect(() => { if (visible && !hasMounted) setHasMounted(true); }, [visible, hasMounted]);
   if (!hasMounted) return null;
   return (
-    <div style={{
-      display: visible ? 'flex' : 'none',
-      flexDirection: 'column',
-      flex: 1, minHeight: 0,
-    }}>
-      <BrowserPanel bubbleId={bubbleId} workspace={workspace}/>
+    <div style={slot}>
+      <BrowserPanel bubbleId={bubbleId} workspace={workspace} immersive={immersive} onToggleImmersive={onToggleImmersive}/>
     </div>
   );
 }
@@ -1950,16 +1868,12 @@ function KeepAliveBrowser({ visible, bubbleId, workspace }: { visible: boolean; 
 // → re-fetch del ring buffer de logs (hasta 64 KB por slot) + re-render
 // completo del xterm — lento y con parpadeo. Manteniéndolo vivo, el stream
 // WS de logs sigue appendando en background y al volver ya está todo ahí.
-function KeepAliveServer({ visible, bubbleId, workspace }: { visible: boolean; bubbleId: string; workspace: string }) {
+function KeepAliveServer({ visible, slot, bubbleId, workspace }: { visible: boolean; slot: React.CSSProperties; bubbleId: string; workspace: string }) {
   const [hasMounted, setHasMounted] = useState(visible);
   useEffect(() => { if (visible && !hasMounted) setHasMounted(true); }, [visible, hasMounted]);
   if (!hasMounted) return null;
   return (
-    <div style={{
-      display: visible ? 'flex' : 'none',
-      flexDirection: 'column',
-      flex: 1, minHeight: 0,
-    }}>
+    <div style={slot}>
       <ServerPanel bubbleId={bubbleId} workspace={workspace} visible={visible}/>
     </div>
   );
@@ -1969,16 +1883,12 @@ function KeepAliveServer({ visible, bubbleId, workspace }: { visible: boolean; b
 // EditorView de CodeMirror (cursor, scroll, selección) + openFiles en memoria
 // + el árbol cargado. Sin esto, cada vuelta a la tab re-fetcheaba todo y
 // reseteaba el editor a la línea 1.
-function KeepAliveFiles({ visible, bubbleId, workspace }: { visible: boolean; bubbleId: string; workspace: string }) {
+function KeepAliveFiles({ visible, slot, bubbleId, workspace }: { visible: boolean; slot: React.CSSProperties; bubbleId: string; workspace: string }) {
   const [hasMounted, setHasMounted] = useState(visible);
   useEffect(() => { if (visible && !hasMounted) setHasMounted(true); }, [visible, hasMounted]);
   if (!hasMounted) return null;
   return (
-    <div style={{
-      display: visible ? 'flex' : 'none',
-      flexDirection: 'column',
-      flex: 1, minHeight: 0,
-    }}>
+    <div style={slot}>
       <FilesPanel bubbleId={bubbleId} workspace={workspace}/>
     </div>
   );

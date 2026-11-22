@@ -982,7 +982,34 @@ export type CurrentPr = {
   headRefName: string;
   baseRefName: string;
   author: string;
+  checks: PrChecks;
 };
+
+export type PrChecks = { total: number; passed: number; failed: number; pending: number };
+
+const CHECK_FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
+const CHECK_PASSED = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
+
+// `statusCheckRollup` mezcla CheckRun (status + conclusion) y StatusContext (state).
+function summarizeChecks(raw: unknown): PrChecks {
+  const out: PrChecks = { total: 0, passed: 0, failed: 0, pending: 0 };
+  if (!Array.isArray(raw)) return out;
+  // Un check re-ejecutado aparece una vez por corrida: cuenta solo la última.
+  const latest = new Map<string, Record<string, unknown>>();
+  for (const c of raw as Array<Record<string, unknown>>) {
+    const key = `${String(c.workflowName ?? '')}/${String(c.name ?? c.context ?? '')}`;
+    const prev = latest.get(key);
+    if (!prev || String(c.startedAt ?? '') >= String(prev.startedAt ?? '')) latest.set(key, c);
+  }
+  for (const c of latest.values()) {
+    const result = String(c.conclusion || c.state || '').toUpperCase();
+    out.total++;
+    if (CHECK_FAILED.has(result)) out.failed++;
+    else if (CHECK_PASSED.has(result)) out.passed++;
+    else out.pending++;
+  }
+  return out;
+}
 
 export type CurrentPrResult =
   | { ok: true; pr: CurrentPr | null }
@@ -995,7 +1022,7 @@ export async function currentPullRequest(workspace: string): Promise<CurrentPrRe
   // asociado, devuelve exit code 1 con "no pull requests found".
   const r = await spawnAsync('gh', [
     'pr', 'view',
-    '--json', 'number,title,url,state,isDraft,mergeable,headRefName,baseRefName,author',
+    '--json', 'number,title,url,state,isDraft,mergeable,headRefName,baseRefName,author,statusCheckRollup',
   ], {
     cwd: workspace,
     timeout: 15_000,
@@ -1022,6 +1049,7 @@ export async function currentPullRequest(workspace: string): Promise<CurrentPrRe
         headRefName: String(raw.headRefName ?? ''),
         baseRefName: String(raw.baseRefName ?? ''),
         author: String(raw.author?.login ?? ''),
+        checks: summarizeChecks(raw.statusCheckRollup),
       },
     };
   } catch {

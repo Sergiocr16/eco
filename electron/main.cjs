@@ -3,7 +3,7 @@
 // dejamos su puerto fijo (127.0.0.1:7000). El renderer (frontend bundleado)
 // se carga desde file:// y se comunica con el backend igual que en dev.
 
-const { app, BrowserWindow, Menu, Notification, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Notification, shell, ipcMain, dialog, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
@@ -378,6 +378,38 @@ ipcMain.handle('eco:open-external', async (_e, url) => {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'open failed' };
+  }
+});
+
+// Emulación de dispositivo del BrowserPanel: fija los env(safe-area-inset-*) de
+// la página de un <webview> por el protocolo de depuración (no hay API pública).
+// Solo acepta webviews hijos de la ventana que lo pide. El override sobrevive a
+// las navegaciones y convive con las DevTools del webview.
+const SAFE_AREA_SIDES = ['top', 'right', 'bottom', 'left'];
+const SAFE_AREA_MAX = 200;
+ipcMain.handle('eco:webview-safe-area', async (event, id, insets) => {
+  if (!Number.isInteger(id)) return { ok: false, error: 'id inválido' };
+  const wc = webContents.fromId(id);
+  if (!wc || wc.isDestroyed() || wc.getType() !== 'webview' || wc.hostWebContents !== event.sender) {
+    return { ok: false, error: 'webview no encontrado' };
+  }
+  const clean = {};
+  for (const side of SAFE_AREA_SIDES) {
+    const n = insets && typeof insets === 'object' ? Number(insets[side]) : 0;
+    clean[side] = Number.isFinite(n) ? Math.min(SAFE_AREA_MAX, Math.max(0, Math.round(n))) : 0;
+  }
+  const active = SAFE_AREA_SIDES.some((side) => clean[side] > 0);
+  try {
+    if (!wc.debugger.isAttached()) {
+      if (!active) return { ok: true };
+      wc.debugger.attach('1.3');
+    }
+    await wc.debugger.sendCommand('Emulation.setSafeAreaInsetsOverride', { insets: active ? clean : {} });
+    return { ok: true };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'safe area failed';
+    console.warn('[webview-safe-area]', error);
+    return { ok: false, error };
   }
 });
 

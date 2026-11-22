@@ -43,7 +43,29 @@ export type SmartBrowserProps = {
    * destruir el webview). Default true.
    */
   visible?: boolean;
+  /**
+   * Emulación de dispositivo (solo <webview>): user agent y márgenes de
+   * env(safe-area-inset-*). Sin `userAgent` se usa el de escritorio. Cambiar
+   * el user agent recarga la página; cambiar los márgenes no.
+   */
+  userAgent?: string;
+  safeArea?: { top: number; right: number; bottom: number; left: number };
+  /** Clases y variables CSS que la app nativa le pone a <html>. */
+  nativeHints?: { rootClasses: Record<string, boolean>; rootVars: Record<string, string> };
 };
+
+// Aplica `nativeHints` dentro de la página del <webview>.
+function nativeHintsScript(hints: NonNullable<SmartBrowserProps['nativeHints']>): string {
+  return `(function(h){var r=document.documentElement,k;`
+    + `for(k in h.rootClasses)r.classList.toggle(k,!!h.rootClasses[k]);`
+    + `for(k in h.rootVars)r.style.setProperty(k,h.rootVars[k]);})(${JSON.stringify(hints)})`;
+}
+
+// Mismo prefijo que lee el script del proxy (backend/src/dev-emulation.ts).
+const EMULATION_NAME_PREFIX = 'eco-emu:';
+
+const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
+  + '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 type ElectronWebview = HTMLElement & {
   src: string;
@@ -57,13 +79,16 @@ type ElectronWebview = HTMLElement & {
   closeDevTools: () => void;
   isDevToolsOpened: () => boolean;
   setZoomFactor: (factor: number) => void;
+  setUserAgent: (userAgent: string) => void;
+  getWebContentsId: () => number;
+  executeJavaScript: (code: string) => Promise<unknown>;
   addEventListener: (event: string, cb: (e: Event & Record<string, unknown>) => void) => void;
   removeEventListener: (event: string, cb: (e: Event & Record<string, unknown>) => void) => void;
 };
 
 export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps>(
   function SmartBrowserView(
-    { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess, partition, visible = true },
+    { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess, partition, visible = true, userAgent, safeArea, nativeHints },
     handleRef,
   ) {
     const tr = useT();
@@ -80,6 +105,43 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
     useEffect(() => {
       cbRef.current = { onTitleChange, onNavigate, onLoadFail, onLoadSuccess };
     }, [onTitleChange, onNavigate, onLoadFail, onLoadSuccess]);
+
+    // Emulación de dispositivo. Se aplica al crear el webview (atributo
+    // `useragent`), en cada dom-ready y cuando cambian las props.
+    const ua = userAgent || DESKTOP_USER_AGENT;
+    const insetsKey = safeArea ? `${safeArea.top},${safeArea.right},${safeArea.bottom},${safeArea.left}` : '';
+    const hintsKey = nativeHints ? JSON.stringify(nativeHints) : '';
+    const emulationRef = useRef({ userAgent: ua, safeArea, nativeHints });
+    emulationRef.current = { userAgent: ua, safeArea, nativeHints };
+    const readyRef = useRef(false);
+    const appliedUaRef = useRef(ua);
+    const applyEmulationRef = useRef(() => {});
+    applyEmulationRef.current = () => {
+      const wv = webviewRef.current;
+      if (!wv || !readyRef.current) return;
+      const want = emulationRef.current;
+      try {
+        const api = (window as unknown as { electronAPI?: {
+          setWebviewSafeArea?: (id: number, insets: SmartBrowserProps['safeArea'] | null) => Promise<{ ok: boolean; error?: string }>;
+        } }).electronAPI;
+        void api?.setWebviewSafeArea?.(wv.getWebContentsId(), want.safeArea ?? null)
+          .then((r) => { if (!r.ok) elog('[webview] safe area', r.error); })
+          .catch((e: unknown) => elog('[webview] safe area', String(e)));
+        if (appliedUaRef.current !== want.userAgent) {
+          appliedUaRef.current = want.userAgent;
+          wv.setUserAgent(want.userAgent);
+          // El user agent solo rige desde la siguiente carga; su dom-ready
+          // vuelve a pasar por acá y aplica las pistas nativas.
+          wv.reload();
+        } else if (want.nativeHints) {
+          void wv.executeJavaScript(nativeHintsScript(want.nativeHints))
+            .catch((e: unknown) => elog('[webview] native hints', String(e)));
+        }
+      } catch (e) {
+        elog('[webview] emulation', String(e));
+      }
+    };
+    useEffect(() => { applyEmulationRef.current(); }, [ua, insetsKey, hintsKey]);
 
     useImperativeHandle(handleRef, () => ({
       reload: () => {
@@ -145,10 +207,8 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       // que dos agentes apuntando al mismo sitio no compartan sesión. Si el
       // caller no pasa una, caemos a la histórica `persist:eco-browser`.
       wv.setAttribute('partition', partition || 'persist:eco-browser');
-      wv.setAttribute('useragent',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      );
+      wv.setAttribute('useragent', emulationRef.current.userAgent);
+      appliedUaRef.current = emulationRef.current.userAgent;
       wv.style.cssText = 'display:inline-flex;width:100%;height:100%;border:0;background:white;';
       // Si tenemos src inicial, lo seteamos ANTES de appendChild — Electron
       // monta el WebContents cuando detecta el elemento con src ya presente.
@@ -178,6 +238,9 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       wv.addEventListener('did-navigate-in-page', onNav);
       wv.addEventListener('did-fail-load', onFail);
       wv.addEventListener('did-finish-load', onFinish);
+      // Los métodos del webview solo existen tras el primer dom-ready.
+      const onReady = () => { readyRef.current = true; applyEmulationRef.current(); };
+      wv.addEventListener('dom-ready', onReady);
 
       container.appendChild(wv);
       webviewRef.current = wv;
@@ -188,6 +251,8 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
         wv.removeEventListener('did-navigate-in-page', onNav);
         wv.removeEventListener('did-fail-load', onFail);
         wv.removeEventListener('did-finish-load', onFinish);
+        wv.removeEventListener('dom-ready', onReady);
+        readyRef.current = false;
         try { container.removeChild(wv); } catch { /* noop */ }
         webviewRef.current = null;
       };
@@ -209,12 +274,28 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       }
     }, [useWebview, src]);
 
+    // En el <iframe> la emulación la hace el proxy de previews del backend
+    // (dev-emulation.ts): la página lee la configuración de `window.name`, que
+    // sale del atributo `name`, y los cambios de márgenes le llegan por
+    // postMessage. Fuera del proxy (otro sitio, dev server local) no tiene efecto.
+    const frameName = userAgent || safeArea ? `${EMULATION_NAME_PREFIX}${JSON.stringify({ userAgent, safeArea, nativeHints })}` : undefined;
+    const postEmulationRef = useRef(() => {});
+    postEmulationRef.current = () => {
+      const target = iframeRef.current?.contentWindow;
+      if (!target) return;
+      try {
+        target.postMessage({ type: 'eco-emulation', safeArea: safeArea ?? null, nativeHints: nativeHints ?? null }, new URL(src, window.location.href).origin);
+      } catch { /* src todavía no es una URL válida */ }
+    };
+    useEffect(() => { if (!useWebview) postEmulationRef.current(); }, [useWebview, insetsKey, hintsKey]);
+
     // Wire eventos del <iframe> (fallback web puro).
     useEffect(() => {
       if (useWebview) return;
       const ifr = iframeRef.current;
       if (!ifr) return;
       const onLoad = () => {
+        postEmulationRef.current();
         cbRef.current.onLoadSuccess?.();
         try {
           const t = ifr.contentDocument?.title;
@@ -223,7 +304,8 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       };
       ifr.addEventListener('load', onLoad);
       return () => ifr.removeEventListener('load', onLoad);
-    }, [useWebview]);
+      // El iframe se recrea (key) cuando cambia el user agent.
+    }, [useWebview, ua]);
 
     if (useWebview) {
       return (
@@ -280,7 +362,11 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
 
     return (
       <iframe
+        // El user agent se lee una sola vez al cargar: cambiarlo exige un
+        // iframe nuevo, con su `name` ya puesto.
+        key={ua}
         ref={iframeRef}
+        name={frameName}
         src={src}
         style={{
           width: '100%', height: '100%', border: 0, background: 'white',
