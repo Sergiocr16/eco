@@ -195,6 +195,9 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
             onRename={() => { setMoreMenuOpen(false); setRenameOpen(true); }}
             onMerge={() => { setMoreMenuOpen(false); setMergeOpen(true); }}
             onPRs={() => { setMoreMenuOpen(false); onOpenPRs(); }}
+            onRenameAgent={isPhone && onRenameAgent && branchName && !detached
+              ? () => { setMoreMenuOpen(false); onRenameAgent(branchName); }
+              : undefined}
           />
         )}
       </div>
@@ -375,12 +378,13 @@ function BranchChip({ branchName, detached, isOpen, onToggle }: {
   );
 }
 
-function MoreMenu({ t, onClose, onRename, onMerge, onPRs }: {
+function MoreMenu({ t, onClose, onRename, onMerge, onPRs, onRenameAgent }: {
   t: ReturnType<typeof useTokens>;
   onClose: () => void;
   onRename: () => void;
   onMerge: () => void;
   onPRs: () => void;
+  onRenameAgent?: () => void;
 }) {
   const tr = useT();
   // Click fuera cierra.
@@ -397,6 +401,7 @@ function MoreMenu({ t, onClose, onRename, onMerge, onPRs }: {
     { icon: IconResume, label: tr('git.topbar.menu.merge'), onClick: onMerge },
     { icon: IconEdit, label: tr('git.topbar.menu.rename'), onClick: onRename },
     { icon: IconGlobe, label: tr('git.topbar.menu.prs'), onClick: onPRs },
+    ...(onRenameAgent ? [{ icon: IconAgent, label: tr('git.topbar.rename_agent_btn'), onClick: onRenameAgent }] : []),
   ];
 
   return (

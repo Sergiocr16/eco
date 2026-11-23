@@ -36,6 +36,8 @@ import {
 import type { Bubble } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
+import { useAutoOpenDevPage } from '@/hooks/useDevServers';
+import { ServerHeaderControl } from '@/components/ServerHeaderControl';
 import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useIsPhone, useIsPhoneLandscape, isPhoneNow, isMobileNow } from '@/hooks/useMediaQuery';
@@ -249,9 +251,12 @@ export function AgentDetail({
   const isPhone = useIsPhone();
   // Paneles abiertos (hasta dos lado a lado), persistidos por agente. En el
   // teléfono no hay lugar para dos: se muestra uno solo.
-  const split = useSplitPanels<Tab>(bubble.id, ALL_TABS, 'terminal', !isPhone);
+  // Acostado el teléfono tiene ~800px de ancho: ahí sí entran dos paneles.
+  const compact = useIsPhoneLandscape();
+  const split = useSplitPanels<Tab>(bubble.id, ALL_TABS, 'terminal', !isPhone || compact);
   const splitDir = useSplitDir();
   const hasSplit = split.open.length === 2;
+  useAutoOpenDevPage(bubble.id);
   const splitRef = useRef<HTMLDivElement | null>(null);
   const [draggingSplit, setDraggingSplit] = useState(false);
   // Orden global de los tabs (persistido para TODOS los agentes en
@@ -265,7 +270,6 @@ export function AgentDetail({
   const [menuOpen, setMenuOpen] = useState(false);
   // Teléfono acostado: header y tabs se funden en UNA fila. Apilados se
   // llevaban ~100px de un alto de ~400.
-  const compact = useIsPhoneLandscape();
   // Navegador a pantalla completa (solo teléfono): esconde también este header.
   const [browserImmersive, setBrowserImmersive] = useState(false);
   const hideChrome = isPhone && browserImmersive && split.open[0] === 'browser';
@@ -401,7 +405,7 @@ export function AgentDetail({
       {!hideChrome && (
       <div style={{
         display: 'flex', alignItems: 'center', gap: compact ? 6 : isPhone ? 8 : 10,
-        padding: compact ? '0 8px' : isPhone ? '10px 12px' : '0 12px',
+        padding: compact ? '0 8px' : isPhone ? '4px 12px' : '0 12px',
         ...(isPhone ? null : { height: 48, flexShrink: 0 }),
         borderBottom: `1px solid ${t.glassBorder}`,
       }}>
@@ -535,6 +539,7 @@ export function AgentDetail({
 
         <div style={{ display: 'flex', gap: compact ? 2 : 6, position: 'relative', alignItems: 'center' }}>
           {compact && <RemoteControlNavButton bubble={bubble}/>}
+          {!isPhone && bubble.workspace && <ServerHeaderControl bubbleId={bubble.id} workspace={bubble.workspace}/>}
           {isPhone && (
             <IconBtn
               icon={IconLayers}

@@ -1,5 +1,9 @@
 html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; }
 
+/* iOS acostado infla por su cuenta los textos largos (la URL del server salía
+   al triple de tamaño). Los tamaños los decide la app. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 /* iOS 26.1+ instalada (WebKit 301994): con `black-translucent` el web view
    arranca debajo de la barra de estado pero iOS lo recorta por abajo en la
    misma altura, y solo mientras el documento mide menos que la pantalla.

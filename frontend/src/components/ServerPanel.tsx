@@ -697,7 +697,9 @@ function PanelHeader({
           const sColor = statusColorFor(s.status, t);
           return (
             <div key={role} style={{
-              flex: '1 1 220px',
+              // minWidth 0: sin esto la tarjeta no baja del ancho de la URL
+              // completa y el panel gana scroll horizontal en el teléfono.
+              flex: '1 1 220px', minWidth: 0,
               padding: '8px 10px',
               borderRadius: 10,
               background: t.bg2, border: `1px solid ${t.glassBorder}`,
