@@ -38,6 +38,8 @@ export async function writeToBubblePty(
     url.searchParams.set('bubble', opts.bubbleId);
     url.searchParams.set('cols', '120');
     url.searchParams.set('rows', '30');
+    // Solo escribe: no debe cambiarle el tamaño al PTY que otro está mirando.
+    url.searchParams.set('follow', '1');
 
     const protocols = [`eco.idtoken.${idToken}`];
     let ws: WebSocket;

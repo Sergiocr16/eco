@@ -743,11 +743,18 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
       // muchas veces con un clear (\x1b[3J borra el scrollback en xterm). Ese
       // redibujo llega DESPUÉS del replay de acá abajo y se lo come — el
       // cliente queda sin historial previo a la conexión.
-      if (existing.pty.cols !== cols || existing.pty.rows !== rows) {
+      // Un PTY tiene UN tamaño y puede haber varios clientes mirándolo (la
+      // app de escritorio y un iPad, o un socket efímero de pty-bridge). Solo
+      // lo fija quien lo está usando; el resto (`follow`) dibuja a ese tamaño.
+      // Antes cada attach lo pisaba y la TUI quedaba descalzada en los demás.
+      const follow = url.searchParams.get('follow') === '1' && existing.clients.size > 1;
+      if (!follow && (existing.pty.cols !== cols || existing.pty.rows !== rows)) {
         try { existing.pty.resize(cols, rows); } catch { /* noop */ }
+        notifySize(existing, ws);
       }
 
       sendJson(ws, { type: 'ready', cwd: existing.cwd, shell: defaultShell(), cols, rows, reattached: true });
+      if (follow) sendJson(ws, { type: 'size', cols: existing.pty.cols, rows: existing.pty.rows, follow: true });
       // Replay del buffer acumulado mientras estuviste fuera.
       if (existing.buffer) {
         sendJson(ws, { type: 'data', data: existing.buffer });
@@ -845,6 +852,13 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
     scheduleAgentLaunch(session);
   });
 
+  function notifySize(session: PtySession, except: WebSocket) {
+    const msg = { type: 'size', cols: session.pty.cols, rows: session.pty.rows };
+    for (const c of session.clients) {
+      if (c !== except) { try { sendJson(c, msg); } catch { /* noop */ } }
+    }
+  }
+
   function attachWsHandlers(ws: WebSocket, session: PtySession) {
     ws.on('message', (raw) => {
       let msg: PtyInput;
@@ -856,7 +870,9 @@ export function attachPtyServer(httpServer: Server, _authToken: string) {
       } else if (msg.type === 'resize') {
         const c = clampInt(msg.cols, 24, 400, 100);
         const r = clampInt(msg.rows, 6, 200, 30);
+        if (session.pty.cols === c && session.pty.rows === r) return;
         try { session.pty.resize(c, r); } catch { /* noop */ }
+        notifySize(session, ws);
       } else if (msg.type === 'ping') {
         sendJson(ws, { type: 'pong' });
       }

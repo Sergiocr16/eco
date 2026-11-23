@@ -228,6 +228,10 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       url.searchParams.set('agent', agent);
       url.searchParams.set('cols', String(term.cols));
       url.searchParams.set('rows', String(term.rows));
+      // Una ventana en segundo plano (reconexión automática) no le saca el
+      // tamaño al cliente que sí se está usando.
+      following = false;
+      if (document.hidden || !document.hasFocus()) url.searchParams.set('follow', '1');
       // El backend aplica estas dims al reattachar, así que ya las "sabe".
       sentCols = term.cols;
       sentRows = term.rows;
@@ -241,6 +245,10 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     // las dimensiones cambiaron de verdad.
     let sentCols = 0;
     let sentRows = 0;
+    // El PTY tiene un solo tamaño aunque lo miren varios clientes. Si lo fijó
+    // otro (aviso `size`), este terminal se dibuja a ESE tamaño en vez del de
+    // su contenedor, y lo reclama cuando el usuario lo usa (`claimSize`).
+    let following = false;
 
     let ws: WebSocket | null = null;
     let pingTimer: number | null = null;
@@ -342,6 +350,16 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
           const msg = JSON.parse(ev.data as string);
           if (msg.type === 'data') {
             term.write(msg.data);
+          } else if (msg.type === 'size') {
+            const c = Number(msg.cols);
+            const r = Number(msg.rows);
+            if (msg.follow) following = true;
+            if (c > 0 && r > 0 && (c !== term.cols || r !== term.rows)) {
+              following = true;
+              sentCols = c;
+              sentRows = r;
+              try { term.resize(c, r); } catch { /* noop */ }
+            }
           } else if (msg.type === 'exit') {
             term.write(`\r\n\x1b[2m[shell exited code=${msg.code ?? '?'}]\x1b[0m\r\n`);
             setStatus('closed');
@@ -373,6 +391,9 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       // Input wiring: lo reconfiguramos en cada (re)connect porque el ws cambia.
       disposeInputRef.current?.dispose();
       const sendInput = (data: string) => {
+        // onData también trae respuestas automáticas del terminal a consultas
+        // de la TUI: solo cuenta como uso si la ventana tiene el foco.
+        if (!document.hidden && document.hasFocus()) claimSize();
         if (ws === sock && sock.readyState === WebSocket.OPEN) {
           sock.send(JSON.stringify({ type: 'input', data }));
         }
@@ -382,6 +403,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     }
 
     const doResize = () => {
+      if (following) return;
       try { fit.fit(); } catch { /* noop */ }
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       if (term.cols === sentCols && term.rows === sentRows) return;
@@ -390,6 +412,12 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     };
     doResizeRef.current = doResize;
+    function claimSize() {
+      if (!following) return;
+      following = false;
+      doResize();
+    }
+    container.addEventListener('pointerdown', claimSize);
 
     // El fit de arriba corre en el mismo tick que open() y sus cols/rows son
     // los que viajan en la URL del WS. En móvil el layout todavía se asienta
@@ -458,6 +486,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
       cancelAnimationFrame(settleRaf);
       if (hideBarTimer) window.clearTimeout(hideBarTimer);
       resizeObs?.disconnect();
+      container.removeEventListener('pointerdown', claimSize);
       cancelAnimationFrame(inertia);
       container.removeEventListener('touchstart', onTouchStart);
       container.removeEventListener('touchmove', onTouchMove);
