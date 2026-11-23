@@ -40,6 +40,7 @@ import { useAutoOpenDevPage } from '@/hooks/useDevServers';
 import { ServerHeaderControl } from '@/components/ServerHeaderControl';
 import { useObsidian, saveSessionToObsidian } from '@/hooks/useObsidian';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
+import { takeBrowserShow } from '@/lib/browser-pending';
 import { useIsPhone, useIsPhoneLandscape, isPhoneNow, isMobileNow } from '@/hooks/useMediaQuery';
 import { useSplitPanels, useSplitDir, setSplitDir } from '@/hooks/useSplitPanels';
 import type { JSX } from 'react';
@@ -321,8 +322,13 @@ export function AgentDetail({
   // cambiaban de tab cuando una sola lo pedía.
   useEffect(() => ecoOn('eco:switch_tab', (e) => {
     if (e.bubbleId && e.bubbleId !== bubble.id) return;
+    if (e.tab === 'browser') takeBrowserShow(bubble.id);
     split.show(e.tab);
   }), [bubble.id, split.show]);
+  // El MCP pidió el navegador de esta bubble antes de que se montara.
+  useEffect(() => {
+    if (takeBrowserShow(bubble.id)) split.show('browser');
+  }, [bubble.id, split.show]);
 
   const tabButtons = tabOrder.map((id) => {
           const def = TAB_DEFS[id];

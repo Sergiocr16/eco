@@ -52,6 +52,11 @@ export type SmartBrowserProps = {
   safeArea?: { top: number; right: number; bottom: number; left: number };
   /** Clases y variables CSS que la app nativa le pone a <html>. */
   nativeHints?: { rootClasses: Record<string, boolean>; rootVars: Record<string, string> };
+  /**
+   * Bubble y pestaña dueñas de este webview: lo registra en el main para que
+   * las tools browser_* del MCP lo controlen. `active` = pestaña activa.
+   */
+  automation?: { bubbleId: string; tabId: string; active: boolean };
 };
 
 // Aplica `nativeHints` dentro de la página del <webview>.
@@ -88,7 +93,7 @@ type ElectronWebview = HTMLElement & {
 
 export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps>(
   function SmartBrowserView(
-    { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess, partition, visible = true, userAgent, safeArea, nativeHints },
+    { src, style, onTitleChange, onNavigate, onLoadFail, onLoadSuccess, partition, visible = true, userAgent, safeArea, nativeHints, automation },
     handleRef,
   ) {
     const tr = useT();
@@ -142,6 +147,30 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       }
     };
     useEffect(() => { applyEmulationRef.current(); }, [ua, insetsKey, hintsKey]);
+
+    // Registro para las tools browser_*. El id del webContents solo existe tras
+    // el primer dom-ready; se re-registra en cada uno (idempotente en el main).
+    const automationRef = useRef(automation);
+    automationRef.current = automation;
+    const registeredRef = useRef<{ wcId: number; bubbleId: string; tabId: string } | null>(null);
+    const registerAutomationRef = useRef(() => {});
+    registerAutomationRef.current = () => {
+      const wv = webviewRef.current;
+      const a = automationRef.current;
+      const api = window.electronAPI;
+      if (!wv || !readyRef.current || !a || !api?.setBrowserTarget) return;
+      try {
+        const wcId = wv.getWebContentsId();
+        registeredRef.current = { wcId, bubbleId: a.bubbleId, tabId: a.tabId };
+        void api.setBrowserTarget({ webContentsId: wcId, bubbleId: a.bubbleId, tabId: a.tabId, active: a.active })
+          .then((r) => { if (!r.ok) elog('[webview] automation', r.error); })
+          .catch((e: unknown) => elog('[webview] automation', String(e)));
+      } catch (e) {
+        elog('[webview] automation', String(e));
+      }
+    };
+    const automationKey = automation ? `${automation.bubbleId}:${automation.tabId}:${automation.active}` : '';
+    useEffect(() => { registerAutomationRef.current(); }, [automationKey]);
 
     useImperativeHandle(handleRef, () => ({
       reload: () => {
@@ -239,7 +268,7 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
       wv.addEventListener('did-fail-load', onFail);
       wv.addEventListener('did-finish-load', onFinish);
       // Los métodos del webview solo existen tras el primer dom-ready.
-      const onReady = () => { readyRef.current = true; applyEmulationRef.current(); };
+      const onReady = () => { readyRef.current = true; applyEmulationRef.current(); registerAutomationRef.current(); };
       wv.addEventListener('dom-ready', onReady);
 
       container.appendChild(wv);
@@ -253,6 +282,12 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
         wv.removeEventListener('did-finish-load', onFinish);
         wv.removeEventListener('dom-ready', onReady);
         readyRef.current = false;
+        const reg = registeredRef.current;
+        if (reg) {
+          registeredRef.current = null;
+          void window.electronAPI?.setBrowserTarget?.({ webContentsId: reg.wcId, bubbleId: reg.bubbleId, tabId: reg.tabId, remove: true })
+            .catch(() => { /* el main ya lo limpia al destruirse el webContents */ });
+        }
         try { container.removeChild(wv); } catch { /* noop */ }
         webviewRef.current = null;
       };

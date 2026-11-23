@@ -20,6 +20,9 @@ export type ClientAction =
   | { kind: 'delete_bubble'; id: string }
   | { kind: 'rename_bubble'; id: string; title: string }
   | { kind: 'focus_bubble'; id: string }
+  // Muestra el navegador de la bubble (tools browser_* del MCP) y navega a `url`.
+  | { kind: 'open_browser'; id: string; url?: string }
+  | { kind: 'browser_tab'; id: string; op: 'new' | 'select' | 'close'; tabId: string; url?: string; isolated?: boolean }
   | { kind: 'set_bubble_categories'; id: string; categoryIds: string[] };
 
 export type ServerMessage =
@@ -42,4 +45,7 @@ export type ServerMessage =
   // Señal de vida del server cada HEARTBEAT_MS. El cliente la usa para saber si
   // el socket sigue vivo sin depender de sus propios timers (Chromium los
   // estrangula en background).
+  // Un agente está manejando el navegador de esa bubble (tools browser_*). Los
+  // clientes sin <webview> (web/iPad) pasan a mostrar el espejo del escritorio.
+  | { type: 'browser_activity'; bubbleId: string }
   | { type: 'heartbeat' };

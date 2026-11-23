@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconCopy, IconTerminal, IconMore } from '@/design/icons';
+import { IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconCopy, IconTerminal, IconMore, IconAgent } from '@/design/icons';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { canEmbedArbitrarySites } from '@/lib/platform';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 import { writeToBubblePty } from '@/lib/pty-bridge';
+import { takeBrowserUrl, hasRecentBrowserActivity } from '@/lib/browser-pending';
 import { useT } from '@/hooks/useI18n';
 import { useIsPhone, useIsPhoneLandscape, isPhoneNow, isPhoneLandscapeNow } from '@/hooks/useMediaQuery';
 import { BrowserTabBar } from './BrowserPanel/BrowserTabBar';
+import { BrowserMirror } from './BrowserPanel/BrowserMirror';
 import { ViewportMenu } from './BrowserPanel/ViewportMenu';
 import {
   type BrowserTab, type NewTabMode,
@@ -118,6 +120,17 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
   const [moreOpen, setMoreOpen] = useState(false);
   const [tabStripOpen, setTabStripOpen] = useState(false);
   const hasNativeDevTools = canEmbedArbitrarySites();
+  // Sin <webview> (web / iPad) este panel no es el navegador que maneja el
+  // agente: ese vive en la app de escritorio y acá se ve por el espejo.
+  const canMirror = !window.electronAPI;
+  const [mirror, setMirror] = useState(() => canMirror && hasRecentBrowserActivity(bubbleId));
+  const mirrorDismissed = useRef(false);
+  useEffect(() => {
+    if (!canMirror) return;
+    return ecoOn('eco:browser_activity', (d) => {
+      if (d.bubbleId === bubbleId && !mirrorDismissed.current) setMirror(true);
+    });
+  }, [bubbleId, canMirror]);
 
   const initial = useMemo(() => loadInitial(bubbleId), [bubbleId]);
   const [tabs, setTabs] = useState<BrowserTab[]>(initial.tabs);
@@ -188,8 +201,8 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
     updateTab(activeTabId, { url: n });
   }, [activeTabId, updateTab]);
 
-  const addTab = useCallback((mode: NewTabMode, opts?: { url?: string }) => {
-    const newId = genTabId();
+  const addTab = useCallback((mode: NewTabMode, opts?: { url?: string; id?: string }) => {
+    const newId = opts?.id ?? genTabId();
     const currentActive = tabs.find((t) => t.id === activeTabId);
     const partition = mode === 'isolated'
       ? isolatedPartition(bubbleId, newId)
@@ -291,6 +304,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
   useEffect(() => {
     return ecoOn('eco:browser_navigate', (d) => {
       if (d.bubbleId !== bubbleId) return;
+      takeBrowserUrl(bubbleId);
       if (!d.url) return;
       // Misma URL: se recarga. Si la página había fallado (server todavía
       // levantando), ignorar el pedido la dejaba rota.
@@ -300,6 +314,26 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
       updateTab(activeTabId, { url: d.url });
     });
   }, [bubbleId, activeTabId, updateTab]);
+
+  // URL pedida por el MCP antes de que este panel existiera.
+  useEffect(() => {
+    const url = takeBrowserUrl(bubbleId);
+    if (url) ecoEmit('eco:browser_navigate', { bubbleId, url });
+  }, [bubbleId]);
+
+  // Pestañas pedidas por el MCP (browser_tab_new / _select / _close).
+  useEffect(() => {
+    return ecoOn('eco:browser_tab', (d) => {
+      if (d.bubbleId !== bubbleId) return;
+      if (d.op === 'new') {
+        if (!tabs.some((tab) => tab.id === d.tabId)) addTab(d.isolated ? 'isolated' : 'shared', { url: d.url ?? 'about:blank', id: d.tabId });
+      } else if (d.op === 'select') {
+        if (tabs.some((tab) => tab.id === d.tabId)) setActiveTabId(d.tabId);
+      } else if (d.op === 'close') {
+        closeTab(d.tabId);
+      }
+    });
+  }, [bubbleId, tabs, addTab, closeTab]);
 
   // Comandos de voz / externos para abrir/cerrar tabs.
   useEffect(() => {
@@ -323,8 +357,24 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
     setZoom(next ?? 1);
   }
 
+  const bumpZoomRef = useRef(bumpZoom);
+  bumpZoomRef.current = bumpZoom;
+  useEffect(() => window.electronAPI?.onBrowserZoom?.((p) => {
+    if (p.bubbleId === bubbleId) bumpZoomRef.current(p.dir);
+  }), [bubbleId]);
+
   const extras = (
     <>
+        {canMirror && (
+          <button
+            type="button"
+            onClick={() => { mirrorDismissed.current = false; setMirror(true); }}
+            title={tr('browser.mirror.enter')}
+            aria-label={tr('browser.mirror.enter')}
+            style={navBtnStyle(t)}>
+            <IconAgent size={13}/>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void copyUrl()}
@@ -402,8 +452,11 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
   return (
     <div style={{
       flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
-      background: t.bg0,
+      background: t.bg0, position: 'relative',
     }}>
+      {mirror && (
+        <BrowserMirror bubbleId={bubbleId} onExit={() => { mirrorDismissed.current = true; setMirror(false); }}/>
+      )}
       {/* Tab bar */}
       {!immersive && (!isPhone || tabStripOpen) && (
         <BrowserTabBar
@@ -556,6 +609,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
           {tabs.map((tab) => (
             <TabContent
               key={tab.id}
+              bubbleId={bubbleId}
               tab={tab}
               visible={tab.id === activeTabId}
               zoom={tab.id === activeTabId ? effectiveZoom : 1}
@@ -625,8 +679,9 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
 // (visibility controlada por display:none) para preservar state al cambiar
 // de tab. El zoom wrapper aplica solo al tab activo.
 function TabContent({
-  tab, visible, zoom, onNavigate, onTitleChange, onLoadFail, onLoadSuccess, onShortcutGo, registerRef,
+  bubbleId, tab, visible, zoom, onNavigate, onTitleChange, onLoadFail, onLoadSuccess, onShortcutGo, registerRef,
 }: {
+  bubbleId: string;
   tab: BrowserTab;
   visible: boolean;
   zoom: number;
@@ -698,6 +753,7 @@ function TabContent({
           userAgent={spec?.userAgent}
           safeArea={spec?.safeArea}
           nativeHints={spec?.nativeHints}
+          automation={{ bubbleId, tabId: tab.id, active: visible }}
           onNavigate={onNavigate}
           onTitleChange={onTitleChange}
           onLoadFail={onLoadFail}

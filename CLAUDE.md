@@ -396,6 +396,7 @@ El Claude Agent SDK se removió con el tab de Conversación (§2). `/ws` quedó 
 ### MCP Server (Claude Code)
 - `mcp-server/` — paquete standalone que se bundlea en el .dmg (ver §C)
 - `backend/src/mcp-config.ts` — resolve path + install/uninstall vía `claude mcp`
+- `backend/src/browser-bridge.ts` + `browser-mirror.ts`, `electron/browser-{automation,input,mirror,page-lib}.cjs`, `mcp-server/src/browser-tools.ts`, `frontend/src/components/BrowserPanel/BrowserMirror.tsx` — tools `browser_*` y espejo para clientes remotos (ver Appendix C)
 - `backend/src/claude-transcript.ts` — lector del transcript JSONL de Claude Code (estado del turno + conversación)
 - `backend/src/strip-ansi.ts` — `stripAnsi` + `ptyTailToText` (cola legible del PTY)
 - `backend/src/index.ts` `GET/POST/DELETE /config/mcp` + todos los endpoints `MCP_FREE` (ver Appendix C)
@@ -1430,7 +1431,7 @@ cualquier terminal o sesión.
    resumen "MCP de Eco" con reglas de uso.
 5. Esta sección — arquitectura, endpoints y decisiones.
 
-### Tools (v1.1 — 15 tools)
+### Tools (v1.3 — 32 tools)
 
 Todas validan el id contra el snapshot (`bubble.invalid_id` / `bubble.not_found`)
 y el dueño (`bubble.not_owner`, salvo admin). Las que cambian estado las aplica
@@ -1450,6 +1451,25 @@ la **UI del dueño** (si no hay cliente WS del dueño → `409 eco.no_clients`).
 | `set_bubble_category` / `list_categories` | `POST /bubble/categories` / `GET /categories` | Por nombre (case/acento-insensible) o id; `mode` set/add/remove/clear. Inexistente → `category.not_found` con la lista; no se crean desde el MCP. |
 | `dev_server` | `POST /bubble/dev` | start/stop/restart/status con el comando del workspace (`workspace-config`); dual arranca backend → frontend. Sin config → `409 dev.not_configured`. |
 | `get_bubble_diff` | `POST /bubble/diff` | Diff del worktree vs HEAD (stat + diff + untracked) o de un archivo (`fileDiff`). |
+| `browser_open` / `browser_navigate` / `browser_snapshot` / `browser_get_text` / `browser_click` / `browser_type` / `browser_press` / `browser_select` / `browser_wait_for` / `browser_eval` / `browser_screenshot` / `browser_console` / `browser_network` / `browser_tabs` / `browser_tab_new` / `browser_tab_select` / `browser_tab_close` | `POST /bubble/browser {op}` | Manejan el navegador de la bubble en Eco (el `<webview>` del tab Navegador). Ver "Navegador de la bubble" abajo. |
+
+### Navegador de la bubble (tools `browser_*`)
+
+Para que un agente (p.ej. `/aditum-smoke-run`) maneje el navegador que el usuario ve dentro de Eco, sin Chrome externo ni puertos de depuración.
+
+```
+MCP ──POST /bubble/browser──▶ backend (browser-bridge.ts) ──WS /ws/browser──▶ main de Electron (browser-automation.cjs) ──webContents.debugger──▶ <webview>
+```
+
+- **Registro**: `SmartBrowserView` (prop `automation`, la pasa `BrowserPanel` → `TabContent`) registra cada webview con `{bubbleId, tabId, active}` por IPC `eco:browser-target` en cada `dom-ready` y lo da de baja al desmontar; el main valida que `hostWebContents` sea el que llama y limpia al `destroyed`.
+- **Puente**: el main abre `ws://127.0.0.1:<port>/ws/browser` con subprotocolo `eco.machine.<~/.eco/token>` y reconecta cada 2 s (funciona igual en dev y empaquetado). El backend rechaza cualquier upgrade con `Origin` (los navegadores siempre lo mandan) y acepta una sola conexión. Sin puente → `409 browser.unavailable` (modo web / tailnet).
+- **Abrir**: si la bubble no tiene webview (o la op es `open`), el backend emite `client_action open_browser {id, url?}` al dueño; `App.tsx` abre la bubble + tab Navegador (solo en Electron; una bubble en ventana aparte la resuelve `SoloBubbleShell`) y espera hasta 15 s a que aparezca el webview. `lib/browser-pending.ts` guarda el pedido si el `AgentDetail`/`BrowserPanel` todavía no montó (un evento del bus emitido antes del montaje se perdía).
+- **CDP**: el debugger se adjunta en la primera op sobre el webview (comparte la sesión con el override de safe area); desde ahí se capturan consola (`Runtime`/`Log`, ring 1000) y red (`Network`, ring 1500, cuerpos bajo demanda con `Network.getResponseBody`). Cada entrada lleva un `seq`; el `cursor` que devuelven todas las ops sirve de marca para `since`. Los clics son `Input.dispatchMouseEvent` de CDP (trusted). **El teclado NO va por CDP**: `Input.dispatchKeyEvent` / `Input.insertText` no llegan a la página de un `<webview>` (verificado en Electron 44, con y sin foco), así que `type` usa `webContents.insertText` y `press` usa `webContents.sendInputEvent` (`keyDown`/`char`/`keyUp`); la selección/borrado previo lo hace la página (`prepare` en el page lib). Primitivas en `electron/browser-input.cjs`. El código que corre dentro de la página (snapshot con refs `data-eco-ref`, resolución por ref/selector/texto, foco, `<select>`, esperas) vive en `electron/browser-page-lib.cjs` y se inyecta como texto.
+- **Throttling**: con Eco tapada por otra app Chromium no produce frames: las capturas tardan ~10 s o no vuelven y el screencast queda mudo. Mientras un agente opera un webview (o alguien lo mira por el espejo) se apaga `setBackgroundThrottling` **del webview y de su `hostWebContents`** — con solo el webview no alcanza (medido) — y se reenciende tras 60 s sin ops (`keepAwake`).
+- **Un solo navegador, el del escritorio.** El agente SIEMPRE maneja el `<webview>` de la app de escritorio; el iframe de un cliente web no se puede automatizar igual (otro origen: sin clics trusted, sin red, sin capturas). Para que un cliente remoto (iPad / web por la tailnet) vea y toque esa misma pestaña existe el **espejo**: `electron/browser-mirror.cjs` hace `Page.startScreencast` (jpeg q55, tope 1600 px, ack demorado 90 ms = control de flujo) y manda `mirror_frame` / `mirror_state` por el puente; `backend/src/browser-mirror.ts` los reparte por `/ws/browser-view?bubble=<id>` (auth `eco.idtoken.<jwt>`, solo el dueño de la bubble, frames descartables si el cliente va lento) y devuelve el input del cliente (`mirror_input`: clic, mouse, rueda, texto, teclas) que el main inyecta en el webview. El screencast corre solo mientras hay alguien mirando (primer viewer lo enciende, el último lo apaga; el main lo corta si pierde el puente). Frontend: `components/BrowserPanel/BrowserMirror.tsx`, montado por `BrowserPanel` cuando `!window.electronAPI`; se enciende solo con el aviso `browser_activity` (el backend lo emite al dueño en cada op, máx. 1 cada 3 s; `lib/browser-pending.ts:noteBrowserActivity` lo recuerda 90 s para paneles que montan después) o con el botón del agente en la barra, y "Mi vista" vuelve al iframe local. `open_browser` en un cliente web abre la bubble + tab Navegador en modo espejo.
+- **Pestañas** (`tabs` / `tab_new` / `tab_select` / `tab_close`): son estado del `BrowserPanel` del escritorio, así que el backend emite `client_action browser_tab {op, tabId, url?, isolated?}` (id generado por el backend, `agent_<hex>`), el panel la aplica (`eco:browser_tab`) y el endpoint espera a que el webview aparezca activo en el registro del main. Los clientes remotos las ven en la tira de pestañas del espejo (`mirror_state`). Las respuestas de `open` / `tabs` / `tab_*` traen `view {driver:'desktop', mirrorViewers, uiClients}` y la tool lo dice en texto.
+- **Una op a la vez por bubble** (cola en el main) y timeout por op (20 s; 125 s navigate/wait_for).
+- **Límite conocido**: un webview oculto (otra bubble a la vista) queda con viewport 0 → clic/captura dan `browser.hidden`; `browser_open` lo vuelve a mostrar (le roba el foco al usuario). Consola, red y eval siguen funcionando oculto.
 
 ### Setup desde Eco (recomendado)
 
@@ -1561,7 +1581,7 @@ codex mcp add eco --env ECO_MCP_AGENT=codex -- node /Applications/Eco.app/Conten
 - `GET /bubble/status`, `GET /bubble/transcript`, `POST /bubble/wait`,
   `POST /bubble/keys`, `POST /bubble/request-close`, `POST /bubble/rename`,
   `POST /bubble/focus`, `POST /bubble/categories`, `GET /categories`,
-  `POST /bubble/dev`, `POST /bubble/diff` — ver la tabla de tools. **Todos
+  `POST /bubble/dev`, `POST /bubble/diff`, `POST /bubble/browser` — ver la tabla de tools. **Todos
   están en `MCP_FREE`** (`index.ts`, match exacto method+path): es lo único
   que el token de máquina puede tocar. `/bubble/close` y `/bubble/archive`
   siguen siendo solo del frontend (no validan id ni dueño) — el MCP usa

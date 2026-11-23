@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { noteBrowserActivity } from '@/lib/browser-pending';
 import type { SocketStatus } from '@/lib/types';
 import { currentIdToken, hasSignedInUser } from '@/lib/firebase';
 import { emit as ecoEmit } from '@/lib/eco-bus';
@@ -24,6 +25,7 @@ type ServerMsg =
   | { type: 'doc_updated'; key: string; value: unknown; updatedAt: number }
   | { type: 'doc_deleted'; key: string }
   | { type: 'claude_theme'; theme: ClaudeThemeInfo }
+  | { type: 'browser_activity'; bubbleId: string }
   | { type: 'heartbeat' };
 
 // Espejo de `backend/src/protocol.ts:ClientAction`. Las acciones las emite el
@@ -41,6 +43,10 @@ export type ClientAction =
   | { kind: 'delete_bubble'; id: string }
   | { kind: 'rename_bubble'; id: string; title: string }
   | { kind: 'focus_bubble'; id: string }
+  // Muestra el navegador de la bubble (y navega a `url` si viene). Solo lo
+  // aplican las ventanas de Electron: el navegador remoto no tiene webviews.
+  | { kind: 'open_browser'; id: string; url?: string }
+  | { kind: 'browser_tab'; id: string; op: 'new' | 'select' | 'close'; tabId: string; url?: string; isolated?: boolean }
   | { kind: 'set_bubble_categories'; id: string; categoryIds: string[] };
 
 export type SocketHandlers = {
@@ -160,6 +166,9 @@ export function useEcoSocket({ url, token, handlers }: Options): EcoSocket {
         }
         else if (msg.type === 'pty_status') {
           handlersRef.current.onPtyStatus?.(msg.bubbleId, msg.running);
+        }
+        else if (msg.type === 'browser_activity') {
+          noteBrowserActivity(msg.bubbleId);
         }
         else if (msg.type === 'pty_busy_change') {
           // Re-emit por eco-bus para que cualquier componente reaccione

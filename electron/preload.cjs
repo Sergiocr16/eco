@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // `insets` null la apaga.
   setWebviewSafeArea: (webContentsId, insets) =>
     ipcRenderer.invoke('eco:webview-safe-area', webContentsId, insets),
+  // Registra un <webview> como el navegador de una bubble/pestaña para que las
+  // tools browser_* del MCP lo encuentren. `remove: true` lo da de baja.
+  setBrowserTarget: (payload) => ipcRenderer.invoke('eco:browser-target', payload),
   // Notificación nativa de macOS via electron.Notification (funciona en
   // .dmg unsigned, a diferencia de la Web API). Click trae la app al frente
   // y dispara onNotificationClicked con el bubbleId.
@@ -62,6 +65,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_e, dir) => { try { cb(dir); } catch { /* noop */ } };
     ipcRenderer.on('eco:zoom', handler);
     return () => ipcRenderer.removeListener('eco:zoom', handler);
+  },
+  // Zoom del navegador de una bubble pedido desde el espejo de un cliente remoto.
+  onBrowserZoom: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload); } catch { /* noop */ } };
+    ipcRenderer.on('eco:browser-zoom', handler);
+    return () => ipcRenderer.removeListener('eco:browser-zoom', handler);
   },
   // Etiquetas traducidas del menú nativo (siguen el idioma de la app).
   setMenuLabels: (labels) => ipcRenderer.invoke('eco:set-menu-labels', labels),

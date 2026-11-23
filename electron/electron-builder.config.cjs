@@ -117,7 +117,7 @@ module.exports = {
     buildResources: 'build',
     output: '../release',
   },
-  files: ['main.cjs', 'preload.cjs', 'package.json'],
+  files: ['main.cjs', 'preload.cjs', 'browser-automation.cjs', 'browser-input.cjs', 'browser-mirror.cjs', 'browser-page-lib.cjs', 'package.json'],
   extraResources,
   mac: {
     category: 'public.app-category.developer-tools',
