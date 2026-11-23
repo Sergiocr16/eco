@@ -1,7 +1,7 @@
 // Preload: expone una API mínima al renderer (contextIsolation: true).
 // El renderer puede leer el token + backend URL desde acá en lugar de
 // depender de env vars de Vite (que solo existen en dev).
-const { contextBridge, ipcRenderer, webFrame } = require('electron');
+const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('eco:get-config'),
@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('eco:fullscreen-changed', handler);
     return () => ipcRenderer.removeListener('eco:fullscreen-changed', handler);
   },
+  // Ruta absoluta de un File soltado (drag & drop). `File.path` se eliminó en
+  // Electron 32; webUtils es el reemplazo y solo existe del lado del preload.
+  // '' si el File no viene del disco.
+  getPathForFile: (file) => { try { return webUtils.getPathForFile(file) || ''; } catch { return ''; } },
   // Abre un URL/URI con el handler default del OS (shell.openExternal).
   // Sirve para http(s):// y también URI schemes custom como vscode://,
   // idea://, cursor:// — útil para el botón "Open in IDE" del FileEditor.
