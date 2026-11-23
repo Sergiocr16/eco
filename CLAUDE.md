@@ -271,7 +271,7 @@ If you're touching X, the key files are:
 - `frontend/src/screens/AuthScreen.tsx:ConnectView` + `frontend/src/lib/eco-config.ts:readStoredToken/writeStoredToken` (key `eco.token`) + `useAuth` `needs_token` state.
 
 ### Bubble detail layout (split view)
-- `frontend/src/hooks/useSplitPanels.ts` — up to TWO panels open at once per bubble (`open[0]` = left/top, `ratio` = its share, clamped 0.2–0.8). A tab click toggles its panel; with both slots taken, a third tab replaces the one that is NOT pinned (the second if none is). Phones get one panel (`allowSplit = !isPhone`). Orientation is a module store shared by every mounted `AgentDetail`.
+- `frontend/src/hooks/useSplitPanels.ts` — up to TWO panels open at once per bubble (`open[0]` = left/top, `ratio` = its share, clamped 0.2–0.8). A tab click toggles its panel; with both slots taken, a third tab replaces the one that is NOT pinned (the second if none is). Portrait phones get one panel; phone landscape (~800px) allows the split (`allowSplit = !isPhone || compact`). Orientation is a module store shared by every mounted `AgentDetail`.
 - `frontend/src/screens/AgentDetail.tsx` — one 48px header row (title, state, categories, path) + tab row (pin on each open tab, swap and orientation buttons at the right). **The panel slots are siblings in a FIXED DOM order and are placed with CSS `order`** (`slotStyle`): moving a `<webview>`/iframe node in the DOM reloads it, so swapping sides must never reorder the JSX. While the divider is dragged an overlay covers the panels, because an iframe/webview under the cursor swallows pointer events.
 - Inside the detail (non-phone) the 64px left rail is not rendered (`App.tsx:hideRail`, `BubbleDock railWidth={0}`); the header's first button is the home icon (`onBack` → Dashboard; in the solo window it stays a back arrow). Other screens keep the rail.
 
@@ -689,6 +689,8 @@ GET   /dev/active                              (ALL live sessions)
 
 `READY_RE` in `dev-server.ts:244` matches patterns indicating bind: `Local: https?://...`, `listening on`, `ready in N`, `Started Server on port`, `[Browsersync] Access URLs|Running|...`, `Finished 'serve'|'default'|'watch'` (gulp), etc. If a new framework doesn't match, add the pattern.
 
+A `READY_RE` match does not flip the session to `running` by itself: `markRunningWhenListening` first waits until the port accepts TCP connections (127.0.0.1 or ::1, probe every 400 ms). gulp prints `Starting 'serve'` at launch, so the status used to turn `running` a second after start and whoever opened the URL got a blank page. After 60 s without a listening port it is marked `running` anyway (a server on a port Eco did not detect).
+
 ### Port conflict + auto-repair
 
 If the output contains `EADDRINUSE` (`PORT_CONFLICT_RE`), the backend retries up to 2 times (`MAX_RETRIES`), asking Claude (`repairPortHardcode`) to patch the config to use `process.env.PORT`.
@@ -723,9 +725,11 @@ useEffect(() => {
 }, [useWebview]);   // do NOT include callbacks here
 ```
 
-### Auto-navigation when a dev server starts
+### Auto-open when a dev server finishes starting
 
-`BrowserPanel.tsx` listens to `eco:dev_status`. When `status==='running' && url && lastAutoNavRef.current !== url`, it navigates. `lastAutoNavRef` resets only on `stopped` or `error` — without this, repeated pushes with the same URL would reload.
+`hooks/useDevServers.ts:useAutoOpenDevPage` (mounted in `AgentDetail`) listens to `eco:dev_status` and, on a real `starting → running` transition, shows the Browser panel (`eco:switch_tab`) and navigates it (`eco:browser_navigate`, 120 ms later because the panel mounts lazily). `main` and `frontend` open their own URL. `backend` waits 2.5 s: if the frontend is starting it does nothing (the frontend opens when ready), if the frontend is already running it opens the frontend, otherwise it opens the backend. The `running` snapshot the backend replays on every WS reconnect has no `starting` before it, so it never opens anything. `BrowserPanel` no longer navigates from `eco:dev_status` itself.
+
+The same module has `useDevServerControl` (start/stop/restart with the workspace config; dual starts backend, waits for `running`, then frontend) used by `components/ServerHeaderControl.tsx`, the server pill in the bubble header (hidden on phones and when the workspace has no server configured). It exists because `ServerPanel` is mounted lazily and cannot be driven from outside.
 
 > **ServerPanel does NOT emit `eco:browser_navigate`** from its `dev_status` listener — that caused reload loops. It DOES emit on explicit user click of the URL pill or "open in Eco" button.
 
@@ -1907,7 +1911,7 @@ Procedure to close a row:
 | `ResizableSplit` | One pane at a time with a segmented toggle | See below. |
 | `DiffViewer` | Falls back to the existing single-column `DiffRender` | `MergeView` is `orientation: 'a-b'`; two ~160px editors with 35px gutters each. |
 | `ServerPanel` dual logs | Stacked instead of side-by-side | ~160px per pane otherwise. |
-| `BrowserPanel` | URL bar wraps; path chip / viewport presets / zoom cluster hidden; device viewport boxes forced fluid | The row demanded ~600px. Pinch-zoom already covers the zoom cluster; emulating a 768×1024 box inside a 390px screen is pointless. |
+| `BrowserPanel` | Portrait phone (`narrow`): one toolbar row (back, reload, URL, tab count, full screen, "⋯"); copy / send to terminal / zoom / open outside sit in a second row behind "⋯"; no Go button (`enterKeyHint="go"`); tab strip behind the tab-count button; path chip and viewport presets hidden; device viewport boxes forced fluid | The row demanded ~600px and wrapped into two rows with a tiny URL field. |
 
 ### `ResizableSplit` — the highest-leverage file
 

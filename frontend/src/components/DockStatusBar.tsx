@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
 import { IconBranch, IconCpu, IconGithub } from '@/design/icons';
-import { apiFetch } from '@/lib/api';
-import { emit as ecoEmit, on as ecoOn } from '@/lib/eco-bus';
+import { emit as ecoEmit } from '@/lib/eco-bus';
+import { useBubbleDevServers } from '@/hooks/useDevServers';
 import { useBranches } from '@/hooks/useBranches';
 import { useCurrentPr } from '@/hooks/useCurrentPr';
 import { useT } from '@/hooks/useI18n';
@@ -46,38 +46,6 @@ function Chip({ children, onClick, title, mono, wide }: {
 
 function Dot({ color }: { color: string }) {
   return <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }}/>;
-}
-
-type DevRole = { status: string; url: string };
-
-// Dev servers vivos de la bubble, por rol. Semilla con /dev/active porque el
-// evento solo llega cuando el estado cambia.
-function useBubbleDevServers(bubbleId: string): Record<string, DevRole> {
-  const [roles, setRoles] = useState<Record<string, DevRole>>({});
-  useEffect(() => {
-    let cancelled = false;
-    setRoles({});
-    void (async () => {
-      try {
-        const r = await apiFetch('/dev/active');
-        if (!r.ok || cancelled) return;
-        const data = await r.json() as { sessions?: Array<{ bubbleId: string; role: string; status: string; url?: string }> };
-        const seed: Record<string, DevRole> = {};
-        for (const s of data.sessions ?? []) {
-          if (s.bubbleId === bubbleId) seed[s.role] = { status: s.status, url: s.url ?? '' };
-        }
-        setRoles((prev) => ({ ...seed, ...prev }));
-      } catch (e) {
-        console.warn('[dock] /dev/active', e);
-      }
-    })();
-    const off = ecoOn('eco:dev_status', (d) => {
-      if (d.bubbleId !== bubbleId) return;
-      setRoles((prev) => ({ ...prev, [d.role ?? 'main']: { status: d.status, url: d.url } }));
-    });
-    return () => { cancelled = true; off(); };
-  }, [bubbleId]);
-  return roles;
 }
 
 export function DockBubbleStatus({ bubble }: { bubble: Bubble }) {

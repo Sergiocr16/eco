@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconCopy, IconTerminal } from '@/design/icons';
+import { IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconCopy, IconTerminal, IconMore } from '@/design/icons';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { canEmbedArbitrarySites } from '@/lib/platform';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
@@ -113,6 +113,9 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
   // Teléfono acostado: una sola fila de controles. La tira de pestañas se
   // abre a demanda desde el contador.
   const compact = useIsPhoneLandscape();
+  // Teléfono de pie: una sola fila; lo secundario va detrás del botón "más".
+  const narrow = isPhone && !compact;
+  const [moreOpen, setMoreOpen] = useState(false);
   const [tabStripOpen, setTabStripOpen] = useState(false);
   const hasNativeDevTools = canEmbedArbitrarySites();
 
@@ -210,6 +213,9 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
   }, [tabs, activeTabId, bubbleId]);
 
   const closeTab = useCallback((id: string) => {
+    // Fuera del updater: React lo invoca dos veces en StrictMode y cada pasada
+    // generaba un id distinto, dejando activo un tab que no existía.
+    const freshId = genTabId();
     setTabs((prev) => {
       const idx = prev.findIndex((t) => t.id === id);
       if (idx < 0) return prev;
@@ -218,7 +224,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
       if (id === activeTabId) {
         if (next.length === 0) {
           const fresh: BrowserTab = {
-            id: genTabId(), url: '', title: '',
+            id: freshId, url: '', title: '',
             partition: defaultPartition(bubbleId),
             isolated: false, viewport: 'desktop',
           };
@@ -286,25 +292,12 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
     return ecoOn('eco:browser_navigate', (d) => {
       if (d.bubbleId !== bubbleId) return;
       if (!d.url) return;
-      if (d.url === lastNavUrlRef.current) return;
+      // Misma URL: se recarga. Si la página había fallado (server todavía
+      // levantando), ignorar el pedido la dejaba rota.
+      if (d.url === lastNavUrlRef.current) { setLoadFailed(false); activeRef()?.reload(); return; }
       lastNavUrlRef.current = d.url;
       setLoadFailed(false);
       updateTab(activeTabId, { url: d.url });
-    });
-  }, [bubbleId, activeTabId, updateTab]);
-
-  const lastAutoNavRef = useRef<string>('');
-  useEffect(() => {
-    return ecoOn('eco:dev_status', (d) => {
-      if (d.bubbleId !== bubbleId) return;
-      if (d.status === 'running' && d.url && lastAutoNavRef.current !== d.url) {
-        lastAutoNavRef.current = d.url;
-        setLoadFailed(false);
-        updateTab(activeTabId, { url: d.url });
-      }
-      if (d.status === 'stopped' || d.status === 'error') {
-        lastAutoNavRef.current = '';
-      }
     });
   }, [bubbleId, activeTabId, updateTab]);
 
@@ -330,123 +323,8 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
     setZoom(next ?? 1);
   }
 
-  return (
-    <div style={{
-      flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
-      background: t.bg0,
-    }}>
-      {/* Tab bar */}
-      {!immersive && (!compact || tabStripOpen) && (
-        <BrowserTabBar
-          tabs={tabs}
-          activeTabId={activeTabId}
-          onActivate={setActiveTabId}
-          onClose={closeTab}
-          onNewTab={(mode) => addTab(mode)}
-        />
-      )}
-
-      {/* URL bar. Son ~11 controles en una fila que pide ~600px: en el
-          teléfono envuelve, y los que solo tienen sentido en escritorio
-          (chip de path, presets de viewport, zoom) no se dibujan. */}
-      <div style={{
-        display: immersive ? 'none' : 'flex', alignItems: 'center', gap: compact ? 4 : 6,
-        padding: compact ? '4px 8px' : '8px 12px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        background: t.bg1,
-        flexWrap: isPhone && !compact ? 'wrap' : 'nowrap',
-      }}>
-        <button
-          type="button"
-          onClick={() => activeRef()?.back()}
-          title={tr('browser.back')}
-          style={navBtnStyle(t)}>
-          <IconArrowL size={12}/>
-        </button>
-        <button
-          type="button"
-          onClick={reload}
-          title={tr('browser.reload')}
-          disabled={!activeTab?.url}
-          style={{ ...navBtnStyle(t), opacity: activeTab?.url ? 1 : 0.4 }}>
-          <IconResume size={12}/>
-        </button>
-        <div style={{
-          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
-          padding: '4px 10px', borderRadius: 8,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        }}>
-          <IconGlobe size={11}/>
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') setActiveUrl(draft); }}
-            placeholder={tr('browser.url_placeholder')}
-            spellCheck={false}
-            autoCorrect="off"
-            autoCapitalize="off"
-            style={{
-              flex: 1, minWidth: 0,
-              background: 'transparent', border: 0, outline: 'none',
-              fontFamily: t.fontMono, color: t.text0,
-              // 16px evita el auto-zoom de iOS al enfocar la barra.
-              fontSize: isPhone ? 16 : 12,
-            }}
-          />
-          {draft && (
-            <button type="button" onClick={() => { setDraft(''); }}
-              style={{ background: 'transparent', border: 0, color: t.text3, cursor: 'pointer', padding: 0 }}>
-              <IconX size={11}/>
-            </button>
-          )}
-        </div>
-        {(() => {
-          if (isPhone) return null;
-          if (!activeTab?.url) return null;
-          let path = '';
-          try {
-            const u = new URL(activeTab.url);
-            path = (u.pathname || '') + (u.search || '') + (u.hash || '');
-          } catch { path = ''; }
-          return (
-            <div title={activeTab.url} style={{
-              padding: '2px 10px', borderRadius: 999,
-              background: t.bg2,
-              color: t.text2,
-              fontFamily: t.fontMono, fontSize: 10.5,
-              border: `1px solid ${t.glassBorder}`,
-              maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              url: <span style={{ color: t.text0 }}>{path || '/'}</span>
-            </div>
-          );
-        })()}
-        <button
-          type="button"
-          onClick={() => setActiveUrl(draft)}
-          disabled={!draft.trim()}
-          style={{
-            padding: '4px 12px', height: compact ? 32 : 26, flexShrink: 0, borderRadius: 8, border: 0,
-            background: t.accent, color: t.accentOn,
-            fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
-            cursor: draft.trim() ? 'pointer' : 'not-allowed',
-            opacity: draft.trim() ? 1 : 0.5,
-          }}>{tr('browser.go')}</button>
-        {compact && (
-          <button
-            type="button"
-            onClick={() => setTabStripOpen((v) => !v)}
-            title={tr('browser.tabs.toggle')}
-            aria-label={tr('browser.tabs.toggle')}
-            aria-pressed={tabStripOpen}
-            style={{
-              ...navBtnStyle(t),
-              fontFamily: t.fontMono, fontSize: 12, fontWeight: 600,
-              color: tabStripOpen ? t.accent : t.text1,
-              border: `1.5px solid ${tabStripOpen ? t.accent : t.text3}`,
-              background: 'transparent',
-            }}>{tabs.length}</button>
-        )}
+  const extras = (
+    <>
         <button
           type="button"
           onClick={() => void copyUrl()}
@@ -518,6 +396,127 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
           style={{ ...navBtnStyle(t), opacity: activeTab?.url ? 1 : 0.4 }}>
           <IconExt size={11}/>
         </button>
+    </>
+  );
+
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
+      background: t.bg0,
+    }}>
+      {/* Tab bar */}
+      {!immersive && (!isPhone || tabStripOpen) && (
+        <BrowserTabBar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onActivate={setActiveTabId}
+          onClose={closeTab}
+          onNewTab={(mode) => addTab(mode)}
+        />
+      )}
+
+      {/* URL bar. Son ~11 controles en una fila que pide ~600px: en el
+          teléfono envuelve, y los que solo tienen sentido en escritorio
+          (chip de path, presets de viewport, zoom) no se dibujan. */}
+      <div style={{
+        display: immersive ? 'none' : 'flex', alignItems: 'center', gap: compact ? 4 : 6,
+        padding: compact ? '4px 8px' : narrow ? '6px 8px' : '8px 12px',
+        borderBottom: narrow && moreOpen ? 0 : `1px solid ${t.glassBorder}`,
+        background: t.bg1,
+      }}>
+        <button
+          type="button"
+          onClick={() => activeRef()?.back()}
+          title={tr('browser.back')}
+          style={navBtnStyle(t)}>
+          <IconArrowL size={12}/>
+        </button>
+        <button
+          type="button"
+          onClick={reload}
+          title={tr('browser.reload')}
+          disabled={!activeTab?.url}
+          style={{ ...navBtnStyle(t), opacity: activeTab?.url ? 1 : 0.4 }}>
+          <IconResume size={12}/>
+        </button>
+        <div style={{
+          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
+          padding: '4px 10px', borderRadius: 8,
+          background: t.bg2, border: `1px solid ${t.glassBorder}`,
+        }}>
+          <IconGlobe size={11}/>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') setActiveUrl(draft); }}
+            placeholder={tr('browser.url_placeholder')}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            enterKeyHint="go"
+            style={{
+              flex: 1, minWidth: 0,
+              background: 'transparent', border: 0, outline: 'none',
+              fontFamily: t.fontMono, color: t.text0,
+              // 16px evita el auto-zoom de iOS al enfocar la barra.
+              fontSize: isPhone ? 16 : 12,
+            }}
+          />
+          {draft && (
+            <button type="button" onClick={() => { setDraft(''); }}
+              style={{ background: 'transparent', border: 0, color: t.text3, cursor: 'pointer', padding: 0 }}>
+              <IconX size={11}/>
+            </button>
+          )}
+        </div>
+        {(() => {
+          if (isPhone) return null;
+          if (!activeTab?.url) return null;
+          let path = '';
+          try {
+            const u = new URL(activeTab.url);
+            path = (u.pathname || '') + (u.search || '') + (u.hash || '');
+          } catch { path = ''; }
+          return (
+            <div title={activeTab.url} style={{
+              padding: '2px 10px', borderRadius: 999,
+              background: t.bg2,
+              color: t.text2,
+              fontFamily: t.fontMono, fontSize: 10.5,
+              border: `1px solid ${t.glassBorder}`,
+              maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              url: <span style={{ color: t.text0 }}>{path || '/'}</span>
+            </div>
+          );
+        })()}
+        {!narrow && <button
+          type="button"
+          onClick={() => setActiveUrl(draft)}
+          disabled={!draft.trim()}
+          style={{
+            padding: '4px 12px', height: compact ? 32 : 26, flexShrink: 0, borderRadius: 8, border: 0,
+            background: t.accent, color: t.accentOn,
+            fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+            cursor: draft.trim() ? 'pointer' : 'not-allowed',
+            opacity: draft.trim() ? 1 : 0.5,
+          }}>{tr('browser.go')}</button>}
+        {isPhone && (
+          <button
+            type="button"
+            onClick={() => setTabStripOpen((v) => !v)}
+            title={tr('browser.tabs.toggle')}
+            aria-label={tr('browser.tabs.toggle')}
+            aria-pressed={tabStripOpen}
+            style={{
+              ...navBtnStyle(t),
+              fontFamily: t.fontMono, fontSize: 12, fontWeight: 600,
+              color: tabStripOpen ? t.accent : t.text1,
+              border: `1.5px solid ${tabStripOpen ? t.accent : t.text3}`,
+              background: 'transparent',
+            }}>{tabs.length}</button>
+        )}
+        {!narrow && extras}
         {onToggleImmersive && (
           <button
             type="button"
@@ -528,7 +527,28 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             <ImmersiveIcon exit={false}/>
           </button>
         )}
+        {narrow && (
+          <button
+            type="button"
+            onClick={() => setMoreOpen((v) => !v)}
+            title={tr('browser.more')}
+            aria-label={tr('browser.more')}
+            aria-expanded={moreOpen}
+            style={{ ...navBtnStyle(t), color: moreOpen ? t.accent : t.text1 }}>
+            <IconMore size={14}/>
+          </button>
+        )}
       </div>
+      {narrow && moreOpen && !immersive && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
+          padding: '0 8px 6px',
+          borderBottom: `1px solid ${t.glassBorder}`,
+          background: t.bg1,
+        }}>
+          {extras}
+        </div>
+      )}
 
       {/* Contenido: render TODOS los webviews, solo el activo visible */}
       <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>

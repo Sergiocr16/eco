@@ -18,7 +18,7 @@
 // - El proceso es child del backend; al matar el backend, los servers mueren.
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { createServer, type AddressInfo } from 'node:net';
+import { createServer, createConnection, type AddressInfo } from 'node:net';
 import { existsSync, symlinkSync, lstatSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, delimiter as PATH_DELIMITER } from 'node:path';
 import { homedir } from 'node:os';
@@ -524,6 +524,50 @@ function extractCommand(raw: string): string {
 
 const READY_RE = /(?:Local:\s+https?:\/\/[^\s]+|listening on|server (?:running|started|on)|ready in \d+|started server on|now available on|webpack compiled successfully|compiled successfully|Server is running|\bnext-server\b|\bvite\s+v.+ready\b|Started \w+ in [\d.]+\s*(seconds|s)|tomcat started on port|\[Browsersync\]\s+(?:Access URLs|Running|Serving files|Watching files|Local|External)|\[BS\]|browser-sync.+access urls|external:\s+https?:\/\/[^\s]+|Finished\s+'(?:serve|default|watch)'|Starting\s+'(?:serve|default|watch)'|access URLs:|\bgulp-inject\b\s+\d+ files|injected \d+ files)/i;
 
+const LISTEN_PROBE_INTERVAL_MS = 400;
+const LISTEN_PROBE_MAX_MS = 60_000;
+const probing = new WeakSet<Session>();
+
+// Las dos familias: un server que escucha en `localhost` puede quedar solo en ::1.
+async function portAccepts(port: number): Promise<boolean> {
+  return (await hostAccepts('127.0.0.1', port)) || hostAccepts('::1', port);
+}
+
+function hostAccepts(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = createConnection({ host, port });
+    const done = (ok: boolean) => { sock.destroy(); resolve(ok); };
+    sock.setTimeout(1000, () => done(false));
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+  });
+}
+
+// El log "ready" puede salir antes de que el puerto escuche (gulp imprime
+// "Starting 'serve'" al arrancar): quien abre la URL al ver `running` recibía
+// una página en blanco. Se espera a que el puerto acepte conexiones; pasado el
+// tope se marca igual, por si el server escucha en un puerto que no se detectó.
+function markRunningWhenListening(s: Session): void {
+  if (probing.has(s)) return;
+  probing.add(s);
+  const run = s.startedAt;
+  const deadline = Date.now() + LISTEN_PROBE_MAX_MS;
+  const tick = async () => {
+    const same = () => s.startedAt === run && s.status === 'starting';
+    if (!same()) { probing.delete(s); return; }
+    const open = s.port > 0 && await portAccepts(s.port);
+    if (!same()) { probing.delete(s); return; }
+    if (open || Date.now() >= deadline) {
+      probing.delete(s);
+      s.status = 'running';
+      broadcastStatus(s);
+      return;
+    }
+    setTimeout(() => void tick(), LISTEN_PROBE_INTERVAL_MS);
+  };
+  void tick();
+}
+
 // Patrones que indican que el spawn intentó bindear un puerto ya en uso.
 // Cubrimos Node EADDRINUSE, Browser-sync, Spring Boot, Webpack, gulp, Python, etc.
 const PORT_CONFLICT_RE = /(EADDRINUSE|address already in use|port \d+ is already in use|port \d+ already in use|port already in use|Could not start the server|cannot bind to port|web server failed to start)/i;
@@ -812,8 +856,7 @@ function spawnSession(s: Session) {
     }
 
     if (s.status === 'starting' && READY_RE.test(text)) {
-      s.status = 'running';
-      broadcastStatus(s);
+      markRunningWhenListening(s);
       return;
     }
     if (detected?.changed && s.status === 'running') {
