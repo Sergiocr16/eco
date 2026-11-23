@@ -1911,7 +1911,7 @@ Procedure to close a row:
 | `ResizableSplit` | One pane at a time with a segmented toggle | See below. |
 | `DiffViewer` | Falls back to the existing single-column `DiffRender` | `MergeView` is `orientation: 'a-b'`; two ~160px editors with 35px gutters each. |
 | `ServerPanel` dual logs | Stacked instead of side-by-side | ~160px per pane otherwise. |
-| `BrowserPanel` | Portrait phone (`narrow`): one toolbar row (back, reload, URL, tab count, full screen, "⋯"); copy / send to terminal / zoom / open outside sit in a second row behind "⋯"; no Go button (`enterKeyHint="go"`); tab strip behind the tab-count button; path chip and viewport presets hidden; device viewport boxes forced fluid | The row demanded ~600px and wrapped into two rows with a tiny URL field. |
+| `BrowserPanel` | Portrait phone (`narrow`): one toolbar row (back, reload, URL, tab count, full screen, "⋯"); copy / send to terminal / zoom / open outside sit in a second row behind "⋯"; no Go button (`enterKeyHint="go"`); tab strip behind the tab-count button; the device-emulation menu (`ViewportMenu`) is in that second row too and the frame scales down to fit; path chip hidden | The row demanded ~600px and wrapped into two rows with a tiny URL field. |
 
 ### `ResizableSplit` — the highest-leverage file
 
