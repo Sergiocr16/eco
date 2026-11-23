@@ -324,13 +324,13 @@ A floating `GitBusyToast` appears while a git op is in flight. An `OpInProgressB
 
 ### Dev server per bubble
 
-The **Server** tab manages gulp / Vite / Spring Boot / etc. inside the worktree. Single or dual mode (frontend + backend in parallel, defined by the admin per workspace). Each slot receives a free random port injected as env vars (`PORT`, `SERVER_PORT`, `JAVA_TOOL_OPTIONS=-Dserver.port=…`, `API_PORT`, `BACKEND_URL`, etc.) covering most frameworks. In dual, backend boots first; frontend follows when backend reports `running`. Sessions persist to disk (`~/.eco/dev-sessions.<port>.json`) and re-adopt across backend reloads via pgid.
+The **Server** tab manages gulp / Vite / Spring Boot / etc. inside the worktree. Single or dual mode (frontend + backend in parallel, defined by the admin per workspace). Each slot receives a free random port injected as env vars (`PORT`, `SERVER_PORT`, `JAVA_TOOL_OPTIONS=-Dserver.port=…`, `API_PORT`, `BACKEND_URL`, etc.) covering most frameworks. In dual, backend boots first; frontend follows when backend reports `running`. Sessions persist to disk (`~/.eco/dev-sessions.<port>.json`) and re-adopt across backend reloads via pgid. A server is reported as `running` only once its port accepts connections. The bubble header also carries a server pill to start, restart and stop it and to open its page, without switching to the Server tab.
 
 > **Rule for commands**: do NOT hardcode ports. Use the env vars Eco injects.
 
 ### Browser per bubble
 
-Real Chromium `<webview>` (Electron) or `<iframe>` (web dev). Per-bubble cookies via partition; persisted URL + zoom. DevTools available via right-click → Inspect. Auto-navigates to the dev server URL when it goes `running`.
+Real Chromium `<webview>` (Electron) or `<iframe>` (web dev). Per-bubble cookies via partition; persisted URL + zoom. DevTools available via right-click → Inspect. When a dev server finishes starting, the Browser panel opens on its page: the frontend if there is one, the backend when only the backend runs.
 
 ### Solo-bubble window
 
@@ -356,7 +356,7 @@ The **Admin** console has three tabs: **Users** (create / enable-disable, roles,
 
 ### From the phone
 
-With remote access on, the same URL works from an iPhone or an iPad. The layout collapses to a single column, navigation moves to the bottom, and every split becomes one pane at a time with a List / Detail toggle. Tablets keep the desktop layout — side rail, dock, node graph — with touch-sized controls, because they have the width for it.
+With remote access on, the same URL works from an iPhone or an iPad. The layout collapses to a single column, navigation moves to the bottom, and every split becomes one pane at a time with a List / Detail toggle. Rotate the phone and a bubble can show two panels side by side. Tablets keep the desktop layout — side rail, dock, node graph — with touch-sized controls, because they have the width for it.
 
 The terminal is the interesting part. Touch scrolling is implemented in Eco (xterm v6 does not ship it), and a key row under the terminal sends `Esc`, `Tab`, `Shift+Tab`, `Ctrl+C`, arrows and `Enter` — none of which exist on the iOS keyboard — plus `A−`/`A+` for font size. **Rotate to landscape for terminal work**: portrait fits about 54 columns and the agent CLIs assume 80.
 
