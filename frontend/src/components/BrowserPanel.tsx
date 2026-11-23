@@ -167,7 +167,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
 
   // Un dispositivo emulado va a su tamaño real y se ajusta solo al panel: el
   // zoom manual no aplica ahí (se conserva para cuando vuelva a escritorio).
-  const emulating = !isPhone && !!activeTab && deviceSpec(activeTab) !== null;
+  const emulating = !!activeTab && deviceSpec(activeTab) !== null;
   const effectiveZoom = emulating ? 1 : zoom;
 
   // Aplicar zoom al webview activo cuando cambia.
@@ -349,7 +349,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
           }}>
           <IconTerminal size={12}/>
         </button>
-        {activeTab && !isPhone && (
+        {activeTab && (
           <ViewportMenu
             selection={activeTab}
             onChange={(patch) => updateTab(activeTabId, patch)}
@@ -682,7 +682,7 @@ function TabContent({
   // escalado para entrar en el panel. En el teléfono siempre fluido: emular
   // una caja de 768x1024 dentro de una pantalla de 390 no sirve para nada, y
   // el selector ni se muestra.
-  const spec = isPhoneNow() ? null : deviceSpec(tab);
+  const spec = deviceSpec(tab);
   return (
     <DeviceFrame spec={spec} visible={visible}>
       <div style={{
