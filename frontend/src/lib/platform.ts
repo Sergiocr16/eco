@@ -96,7 +96,9 @@ function isIOS(): boolean {
 // y nunca pasa de 40px (en landscape env() da 0). Debajo queda solo el fondo
 // del shell, y un color plano esmerilado no se nota; texto sí. Cuándo y cómo
 // quitarlo: CLAUDE.md, Appendix F → "iOS 27 workarounds — the revert checklist".
-const IOS_FROST_REACH = '80px';
+// 72px: punto medio para el iPhone (barra de ~62pt → ~10px de colchón). Con
+// 80px sobraban 18pt de pantalla; con 64px la primera línea se veía borrosa.
+const IOS_FROST_REACH = '72px';
 const IOS_FROST_EXTRA = OWNS_FULL_SCREEN && isIOS()
   // --eco-frost vale 0 con el teléfono acostado (index.css): ahí iOS esconde
   // la barra de estado y el colchón eran 40px de un alto de ~400.
