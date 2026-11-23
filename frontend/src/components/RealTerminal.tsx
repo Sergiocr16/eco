@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -14,6 +14,7 @@ import { useIsMobile } from '@/hooks/useMediaQuery';
 import { TerminalKeyBar } from './TerminalKeyBar';
 import { getTermPrefs, setTermFontSize, termFontStack, useTermPrefs } from '@/lib/terminal-prefs';
 import { cssZoom, useCssZoom } from '@/lib/ui-zoom';
+import { dragHasFiles, quotePathForTerminal, resolveDroppedPaths } from '@/lib/terminal-drop';
 
 // Debe coincidir con `AgentCli` en backend/src/pty-server.ts.
 export type AgentCli = 'claude' | 'codex' | 'none';
@@ -49,6 +50,8 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
   trRef.current = tr;
   const [status, setStatus] = useState<'connecting' | 'open' | 'reconnecting' | 'closed' | 'error'>('connecting');
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [dropErr, setDropErr] = useState<string | null>(null);
   // Tamaño y tipografía viven en lib/terminal-prefs.ts (Settings → Apariencia
   // y la barra A−/A+ escriben ahí). En web el contenedor de xterm se
   // contra-zoomea (ver el style de abajo), así que para que el terminal
@@ -491,11 +494,46 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t, effectiveMode, agent, claudeTheme]);
 
+  // Soltar archivos = tipear sus rutas, como iTerm/Terminal.app. Sin esto el
+  // navegador descarta el drop y Claude Code nunca ve la imagen. Va por
+  // term.paste para que respete el bracketed paste que activa el CLI.
+  const onDragOver = (e: DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    if (!dragOver) setDragOver(true);
+  };
+  const onDragLeave = (e: DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDragOver(false);
+  };
+  const onDrop = (e: DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+    void resolveDroppedPaths(files).then((paths) => {
+      const term = termRef.current;
+      if (!term) return;
+      term.paste(paths.map(quotePathForTerminal).join(' ') + ' ');
+      term.focus();
+    }).catch((err: unknown) => {
+      console.error('[terminal] drop falló', err);
+      setDropErr(trRef.current('term.drop.err', { msg: err instanceof Error ? err.message : String(err) }));
+      window.setTimeout(() => setDropErr(null), 5000);
+    });
+  };
+
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Wrapper propio para posicionar la barra de scroll: el contenedor de
           xterm no puede llevar hijos de React (ese subárbol lo maneja xterm). */}
-      <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex' }}>
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex' }}>
         <div
           ref={containerRef}
           // En iOS el teclado solo sube si el foco cae en el textarea oculto de
@@ -518,6 +556,26 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
             ...(cssZ !== 1 ? { zoom: 1 / cssZ } : null),
           }}
         />
+        {dragOver && (
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: 10,
+            border: `2px dashed ${t.accent}`, background: 'rgba(0,0,0,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: t.text0, fontSize: 13, pointerEvents: 'none',
+          }}>
+            {tr('term.drop.hint')}
+          </div>
+        )}
+        {dropErr && (
+          <div style={{
+            position: 'absolute', left: 10, right: 10, bottom: 10,
+            padding: '8px 10px', borderRadius: 8, fontSize: 12.5,
+            background: 'rgba(0,0,0,0.7)', border: `1px solid ${t.err}`, color: t.err,
+            pointerEvents: 'none',
+          }}>
+            {dropErr}
+          </div>
+        )}
         {isMobile && (
           <div
             ref={scrollTrackRef}

@@ -62,6 +62,7 @@ import { verifyFirebaseIdToken } from './firebase-auth.js';
 import { getMachineUser, setMachineUser } from './machine-user.js';
 import { isAppError } from './app-error.js';
 import { resolveSafePath } from './fs-paths.js';
+import { saveDroppedFile, DROP_MAX_BYTES } from './terminal-drops.js';
 import { listTree } from './fs-tree.js';
 import { searchInWorkspace } from './fs-search.js';
 import { summarizeBubble } from './notes-summary.js';
@@ -1138,6 +1139,27 @@ const FileSaveSchema = z.object({
   content: z.string().max(2 * 1024 * 1024),  // 2MB hard cap
   expectedMtime: z.number().optional(),
 });
+// Archivo soltado sobre la terminal desde un cliente remoto: cuerpo binario,
+// nombre en X-Eco-Filename (URI-encoded). Devuelve la ruta en este host.
+app.post(
+  '/terminal/drop',
+  express.raw({ type: () => true, limit: DROP_MAX_BYTES }),
+  (req: Request, res: Response) => {
+    const body = req.body;
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      return errResponse(res, 400, 'http.invalid_body', 'Archivo vacío');
+    }
+    let name = 'archivo';
+    try { name = decodeURIComponent(String(req.header('x-eco-filename') ?? '')) || name; } catch { /* nombre mal codificado: default */ }
+    try {
+      res.json({ ok: true, path: saveDroppedFile(name, body) });
+    } catch (e) {
+      console.error('[terminal/drop] no se pudo guardar', e);
+      return fromException(res, e, 'fs.write_failed', 'No se pudo guardar el archivo');
+    }
+  },
+);
+
 app.post('/file/save', (req: Request, res: Response) => {
   const parsed = FileSaveSchema.safeParse(req.body);
   if (!parsed.success) {

@@ -2542,6 +2542,8 @@ const DICT = {
   'term.keybar.font_bigger': { es: 'Agrandar la letra del terminal', en: 'Increase terminal font size' },
   'term.conn.reconnecting': { es: 'reconectando…', en: 'reconnecting…' },
   'term.conn.closed': { es: 'cerrado', en: 'closed' },
+  'term.drop.hint': { es: 'Soltá para pegar la ruta del archivo', en: 'Drop to paste the file path' },
+  'term.drop.err': { es: 'No se pudo adjuntar el archivo: {{msg}}', en: 'Could not attach the file: {{msg}}' },
   'term.conn.retrying': { es: 'Reconectando… (intento {{n}})', en: 'Reconnecting… (attempt {{n}})' },
   'term.conn.no_session': { es: 'Sesión no iniciada', en: 'Not signed in' },
   'term.conn.open_failed': { es: 'No se pudo abrir el WebSocket', en: 'Could not open the WebSocket' },

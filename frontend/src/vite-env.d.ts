@@ -25,6 +25,7 @@ interface Window {
     log?: (...args: unknown[]) => void;
     pickFolder?: (opts?: { title?: string; defaultPath?: string }) => Promise<{ canceled: boolean; path: string }>;
     onFullscreenChange?: (cb: (isFull: boolean) => void) => () => void;
+    getPathForFile?: (file: File) => string;
     setZoomFactor?: (factor: number) => boolean;
     getZoomFactor?: () => number;
     onZoom?: (cb: (dir: 'in' | 'out' | 'reset') => void) => () => void;
