@@ -16,6 +16,7 @@ import { usePtyBusyTracker } from './hooks/usePtyBusyNotifier';
 import { useEcoSocket } from './hooks/useEcoSocket';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { emit as ecoEmit } from './lib/eco-bus';
+import { queueBrowserOpen, noteBrowserActivity } from './lib/browser-pending';
 import { hydrateDocs, startUserDocListeners } from './lib/user-sync';
 import { hydrateCategories } from './hooks/useCategories';
 import { hydratePrefs } from './lib/prefs-sync';
@@ -303,6 +304,28 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
             return;
           case 'focus_bubble':
             handleOpenAgent(action.id);
+            return;
+          case 'browser_tab':
+            // Las pestañas que maneja el agente son las del escritorio.
+            if (!window.electronAPI || detachedIds.has(action.id)) return;
+            ecoEmit('eco:browser_tab', { bubbleId: action.id, op: action.op, tabId: action.tabId, url: action.url, isolated: action.isolated });
+            return;
+          case 'open_browser':
+            // Solo Electron tiene webviews que el main pueda controlar. Los
+            // demás clientes muestran esa misma pestaña por el espejo.
+            if (!window.electronAPI) {
+              handleOpenAgent(action.id);
+              queueBrowserOpen(action.id);
+              noteBrowserActivity(action.id);
+              ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId: action.id });
+              return;
+            }
+            handleOpenAgent(action.id);
+            // Si vive en otra ventana, esa lo resuelve (SoloBubbleShell).
+            if (detachedIds.has(action.id)) return;
+            queueBrowserOpen(action.id, action.url);
+            ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId: action.id });
+            if (action.url) ecoEmit('eco:browser_navigate', { bubbleId: action.id, url: action.url });
             return;
           case 'set_bubble_categories':
             bubbles.setBubbleCategories(action.id, action.categoryIds);

@@ -5,6 +5,7 @@
 
 const { app, BrowserWindow, Menu, Notification, shell, ipcMain, dialog, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { startBridge: startBrowserAutomation } = require('./browser-automation.cjs');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -872,6 +873,9 @@ app.whenReady().then(async () => {
     else console.warn('[electron] backend no respondió /health en 15s, abriendo igual');
   }
   await createWindow();
+  // Tools browser_* del MCP: el backend le pide acá operaciones sobre los
+  // webviews de cada bubble. Reconecta solo si el backend se reinicia.
+  startBrowserAutomation({ backendUrl: BACKEND_URL, readToken: readEcoToken });
 
   setupAutoUpdater();
 

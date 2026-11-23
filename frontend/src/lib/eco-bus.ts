@@ -43,6 +43,10 @@ export type EcoBusEvents = {
   // ejemplo desde el ServerPanel cuando el server arranca o el user clickea
   // la URL del server).
   'eco:browser_navigate': { bubbleId: string; url: string };
+  // Un agente está manejando el navegador de la bubble (tools browser_* del MCP).
+  'eco:browser_activity': { bubbleId: string };
+  // Pestaña pedida por el MCP: la aplica el BrowserPanel del escritorio.
+  'eco:browser_tab': { bubbleId: string; op: 'new' | 'select' | 'close'; tabId: string; url?: string; isolated?: boolean };
   // Notifica que la URL del browser de una burbuja cambió (set o cleared).
   // Usado por useBubbleActive para evitar el polling de localStorage.
   'eco:browser_url_changed': { bubbleId: string; hasUrl: boolean };

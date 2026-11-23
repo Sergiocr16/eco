@@ -74,6 +74,51 @@ Eco, así que requieren la app abierta.
 - **`get_bubble_diff`** `{ bubble_id, path?, max_bytes? }` — Diff del
   worktree contra HEAD (stat + diff + archivos nuevos) o de un archivo.
 
+### Navegador de la bubble
+
+Manejan el navegador que la bubble tiene en Eco (tab Navegador), el mismo que
+el usuario ve. Las ejecuta el proceso principal de Electron con
+`webContents.debugger` sobre el `<webview>`: no se abre ningún puerto de
+depuración. Solo funcionan con Eco.app abierta (el modo web no tiene webviews).
+Las operaciones de una misma bubble se ejecutan de a una.
+
+Los elementos se apuntan con `ref` (de `browser_snapshot`), `selector` CSS o
+`text` visible. Todas las respuestas traen un `cursor`: pasalo como `since` a
+`browser_console` / `browser_network` para ver solo lo que generó una acción.
+
+El navegador que se maneja es **siempre el de la app de escritorio**. Un cliente
+remoto (iPad / web por la tailnet) ve esa misma pestaña en vivo por el espejo
+del tab Navegador y puede tocarla y escribir en ella. `browser_open`,
+`browser_tabs` y `browser_tab_*` dicen en su respuesta qué vista se maneja y
+cuántos clientes remotos la están mirando.
+
+- **`browser_open`** `{ bubble_id, url?, tab_id? }` — Muestra el navegador de la
+  bubble (abre la bubble y su tab) y navega a `url` esperando la carga. Lista
+  las pestañas con sus ids.
+- **`browser_tabs`** `{ bubble_id }` — Pestañas (id, URL, título, activa) y vista.
+- **`browser_tab_new`** `{ bubble_id, url?, isolated? }` — Pestaña nueva, activa y
+  visible en la barra de pestañas; `isolated` = sesión limpia (otro usuario).
+- **`browser_tab_select`** / **`browser_tab_close`** `{ bubble_id, tab_id }`.
+- **`browser_navigate`** `{ bubble_id, url?, action?: 'go'|'back'|'forward'|'reload', hard?, wait?, timeout_s? }`.
+- **`browser_snapshot`** `{ bubble_id, scope?, include_hidden?, max? }` — Controles
+  visibles con refs estables (`[e12] button "Guardar" (deshabilitado)`), títulos,
+  alertas y diálogos. Entiende Angular Material (`md-button`, `md-select`, …).
+- **`browser_get_text`** `{ bubble_id, scope?, max_chars? }` — `innerText`.
+- **`browser_click`** `{ bubble_id, ref|selector|text|x+y, double?, button?, modifiers? }` —
+  Clic real (`Input.dispatchMouseEvent`); avisa si otro elemento tapa el punto.
+- **`browser_type`** `{ bubble_id, value, ref|selector|text?, clear?, submit?, slowly? }` —
+  Texto real vía `webContents.insertText` (dispara `input`); `slowly` tecla por tecla.
+- **`browser_press`** `{ bubble_id, key, times?, ref|selector|text? }` — `"Enter"`, `"Shift+Tab"`, …
+- **`browser_select`** `{ bubble_id, value, ref|selector|text }` — Solo `<select>` nativo.
+- **`browser_wait_for`** `{ bubble_id, text?|selector?|ref?|expression?, gone?, network_idle?, timeout_s? }`.
+- **`browser_eval`** `{ bubble_id, expression }` — JS en la página, resultado como JSON.
+- **`browser_screenshot`** `{ bubble_id, ref|selector|text?, full_page?, format?, save_to?, return_image? }` —
+  Devuelve la imagen; con `save_to` (ruta absoluta) además la guarda.
+- **`browser_console`** `{ bubble_id, since?, level?, pattern?, limit? }` — `console.*`,
+  excepciones y errores del navegador.
+- **`browser_network`** `{ bubble_id, since?, url_pattern?, method?, only_errors?, only_api?, limit?, request_id? }` —
+  Con `request_id`, cuerpos del request y de la respuesta.
+
 ## Instalación
 
 Desde Eco: Settings → Integraciones → **MCP Server (Claude Code)** → Instalar.

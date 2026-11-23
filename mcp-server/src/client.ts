@@ -388,3 +388,24 @@ export async function readBubbleConversation(
   });
   return (await call(`/bubble/transcript${q}`, { timeoutMs: 20_000 })) as ConversationResult;
 }
+
+// ─── Navegador de la bubble (tools browser_*) ────────────────────────────────
+
+export type BrowserOp =
+  | 'open' | 'status' | 'navigate' | 'snapshot' | 'text' | 'click' | 'type' | 'press' | 'select'
+  | 'eval' | 'screenshot' | 'wait_for' | 'console' | 'network'
+  | 'tabs' | 'tab_new' | 'tab_select' | 'tab_close';
+
+const BROWSER_SLOW_OPS = new Set<BrowserOp>(['open', 'navigate', 'wait_for', 'tab_new']);
+
+export async function browserAction<T = Record<string, unknown>>(
+  bubbleId: string,
+  op: BrowserOp,
+  args: Record<string, unknown> = {},
+  tabId?: string,
+): Promise<T> {
+  const body: Record<string, unknown> = { bubbleId, op, args };
+  if (tabId) body.tabId = tabId;
+  const timeoutMs = BROWSER_SLOW_OPS.has(op) ? 170_000 : 70_000;
+  return (await call('/bubble/browser', { method: 'POST', body, timeoutMs })) as T;
+}

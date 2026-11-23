@@ -26,9 +26,13 @@ interface Window {
     pickFolder?: (opts?: { title?: string; defaultPath?: string }) => Promise<{ canceled: boolean; path: string }>;
     onFullscreenChange?: (cb: (isFull: boolean) => void) => () => void;
     getPathForFile?: (file: File) => string;
+    setBrowserTarget?: (payload: {
+      webContentsId: number; bubbleId: string; tabId: string; active?: boolean; remove?: boolean;
+    }) => Promise<{ ok: boolean; error?: string }>;
     setZoomFactor?: (factor: number) => boolean;
     getZoomFactor?: () => number;
     onZoom?: (cb: (dir: 'in' | 'out' | 'reset') => void) => () => void;
+    onBrowserZoom?: (cb: (payload: { bubbleId: string; dir: 'in' | 'out' | 'reset' }) => void) => () => void;
     setMenuLabels?: (labels: {
       edit: string; view: string; window: string;
       zoomIn: string; zoomOut: string; zoomActual: string;

@@ -38,10 +38,21 @@ REGLAS
 - Las categorías se crean desde la UI de Eco; set_bubble_category solo asigna existentes (nombre sin distinguir mayúsculas/acentos, o id). list_categories las lista.
 - rename_bubble, focus_bubble, set_bubble_category, close_bubble y create_bubble las aplica la UI de Eco: necesitan la app abierta (error eco.no_clients si no).
 - dev_server usa el comando que el admin configuró para el workspace; get_bubble_diff muestra el diff del worktree o de un archivo.
-- Nunca cierres ni mandes input a bubbles que no te pidieron tocar: para experimentos creá una bubble nueva.`;
+- Nunca cierres ni mandes input a bubbles que no te pidieron tocar: para experimentos creá una bubble nueva.
+
+NAVEGADOR DE LA BUBBLE (tools browser_*)
+Cada bubble tiene su navegador en Eco (tab Navegador, sesión/cookies propias). Las tools browser_* lo manejan con el protocolo de depuración de Electron: el usuario ve en vivo lo que hacés. Solo funcionan con Eco.app abierta (no en el modo web).
+1. browser_open { bubble_id, url } → muestra el navegador de la bubble y carga la URL. Usalo primero y cada vez que una tool diga que está oculto.
+2. browser_snapshot → controles visibles con refs [e12]. Apuntá con ref (lo más confiable), selector CSS o text.
+3. browser_click / browser_type / browser_select / browser_press → input real (eventos trusted, ng-model se entera). browser_wait_for en vez de esperas fijas.
+4. Verificá: browser_get_text, browser_eval (JS en la página), browser_screenshot (save_to para guardar), browser_console y browser_network (con request_id ves los cuerpos).
+- Todas devuelven un "cursor": guardalo antes de una acción y pasalo como since a browser_console / browser_network para ver solo lo que esa acción generó. La captura de consola y red arranca con la primera tool browser_* sobre la página.
+- El navegador que manejás es SIEMPRE el de la app de escritorio de Eco. Si el usuario mira Eco desde otro dispositivo (iPad / web), ve esa misma pestaña en vivo por el espejo del tab Navegador y puede tocarla. browser_open y browser_tabs te dicen qué vista se maneja y si hay clientes remotos mirando: informalo cuando el usuario necesite mirar o escribir algo (p.ej. una clave).
+- Pestañas: browser_tabs lista ids; browser_tab_new { url, isolated? } abre una nueva (isolated = sesión limpia para entrar con otro usuario); browser_tab_select la cambia; browser_tab_close cierra las que abriste. Sin tab_id las tools actúan sobre la activa.
+- En la misma bubble las operaciones se ejecutan de a una; si el usuario cambia de bubble en Eco el navegador queda oculto (clic y captura fallan con "oculto": browser_open lo vuelve a mostrar).`;
 
 const server = new Server(
-  { name: 'eco', version: '1.1.0' },
+  { name: 'eco', version: '1.3.0' },
   { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
 );
 

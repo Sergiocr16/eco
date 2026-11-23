@@ -63,6 +63,9 @@ import { getMachineUser, setMachineUser } from './machine-user.js';
 import { isAppError } from './app-error.js';
 import { resolveSafePath } from './fs-paths.js';
 import { saveDroppedFile, DROP_MAX_BYTES } from './terminal-drops.js';
+import { attachBrowserBridge, browserBridgeConnected, browserCall, BrowserBridgeError } from './browser-bridge.js';
+import { attachBrowserMirror, mirrorViewerCount } from './browser-mirror.js';
+import { randomBytes } from 'node:crypto';
 import { listTree } from './fs-tree.js';
 import { searchInWorkspace } from './fs-search.js';
 import { summarizeBubble } from './notes-summary.js';
@@ -164,6 +167,7 @@ const MCP_FREE: Array<{ method: string; path: string }> = [
   { method: 'GET', path: '/categories' },
   { method: 'POST', path: '/bubble/dev' },
   { method: 'POST', path: '/bubble/diff' },
+  { method: 'POST', path: '/bubble/browser' },
 ];
 function isMcpFreePath(method: string, path: string): boolean {
   return MCP_FREE.some((r) => r.method === method && r.path === path);
@@ -2341,6 +2345,158 @@ const BubbleDiffSchema = z.object({
   path: z.string().min(1).max(4096).optional(),
   maxBytes: z.number().int().min(1000).max(512 * 1024).default(200_000),
 });
+// Navegador de la bubble (tools browser_* del MCP). Lo ejecuta el main de
+// Electron sobre el <webview> del BrowserPanel (browser-bridge.ts). Si la bubble
+// no tiene el navegador montado, la UI del dueño lo abre (`open_browser`).
+const BROWSER_OPS = [
+  'open', 'status', 'navigate', 'snapshot', 'text', 'click', 'type', 'press', 'select',
+  'eval', 'screenshot', 'wait_for', 'console', 'network',
+  'tabs', 'tab_new', 'tab_select', 'tab_close',
+] as const;
+const BubbleBrowserSchema = z.object({
+  bubbleId: z.string().min(1).max(128),
+  op: z.enum(BROWSER_OPS),
+  tabId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).optional(),
+  args: z.record(z.string(), z.unknown()).default({}),
+});
+const BROWSER_SHOW_WAIT_MS = 15_000;
+const BROWSER_SLOW_OPS = new Set(['navigate', 'wait_for', 'open', 'tab_new']);
+const BROWSER_ACTIVITY_MS = 3000;
+const browserActivityAt = new Map<string, number>();
+
+// Avisa a los clientes del dueño que un agente está usando el navegador de la
+// bubble; los que no tienen webview pasan a mostrar el espejo del escritorio.
+function noteBrowserActivity(ownerId: string, bubbleId: string): void {
+  const now = Date.now();
+  if (now - (browserActivityAt.get(bubbleId) ?? 0) < BROWSER_ACTIVITY_MS) return;
+  browserActivityAt.set(bubbleId, now);
+  broadcastToUser(ownerId, { type: 'browser_activity', bubbleId });
+}
+
+// Qué navegador se está manejando: siempre el <webview> de la app de escritorio.
+// Los demás clientes del dueño lo ven por el espejo (browser-mirror.ts).
+function browserView(bubble: BubbleSummary): { driver: 'desktop'; mirrorViewers: number; uiClients: number } {
+  return { driver: 'desktop', mirrorViewers: mirrorViewerCount(bubble.id), uiClients: wsClientCountForUser(bubble.ownerId) };
+}
+
+async function waitBrowserTabs(bubbleId: string, done: (t: BrowserTabs) => boolean, timeoutMs: number): Promise<BrowserTabs> {
+  const t0 = Date.now();
+  for (;;) {
+    const r = await browserCall<BrowserTabs>('targets', bubbleId, {}, { timeoutMs: 5000 });
+    if (done(r) || Date.now() - t0 >= timeoutMs) return r;
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+}
+const BROWSER_ERROR_STATUS: Record<string, number> = {
+  invalid_args: 400, not_found: 404, no_target: 409, hidden: 409, ref_stale: 409, not_visible: 409,
+  not_focusable: 409, not_select: 409, unavailable: 409, eval_error: 422, load_failed: 502,
+  bridge_closed: 503, timeout: 504,
+};
+type BrowserTabs = { tabs: Array<{ tabId: string; active: boolean; url: string; title: string; loading: boolean }> };
+
+async function waitBrowserTarget(bubbleId: string, timeoutMs: number): Promise<BrowserTabs> {
+  const t0 = Date.now();
+  for (;;) {
+    const r = await browserCall<BrowserTabs>('targets', bubbleId, {}, { timeoutMs: 5000 });
+    if (r.tabs.length > 0 || Date.now() - t0 >= timeoutMs) return r;
+    await new Promise((ok) => setTimeout(ok, 300));
+  }
+}
+
+app.post('/bubble/browser', async (req: Request, res: Response) => {
+  const parsed = BubbleBrowserSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return errResponse(res, 400, 'http.invalid_body', parsed.error.issues[0]?.message ?? 'Cuerpo inválido');
+  }
+  const bubble = resolveOwnedBubble(req, res, parsed.data.bubbleId);
+  if (!bubble) return;
+  if (!browserBridgeConnected()) {
+    return errResponse(res, 409, 'browser.unavailable', 'El navegador de Eco solo se controla con la app de escritorio abierta.');
+  }
+  const { op, tabId, args } = parsed.data;
+  const url = typeof args.url === 'string' && args.url ? args.url : undefined;
+  if (url && !/^https?:\/\//i.test(url)) {
+    return errResponse(res, 400, 'browser.invalid_args', 'url debe empezar con http:// o https://');
+  }
+  const slow = BROWSER_SLOW_OPS.has(op);
+  req.setTimeout((slow ? 135_000 : 40_000) + 20_000);
+  try {
+    let targets = await browserCall<BrowserTabs>('targets', bubble.id, {}, { timeoutMs: 5000 });
+    if (op === 'tabs') {
+      return res.json({ ok: true, op, tabs: targets.tabs, view: browserView(bubble) });
+    }
+    noteBrowserActivity(bubble.ownerId, bubble.id);
+    // Las pestañas son estado del BrowserPanel: las crea/elige/cierra la UI del
+    // escritorio y acá se espera a que el webview aparezca en el registro.
+    if (op === 'tab_select' || op === 'tab_close' || (op === 'tab_new' && targets.tabs.length > 0)) {
+      if (!requireUiForOwner(res, bubble.ownerId)) return;
+      const wanted = op === 'tab_new' ? `agent_${randomBytes(5).toString('hex')}` : tabId;
+      if (!wanted) return errResponse(res, 400, 'browser.invalid_args', 'Falta tab_id (salen de browser_tabs).');
+      if (op !== 'tab_new' && !targets.tabs.some((t) => t.tabId === wanted)) {
+        return errResponse(res, 409, 'browser.no_target', `No existe la pestaña ${wanted}: mirá browser_tabs.`);
+      }
+      if (op !== 'tab_close') broadcastClientActionToUser(bubble.ownerId, { kind: 'open_browser', id: bubble.id });
+      broadcastClientActionToUser(bubble.ownerId, {
+        kind: 'browser_tab', id: bubble.id, tabId: wanted,
+        op: op === 'tab_new' ? 'new' : op === 'tab_select' ? 'select' : 'close',
+        ...(op === 'tab_new' ? { url: url ?? 'about:blank', isolated: args.isolated === true } : {}),
+      });
+      const settled = (t: BrowserTabs): boolean => op === 'tab_close'
+        ? !t.tabs.some((x) => x.tabId === wanted)
+        : t.tabs.some((x) => x.tabId === wanted && x.active);
+      targets = await waitBrowserTabs(bubble.id, settled, 10_000);
+      if (!settled(targets)) {
+        return errResponse(res, 504, 'browser.timeout', 'La app de escritorio no aplicó el cambio de pestaña a tiempo.');
+      }
+      if (op === 'tab_close') return res.json({ ok: true, op, closed: wanted, tabs: targets.tabs, view: browserView(bubble) });
+      const st = await browserCall('status', bubble.id, { waitLoad: op === 'tab_new' }, { tabId: wanted, timeoutMs: 60_000 });
+      return res.json({ ok: true, op, tabId: wanted, ...(st as Record<string, unknown>), tabs: targets.tabs, view: browserView(bubble) });
+    }
+    const empty = targets.tabs.length === 0;
+    let navigatedByUi = false;
+    if (op === 'open' || empty) {
+      if (!requireUiForOwner(res, bubble.ownerId)) return;
+      // Sin webview, la única forma de crear uno es que la UI ponga una URL en la pestaña.
+      const uiUrl = empty && url && (op === 'open' || op === 'navigate' || op === 'tab_new') ? url : undefined;
+      broadcastClientActionToUser(bubble.ownerId, { kind: 'open_browser', id: bubble.id, ...(uiUrl ? { url: uiUrl } : {}) });
+      navigatedByUi = !!uiUrl;
+      if (empty) {
+        targets = await waitBrowserTarget(bubble.id, BROWSER_SHOW_WAIT_MS);
+        if (targets.tabs.length === 0) {
+          return errResponse(res, 409, 'browser.no_target', uiUrl
+            ? 'Eco no abrió el navegador de la bubble a tiempo. ¿Está abierta la app?'
+            : 'El navegador de la bubble no tiene ninguna página: usá browser_open con url.');
+        }
+      } else {
+        // Que el panel termine de mostrarse antes de capturar o clickear.
+        await new Promise((ok) => setTimeout(ok, 400));
+      }
+    }
+    let result: unknown;
+    if (navigatedByUi) {
+      result = await browserCall('status', bubble.id, { waitLoad: true }, { tabId, timeoutMs: 60_000 });
+    } else if (op === 'tab_new') {
+      // Sin ninguna página abierta, la "pestaña nueva" es la que ya estaba vacía.
+      result = await browserCall('status', bubble.id, {}, { timeoutMs: 20_000 });
+    } else if (op === 'open') {
+      result = url
+        ? await browserCall('navigate', bubble.id, { action: 'go', url, timeoutMs: args.timeoutMs }, { tabId, timeoutMs: 135_000 })
+        : await browserCall('status', bubble.id, {}, { tabId, timeoutMs: 20_000 });
+    } else {
+      result = await browserCall(op, bubble.id, args, { tabId, timeoutMs: slow ? 135_000 : 40_000 });
+    }
+    res.json({
+      ok: true, op, ...(result as Record<string, unknown>),
+      ...(op === 'open' || op === 'status' || op === 'tab_new' ? { view: browserView(bubble) } : {}),
+    });
+  } catch (e) {
+    if (e instanceof BrowserBridgeError) {
+      return errResponse(res, BROWSER_ERROR_STATUS[e.code] ?? 500, `browser.${e.code}`, e.message);
+    }
+    return fromException(res, e, 'browser.failed', 'Falló la operación del navegador');
+  }
+});
+
 app.post('/bubble/diff', async (req: Request, res: Response) => {
   const parsed = BubbleDiffSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -2669,6 +2825,8 @@ server.requestTimeout = 0;
 attachWebSocket(server, authToken);
 startClaudeThemeWatch();
 attachPtyServer(server, authToken);
+attachBrowserBridge(server, authToken);
+attachBrowserMirror(server);
 
 // Fallo al bindear el puerto (ej. una instancia anterior aún lo ocupa). Sin
 // esto el proceso moría en silencio: el host Electron esperaba /health 15s,

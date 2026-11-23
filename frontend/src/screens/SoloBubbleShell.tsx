@@ -13,6 +13,8 @@ import { hydrateWorkspaceConfig } from '../lib/workspace-config';
 import { AgentDetail } from './AgentDetail';
 import { useT } from '../hooks/useI18n';
 import { getTopInset } from '../lib/platform';
+import { emit as ecoEmit } from '../lib/eco-bus';
+import { queueBrowserOpen } from '../lib/browser-pending';
 import { ecoBackend, ecoToken } from '../lib/eco-config';
 
 const BACKEND = ecoBackend();
@@ -40,6 +42,14 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
         // el MCP cierra el suyo (la ventana principal aplica el archivado).
         if ((action.kind === 'archive_bubble' || action.kind === 'delete_bubble') && action.id === bubbleId) {
           closeThisWindow(bubbleId);
+        }
+        if (action.kind === 'browser_tab' && action.id === bubbleId) {
+          ecoEmit('eco:browser_tab', { bubbleId, op: action.op, tabId: action.tabId, url: action.url, isolated: action.isolated });
+        }
+        if (action.kind === 'open_browser' && action.id === bubbleId) {
+          queueBrowserOpen(bubbleId, action.url);
+          ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId });
+          if (action.url) ecoEmit('eco:browser_navigate', { bubbleId, url: action.url });
         }
       },
     },
