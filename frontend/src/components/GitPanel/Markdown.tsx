@@ -233,7 +233,7 @@ function renderInline(text: string, t: ReturnType<typeof useTokens>, keyBase = '
       out.push(
         <code key={`${keyBase}c${n++}`} style={{
           fontFamily: t.fontMono, fontSize: '0.92em',
-          padding: '1px 5px', borderRadius: 4,
+          padding: '1px 6px', borderRadius: 4,
           background: t.bg3, color: t.text0,
         }}>{m[2]}</code>,
       );
@@ -267,7 +267,7 @@ function renderInline(text: string, t: ReturnType<typeof useTokens>, keyBase = '
       );
     } else if (m[8] || m[9]) {
       // bold **text** o __text__
-      out.push(<strong key={`${keyBase}b${n++}`} style={{ color: t.text0, fontWeight: 700 }}>{m[8] || m[9]}</strong>);
+      out.push(<strong key={`${keyBase}b${n++}`} style={{ color: t.text0, fontWeight: 600 }}>{m[8] || m[9]}</strong>);
     } else if (m[10] || m[11]) {
       // italic *text* o _text_
       out.push(<em key={`${keyBase}i${n++}`}>{m[10] || m[11]}</em>);
@@ -278,14 +278,14 @@ function renderInline(text: string, t: ReturnType<typeof useTokens>, keyBase = '
       // @mention
       out.push(
         <span key={`${keyBase}m${n++}`} style={{
-          color: t.accent, fontWeight: 600,
+          color: t.accent, fontWeight: 500,
         }}>{m[13]}</span>,
       );
     } else if (m[14]) {
       // #issue ref
       out.push(
         <span key={`${keyBase}r${n++}`} style={{
-          color: t.accent, fontWeight: 600,
+          color: t.accent, fontWeight: 500,
         }}>{m[14]}</span>,
       );
     }
@@ -314,8 +314,8 @@ export function Markdown({ source }: { source: string }) {
             const Tag = `h${Math.min(b.level, 4)}` as 'h1' | 'h2' | 'h3' | 'h4';
             return (
               <Tag key={i} style={{
-                margin: '14px 0 6px',
-                fontSize: sizes[b.level] ?? 13, fontWeight: 700,
+                margin: '16px 0 6px',
+                fontSize: sizes[b.level] ?? 13, fontWeight: 600,
                 color: t.text0, lineHeight: 1.3,
                 borderBottom: b.level <= 2 ? `1px solid ${t.glassBorder}` : 'none',
                 paddingBottom: b.level <= 2 ? 4 : 0,
@@ -332,13 +332,13 @@ export function Markdown({ source }: { source: string }) {
                 {b.lang && (
                   <div style={{
                     padding: '4px 10px', borderBottom: `1px solid ${t.glassBorder}`,
-                    fontSize: 10, fontFamily: t.fontMono, color: t.text3,
+                    fontSize: 11, fontFamily: t.fontMono, color: t.text3,
                     textTransform: 'lowercase', letterSpacing: 0.3,
                   }}>{b.lang}</div>
                 )}
                 <pre style={{
                   margin: 0, padding: '8px 12px',
-                  fontFamily: t.fontMono, fontSize: 11.5, lineHeight: 1.5,
+                  fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.5,
                   color: t.text1,
                   overflowX: 'auto', whiteSpace: 'pre',
                 }}>{b.body}</pre>
@@ -356,7 +356,7 @@ export function Markdown({ source }: { source: string }) {
             const Tag = b.ordered ? 'ol' : 'ul';
             return (
               <Tag key={i} style={{
-                margin: '6px 0', paddingLeft: 22,
+                margin: '6px 0', paddingLeft: 24,
               }}>
                 {b.items.map((it, k) => (
                   <li key={k} style={{ marginBottom: 2 }}>
@@ -372,7 +372,7 @@ export function Markdown({ source }: { source: string }) {
                 margin: '8px 0', overflowX: 'auto',
                 border: `1px solid ${t.glassBorder}`, borderRadius: 8,
               }}>
-                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5 }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
                   <thead>
                     <tr>
                       {b.header.map((h, k) => (
@@ -380,7 +380,7 @@ export function Markdown({ source }: { source: string }) {
                           textAlign: b.align[k] ?? 'left',
                           padding: '6px 12px',
                           background: t.bg2, color: t.text0,
-                          fontWeight: 700, whiteSpace: 'nowrap',
+                          fontWeight: 600, whiteSpace: 'nowrap',
                           borderBottom: `1px solid ${t.glassBorder}`,
                           borderRight: k < b.header.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
                         }}>{renderInline(h, t, `th${i}-${k}-`)}</th>
@@ -393,7 +393,7 @@ export function Markdown({ source }: { source: string }) {
                         {b.header.map((_, k) => (
                           <td key={k} style={{
                             textAlign: b.align[k] ?? 'left',
-                            padding: '5px 12px', verticalAlign: 'top',
+                            padding: '6px 12px', verticalAlign: 'top',
                             borderBottom: r < b.rows.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
                             borderRight: k < b.header.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
                           }}>{renderInline(row[k] ?? '', t, `td${i}-${r}-${k}-`)}</td>

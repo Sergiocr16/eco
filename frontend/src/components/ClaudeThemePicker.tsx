@@ -33,13 +33,13 @@ export function ClaudeThemeCard({ entry, selected, recommended, compact, onClick
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{
-            fontSize: compact ? 11 : 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            display: 'flex', alignItems: 'center', gap: 5,
+            fontSize: compact ? 11 : 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            display: 'flex', alignItems: 'center', gap: 6,
           }}>
             {selected && <IconCheck size={10} strokeWidth={3}/>}
             {entry.name}
           </div>
-          <div style={{ fontSize: compact ? 8.5 : 9.5, color: p.muted, marginTop: 2, letterSpacing: 0.5 }}>
+          <div style={{ fontSize: compact ? 11 : 11, color: p.muted, marginTop: 2, letterSpacing: 0.5 }}>
             {entry.base === 'dark' ? '● DARK' : '○ LIGHT'}
             {recommended && <span style={{ marginLeft: 6, color: p.claude }}>★ {tr('settings.appearance.claude_theme.recommended')}</span>}
           </div>
@@ -49,15 +49,15 @@ export function ClaudeThemeCard({ entry, selected, recommended, compact, onClick
           <div style={{ width: compact ? 30 : 44, height: compact ? 5 : 7, borderRadius: 4, background: p.claude }}/>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: compact ? 4 : 6, marginTop: compact ? 7 : 10 }}>
+      <div style={{ display: 'flex', gap: compact ? 4 : 6, marginTop: compact ? 8 : 10 }}>
         {p.swatches.map((c, i) => (
-          <span key={i} style={{ width: compact ? 10 : 14, height: compact ? 10 : 14, borderRadius: 3, background: c }}/>
+          <span key={i} style={{ width: compact ? 10 : 14, height: compact ? 10 : 14, borderRadius: 4, background: c }}/>
         ))}
       </div>
       {!compact && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8, fontSize: 8.5 }}>
-          <span style={{ flex: 1, padding: '2px 6px', borderRadius: 3, background: p.added, color: p.addedFg }}>+ added</span>
-          <span style={{ flex: 1, padding: '2px 6px', borderRadius: 3, background: p.removed, color: p.removedFg }}>− removed</span>
+          <span style={{ flex: 1, padding: '2px 6px', borderRadius: 4, background: p.added, color: p.addedFg }}>+ added</span>
+          <span style={{ flex: 1, padding: '2px 6px', borderRadius: 4, background: p.removed, color: p.removedFg }}>− removed</span>
         </div>
       )}
     </button>
@@ -88,7 +88,7 @@ export function ClaudeThemePickerButton({ mode }: { mode: EffectiveThemeMode }) 
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 9.5, color: t.text3, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+      <div style={{ fontSize: 11, color: t.text3, marginBottom: 4, }}>
         {tr('settings.appearance.claude_theme.label')}
       </div>
       {chosen && <ClaudeThemeCard entry={chosen} compact recommended={chosen.id === recommended} onClick={() => setOpen(true)}/>}
@@ -103,11 +103,11 @@ export function ClaudeThemePickerButton({ mode }: { mode: EffectiveThemeMode }) 
           }}>
           <div style={{
             width: 'min(960px, 92vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column',
-            padding: 18, ...dialogSurface(t), borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
+            padding: 20, ...dialogSurface(t), borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>
                   {tr('settings.appearance.claude_theme.pick_title')}
                 </div>
                 <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>

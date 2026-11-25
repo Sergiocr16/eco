@@ -10,7 +10,7 @@ export function ShaPill({ sha, abbrev }: { sha?: string; abbrev: string }) {
       title={sha}
       style={{
         fontFamily: t.fontMono, fontSize: 11,
-        padding: '1px 6px', borderRadius: 5,
+        padding: '1px 6px', borderRadius: 6,
         background: t.bg3, color: t.text1,
         cursor: sha ? 'pointer' : 'default',
       }}
@@ -32,7 +32,7 @@ export function EmptyState({ message, hint }: { message: string; hint?: ReactNod
       padding: 40, gap: 8, color: t.text2,
     }}>
       <div style={{ fontSize: 13, color: t.text1, fontWeight: 500 }}>{message}</div>
-      {hint && <div style={{ fontSize: 11.5, color: t.text3, maxWidth: 380, textAlign: 'center' }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 12, color: t.text3, maxWidth: 380, textAlign: 'center' }}>{hint}</div>}
     </div>
   );
 }

@@ -94,13 +94,13 @@ export function HistoryView({ workspace, bubbleId }: Props) {
           background: t.bg0,
         }}>
           <div style={{
-            padding: '8px 14px', display: 'flex', alignItems: 'center',
+            padding: '8px 16px', display: 'flex', alignItems: 'center',
             borderBottom: `1px solid ${t.glassBorder}`,
             flexShrink: 0,
           }}>
             <label style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
-              fontSize: 11.5, color: t.text2, cursor: 'pointer',
+              fontSize: 12, color: t.text2, cursor: 'pointer',
             }}
             title={tr('git.history.all_branches_tooltip')}>
               <input type="checkbox"
@@ -155,7 +155,7 @@ function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: bool
     <button type="button"
       onClick={onClick}
       style={{
-        width: '100%', padding: '10px 14px',
+        width: '100%', padding: '10px 16px',
         display: 'flex', flexDirection: 'column', gap: 4,
         border: 0, background: active ? t.accentFaint : 'transparent',
         textAlign: 'left', cursor: 'pointer',
@@ -168,11 +168,11 @@ function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: bool
         <ShaPill sha={commit.sha} abbrev={commit.abbrev}/>
         <div style={{
           flex: 1, minWidth: 0,
-          fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500, color: t.text0,
+          fontFamily: t.fontSans, fontSize: 13, fontWeight: 500, color: t.text0,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{commit.subject}</div>
       </div>
-      <div style={{ fontSize: 10.5, color: t.text3, display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div style={{ fontSize: 11, color: t.text3, display: 'flex', gap: 6, alignItems: 'center' }}>
         <span>{commit.author}</span>
         <span>·</span>
         <span>{formatRelTime(commit.date)}</span>
@@ -181,8 +181,8 @@ function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: bool
             <span>·</span>
             {commit.refs.slice(0, 2).map((r, i) => (
               <span key={i} style={{
-                padding: '0 5px', borderRadius: 4,
-                background: t.bg3, color: t.text1, fontSize: 9.5, fontWeight: 600,
+                padding: '0 6px', borderRadius: 4,
+                background: t.bg3, color: t.text1, fontSize: 11, fontWeight: 500,
               }}>{r.replace('HEAD -> ', '').replace('tag: ', '🏷 ')}</span>
             ))}
           </>
@@ -190,7 +190,7 @@ function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: bool
         {commit.parents.length > 1 && (
           <>
             <span>·</span>
-            <span style={{ color: t.accent, fontSize: 9.5, fontWeight: 600 }}>{tr('git.history.merge_tag')}</span>
+            <span style={{ color: t.accent, fontSize: 11, fontWeight: 500 }}>{tr('git.history.merge_tag')}</span>
           </>
         )}
       </div>

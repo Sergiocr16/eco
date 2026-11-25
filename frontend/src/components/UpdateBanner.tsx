@@ -45,8 +45,8 @@ export function UpdateBanner() {
     <div style={{
       position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
       marginTop: 8, zIndex: 9998,
-      display: 'flex', alignItems: 'center', gap: 14,
-      padding: '10px 14px', borderRadius: 12,
+      display: 'flex', alignItems: 'center', gap: 16,
+      padding: '10px 16px', borderRadius: 12,
       background: t.bg2, color: t.text0,
       border: `1px solid ${t.glassBorder}`,
       boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
@@ -68,9 +68,9 @@ export function UpdateBanner() {
           void window.electronAPI?.installAndRestart?.();
         }}
         style={{
-          padding: '6px 14px', borderRadius: 8,
+          padding: '6px 16px', borderRadius: 8,
           border: `1px solid ${t.ok}`, background: 'transparent', color: t.ok,
-          fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 600,
+          fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
           cursor: installing ? 'wait' : 'pointer', opacity: installing ? 0.6 : 1,
         }}>
         {tr('update.banner.restart')}

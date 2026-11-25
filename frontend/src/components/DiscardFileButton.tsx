@@ -70,10 +70,10 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
           : tr('discard.tooltip.revert', { path })}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '5px 10px', borderRadius: 7,
+          padding: '6px 10px', borderRadius: 8,
           border: `1px solid ${t.glassBorder}`,
           background: 'transparent', color: t.text2,
-          fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+          fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
           cursor: 'pointer',
         }}
         onMouseEnter={(e) => { e.currentTarget.style.color = t.err; e.currentTarget.style.borderColor = t.err; }}
@@ -87,7 +87,7 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
-      padding: '4px 6px 4px 10px', borderRadius: 7,
+      padding: '4px 6px 4px 10px', borderRadius: 8,
       background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
       border: `1px solid ${t.err}`,
     }}>
@@ -98,16 +98,16 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
         onClick={() => void discard()}
         disabled={busy}
         style={{
-          padding: '3px 9px', borderRadius: 5, border: 0,
+          padding: '4px 8px', borderRadius: 6, border: 0,
           background: t.err, color: '#fff',
-          fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer',
+          fontSize: 11, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
           opacity: busy ? 0.6 : 1,
         }}>{busy ? '…' : tr('common.yes')}</button>
       <button type="button"
         onClick={() => setConfirming(false)}
         disabled={busy}
         style={{
-          padding: '3px 9px', borderRadius: 5, border: 0,
+          padding: '4px 8px', borderRadius: 6, border: 0,
           background: 'transparent', color: t.text2,
           fontSize: 11, cursor: 'pointer',
         }}>{tr('common.no')}</button>

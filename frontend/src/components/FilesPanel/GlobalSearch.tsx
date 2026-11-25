@@ -183,7 +183,7 @@ export function GlobalSearch({ bubbleId, workspace, onPick, seed }: Props) {
               padding: '4px 10px', fontSize: 11, fontFamily: t.fontMono,
               background: t.bg2,
             }}>
-              <span style={{ color: t.text1, fontWeight: 600 }}>{name}</span>
+              <span style={{ color: t.text1, fontWeight: 500 }}>{name}</span>
               {dir && <span style={{ color: t.text3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{dir}</span>}
             </div>
             {hs.map((h, idx) => (
@@ -194,7 +194,7 @@ export function GlobalSearch({ bubbleId, workspace, onPick, seed }: Props) {
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: 8,
                   width: '100%', textAlign: 'left',
-                  padding: '3px 10px 3px 18px',
+                  padding: '4px 10px 4px 20px',
                   background: 'transparent', border: 0,
                   color: t.text1, cursor: 'pointer',
                   fontFamily: t.fontMono, fontSize: 12,
@@ -241,7 +241,7 @@ function highlightPreview(
   while ((m = re.exec(preview)) !== null && guard < 200) {
     guard++;
     if (m.index > last) out.push(preview.slice(last, m.index));
-    out.push(<span key={`${m.index}-${guard}`} style={{ color: accent, fontWeight: 700 }}>{m[0]}</span>);
+    out.push(<span key={`${m.index}-${guard}`} style={{ color: accent, fontWeight: 600 }}>{m[0]}</span>);
     last = m.index + m[0].length;
     if (m[0].length === 0) re.lastIndex++;  // evita loop infinito en match vacío
   }

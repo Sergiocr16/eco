@@ -208,11 +208,10 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
           } : {})}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: onOpenDetail ? '5px 10px' : '2px 8px', borderRadius: 999,
+            padding: onOpenDetail ? '6px 10px' : '2px 8px', borderRadius: 999,
             background: `color-mix(in oklch, ${stateColor} 18%, transparent)`,
             color: stateColor,
-            fontSize: 10, fontWeight: 600,
-            textTransform: 'uppercase', letterSpacing: 0.4,
+            fontSize: 11, fontWeight: 500,
             flexShrink: 0,
             ...(onOpenDetail ? {
               cursor: 'pointer',
@@ -223,15 +222,14 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
           PR #{pr.number}
         </span>
         <span style={{
-          fontSize: 10, color: stateColor, fontWeight: 600,
-          textTransform: 'uppercase', letterSpacing: 0.4,
+          fontSize: 11, color: stateColor, fontWeight: 500,
           flexShrink: 0,
         }}>{stateLabel}</span>
         <span style={{ flex: 1 }}/>
         <a href={pr.url} target="_blank" rel="noopener noreferrer"
           title={tr('prs.banner.view_github_tooltip')}
           style={{
-            width: 22, height: 22, borderRadius: 5,
+            width: 22, height: 22, borderRadius: 6,
             background: 'transparent', color: t.text3,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
@@ -267,7 +265,7 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
       {/* Ramas y conflictos */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        fontFamily: t.fontMono, fontSize: 10, color: t.text3,
+        fontFamily: t.fontMono, fontSize: 11, color: t.text3,
         marginBottom: 10,
         flexWrap: 'wrap', rowGap: 4,
       }}>
@@ -279,11 +277,11 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
         </span>
         {conflicting && (
           <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 3,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: '1px 6px', borderRadius: 4,
             background: `color-mix(in oklch, ${t.err} 14%, transparent)`,
             color: t.err,
-            fontSize: 9.5, fontWeight: 500,
+            fontSize: 11, fontWeight: 500,
             flexShrink: 0,
           }}>
             <IconAlert size={9}/> {tr('prs.banner.conflicts')}
@@ -316,10 +314,10 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
               title={tr('prs.banner.ready_tooltip')}
               style={{
                 flex: 1, minWidth: 0,
-                padding: '6px 8px', borderRadius: 7, border: 0,
+                padding: '6px 8px', borderRadius: 8, border: 0,
                 background: canReady ? t.accent : t.bg3,
                 color: canReady ? t.accentOn : t.text3,
-                fontSize: 11, fontWeight: 600, fontFamily: t.fontSans,
+                fontSize: 11, fontWeight: 500, fontFamily: t.fontSans,
                 cursor: canReady ? 'pointer' : 'not-allowed',
                 opacity: busy === 'readying' ? 0.7 : 1,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
@@ -339,12 +337,12 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
                 style={{
                   flex: 1, minWidth: 0,
                   padding: '6px 8px',
-                  borderTopLeftRadius: 7, borderBottomLeftRadius: 7,
+                  borderTopLeftRadius: 8, borderBottomLeftRadius: 8,
                   borderTopRightRadius: 0, borderBottomRightRadius: 0,
                   border: 0,
                   background: canMerge ? t.ok : t.bg3,
                   color: canMerge ? '#fff' : t.text3,
-                  fontSize: 11, fontWeight: 600, fontFamily: t.fontSans,
+                  fontSize: 11, fontWeight: 500, fontFamily: t.fontSans,
                   cursor: canMerge ? 'pointer' : 'not-allowed',
                   opacity: busy === 'merging' ? 0.7 : 1,
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
@@ -357,9 +355,9 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
                 disabled={!canMerge}
                 title={tr('prs.banner.merge_method_tooltip')}
                 style={{
-                  padding: '6px 7px',
+                  padding: '6px 8px',
                   borderTopLeftRadius: 0, borderBottomLeftRadius: 0,
-                  borderTopRightRadius: 7, borderBottomRightRadius: 7,
+                  borderTopRightRadius: 8, borderBottomRightRadius: 8,
                   border: 0, borderLeft: `1px solid color-mix(in oklch, ${t.ok} 60%, black)`,
                   background: canMerge ? t.ok : t.bg3,
                   color: canMerge ? '#fff' : t.text3,
@@ -397,15 +395,15 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
                         <button key={m} type="button"
                           onClick={() => { setShowMergeMenu(false); setConfirming({ method: m }); }}
                           style={{
-                            width: '100%', padding: '7px 10px', borderRadius: 5,
+                            width: '100%', padding: '8px 10px', borderRadius: 6,
                             border: 0, background: 'transparent', color: t.text1,
-                            fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+                            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
                             textAlign: 'left', cursor: 'pointer',
                           }}
                           onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
                           <div>{m === 'merge' ? tr('prs.banner.method.merge.label') : m === 'squash' ? tr('prs.banner.method.squash.label') : tr('prs.banner.method.rebase.label')}</div>
-                          <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>
+                          <div style={{ fontSize: 11, color: t.text3, marginTop: 1 }}>
                             {m === 'merge' ? tr('prs.banner.method.merge.desc') : m === 'squash' ? tr('prs.banner.method.squash.desc') : tr('prs.banner.method.rebase.desc')}
                           </div>
                         </button>
@@ -422,7 +420,7 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
             disabled={!canClose}
             title={tr('prs.banner.close_tooltip')}
             style={{
-              padding: '6px 10px', borderRadius: 7,
+              padding: '6px 10px', borderRadius: 8,
               border: `1px solid ${t.glassBorder}`,
               background: 'transparent', color: t.text2,
               fontSize: 11, fontFamily: t.fontSans,
@@ -475,14 +473,14 @@ function FeedbackInline({
   const t = useTokens();
   return (
     <div style={{
-      padding: '5px 7px',
+      padding: '6px 8px',
       borderRadius: 6,
       background: msg.kind === 'ok'
         ? `color-mix(in oklch, ${t.ok} 14%, transparent)`
         : `color-mix(in oklch, ${t.err} 14%, transparent)`,
       color: msg.kind === 'ok' ? t.ok : t.err,
-      fontFamily: t.fontMono, fontSize: 10.5,
-      display: 'flex', alignItems: 'flex-start', gap: 5,
+      fontFamily: t.fontMono, fontSize: 11,
+      display: 'flex', alignItems: 'flex-start', gap: 6,
       maxHeight: 90, overflow: 'auto', wordBreak: 'break-word',
     }}>
       <span style={{ flexShrink: 0, marginTop: 1 }}>
@@ -534,16 +532,16 @@ function ConfirmMergeDialog({
           borderRadius: 16,
           padding: 20,
         }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500, color: t.text0 }}>
           {tr('prs.banner.confirm_merge.title', { n: pr.number })}
         </h3>
         <div style={{
-          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 14,
+          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 16,
           lineHeight: 1.5,
         }}>
           <code style={{
             fontFamily: t.fontMono, fontSize: 11,
-            padding: '1px 5px', borderRadius: 4,
+            padding: '1px 6px', borderRadius: 4,
             background: t.bg3, color: t.text1,
           }}>{pr.title}</code>
           <div style={{ marginTop: 6 }}>
@@ -553,16 +551,16 @@ function ConfirmMergeDialog({
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onCancel}
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
-              fontSize: 12.5, cursor: 'pointer',
+              fontSize: 13, cursor: 'pointer',
             }}>{tr('common.cancel')}</button>
           <button type="button" onClick={onConfirm}
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: t.ok, color: '#fff', border: 0,
-              fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer',
             }}>{tr('prs.banner.merge_btn')}</button>
         </div>
       </motion.div>
@@ -600,16 +598,16 @@ function ConfirmReadyDialog({
           borderRadius: 16,
           padding: 20,
         }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500, color: t.text0 }}>
           {tr('prs.banner.confirm_ready.title', { n: pr.number })}
         </h3>
         <div style={{
-          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 14,
+          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 16,
           lineHeight: 1.5,
         }}>
           <code style={{
             fontFamily: t.fontMono, fontSize: 11,
-            padding: '1px 5px', borderRadius: 4,
+            padding: '1px 6px', borderRadius: 4,
             background: t.bg3, color: t.text1,
           }}>{pr.title}</code>
           <div style={{ marginTop: 6 }}>
@@ -619,16 +617,16 @@ function ConfirmReadyDialog({
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onCancel}
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
-              fontSize: 12.5, cursor: 'pointer',
+              fontSize: 13, cursor: 'pointer',
             }}>{tr('common.cancel')}</button>
           <button type="button" onClick={onConfirm}
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: t.accent, color: t.accentOn, border: 0,
-              fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer',
             }}>{tr('prs.ready_confirm.confirm')}</button>
         </div>
       </motion.div>
@@ -668,23 +666,23 @@ function ConfirmCloseDialog({
           borderRadius: 16,
           padding: 20,
         }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text0 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500, color: t.text0 }}>
           {tr('prs.banner.confirm_close.title', { n: pr.number })}
         </h3>
         <div style={{
-          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 14,
+          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 16,
           lineHeight: 1.5,
         }}>
           <code style={{
             fontFamily: t.fontMono, fontSize: 11,
-            padding: '1px 5px', borderRadius: 4,
+            padding: '1px 6px', borderRadius: 4,
             background: t.bg3, color: t.text1,
           }}>{pr.title}</code>
           <div style={{ marginTop: 6 }}>
             {tr('prs.banner.confirm_close.body_pre')}
             <code style={{
-              fontFamily: t.fontMono, fontSize: 10.5,
-              padding: '1px 4px', borderRadius: 3,
+              fontFamily: t.fontMono, fontSize: 11,
+              padding: '1px 4px', borderRadius: 4,
               background: t.bg3, color: t.text1,
               margin: '0 4px',
             }}>{pr.headRefName}</code>
@@ -694,16 +692,16 @@ function ConfirmCloseDialog({
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onCancel}
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
-              fontSize: 12.5, cursor: 'pointer',
+              fontSize: 13, cursor: 'pointer',
             }}>{tr('common.cancel')}</button>
           <button type="button" onClick={onConfirm}
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: t.err, color: '#fff', border: 0,
-              fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer',
             }}>{tr('prs.detail.close_btn')}</button>
         </div>
       </motion.div>

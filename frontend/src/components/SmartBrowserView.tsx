@@ -374,21 +374,21 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
             fontFamily: 'ui-sans-serif, system-ui, sans-serif',
           }}
         >
-          <div style={{ fontSize: 13.5, lineHeight: 1.55, maxWidth: 380, color: '#9aa3b2' }}>
+          <div style={{ fontSize: 14, lineHeight: 1.55, maxWidth: 380, color: '#9aa3b2' }}>
             {tr('browser.mixed.msg')}
           </div>
           <button
             type="button"
             onClick={() => { try { window.open(src, '_blank', 'noopener'); } catch { /* noop */ } }}
             style={{
-              padding: '9px 18px', borderRadius: 10, border: '1px solid #2b3140',
-              background: '#1a1d28', color: '#e5e7eb', fontSize: 13, fontWeight: 600,
+              padding: '8px 20px', borderRadius: 10, border: '1px solid #2b3140',
+              background: '#1a1d28', color: '#e5e7eb', fontSize: 13, fontWeight: 500,
               cursor: 'pointer',
             }}
           >
             {tr('browser.mixed.btn')}
           </button>
-          <div style={{ fontSize: 11.5, color: '#6b7280', fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all', maxWidth: 380 }}>
+          <div style={{ fontSize: 12, color: '#6b7280', fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all', maxWidth: 380 }}>
             {src}
           </div>
         </div>

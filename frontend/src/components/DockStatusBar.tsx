@@ -34,7 +34,7 @@ function Chip({ children, onClick, title, mono, wide }: {
         border: `1px solid ${t.glassBorder}`,
         background: t.glassBg,
         color: t.text1,
-        fontFamily: mono ? t.fontMono : t.fontSans, fontSize: mono ? 11.5 : 12,
+        fontFamily: mono ? t.fontMono : t.fontSans, fontSize: mono ? 12 : 12,
         whiteSpace: 'nowrap', maxWidth: wide ? 420 : 240, minWidth: 0,
         cursor: onClick ? 'pointer' : 'default',
         backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
@@ -89,7 +89,7 @@ export function DockBubbleStatus({ bubble }: { bubble: Bubble }) {
           <Dot color={PR_COLOR[pr.state] ?? t.text3}/>
           {task ? (
             <>
-              <span style={{ fontFamily: t.fontMono, fontSize: 11.5, color: t.text2 }}>{task.id}</span>
+              <span style={{ fontFamily: t.fontMono, fontSize: 12, color: t.text2 }}>{task.id}</span>
               {task.name && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.name}</span>}
             </>
           ) : <span>#{pr.number}</span>}

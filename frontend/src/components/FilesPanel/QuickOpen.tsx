@@ -90,7 +90,7 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
       style={{
         position: 'fixed', inset: 0, ...scrimStyle(t),
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        paddingTop: vh(15), zIndex: 100,
+        paddingTop: vh(16), zIndex: 100,
       }}
     >
       <div style={{
@@ -116,7 +116,7 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
           }}
           placeholder={tr('files.quickopen.placeholder')}
           style={{
-            padding: '12px 14px', fontSize: 14, fontFamily: t.fontSans,
+            padding: '12px 16px', fontSize: 14, fontFamily: t.fontSans,
             background: t.bg1, color: t.text0, border: 0,
             borderBottom: `1px solid ${t.glassBorder}`, outline: 'none',
           }}
@@ -146,7 +146,7 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
                   onMouseEnter={() => setFocusedIdx(idx)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 14px',
+                    padding: '6px 16px',
                     background: isActive ? `color-mix(in oklch, ${t.accent} 18%, transparent)` : 'transparent',
                     cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
                     color: isActive ? t.text0 : t.text1,
@@ -182,7 +182,7 @@ function highlight(text: string, positions: number[], accent: string) {
   const flush = (key: number) => {
     if (!run) return;
     out.push(runHi
-      ? <span key={key} style={{ color: accent, fontWeight: 700 }}>{run}</span>
+      ? <span key={key} style={{ color: accent, fontWeight: 600 }}>{run}</span>
       : <span key={key}>{run}</span>);
     run = '';
   };

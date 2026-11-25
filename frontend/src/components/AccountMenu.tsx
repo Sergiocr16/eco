@@ -76,7 +76,7 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
         style={{
           width: 36, height: 36, borderRadius: '50%', border: 0, cursor: 'pointer',
           background: open ? t.accentFaint : t.bg3,
-          color: open ? t.accent : t.text0, fontWeight: 600, fontSize: 14,
+          color: open ? t.accent : t.text0, fontWeight: 500, fontSize: 14,
           letterSpacing: -0.3,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           transition: 'background 140ms, color 140ms',
@@ -108,7 +108,7 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
             backdropFilter: 'blur(40px) saturate(180%)',
             WebkitBackdropFilter: 'blur(40px) saturate(180%)',
             border: `1px solid ${t.glassBorderHi}`,
-            borderRadius: 14,
+            borderRadius: 16,
             boxShadow: t.shadowLg,
             padding: 8,
             display: 'flex', flexDirection: 'column', gap: 2,
@@ -125,7 +125,7 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
                 {tr('account.signed_in_as')}
               </div>
               <div style={{
-                fontSize: 13.5, color: t.text0, fontWeight: 500,
+                fontSize: 14, color: t.text0, fontWeight: 500,
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
                 {username ?? '—'}
@@ -199,7 +199,7 @@ function ChangePasswordDialog({ onChangePassword, onClose }: {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, ...scrimStyle(t), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ width: `min(380px, calc(${vw(100)} - 48px))`, ...dialogSurface(t), borderRadius: 16, padding: 24 }}>
-        <h3 style={{ margin: '0 0 14px', color: t.text0, fontSize: 16 }}>{tr('account.password')}</h3>
+        <h3 style={{ margin: '0 0 16px', color: t.text0, fontSize: 16 }}>{tr('account.password')}</h3>
         {done ? (
           <>
             <p style={{ color: t.text1, fontSize: 13, margin: '0 0 16px' }}>{tr('account.password.done')}</p>
@@ -209,12 +209,12 @@ function ChangePasswordDialog({ onChangePassword, onClose }: {
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
               {input(current, setCurrent, tr('account.password.current'), true)}
               {input(next, setNext, tr('account.password.new'))}
               {input(confirm, setConfirm, tr('account.password.confirm'))}
             </div>
-            {err && <div style={{ marginBottom: 10, color: t.err, fontSize: 12.5 }}>{err}</div>}
+            {err && <div style={{ marginBottom: 10, color: t.err, fontSize: 13 }}>{err}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Btn kind="secondary" size="sm" onClick={onClose}>{tr('account.password.cancel')}</Btn>
               <Btn kind="primary" size="sm" onClick={submit} disabled={busy}>{busy ? tr('account.password.saving') : tr('account.password.save')}</Btn>
@@ -299,7 +299,7 @@ function ProfilePhotoControl() {
           width: 44, height: 44, borderRadius: '50%', border: 0, cursor: 'pointer',
           padding: 0, overflow: 'hidden',
           background: profile.photo ? t.bg2 : t.accent,
-          color: t.accentOn, fontWeight: 600, fontSize: 18,
+          color: t.accentOn, fontWeight: 500, fontSize: 20,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
         {profile.photo ? (
@@ -347,7 +347,7 @@ function ProfilePhotoControl() {
           position: 'absolute', top: 48, left: -8,
           padding: '4px 8px', borderRadius: 6,
           background: `color-mix(in oklch, ${t.err} 16%, ${t.bg2})`,
-          color: t.err, fontSize: 10.5, whiteSpace: 'nowrap',
+          color: t.err, fontSize: 11, whiteSpace: 'nowrap',
         }}>{err}</div>
       )}
     </div>

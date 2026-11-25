@@ -62,11 +62,11 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{
           width: 8, height: 8, borderRadius: '50%',
-          background: t.err, boxShadow: `0 0 6px ${t.err}`,
+          background: t.err,
           flexShrink: 0,
         }}/>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, color: t.text0, fontWeight: 600 }}>
+          <div style={{ fontSize: 13, color: t.text0, fontWeight: 500 }}>
             {tr('git.op.in_progress', { op: opLabel })}
           </div>
           {conflictCount > 0 && (
@@ -84,7 +84,7 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
             style={{
               height: 28, padding: '0 10px', borderRadius: 6,
               background: 'transparent', border: `1px solid ${t.glassBorder}`,
-              color: t.text1, fontSize: 11.5, fontWeight: 500, cursor: 'pointer',
+              color: t.text1, fontSize: 12, fontWeight: 500, cursor: 'pointer',
             }}>
             {tr('git.op.resolve_in_changes')}
           </button>
@@ -95,7 +95,7 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
             style={{
               height: 28, padding: '0 10px', borderRadius: 6,
               background: t.accent, border: 0, color: t.accentOn,
-              fontSize: 11.5, fontWeight: 600,
+              fontSize: 12, fontWeight: 500,
               cursor: busy ? 'wait' : 'pointer',
               opacity: busy ? 0.6 : 1,
             }}>
@@ -108,7 +108,7 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
             style={{
               height: 28, padding: '0 10px', borderRadius: 6,
               background: t.err, border: 0, color: '#fff',
-              fontSize: 11.5, fontWeight: 600,
+              fontSize: 12, fontWeight: 500,
               cursor: busy ? 'wait' : 'pointer',
               opacity: busy ? 0.6 : 1,
             }}>

@@ -101,7 +101,7 @@ export function NoteEditor({
       {/* Header: título input + toggle preview + delete */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '10px 14px',
+        padding: '10px 16px',
         borderBottom: `1px solid ${t.glassBorder}`,
         background: t.bg1,
       }}>
@@ -113,7 +113,7 @@ export function NoteEditor({
             flex: 1, padding: '4px 6px',
             background: 'transparent', color: t.text0,
             border: 0, outline: 'none',
-            fontFamily: t.fontSans, fontSize: 16, fontWeight: 600,
+            fontFamily: t.fontSans, fontSize: 16, fontWeight: 500,
           }}
         />
         <button
@@ -125,7 +125,7 @@ export function NoteEditor({
             background: showPreview ? `color-mix(in oklch, ${t.accent} 18%, transparent)` : 'transparent',
             color: showPreview ? t.accent : t.text2,
             border: `1px solid ${showPreview ? t.accent : t.glassBorder}`,
-            cursor: 'pointer', fontSize: 11.5, fontFamily: t.fontSans, fontWeight: 500,
+            cursor: 'pointer', fontSize: 12, fontFamily: t.fontSans, fontWeight: 500,
           }}
         >
           {showPreview ? tr('notes.edit_mode') : tr('notes.preview')}

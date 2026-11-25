@@ -94,7 +94,7 @@ export function AgentStateCard({ bubbleId, filesCount, onGoToTerminal, onGoToGit
       {status && (
         <button type="button" onClick={onGoToTerminal}
           style={{ ...plain, ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500 }}>
             <span style={{
               width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0,
               animation: status.state === 'working' ? 'eco-shimmer 1.4s ease-in-out infinite' : undefined,
@@ -111,10 +111,10 @@ export function AgentStateCard({ bubbleId, filesCount, onGoToTerminal, onGoToGit
       )}
       <button type="button" onClick={onGoToGit}
         style={{ ...plain, ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <span style={{ fontSize: 10.5, letterSpacing: 0.5, textTransform: 'uppercase', color: t.text2 }}>
+        <span style={{ fontSize: 11, color: t.text2 }}>
           {tr('detail.agent.files')}
         </span>
-        <span style={{ fontFamily: t.fontMono, fontSize: 20, fontWeight: 700, lineHeight: 1, color: filesCount > 0 ? t.text0 : t.text3 }}>
+        <span style={{ fontFamily: t.fontMono, fontSize: 20, fontWeight: 600, lineHeight: 1, color: filesCount > 0 ? t.text0 : t.text3 }}>
           {filesCount}
         </span>
       </button>
@@ -149,21 +149,20 @@ function ContextMeter({ tokens }: { tokens: number }) {
                 stroke={on ? tickColor(i) : t.bg3}
                 strokeWidth={2.2} strokeLinecap="round"
                 transform={`rotate(${(i * 360) / TICKS} ${c} ${c})`}
-                style={on && i === lit - 1 ? { filter: `drop-shadow(0 0 3px ${head})` } : undefined}
               />
             );
           })}
         </svg>
         <span style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: t.fontMono, fontSize: 13, fontWeight: 700, color: head,
+          fontFamily: t.fontMono, fontSize: 13, fontWeight: 600, color: head,
         }}>{pct}%</span>
       </span>
       <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <span style={{ fontSize: 10.5, letterSpacing: 0.5, textTransform: 'uppercase', color: t.text2 }}>
+        <span style={{ fontSize: 11, color: t.text2 }}>
           {tr('detail.agent.context')}
         </span>
-        <span style={{ fontFamily: t.fontMono, fontSize: 13, fontWeight: 600, color: t.text0, whiteSpace: 'nowrap' }}>
+        <span style={{ fontFamily: t.fontMono, fontSize: 13, fontWeight: 500, color: t.text0, whiteSpace: 'nowrap' }}>
           {Math.round(tokens / 1000)}k <span style={{ color: t.text3, fontWeight: 400 }}>/ {limit >= 1_000_000 ? '1M' : `${limit / 1000}k`}</span>
         </span>
         <span style={{ fontSize: 11, color: t.text3 }}>

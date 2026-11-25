@@ -230,7 +230,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
       if (action === 'up') {
         const cmd = cmdFor(role);
         if (!cmd.trim()) {
-          updateSlot(role, { actionError: 'Definí el comando para iniciar.', actionBusy: null, status: 'idle' });
+          updateSlot(role, { actionError: tr('server.err.no_command'), actionBusy: null, status: 'idle' });
           return;
         }
         r = await postWithRetry('/dev/start', { workspace, bubbleId, command: cmd, role });
@@ -244,11 +244,11 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
         updateSlot(role, { actionError: data.error || data.message || `HTTP ${r.status}` });
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Error de red';
+      const msg = e instanceof Error ? e.message : tr('server.err.network');
       if (/failed to fetch|network|TypeError/i.test(msg)) {
-        updateSlot(role, { actionError: 'No se pudo contactar Eco. Reintentá en unos segundos.' });
+        updateSlot(role, { actionError: tr('server.err.unreachable') });
       } else if (/aborted|timeout/i.test(msg)) {
-        updateSlot(role, { actionError: 'La operación tardó más de 60s. Revisá el status.' });
+        updateSlot(role, { actionError: tr('server.err.timeout') });
       } else {
         updateSlot(role, { actionError: msg });
       }
@@ -322,17 +322,17 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
 
         {/* Botones de acción globales — corren ambos slots en dual.
             Los tres rótulos en español piden ~430px de fila: envuelven. */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {(() => {
             const activeRoles: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
             const anyRunning = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting');
             const anyStoppable = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting' || slots[r].status === 'error');
             const anyBusy = activeRoles.some((r) => !!slots[r].actionBusy);
-            const startLabel = 'Iniciar servidor';
-            const restartLabel = dual && restartMode === 'frontend' ? 'Reiniciar frontend'
-              : dual && restartMode === 'backend' ? 'Reiniciar backend'
-              : 'Reiniciar servidor';
-            const stopLabel = 'Detener servidor';
+            const startLabel = tr('detail.server.start');
+            const restartLabel = dual && restartMode === 'frontend' ? tr('server.restart.frontend')
+              : dual && restartMode === 'backend' ? tr('server.restart.backend')
+              : tr('detail.server.restart');
+            const stopLabel = tr('detail.server.stop');
             // Identificamos cuál es la acción en curso (si la hay) para
             // mostrar "Iniciando…/Reiniciando…/Deteniendo…" en el botón
             // correcto en vez de "Trabajando…" en el primero solo.
@@ -343,15 +343,15 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               <>
                 <Btn kind="primary" size="md" onClick={() => void runAllAction('up')}
                   disabled={anyBusy || anyRunning} icon={IconPlay}>
-                  {busyAction === 'start' ? 'Iniciando…' : startLabel}
+                  {busyAction === 'start' ? tr('server.busy.starting') : startLabel}
                 </Btn>
                 <Btn kind="secondary" size="md" onClick={() => void runAllAction('restart')}
                   disabled={anyBusy} icon={IconResume}>
-                  {busyAction === 'restart' ? 'Reiniciando…' : restartLabel}
+                  {busyAction === 'restart' ? tr('server.busy.restarting') : restartLabel}
                 </Btn>
                 <Btn kind="danger" size="md" onClick={() => void runAllAction('down')}
                   disabled={anyBusy || !anyStoppable} icon={IconStop}>
-                  {busyAction === 'stop' ? 'Deteniendo…' : stopLabel}
+                  {busyAction === 'stop' ? tr('server.busy.stopping') : stopLabel}
                 </Btn>
               </>
             );
@@ -368,7 +368,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             background: 'transparent', border: 0,
             cursor: 'pointer', color: t.text2,
             fontFamily: t.fontSans, fontSize: 11,
-            textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600,
+            fontWeight: 500,
             textAlign: 'left',
             borderRadius: 6,
           }}
@@ -376,7 +376,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
           {configCollapsed ? <IconChevR size={11}/> : <IconChevD size={11}/>}
           <IconSettings size={11}/>
-          Configuración del server
+          {tr('server.config.section')}
         </button>
 
         {!configCollapsed && (
@@ -398,7 +398,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
                     padding: 10, borderRadius: 10,
                     background: t.bg2, border: `1px solid ${t.glassBorder}`,
                   }}>
-                    <div style={{ fontSize: 11, color: t.text2, fontWeight: 600, marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, color: t.text2, fontWeight: 500, marginBottom: 4 }}>
                       {tr('server.cfg.env_label')}
                     </div>
                     {Object.entries(wsDefaults.defaults.env).map(([k, v]) => (
@@ -409,13 +409,13 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
                     ))}
                   </div>
                 )}
-                <div style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5, marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: t.text3, lineHeight: 1.5, marginTop: 2 }}>
                   {tr('server.cfg.edit_hint')}
                 </div>
               </div>
             ) : (
               <div style={{
-                padding: '12px 14px', borderRadius: 10,
+                padding: '12px 16px', borderRadius: 10,
                 background: t.bg2, border: `1px solid ${t.glassBorder}`,
                 fontSize: 12, color: t.text2, lineHeight: 1.5,
               }}>
@@ -429,11 +429,11 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             padding: '10px 12px', marginBottom: 12, borderRadius: 10,
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
           }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0, marginBottom: 2 }}>
-              Vista de logs
+            <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 2 }}>
+              {tr('server.logview.title')}
             </div>
             <div style={{ fontSize: 11, color: t.text2, marginBottom: 8, lineHeight: 1.45 }}>
-              Cuál panel se muestra grande. Igual podés colapsar/expandir desde los chevrons en cada panel.
+              {tr('server.logview.sub')}
             </div>
             <div style={{
               // Tres columnas en 300px dan tarjetas de ~86px para dos líneas
@@ -443,9 +443,9 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               gap: 6,
             }}>
               {([
-                { id: 'both',     label: 'Ambos',         sub: 'mitad y mitad' },
-                { id: 'frontend', label: 'Frontend',      sub: 'backend chiquito' },
-                { id: 'backend',  label: 'Backend',       sub: 'frontend chiquito' },
+                { id: 'both',     label: tr('server.opt.both'), sub: tr('server.logview.both_sub') },
+                { id: 'frontend', label: 'Frontend',            sub: tr('server.logview.frontend_sub') },
+                { id: 'backend',  label: 'Backend',             sub: tr('server.logview.backend_sub') },
               ] as const).map((opt) => {
                 const selected = (!minFront && !minBack && opt.id === 'both')
                   || (minBack && !minFront && opt.id === 'frontend')
@@ -466,8 +466,8 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
                       color: selected ? t.accent : t.text1,
                       fontFamily: t.fontSans, textAlign: 'left',
                     }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 600 }}>{opt.label}</div>
-                    <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>{opt.sub}</div>
+                    <div style={{ fontSize: 12, fontWeight: 500 }}>{opt.label}</div>
+                    <div style={{ fontSize: 11, color: t.text3, marginTop: 1 }}>{opt.sub}</div>
                   </button>
                 );
               })}
@@ -481,11 +481,11 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             padding: '10px 12px', marginBottom: 12, borderRadius: 10,
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
           }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0, marginBottom: 2 }}>
-              Al reiniciar
+            <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 2 }}>
+              {tr('server.restartmode.title')}
             </div>
             <div style={{ fontSize: 11, color: t.text2, marginBottom: 8, lineHeight: 1.45 }}>
-              Qué reinicia el botón "Reiniciar servidor". Igual podés reiniciar cada slot por separado desde su botón en el header.
+              {tr('server.restartmode.sub')}
             </div>
             <div style={{
               // Tres columnas en 300px dan tarjetas de ~86px para dos líneas
@@ -495,9 +495,9 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               gap: 6,
             }}>
               {([
-                { id: 'both',     label: 'Ambos',    sub: 'frontend + backend' },
-                { id: 'frontend', label: 'Frontend', sub: 'solo el frontend' },
-                { id: 'backend',  label: 'Backend',  sub: 'solo el backend' },
+                { id: 'both',     label: tr('server.opt.both'), sub: 'frontend + backend' },
+                { id: 'frontend', label: 'Frontend', sub: tr('server.restartmode.frontend_sub') },
+                { id: 'backend',  label: 'Backend',  sub: tr('server.restartmode.backend_sub') },
               ] as const).map((opt) => {
                 const selected = restartMode === opt.id;
                 return (
@@ -512,8 +512,8 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
                       color: selected ? t.accent : t.text1,
                       fontFamily: t.fontSans, textAlign: 'left',
                     }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 600 }}>{opt.label}</div>
-                    <div style={{ fontSize: 10, color: t.text3, marginTop: 1 }}>{opt.sub}</div>
+                    <div style={{ fontSize: 12, fontWeight: 500 }}>{opt.label}</div>
+                    <div style={{ fontSize: 11, color: t.text3, marginTop: 1 }}>{opt.sub}</div>
                   </button>
                 );
               })}
@@ -522,29 +522,28 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
         )}
 
         {/* Descripción de cómo funciona */}
-        <Glass radius={10} style={{ padding: 14, marginTop: 16, background: t.bg2 }}>
+        <Glass radius={10} style={{ padding: 16, marginTop: 16, background: t.bg2 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
             fontSize: 11, color: t.accent, fontWeight: 500,
-            textTransform: 'uppercase', letterSpacing: 0.3,
           }}>
             <IconCpu size={11}/> {tr('server.help.how_it_works')}
           </div>
-          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>
+          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>
             {tr('server.help.body_a')} <code style={mono(t)}>$PORT</code> {dual ? tr('server.help.body_dual') : tr('server.help.body_single')} {tr('server.help.body_b')} <code style={mono(t)}>vite --port $PORT</code>, <code style={mono(t)}>process.env.PORT</code>{tr('server.help.body_c')} <code style={mono(t)}>lsof</code>.
           </div>
           {dual && (
             <div style={{
               marginTop: 10, paddingTop: 10,
               borderTop: `1px solid ${t.glassBorder}`,
-              fontSize: 11.5, color: t.text2, lineHeight: 1.55,
+              fontSize: 12, color: t.text2, lineHeight: 1.55,
             }}>
-              <div style={{ fontWeight: 600, color: t.text1, marginBottom: 4 }}>
+              <div style={{ fontWeight: 500, color: t.text1, marginBottom: 4 }}>
                 {tr('server.help.dual.title')}
               </div>
               {tr('server.help.dual.body_a')} <strong>{tr('server.help.dual.body_b')}</strong> {tr('server.help.dual.body_c')} <strong>{tr('server.help.dual.body_d')}</strong> {tr('server.help.dual.body_e')} <code style={mono(t)}>BACKEND_URL</code>, <code style={mono(t)}>BACKEND_PORT</code>, <code style={mono(t)}>API_PORT</code>.
               {' '}{tr('server.help.dual.body_f')}
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
                 <li>{tr('server.help.dual.li_vite')} <code style={mono(t)}>vite.config</code>: <code style={mono(t)}>{'server.proxy: { \'/api\': process.env.BACKEND_URL }'}</code></li>
                 <li>{tr('server.help.dual.li_gulp')} <code style={mono(t)}>apiPort: process.env.BACKEND_PORT || 8080</code></li>
                 <li>{tr('server.help.dual.li_generic_a')} <code style={mono(t)}>$BACKEND_PORT</code> {tr('server.help.dual.li_generic_b')} <code style={mono(t)}>$BACKEND_URL</code> {tr('server.help.dual.li_generic_c')}</li>
@@ -628,7 +627,7 @@ function ReadonlyCmd({ label, value }: { label: string; value: string }) {
   const t = useTokens();
   return (
     <div style={{ padding: 10, borderRadius: 10, background: t.bg2, border: `1px solid ${t.glassBorder}` }}>
-      <div style={{ fontSize: 11, color: t.text2, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 11, color: t.text2, fontWeight: 500, marginBottom: 4 }}>{label}</div>
       <code style={{
         display: 'block', fontFamily: t.fontMono, fontSize: 12,
         color: value ? t.text0 : t.text3, wordBreak: 'break-all',
@@ -639,8 +638,8 @@ function ReadonlyCmd({ label, value }: { label: string; value: string }) {
 
 function mono(t: ReturnType<typeof useTokens>) {
   return {
-    fontFamily: t.fontMono, fontSize: 10.5,
-    padding: '1px 5px', borderRadius: 4,
+    fontFamily: t.fontMono, fontSize: 11,
+    padding: '1px 6px', borderRadius: 4,
     background: t.bg3, color: t.text1,
   };
 }
@@ -651,12 +650,12 @@ function statusColorFor(s: Status, t: ReturnType<typeof useTokens>) {
     : s === 'error' ? t.err
     : t.text3;
 }
-function statusLabelFor(s: Status) {
-  return s === 'running' ? 'Corriendo'
-    : s === 'starting' ? 'Iniciando…'
-    : s === 'stopped' ? 'Detenido'
-    : s === 'error' ? 'Error'
-    : 'Inactivo';
+function statusLabelFor(s: Status, tr: ReturnType<typeof useT>) {
+  return s === 'running' ? tr('server.status.running')
+    : s === 'starting' ? tr('server.status.starting')
+    : s === 'stopped' ? tr('server.status.stopped')
+    : s === 'error' ? tr('server.status.error')
+    : tr('server.status.idle');
 }
 
 function PanelHeader({
@@ -673,21 +672,21 @@ function PanelHeader({
   const visibleRoles: SlotRole[] = isDual ? ['frontend', 'backend'] : ['main'];
 
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-          background: t.accentFaint, color: t.accent,
+          background: t.bg2, color: t.text2, border: `1px solid ${t.glassBorder}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <IconCpu size={20}/>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: t.text0, marginBottom: 2 }}>
-            {isDual ? 'Dev servers (frontend + backend)' : 'Instancia del dev server'}
+          <div style={{ fontSize: 16, fontWeight: 500, color: t.text0, marginBottom: 2 }}>
+            {isDual ? tr('server.header.dual_title') : tr('server.header.single_title')}
           </div>
-          <div style={{ fontSize: 11.5, color: t.text2 }}>
-            {isDual ? 'Dos slots corriendo en paralelo, cada uno con su puerto.' : 'Un proceso, un puerto.'}
+          <div style={{ fontSize: 12, color: t.text2 }}>
+            {isDual ? tr('server.header.dual_sub') : tr('server.header.single_sub')}
           </div>
         </div>
       </div>
@@ -707,19 +706,18 @@ function PanelHeader({
             }}>
               {isDual && (
                 <span style={{
-                  fontSize: 10, fontFamily: t.fontMono,
-                  color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5,
-                  marginRight: 2, fontWeight: 600,
+                  fontSize: 11, fontFamily: t.fontMono,
+                  color: t.text2,
+                  marginRight: 2, fontWeight: 500,
                 }}>{role}</span>
               )}
               <span style={{
                 width: 8, height: 8, borderRadius: '50%', background: sColor,
-                boxShadow: s.status === 'starting' || s.status === 'running' ? `0 0 8px ${sColor}` : 'none',
                 animation: s.status === 'starting' ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
                 flexShrink: 0,
               }}/>
               <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text2 }}>
-                {statusLabelFor(s.status)}
+                {statusLabelFor(s.status, tr)}
               </span>
               {s.url && (
                 <>
@@ -747,7 +745,7 @@ function PanelHeader({
                     title={tr('server.action.open_browser')}
                     style={{
                       flexShrink: 0,
-                      width: 22, height: 22, padding: 0, borderRadius: 5,
+                      width: 22, height: 22, padding: 0, borderRadius: 6,
                       border: 0, background: 'transparent',
                       color: t.accent, cursor: 'pointer',
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -762,7 +760,7 @@ function PanelHeader({
                     title={tr('server.action.open_os')}
                     style={{
                       flexShrink: 0,
-                      width: 22, height: 22, padding: 0, borderRadius: 5,
+                      width: 22, height: 22, padding: 0, borderRadius: 6,
                       border: 0, background: 'transparent',
                       color: t.text2, cursor: 'pointer',
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -774,7 +772,7 @@ function PanelHeader({
               {s.actionError && (
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
-                  fontSize: 10.5, color: t.err,
+                  fontSize: 11, color: t.err,
                 }} title={s.actionError}>
                   <IconAlert size={11}/>
                 </span>
@@ -788,7 +786,7 @@ function PanelHeader({
                   style={{
                     flexShrink: 0,
                     marginLeft: s.url ? 0 : 'auto',
-                    width: 22, height: 22, padding: 0, borderRadius: 5,
+                    width: 22, height: 22, padding: 0, borderRadius: 6,
                     border: 0, background: 'transparent',
                     color: s.actionBusy ? t.text3 : t.text2,
                     cursor: s.actionBusy ? 'default' : 'pointer',
@@ -889,10 +887,10 @@ function LogsPane({
           flexShrink: 0,
         }}/>
         <span style={{
-          fontSize: 10.5, fontFamily: t.fontMono, color: t.text2,
-          textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600,
+          fontSize: 11, fontFamily: t.fontMono, color: t.text2,
+          fontWeight: 500,
         }}>{label}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 10, color: t.text3, fontFamily: t.fontMono }}>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>
           {logSize.toLocaleString()} chars
         </span>
         {logSize > 0 && (
@@ -901,7 +899,7 @@ function LogsPane({
             onClick={() => clearRef.current?.()}
             title={tr('server.logs.clear_tooltip')}
             style={{
-              width: 22, height: 22, borderRadius: 5, border: 0,
+              width: 22, height: 22, borderRadius: 6, border: 0,
               background: 'transparent', color: t.text2, cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
@@ -917,7 +915,7 @@ function LogsPane({
             onClick={onToggle}
             title={minimized ? 'Expandir' : 'Minimizar'}
             style={{
-              width: 22, height: 22, borderRadius: 5, border: 0,
+              width: 22, height: 22, borderRadius: 6, border: 0,
               background: 'transparent', color: t.text2, cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
@@ -947,7 +945,7 @@ function LogsPane({
           }}
           onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = t.bg3; }}>
-          <div style={{ width: 28, height: 3, borderRadius: 2, background: t.text3, opacity: 0.6 }}/>
+          <div style={{ width: 28, height: 3, borderRadius: 4, background: t.text3, opacity: 0.6 }}/>
         </div>
       )}
     </div>
@@ -986,6 +984,7 @@ function TerminalLogs({
   visible?: boolean;
 }) {
   const { t, effectiveMode } = useTheme();
+  const tr = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -1222,7 +1221,7 @@ function TerminalLogs({
     });
     setSending(false);
     if (r.ok) {
-      setFeedback({ ok: true, text: 'Enviado a Claude' });
+      setFeedback({ ok: true, text: tr('server.logs.sent') });
       termRef.current?.clearSelection();
       setSelection('');
       // Ahora sí cambiamos al tab Terminal para que el user vea la respuesta.
@@ -1260,10 +1259,10 @@ function TerminalLogs({
           boxShadow: `0 6px 18px rgba(0,0,0,0.4)`,
         }}>
           <span style={{
-            fontSize: 10.5, color: t.text2, fontFamily: t.fontMono,
+            fontSize: 11, color: t.text2, fontFamily: t.fontMono,
             marginRight: 2,
           }}>
-            {selection.length} {selection.length === 1 ? 'char' : 'chars'}
+            {selection.length === 1 ? tr('server.logs.chars_one') : tr('server.logs.chars_many', { n: selection.length })}
           </span>
           <button
             type="button"
@@ -1273,11 +1272,11 @@ function TerminalLogs({
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '4px 12px', borderRadius: 999, border: 0,
               background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 600,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
               cursor: sending ? 'wait' : 'pointer',
               opacity: sending ? 0.7 : 1,
             }}>
-            {sending ? 'Enviando…' : '↗ Enviar a Claude'}
+            {sending ? tr('server.logs.sending') : tr('server.logs.send')}
           </button>
         </div>
       )}
@@ -1290,7 +1289,7 @@ function TerminalLogs({
           background: t.bg1,
           border: `1px solid ${feedback.ok ? t.ok : t.err}`,
           color: feedback.ok ? t.ok : t.err,
-          fontSize: 11.5, fontFamily: t.fontSans, fontWeight: 500,
+          fontSize: 12, fontFamily: t.fontSans, fontWeight: 500,
           maxWidth: 280,
         }}>
           {feedback.text}

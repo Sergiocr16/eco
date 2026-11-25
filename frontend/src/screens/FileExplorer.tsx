@@ -114,9 +114,9 @@ export function FileExplorer({ bubbles, onOpenChange }: Props) {
 
       <div style={{
         flex: 1, minHeight: 0, minWidth: 0, overflow: 'auto',
-        padding: isPhone ? '14px 12px 24px' : '20px 24px',
+        padding: isPhone ? '16px 12px 24px' : '20px 24px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <div style={{ color: t.accent }}><IconFolderOpen size={16}/></div>
           <span style={{ fontFamily: t.fontMono, fontSize: 13, color: t.text0 }}
             title={selected ?? undefined}>
@@ -177,7 +177,7 @@ function FolderListRow({ label, title, count, changes, active, onClick }: {
         <IconFolder size={14}/>
       </div>
       <span style={{
-        fontFamily: t.fontMono, fontSize: 11.5, minWidth: 0,
+        fontFamily: t.fontMono, fontSize: 12, minWidth: 0,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         ...(isPhoneNow() ? {} : { flex: 1 }),
       }}>{label}</span>
@@ -187,7 +187,7 @@ function FolderListRow({ label, title, count, changes, active, onClick }: {
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: '1px 6px', background: `color-mix(in oklch, ${t.warn} 16%, transparent)`,
-            color: t.warn, borderRadius: 999, fontSize: 10, fontWeight: 600,
+            color: t.warn, borderRadius: 999, fontSize: 11, fontWeight: 500,
           }}>
           <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.warn }}/>
           {changes}
@@ -196,7 +196,7 @@ function FolderListRow({ label, title, count, changes, active, onClick }: {
       {(count ?? 0) > 0 && (
         <span style={{
           padding: '1px 6px', background: t.accentFaint, color: t.accent,
-          borderRadius: 999, fontSize: 10, fontWeight: 500,
+          borderRadius: 999, fontSize: 11, fontWeight: 500,
         }}>{count}</span>
       )}
     </div>
@@ -219,14 +219,14 @@ function ChangeRow({ change, onDiff, onOpen }: {
   const Icon = opMeta.icon;
   return (
     <Glass radius={12} hover style={{
-      padding: isPhoneNow() ? 10 : 14,
+      padding: isPhoneNow() ? 10 : 16,
       display: 'flex', alignItems: 'center', gap: isPhoneNow() ? 8 : 12,
       // Icono + ruta + "Diff" + abrir en una fila dejan la ruta —lo único que
       // identifica el cambio— reducida a nada. En móvil los botones bajan.
       ...(isPhoneNow() ? { flexWrap: 'wrap' as const } : {}),
     }}>
       <div style={{
-        width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
         background: `color-mix(in oklch, ${opMeta.color} 12%, transparent)`,
         color: opMeta.color, border: `1px solid color-mix(in oklch, ${opMeta.color} 30%, transparent)`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -238,9 +238,9 @@ function ChangeRow({ change, onDiff, onOpen }: {
           fontFamily: t.fontMono, fontSize: 13, color: t.text0,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{change.file}</div>
-        <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
           <Pill color={opMeta.color}>{opMeta.label}</Pill>
-          <span style={{ fontSize: 11.5, color: t.text2 }}>
+          <span style={{ fontSize: 12, color: t.text2 }}>
             {tr('files.by')} <span style={{ color: t.text1 }}>{change.agent}</span>
           </span>
         </div>

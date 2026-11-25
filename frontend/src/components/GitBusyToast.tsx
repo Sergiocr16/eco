@@ -34,7 +34,7 @@ export function GitBusyToast({ bubbleId }: { bubbleId: string }) {
       style={{
         position: 'absolute', top: 14, right: 18,
         display: 'inline-flex', alignItems: 'center', gap: 8,
-        padding: '7px 14px', borderRadius: 999,
+        padding: '8px 16px', borderRadius: 999,
         background: t.glassBg,
         border: `1px solid color-mix(in oklch, ${t.accent} 45%, ${t.glassBorder})`,
         color: t.text0, fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,

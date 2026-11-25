@@ -1,4 +1,5 @@
 import { vh } from '@/lib/ui-zoom';
+import { T_UI } from '@/design/motion';
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { Btn, Glass, scrimStyle, dialogSurface } from '@/design/primitives';
@@ -90,7 +91,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
         style={{
           width: 'min(540px, 100%)', maxHeight: vh(80),
           ...dialogSurface(t),
-          borderRadius: 18,
+          borderRadius: 20,
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
         <div style={{
@@ -105,7 +106,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
             <IconFolderOpen size={18}/>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: t.text0, letterSpacing: -0.2 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: t.text0, }}>
               {tr('wsp.title')}
             </div>
             <div style={{ fontSize: 12, color: t.text2, marginTop: 1 }}>
@@ -124,7 +125,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
           </button>
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
           {ws.loading ? (
             <div style={{ fontSize: 13, color: t.text2, padding: '20px 4px' }}>{tr('common.loading')}</div>
           ) : ws.list.workspaces.length === 0 && !adding ? (
@@ -149,7 +150,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '10px 12px', borderRadius: 10, border: `1px solid ${t.glassBorder}`,
                     background: t.bg2, cursor: 'pointer', textAlign: 'left',
-                    transition: 'all 140ms',
+                    transition: T_UI,
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = t.bg3;
@@ -165,7 +166,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
-                      fontFamily: t.fontMono, fontSize: 12.5, color: t.text0,
+                      fontFamily: t.fontMono, fontSize: 13, color: t.text0,
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>{path}</div>
                   </div>
@@ -176,7 +177,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
 
           {!canAddFolders ? null : adding ? (
             <Glass radius={12} style={{ padding: 10, marginTop: 8 }}>
-              <div style={{ fontSize: 11.5, color: t.text2, marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: t.text2, marginBottom: 8 }}>
                 {tr('wsp.add_hint')}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -192,7 +193,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
                   style={{
                     flex: 1, background: t.bg2, border: `1px solid ${t.glassBorder}`,
                     borderRadius: 8, padding: '8px 10px', outline: 'none',
-                    fontFamily: t.fontMono, fontSize: 12.5, color: t.text0,
+                    fontFamily: t.fontMono, fontSize: 13, color: t.text0,
                   }}
                 />
                 <Btn kind="primary" size="sm" onClick={() => void handleAdd()} disabled={busy || !draftPath.trim()} icon={IconCheck}>
@@ -200,7 +201,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
                 </Btn>
               </div>
               {addError && (
-                <div style={{ marginTop: 8, fontSize: 11.5, color: t.err }}>{addError}</div>
+                <div style={{ marginTop: 8, fontSize: 12, color: t.err }}>{addError}</div>
               )}
             </Glass>
           ) : (
@@ -213,10 +214,10 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
                 style={{
                   width: '100%',
                   display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '12px 14px', borderRadius: 12,
+                  padding: '12px 16px', borderRadius: 12,
                   background: 'transparent', border: `1px dashed ${t.glassBorderHi}`,
                   color: t.text1, cursor: busy ? 'wait' : 'pointer', textAlign: 'left',
-                  transition: 'all 140ms',
+                  transition: T_UI,
                 }}
                 onMouseEnter={(e) => {
                   if (busy) return;
@@ -234,7 +235,7 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
                   {busy ? tr('wsp.add_loading') : (hasNativePicker ? tr('wsp.pick_folder') : tr('wsp.add_other'))}
                 </span>
                 {hasNativePicker && (
-                  <span style={{ fontSize: 10, color: t.text3, fontFamily: t.fontMono }}>Finder</span>
+                  <span style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>Finder</span>
                 )}
               </button>
 
@@ -258,12 +259,12 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
 
         <div style={{
           display: 'flex', justifyContent: 'space-between', gap: 8,
-          padding: '12px 18px', borderTop: `1px solid ${t.glassBorder}`,
+          padding: '12px 20px', borderTop: `1px solid ${t.glassBorder}`,
         }}>
           <Btn kind="ghost" size="sm" onClick={onSkip}>
             {tr('wsp.skip')}
           </Btn>
-          <span style={{ fontSize: 10.5, color: t.text3 }}>
+          <span style={{ fontSize: 11, color: t.text3 }}>
             {tr('wsp.change_later')}
           </span>
         </div>

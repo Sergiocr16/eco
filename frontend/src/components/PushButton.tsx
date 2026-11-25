@@ -56,8 +56,8 @@ export function PushButton({ bubbleId, workspace }: Props) {
           <IconBranch size={11}/>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>{tr('push.btn')}</div>
-          <div style={{ fontSize: 10, color: t.text3, marginTop: 0 }}>
+          <div style={{ fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, color: t.text0 }}>{tr('push.btn')}</div>
+          <div style={{ fontSize: 11, color: t.text3, marginTop: 0 }}>
             {tr('push.sub')}
           </div>
         </div>
@@ -69,7 +69,7 @@ export function PushButton({ bubbleId, workspace }: Props) {
             style={{
               height: 26, padding: '0 12px', border: 0, borderRadius: 6,
               background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
+              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
               cursor: phase === 'pushing' ? 'default' : 'pointer',
               opacity: phase === 'pushing' ? 0.6 : 1,
             }}>
@@ -84,8 +84,8 @@ export function PushButton({ bubbleId, workspace }: Props) {
         }}>
           <div style={{ fontSize: 11, color: t.text1, lineHeight: 1.5 }}>
             {tr('push.confirm.q_pre')} <code style={{
-              fontFamily: t.fontMono, fontSize: 10.5,
-              padding: '1px 5px', borderRadius: 4,
+              fontFamily: t.fontMono, fontSize: 11,
+              padding: '1px 6px', borderRadius: 4,
               background: t.bg3, color: t.text1,
             }}>origin</code>{tr('push.confirm.q_post')}
           </div>
@@ -105,7 +105,7 @@ export function PushButton({ bubbleId, workspace }: Props) {
               style={{
                 height: 26, padding: '0 12px', border: 0, borderRadius: 6,
                 background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
+                fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
                 cursor: 'pointer',
               }}>{tr('push.confirm.do')}</button>
           </div>
@@ -117,7 +117,7 @@ export function PushButton({ bubbleId, workspace }: Props) {
           padding: '6px 8px', borderRadius: 6,
           background: `color-mix(in oklch, ${isError ? t.err : t.ok} 12%, transparent)`,
           color: isError ? t.err : t.ok,
-          fontFamily: t.fontMono, fontSize: 10.5,
+          fontFamily: t.fontMono, fontSize: 11,
           whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
         }}>{msg}</div>
       )}

@@ -206,9 +206,9 @@ export function NotesPanel({ bubble }: Props) {
           {summaryError && (
             <div style={{
               position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-              padding: '8px 14px', borderRadius: t.r2,
+              padding: '8px 16px', borderRadius: t.r2,
               background: t.windowBg, border: `1px solid ${t.err}`,
-              color: t.err, fontSize: 12.5, fontFamily: t.fontSans,
+              color: t.err, fontSize: 13, fontFamily: t.fontSans,
               boxShadow: t.shadowMd, zIndex: 10,
             }}>
               {summaryError}
@@ -237,7 +237,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
     }}>
       <div style={{
         width: 56, height: 56, borderRadius: 16,
-        background: t.accentFaint, color: t.accent,
+        background: t.bg2, color: t.text2, border: `1px solid ${t.glassBorder}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -255,8 +255,8 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
         type="button"
         onClick={onCreate}
         style={{
-          padding: '8px 14px', borderRadius: t.r2,
-          background: t.accent, color: t.accentOn, border: 0,
+          padding: '8px 16px', borderRadius: t.r2,
+          background: t.bg3, color: t.text0, border: `1px solid ${t.glassBorder}`,
           cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
           marginTop: 8,
         }}
@@ -285,15 +285,15 @@ function DeleteConfirmDialog({ onCancel, onConfirm }: {
       }}
     >
       <div style={{
-        maxWidth: 380, width: '90%', padding: 18,
+        maxWidth: 380, width: '90%', padding: 20,
         background: t.windowBg, border: `1px solid ${t.glassBorder}`,
         borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
         boxShadow: t.shadowLg,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
           {tr('notes.delete_confirm_title')}
         </div>
-        <div style={{ fontSize: 13, color: t.text1, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, color: t.text1, marginBottom: 16 }}>
           {tr('notes.delete_confirm_body')}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -315,7 +315,7 @@ function DeleteConfirmDialog({ onCancel, onConfirm }: {
             style={{
               padding: '6px 12px', borderRadius: t.r2,
               background: t.err, color: '#fff', border: 0,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 600,
+              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
             }}
           >
             {tr('notes.delete')}

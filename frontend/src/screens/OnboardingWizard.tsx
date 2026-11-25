@@ -1,4 +1,5 @@
 import { vh } from '@/lib/ui-zoom';
+import { T_UI } from '@/design/motion';
 import { useEffect, useMemo, useState } from 'react';
 import { useTokens, useTheme } from '@/design/theme';
 import { ACCENT_HUES } from '@/design/tokens';
@@ -71,17 +72,17 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
         width: '100%', maxWidth: 640,
         maxHeight: `calc(${vh(100)} - 48px)`,
         ...dialogSurface(t),
-        borderRadius: 18,
+        borderRadius: 20,
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>
         {/* Progress dots */}
         <div style={{
-          display: 'flex', gap: 6, padding: '16px 22px 0',
+          display: 'flex', gap: 6, padding: '16px 24px 0',
         }}>
           {order.map((s, i) => (
             <span key={s} style={{
-              height: 3, flex: 1, borderRadius: 2,
+              height: 3, flex: 1, borderRadius: 4,
               background: i <= idx ? t.accent : t.bg3,
               transition: 'background 200ms ease',
             }}/>
@@ -106,7 +107,7 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
         {/* Footer */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
-          padding: '14px 22px',
+          padding: '16px 24px',
           borderTop: `1px solid ${t.glassBorder}`,
           background: t.bg2,
         }}>
@@ -144,20 +145,20 @@ function StepWelcome({ username }: { username: string | null }) {
       <div style={{ display: 'inline-flex', marginBottom: 16 }}>
         <EcoMark size={72}/>
       </div>
-      <h2 style={{ margin: 0, fontSize: 26, fontWeight: 600, color: t.text0, letterSpacing: -0.5 }}>
+      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.5 }}>
         {username
           ? tr('onboarding.welcome.title_named').replace('{name}', username)
           : tr('onboarding.welcome.title')}
       </h2>
       <p style={{
         margin: '10px auto 0', maxWidth: 420,
-        fontSize: 13.5, color: t.text2, lineHeight: 1.6,
+        fontSize: 14, color: t.text2, lineHeight: 1.6,
       }}>
         {tr('onboarding.welcome.body')}
       </p>
       <div style={{
         display: 'flex', justifyContent: 'center', gap: 10,
-        marginTop: 22, flexWrap: 'wrap',
+        marginTop: 24, flexWrap: 'wrap',
       }}>
         {[
           { icon: IconBolt,   label: tr('onboarding.welcome.tag.fast') },
@@ -199,14 +200,14 @@ function StepLanguage() {
           return (
             <button key={o.id} type="button" onClick={() => setLang(o.id)}
               style={{
-                padding: '18px 14px', borderRadius: 12,
+                padding: '20px 16px', borderRadius: 12,
                 background: selected ? t.accentFaint : t.bg2,
                 border: `1px solid ${selected ? t.accent : t.glassBorder}`,
                 color: t.text0, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                transition: 'all 140ms ease',
+                transition: T_UI,
               }}>
-              <span style={{ fontSize: 26 }}>{o.flag}</span>
+              <span style={{ fontSize: 24 }}>{o.flag}</span>
               <span style={{ fontSize: 14, fontWeight: 500 }}>{o.label}</span>
               {selected && (
                 <span style={{ color: t.accent, display: 'inline-flex' }}>
@@ -238,7 +239,7 @@ function StepAppearance() {
     >
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10,
-        marginBottom: 22,
+        marginBottom: 24,
       }}>
         {modes.map((m) => {
           const selected = mode === m.id;
@@ -257,8 +258,8 @@ function StepAppearance() {
         })}
       </div>
       <div style={{
-        fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
-        letterSpacing: 0.5, fontWeight: 600, marginBottom: 10,
+        fontSize: 11, color: t.text2,
+        fontWeight: 500, marginBottom: 10,
       }}>{tr('onboarding.appearance.accent')}</div>
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 8,
@@ -327,7 +328,7 @@ function StepClaude() {
     >
       {/* CLI status */}
       <div style={{
-        padding: 14, borderRadius: 12,
+        padding: 16, borderRadius: 12,
         background: cliOk ? t.accentFaint : t.bg2,
         border: `1px solid ${cliOk ? t.accent : t.glassBorder}`,
         marginBottom: 12,
@@ -342,10 +343,10 @@ function StepClaude() {
             <IconCheck size={14}/>
           </span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: t.text0 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: t.text0 }}>
               {cliOk ? tr('onboarding.claude.cli.ok') : tr('onboarding.claude.cli.no')}
             </div>
-            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>
               {cliOk
                 ? tr('onboarding.claude.cli.ok_body')
                 : status?.cliInstalled
@@ -359,14 +360,14 @@ function StepClaude() {
       {/* API key fallback */}
       {!cliOk && (
         <div style={{
-          padding: 14, borderRadius: 12,
+          padding: 16, borderRadius: 12,
           background: t.bg2,
           border: `1px solid ${hasKey ? t.accent : t.glassBorder}`,
         }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: t.text0, marginBottom: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 4 }}>
             {tr('onboarding.claude.apikey.title')}
           </div>
-          <div style={{ fontSize: 11.5, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
             {tr('onboarding.claude.apikey.sub')}
           </div>
           {hasKey ? (
@@ -452,24 +453,24 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
       title={tr('onboarding.github.title')}
       sub={tr('onboarding.github.sub')}
     >
-      <p style={{ marginTop: 0, color: t.text2, fontSize: 13.5, lineHeight: 1.6, maxWidth: 560 }}>
+      <p style={{ marginTop: 0, color: t.text2, fontSize: 14, lineHeight: 1.6, maxWidth: 560 }}>
         {tr('onboarding.github.body')}
       </p>
 
       {gh.hasCredentials ? (
         <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{
-            padding: 14, borderRadius: 10,
+            padding: 16, borderRadius: 10,
             background: `color-mix(in oklch, ${t.ok} 8%, transparent)`,
             border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
-            color: t.text0, fontSize: 13.5, fontFamily: t.fontSans,
+            color: t.text0, fontSize: 14, fontFamily: t.fontSans,
           }}>
             {tr('settings.github.connected_as', { username: gh.username ?? '' })}
           </div>
           <GhStatusBanner/>
         </div>
       ) : (
-        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 540 }}>
+        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 540 }}>
           <div style={{ display: 'flex', gap: 6 }}>
             <input
               type={showPat ? 'text' : 'password'}
@@ -480,7 +481,7 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
               autoCorrect="off"
               autoCapitalize="off"
               style={{
-                flex: 1, padding: '9px 12px', borderRadius: 8,
+                flex: 1, padding: '8px 12px', borderRadius: 8,
                 background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
                 fontFamily: t.fontMono, fontSize: 13, outline: 'none',
               }}
@@ -496,7 +497,7 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
             >{showPat ? tr('settings.github.pat_hide') : tr('settings.github.pat_show')}</button>
           </div>
 
-          <div style={{ fontSize: 11.5, color: t.text3, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: t.text3, lineHeight: 1.5 }}>
             {tr('settings.github.recommended_scopes')}
           </div>
           <GithubTokenHelp/>
@@ -511,12 +512,12 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
                 placeholder={tr('settings.github.email_placeholder')}
                 style={{
                   width: '100%', boxSizing: 'border-box',
-                  padding: '9px 12px', borderRadius: 8,
+                  padding: '8px 12px', borderRadius: 8,
                   background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
                   fontFamily: t.fontMono, fontSize: 13, outline: 'none',
                 }}
               />
-              <div style={{ fontSize: 11.5, color: t.warn }}>
+              <div style={{ fontSize: 12, color: t.warn }}>
                 {tr('settings.github.email_required_note')}
                 {loginHint && (
                   <span style={{ marginLeft: 6, color: t.text2 }}>
@@ -531,7 +532,7 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
             <div style={{
               padding: '8px 10px', borderRadius: 6,
               background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-              color: t.err, fontSize: 12.5, fontFamily: t.fontSans,
+              color: t.err, fontSize: 13, fontFamily: t.fontSans,
             }}>{error}</div>
           )}
 
@@ -541,9 +542,9 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
               onClick={() => void onSave()}
               disabled={saving || !pat.trim()}
               style={{
-                padding: '10px 18px', borderRadius: 10, border: 0,
+                padding: '10px 20px', borderRadius: 10, border: 0,
                 background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 13.5, fontWeight: 600,
+                fontFamily: t.fontSans, fontSize: 14, fontWeight: 500,
                 cursor: saving || !pat.trim() ? 'not-allowed' : 'pointer',
                 opacity: saving || !pat.trim() ? 0.6 : 1,
               }}
@@ -552,7 +553,7 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
               type="button"
               onClick={onContinue}
               style={{
-                padding: '10px 14px', borderRadius: 10, border: `1px solid ${t.glassBorder}`,
+                padding: '10px 16px', borderRadius: 10, border: `1px solid ${t.glassBorder}`,
                 background: 'transparent', color: t.text1,
                 fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
               }}
@@ -596,10 +597,10 @@ function StepFolder() {
       sub={tr('onboarding.folder.sub')}
     >
       {ws.list.workspaces.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 16 }}>
           <div style={{
-            fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
-            letterSpacing: 0.5, fontWeight: 600, marginBottom: 8,
+            fontSize: 11, color: t.text2,
+            fontWeight: 500, marginBottom: 8,
           }}>{tr('onboarding.folder.current')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {ws.list.workspaces.map((w) => (
@@ -610,13 +611,12 @@ function StepFolder() {
               }}>
                 <IconFolder size={13}/>
                 <code style={{
-                  flex: 1, minWidth: 0, fontFamily: t.fontMono, fontSize: 11.5, color: t.text1,
+                  flex: 1, minWidth: 0, fontFamily: t.fontMono, fontSize: 12, color: t.text1,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>{w}</code>
                 {def.value === w && (
                   <span style={{
-                    fontSize: 9.5, color: t.accent, fontWeight: 600,
-                    textTransform: 'uppercase', letterSpacing: 0.4,
+                    fontSize: 11, color: t.accent, fontWeight: 500,
                   }}>{tr('onboarding.folder.default')}</span>
                 )}
               </div>
@@ -687,7 +687,7 @@ function StepObsidian() {
     >
       {isLinked ? (
         <div style={{
-          padding: 14, borderRadius: 12,
+          padding: 16, borderRadius: 12,
           background: t.accentFaint,
           border: `1px solid ${t.accent}`,
           marginBottom: 12,
@@ -701,12 +701,12 @@ function StepObsidian() {
               <IconCheck size={14}/>
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: t.text0 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: t.text0 }}>
                 {tr('onboarding.obsidian.connected')}
               </div>
               <code style={{
-                display: 'block', fontFamily: t.fontMono, fontSize: 11.5, color: t.text2,
-                marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                display: 'block', fontFamily: t.fontMono, fontSize: 12, color: t.text2,
+                marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>{status.vaultPath}</code>
             </div>
             <button type="button" onClick={() => void disconnect()} disabled={busy}
@@ -714,7 +714,7 @@ function StepObsidian() {
                 padding: '6px 12px', borderRadius: 8,
                 border: `1px solid ${t.glassBorder}`,
                 background: 'transparent', color: t.text1,
-                fontSize: 11.5, fontWeight: 500, cursor: 'pointer',
+                fontSize: 12, fontWeight: 500, cursor: 'pointer',
               }}>
               {tr('onboarding.obsidian.disconnect')}
             </button>
@@ -732,10 +732,10 @@ function StepObsidian() {
       ) : (
         <>
           {vaults.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
+            <div style={{ marginBottom: 16 }}>
               <div style={{
-                fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
-                letterSpacing: 0.5, fontWeight: 600, marginBottom: 8,
+                fontSize: 11, color: t.text2,
+                fontWeight: 500, marginBottom: 8,
               }}>{tr('onboarding.obsidian.detected')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {vaults.map((v) => (
@@ -744,7 +744,7 @@ function StepObsidian() {
                     disabled={busy}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '10px 12px', borderRadius: 9,
+                      padding: '10px 12px', borderRadius: 8,
                       background: t.bg2, border: `1px solid ${t.glassBorder}`,
                       color: t.text0, cursor: busy ? 'default' : 'pointer',
                       textAlign: 'left', width: '100%',
@@ -756,13 +756,13 @@ function StepObsidian() {
                         {v.name}
                         {v.open && (
                           <span style={{
-                            marginLeft: 8, fontSize: 9.5, color: t.accent,
-                            textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
+                            marginLeft: 8, fontSize: 11, color: t.accent,
+                            fontWeight: 500,
                           }}>{tr('onboarding.obsidian.open')}</span>
                         )}
                       </div>
                       <code style={{
-                        display: 'block', fontFamily: t.fontMono, fontSize: 10.5,
+                        display: 'block', fontFamily: t.fontMono, fontSize: 11,
                         color: t.text3, marginTop: 2,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>{v.path}</code>
@@ -795,7 +795,7 @@ function StepObsidian() {
         <div style={{ marginTop: 8, fontSize: 11, color: t.err }}>{err}</div>
       )}
       <div style={{
-        marginTop: 14, fontSize: 11, color: t.text3, lineHeight: 1.5,
+        marginTop: 16, fontSize: 11, color: t.text3, lineHeight: 1.5,
       }}>
         {tr('onboarding.obsidian.note')}
       </div>
@@ -815,15 +815,15 @@ function StepDone() {
       <div style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: 72, height: 72, borderRadius: '50%',
-        background: t.accentFaint, color: t.accent, marginBottom: 18,
+        background: t.accentFaint, color: t.accent, marginBottom: 20,
       }}>
         <IconCheck size={32}/>
       </div>
-      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
+      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.4 }}>
         {tr('onboarding.done.title')}
       </h2>
       <p style={{
-        margin: '8px auto 22px', maxWidth: 400,
+        margin: '8px auto 24px', maxWidth: 400,
         fontSize: 13, color: t.text2, lineHeight: 1.6,
       }}>
         {tr('onboarding.done.body')}
@@ -835,16 +835,16 @@ function StepDone() {
         {tips.map((tip, i) => (
           <div key={i} style={{
             display: 'flex', alignItems: 'flex-start', gap: 10,
-            padding: '10px 14px', borderRadius: 10,
+            padding: '10px 16px', borderRadius: 10,
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
           }}>
             <span style={{
               width: 22, height: 22, borderRadius: 6, flexShrink: 0,
               background: t.accent, color: t.accentOn,
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 11, fontWeight: 600,
+              fontSize: 11, fontWeight: 500,
             }}>{i + 1}</span>
-            <span style={{ flex: 1, fontSize: 12.5, color: t.text1, lineHeight: 1.5 }}>{tip}</span>
+            <span style={{ flex: 1, fontSize: 13, color: t.text1, lineHeight: 1.5 }}>{tip}</span>
           </div>
         ))}
       </div>
@@ -874,7 +874,7 @@ function StepShell({
           <Icon size={18}/>
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: t.text0, letterSpacing: -0.3 }}>{title}</h3>
+          <h3 style={{ margin: 0, fontSize: 20, fontWeight: 500, color: t.text0, }}>{title}</h3>
           <div style={{ fontSize: 12, color: t.text2, marginTop: 2, lineHeight: 1.5 }}>{sub}</div>
         </div>
       </div>
@@ -885,16 +885,16 @@ function StepShell({
 
 function btnPrimary(t: ReturnType<typeof useTokens>): React.CSSProperties {
   return {
-    padding: '8px 18px', borderRadius: 9, border: 0,
+    padding: '8px 20px', borderRadius: 8, border: 0,
     background: t.accent, color: t.accentOn,
-    fontFamily: t.fontSans, fontSize: 13, fontWeight: 600,
+    fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
     cursor: 'pointer',
   };
 }
 
 function btnGhost(t: ReturnType<typeof useTokens>): React.CSSProperties {
   return {
-    padding: '8px 14px', borderRadius: 9,
+    padding: '8px 16px', borderRadius: 8,
     border: `1px solid ${t.glassBorder}`,
     background: 'transparent', color: t.text1,
     fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,

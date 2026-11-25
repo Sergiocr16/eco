@@ -15,9 +15,9 @@ import {
 } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
-import { useT } from '@/hooks/useI18n';
+import { useI18n, useT } from '@/hooks/useI18n';
+import { T_UI, tween } from '@/design/motion';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
-import { useProfile } from '@/hooks/useProfile';
 import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
 import { useCategories, getCategoryById, sortByCategory, type Category } from '@/hooks/useCategories';
@@ -55,7 +55,7 @@ export function Dashboard(props: Props) {
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
-  const { username } = useProfile();
+  const { lang } = useI18n();
   const isAdmin = role === 'admin';
   // Grafo de equipo del admin: bubbles propias (reales) + las de otros usuarios
   // (sintetizadas desde /admin/overview). Para members el hook no hace nada.
@@ -157,21 +157,21 @@ export function Dashboard(props: Props) {
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+          transition={tween()}
           style={{
-            display: 'flex', alignItems: 'center', gap: isPhone ? 14 : 24,
-            padding: isPhone ? '4px 2px 18px' : '12px 8px 32px', flexWrap: 'wrap',
+            display: 'flex', alignItems: 'center', gap: isPhone ? 16 : 24,
+            padding: isPhone ? '4px 2px 20px' : '12px 8px 32px', flexWrap: 'wrap',
           }}>
           <div style={isPhone
             ? { flex: '1 1 100%', minWidth: 0 }
             : { flex: '1 1 280px', maxWidth: 380, minWidth: 240 }}>
             <div style={{
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-              color: t.accent, letterSpacing: 1.5, textTransform: 'uppercase',
-            }}>{greetingFor(new Date(), tr)}{username ? `, ${username}` : ''}</div>
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 400,
+              color: t.text2,
+            }}>{todayLabel(new Date(), lang)}</div>
             <h1 style={{
-              margin: '6px 0 14px', fontFamily: t.fontSans, fontSize: isPhone ? 22 : 30,
-              fontWeight: 600, color: t.text0, letterSpacing: -0.8,
+              margin: '6px 0 16px', fontFamily: t.fontSans, fontSize: isPhone ? 24 : 30,
+              fontWeight: 500, color: t.text0,
               lineHeight: 1.15,
             }}>
               {tr(active.length === 1 ? 'dash.active_summary_one' : 'dash.active_summary_many', { n: active.length })}
@@ -288,7 +288,7 @@ function ScopeBtn({ active, onClick, children }: { active: boolean; onClick: () 
         background: active ? t.accentFaint : (h ? t.bg3 : 'transparent'),
         color: active ? t.accent : (h ? t.text0 : t.text1),
         border: `1px solid ${active ? t.accentDim : 'transparent'}`,
-        borderRadius: 8, cursor: 'pointer', transition: 'all 140ms', whiteSpace: 'nowrap',
+        borderRadius: 8, cursor: 'pointer', transition: T_UI, whiteSpace: 'nowrap',
       }}
     >
       {children}
@@ -296,12 +296,10 @@ function ScopeBtn({ active, onClick, children }: { active: boolean; onClick: () 
   );
 }
 
-function greetingFor(d: Date, tr: (k: string, v?: Record<string, string | number>) => string): string {
-  const h = d.getHours();
-  if (h < 6) return tr('dash.greeting.evening');
-  if (h < 12) return tr('dash.greeting.morning');
-  if (h < 19) return tr('dash.greeting.afternoon');
-  return tr('dash.greeting.evening');
+// The header names the day instead of greeting the user.
+function todayLabel(d: Date, lang: string): string {
+  const s = new Intl.DateTimeFormat(lang, { weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // ─────────────────────────── Dashboard top cards
@@ -327,7 +325,7 @@ function DashboardCards({
       flexDirection: 'row',
       flexWrap: compact ? 'wrap' : 'nowrap',
       alignItems: 'stretch',
-      gap: compact ? 10 : 14,
+      gap: compact ? 10 : 16,
       marginBottom: 8,
       // Las cards viven en el lado DERECHO del header — usamos marginLeft
       // auto para empujarlas al borde derecho dentro del flex padre.
@@ -345,10 +343,10 @@ function DashboardCards({
 }
 
 function CardShell({
-  icon: Icon, iconColor, accentBorder = false, onClick, children,
+  accentBorder = false, onClick, children,
 }: {
-  icon: (p: IconProps) => JSX.Element;
-  iconColor: string;
+  icon?: (p: IconProps) => JSX.Element;
+  iconColor?: string;
   accentBorder?: boolean;
   onClick?: () => void;
   children: ReactNode;
@@ -362,16 +360,13 @@ function CardShell({
       onMouseLeave={() => setHover(false)}
       style={{
         ...glassEffect(t, { hovered: hover, intensity: 'normal' }),
-        borderRadius: 14,
-        padding: '14px 16px',
+        borderRadius: 16,
+        padding: '16px 16px',
         cursor: onClick ? 'pointer' : 'default',
         position: 'relative',
-        transition: 'transform 200ms ease, border-color 200ms ease',
-        transform: hover && onClick ? 'translateY(-2px)' : 'translateY(0)',
+        transition: T_UI,
         border: `1px solid ${accentBorder ? t.accent : (hover ? t.glassBorderHi : t.glassBorder)}`,
-        boxShadow: accentBorder
-          ? `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 20px ${t.accentGlow}, ${t.shadowMd}`
-          : `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`,
+        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`,
         overflow: 'hidden',
         // Llena 100% del slot del flex container — así todas las cards
         // quedan exactamente del mismo ancho y alto aunque su contenido varíe.
@@ -381,16 +376,6 @@ function CardShell({
         display: 'flex',
         flexDirection: 'column',
       }}>
-      <div style={{
-        width: 34, height: 34, borderRadius: 9,
-        background: iconColor,
-        color: t.accentOn,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginBottom: 10,
-        boxShadow: `0 0 10px ${iconColor}`,
-      }}>
-        <Icon size={17} strokeWidth={2}/>
-      </div>
       {children}
     </div>
   );
@@ -416,20 +401,20 @@ function LiveAgentsCard({ bubbles }: { bubbles: Bubble[] }) {
   return (
     <CardShell icon={IconZap} iconColor={t.accent}>
       <div style={{
-        fontSize: 10.5, color: t.text2, fontFamily: t.fontSans,
-        letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500,
+        fontSize: 11, color: t.text2, fontFamily: t.fontSans,
+        fontWeight: 500,
         marginBottom: 4,
       }}>{tr('dash.card.live.title')}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{
-          fontSize: 28, fontFamily: t.fontSans, fontWeight: 700,
-          color: active > 0 ? t.accent : t.text0, letterSpacing: -0.8,
+          fontSize: 32, fontFamily: t.fontSans, fontWeight: 500,
+          color: t.text0, letterSpacing: -0.5,
         }}>{active}</span>
         <span style={{ fontSize: 13, color: t.text3 }}>/ {total}</span>
       </div>
       {/* Mini barra horizontal apilada: running | waiting | errors | idle */}
       <div style={{
-        height: 6, borderRadius: 3, marginTop: 8,
+        height: 6, borderRadius: 4, marginTop: 8,
         background: t.bg3, overflow: 'hidden',
         display: 'flex',
       }}>
@@ -440,8 +425,8 @@ function LiveAgentsCard({ bubbles }: { bubbles: Bubble[] }) {
       </div>
       {/* Solo mostramos los conteos que aportan info — un "● 0" no sirve. */}
       <div style={{
-        display: 'flex', gap: 10, marginTop: 7,
-        fontSize: 10.5, color: t.text2, fontFamily: t.fontMono,
+        display: 'flex', gap: 10, marginTop: 8,
+        fontSize: 11, color: t.text2, fontFamily: t.fontMono,
       }}>
         {running > 0 && <span><span style={{ color: t.ok }}>●</span> {running}</span>}
         {waiting > 0 && <span><span style={{ color: t.warn }}>●</span> {waiting}</span>}
@@ -581,29 +566,22 @@ function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
     { icon: IconFolder,   count: worktrees, color: t.text2,   label: tr('dash.card.res.worktrees') },  // gris tema (sin satélite asociado)
   ];
 
+  const openItems = items.filter((it) => it.count > 0);
+
   return (
     <CardShell icon={IconLayers} iconColor={t.busy}>
       <div style={{
-        fontSize: 10.5, color: t.text2, fontFamily: t.fontSans,
-        letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500,
+        fontSize: 11, color: t.text2, fontFamily: t.fontSans,
+        fontWeight: 500,
         marginBottom: 8,
       }}>{tr('dash.card.res.title')}</div>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6,
-      }}>
-        {items.map((it, i) => (
-          <div key={i} title={it.label}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '4px 6px', borderRadius: 6,
-              background: t.bg2,
-              color: it.count > 0 ? it.color : t.text3,
-            }}>
-            <it.icon size={12} strokeWidth={2}/>
-            <span style={{
-              fontFamily: t.fontMono, fontSize: 12, fontWeight: 600,
-              color: it.count > 0 ? t.text0 : t.text3,
-            }}>{it.count}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {openItems.length === 0 ? (
+          <span style={{ fontSize: 12, color: t.text3 }}>{tr('dash.card.res.empty')}</span>
+        ) : openItems.map((it) => (
+          <div key={it.label} style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ flex: 1, fontSize: 12, color: t.text2 }}>{it.label}</span>
+            <span style={{ fontSize: 13, color: t.text0 }}>{it.count}</span>
           </div>
         ))}
       </div>
@@ -645,8 +623,8 @@ function SystemStatusCard() {
   return (
     <CardShell icon={IconShield} iconColor={t.ok}>
       <div style={{
-        fontSize: 10.5, color: t.text2, fontFamily: t.fontSans,
-        letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: 500,
+        fontSize: 11, color: t.text2, fontFamily: t.fontSans,
+        fontWeight: 500,
         marginBottom: 8,
       }}>{tr('dash.card.sys.title')}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -655,7 +633,6 @@ function SystemStatusCard() {
             <span style={{
               width: 7, height: 7, borderRadius: '50%',
               background: r.color,
-              boxShadow: `0 0 6px ${r.color}`,
             }}/>
             <span style={{ fontSize: 12, color: t.text1, fontFamily: t.fontSans }}>{r.label}</span>
           </div>
@@ -668,7 +645,7 @@ function SystemStatusCard() {
 
 function AgentBubble({
   bubble, workspaces, onClick, onRename, onRemove, onChangeWorkspace, onToggleCategory,
-  ownerLabel, readOnly = false,
+  ownerLabel, readOnly = false, changes = 0,
 }: {
   bubble: Bubble;
   workspaces: string[];
@@ -679,6 +656,7 @@ function AgentBubble({
   onToggleCategory: (categoryId: string | undefined) => void;
   ownerLabel?: string;
   readOnly?: boolean;
+  changes?: number;
 }) {
   const t = useTokens();
   const [hover, setHover] = useState(false);
@@ -732,28 +710,20 @@ function AgentBubble({
       style={{
         position: 'relative',
         ...glassEffect(t, { hovered: hover, intensity: 'normal' }),
-        borderRadius: 18,
-        padding: isPhone ? '12px 12px 10px' : '18px 18px 14px',
+        borderRadius: 16,
+        padding: isPhone ? '12px 12px 10px' : '16px 16px 12px',
         cursor: renaming ? 'default' : 'pointer',
-        transition: 'border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease',
-        transform: hover ? 'translateY(-1px)' : 'translateY(0)',
+        transition: T_UI,
         overflow: 'visible',
-        // El minHeight de 200 cuadra las tarjetas en una grilla de varias
-        // columnas. En una sola columna solo estira cada tarjeta con aire
-        // muerto y hace que entren menos en pantalla.
-        ...(isPhone ? null : { minHeight: 200 }),
-        display: 'flex', flexDirection: 'column',
-        ...(busy ? {
-          borderColor: t.ok,
-          boxShadow: `0 0 0 1px ${t.ok}55, 0 0 22px color-mix(in oklch, ${t.ok} 30%, transparent)`,
-        } : null),
+        display: 'flex', flexDirection: 'column', gap: 12,
+        ...(busy ? { borderColor: `color-mix(in oklch, ${t.ok} 55%, transparent)` } : null),
       }}
     >
       <div style={{
         display: 'flex', alignItems: 'flex-start',
-        gap: isPhone ? 10 : 12, marginBottom: isPhone ? 8 : 12,
+        gap: isPhone ? 10 : 12,
       }}>
-        <AgentGlyph size={isPhone ? 32 : 38} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
+        <AgentGlyph size={32} state={state} letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           {renaming ? (
             <input
@@ -770,7 +740,7 @@ function AgentBubble({
                 width: '100%', boxSizing: 'border-box',
                 background: t.bg3, border: `1px solid ${t.accent}`,
                 borderRadius: 8, padding: '4px 8px',
-                fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, color: t.text0,
+                fontFamily: t.fontSans, fontSize: 14, fontWeight: 500, color: t.text0,
                 outline: 'none',
               }}
             />
@@ -779,20 +749,31 @@ function AgentBubble({
               onDoubleClick={(e) => { if (!readOnly) startRename(e); }}
               title={readOnly ? undefined : tr('dash.bubble.rename_tip')}
               style={{
-                fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, color: t.text0,
-                letterSpacing: -0.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                fontFamily: t.fontSans, fontSize: 14, fontWeight: 500, color: t.text0,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{bubble.title}</div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11.5, color: t.text2 }}>{tr('dash.bubble.agent')}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+            <StatusDot color={busy ? t.ok : sColor} pulse={busy || state === 'running' || state === 'thinking' || state === 'executing'} size={6}/>
+            <span style={{ fontSize: 12, color: busy || state !== 'idle' ? t.text1 : t.text2 }}>
+              {busy ? tr('state.executing') : (STATE_LABELS_I18N[state] || tr('state.idle'))}
+            </span>
             <span style={{ color: t.text3 }}>·</span>
-            <span style={{ fontSize: 11.5, color: t.text2 }}>{tStr}</span>
+            <span style={{ fontSize: 12, color: t.text2 }}>{tStr}</span>
+            {changes > 0 && (
+              <>
+                <span style={{ color: t.text3 }}>·</span>
+                <span style={{ fontSize: 12, color: t.text2 }}>
+                  {changes === 1 ? tr('dash.bubble.files_one') : tr('dash.bubble.files_many', { n: changes })}
+                </span>
+              </>
+            )}
             {ownerLabel && (
               <span title={tr('dash.bubble.owner')} style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
-                padding: '1px 7px', borderRadius: 999,
+                padding: '1px 8px', borderRadius: 999,
                 background: t.accentFaint, border: `1px solid ${t.accentDim}`,
-                fontSize: 10, fontWeight: 500, color: t.accent,
+                fontSize: 11, fontWeight: 500, color: t.accent,
                 whiteSpace: 'nowrap', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{ownerLabel}</span>
             )}
@@ -821,17 +802,10 @@ function AgentBubble({
         )}
       </div>
 
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 6, marginBottom: isPhone ? 6 : 10,
-      }}>
-        <StatusDot color={busy ? t.ok : sColor} pulse={busy || state === 'running' || state === 'thinking' || state === 'executing'} size={7}/>
-        <span style={{ fontSize: 11.5, color: busy ? t.ok : sColor, fontWeight: 500 }}>
-          {busy ? tr('state.executing') : (STATE_LABELS_I18N[state] || tr('state.idle'))}
-        </span>
-        {/* Chips de categorías — solo si la burbuja tiene asignadas. */}
-        {bubbleCategories.length > 0 && (
+      {bubbleCategories.length > 0 && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{
-            minWidth: 0, marginLeft: 'auto',
+            minWidth: 0,
             display: 'inline-flex', alignItems: 'center', gap: 4,
             flexWrap: 'wrap', justifyContent: 'flex-end',
           }}>
@@ -850,11 +824,11 @@ function AgentBubble({
                 }}/>
             ) : (
               <span key={category.id} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                padding: '1px 7px', borderRadius: 999,
-                background: `color-mix(in oklch, ${category.color} 16%, transparent)`,
-                border: `1px solid color-mix(in oklch, ${category.color} 45%, transparent)`,
-                fontSize: 10, fontWeight: 500, color: category.color,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '1px 8px', borderRadius: 6,
+                background: t.bg2,
+                border: `1px solid ${t.glassBorder}`,
+                fontSize: 11, color: t.text1,
                 whiteSpace: 'nowrap', maxWidth: 110,
                 overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
@@ -863,16 +837,16 @@ function AgentBubble({
               </span>
             )))}
           </span>
-        )}
       </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto' }}>
         {readOnly ? (
           <span style={{
-            display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0,
+            display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0,
             background: t.bg3, border: `1px solid ${t.glassBorder}`,
             borderRadius: 999, padding: '4px 10px',
-            fontFamily: t.fontMono, fontSize: 10.5, color: bubble.workspace ? t.text1 : t.text3,
+            fontFamily: t.fontMono, fontSize: 11, color: bubble.workspace ? t.text1 : t.text3,
           }} title={bubble.workspace}>
             <IconFolder size={10}/>
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -959,7 +933,7 @@ function WorkspacePicker({ workspaces, selected, onSelect, onSubmit }: {
       </div>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
-        padding: isPhone ? '10px 12px' : '7px 10px', borderRadius: 8,
+        padding: isPhone ? '10px 12px' : '8px 10px', borderRadius: 8,
         background: t.bg2, border: `1px solid ${t.glassBorder}`,
       }}>
         <IconSearch size={13} style={{ color: t.text2, flexShrink: 0 }}/>
@@ -978,7 +952,7 @@ function WorkspacePicker({ workspaces, selected, onSelect, onSubmit }: {
           style={{
             flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none',
             // 16px: por debajo de eso iOS hace auto-zoom al enfocar.
-            fontFamily: t.fontSans, fontSize: isPhone ? 16 : 12.5, color: t.text0,
+            fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13, color: t.text0,
           }}
         />
       </div>
@@ -1007,7 +981,7 @@ function WorkspacePicker({ workspaces, selected, onSelect, onSubmit }: {
                 background: active ? t.accentFaint : t.bg2,
                 color: active ? t.accent : t.text1,
                 cursor: 'pointer', textAlign: 'left',
-                transition: 'all 140ms',
+                transition: T_UI,
               }}>
               <div style={{
                 width: 22, height: 22, borderRadius: 6, flexShrink: 0,
@@ -1019,11 +993,11 @@ function WorkspacePicker({ workspaces, selected, onSelect, onSubmit }: {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
-                  fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+                  fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
                   color: active ? t.accent : t.text0,
                 }}>{name}</div>
                 <div style={{
-                  fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                  fontFamily: t.fontMono, fontSize: 11, color: t.text3,
                   marginTop: 1,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>{display}</div>
@@ -1156,8 +1130,8 @@ function NameAgentDialog({
           ...(isPhone ? {
             // Sheet anclada abajo: el pulgar llega a los botones sin estirarse,
             // que es el patrón de cualquier modal de iOS.
-            borderRadius: '18px 18px 0 0',
-            padding: `18px 16px calc(18px + ${keyboardInset > 0 ? '0px' : SAFE_BOTTOM})`,
+            borderRadius: '20px 20px 0 0',
+            padding: `20px 16px calc(20px + ${keyboardInset > 0 ? '0px' : SAFE_BOTTOM})`,
             maxHeight: dvh(85), overflowY: 'auto',
           } : {
             borderRadius: 16,
@@ -1177,10 +1151,10 @@ function NameAgentDialog({
             <IconAgent size={18} strokeWidth={2}/>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: t.text0 }}>
               {tr('dash.bubble.new')}
             </div>
-            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 1 }}>
+            <div style={{ fontSize: 12, color: t.text2, marginTop: 1 }}>
               {tr('dash.bubble.name_label')}
             </div>
           </div>
@@ -1188,7 +1162,7 @@ function NameAgentDialog({
         {workspaces.length === 0 ? (
           <>
             <div style={{
-              padding: '14px 4px 6px', textAlign: 'center',
+              padding: '16px 4px 6px', textAlign: 'center',
               display: 'flex', flexDirection: 'column', gap: 6,
             }}>
               <div style={{ fontSize: 13, color: t.text0, fontWeight: 500 }}>
@@ -1204,7 +1178,7 @@ function NameAgentDialog({
               style={{
                 height: 36, borderRadius: 999, border: `1px solid ${t.glassBorder}`,
                 background: 'transparent', color: t.text1,
-                fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+                fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
               }}>
               {tr('common.close')}
             </button>
@@ -1220,9 +1194,9 @@ function NameAgentDialog({
           style={{
             width: '100%', boxSizing: 'border-box',
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            borderRadius: 10, padding: isPhone ? '13px 14px' : '10px 12px',
+            borderRadius: 10, padding: isPhone ? '12px 16px' : '10px 12px',
             // 16px: por debajo de eso iOS hace auto-zoom al enfocar.
-            fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13.5, color: t.text0,
+            fontFamily: t.fontSans, fontSize: isPhone ? 16 : 14, color: t.text0,
             outline: 'none',
           }}
         />
@@ -1247,7 +1221,7 @@ function NameAgentDialog({
                     type="button"
                     onClick={() => { setCustomMode(false); setBaseBranch(b); }}
                     style={{
-                      padding: isPhone ? '11px 14px' : '5px 10px', borderRadius: 999,
+                      padding: isPhone ? '12px 16px' : '6px 10px', borderRadius: 999,
                       border: `1px solid ${active ? t.accent : t.glassBorder}`,
                       background: active ? t.accentFaint : t.bg2,
                       color: active ? t.accent : t.text1,
@@ -1259,7 +1233,7 @@ function NameAgentDialog({
                 type="button"
                 onClick={() => setCustomMode(true)}
                 style={{
-                  padding: isPhone ? '11px 14px' : '5px 10px', borderRadius: 999,
+                  padding: isPhone ? '12px 16px' : '6px 10px', borderRadius: 999,
                   border: `1px solid ${customMode ? t.accent : t.glassBorder}`,
                   background: customMode ? t.accentFaint : t.bg2,
                   color: customMode ? t.accent : t.text2,
@@ -1276,14 +1250,14 @@ function NameAgentDialog({
               style={{
                 marginTop: 6, width: '100%', boxSizing: 'border-box',
                 background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                borderRadius: 8, padding: '7px 10px',
+                borderRadius: 8, padding: '8px 10px',
                 fontFamily: t.fontMono, fontSize: 12, color: t.text0,
                 outline: 'none',
               }}
             />
           )}
         </div>
-        <div style={{ fontSize: 10.5, color: t.text3 }}>
+        <div style={{ fontSize: 11, color: t.text3 }}>
           {tr('dash.bubble.enter_hint')}
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -1294,7 +1268,7 @@ function NameAgentDialog({
               flex: 1, height: isPhone ? 48 : 36, borderRadius: 999,
               border: `1px solid ${t.glassBorder}`,
               background: 'transparent', color: t.text1,
-              fontFamily: t.fontSans, fontSize: isPhone ? 15 : 12.5, cursor: 'pointer',
+              fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13, cursor: 'pointer',
             }}>
             {tr('common.cancel')}
           </button>
@@ -1304,7 +1278,7 @@ function NameAgentDialog({
             style={{
               flex: 1, height: isPhone ? 48 : 36, borderRadius: 999, border: 0,
               background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: isPhone ? 15 : 12.5, fontWeight: 500,
+              fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13, fontWeight: 500,
               cursor: 'pointer',
             }}>
             {tr('common.create')}
@@ -1339,7 +1313,6 @@ function CreateAgentButton({
           background: t.accent, color: t.accentOn,
           fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
           cursor: 'pointer',
-          boxShadow: `0 0 12px ${t.accentGlow}`,
         }}>
         <IconAgent size={14} strokeWidth={2}/>
         {tr('dash.bubble.new')}
@@ -1427,10 +1400,9 @@ function NewAgentCard({
         style={{
           ...glassEffect(t, { intensity: 'normal' }),
           border: `1px solid ${t.accentDim}`,
-          background: `linear-gradient(135deg, ${t.accentFaint}, ${t.glassBg})`,
-          borderRadius: 18, minHeight: isPhone ? undefined : 200,
-          padding: isPhone ? 14 : 22,
-          display: 'flex', flexDirection: 'column', gap: isPhone ? 10 : 14,
+          borderRadius: 16,
+          padding: isPhone ? 16 : 24,
+          display: 'flex', flexDirection: 'column', gap: isPhone ? 10 : 16,
         }}
       >
         <div style={{
@@ -1440,7 +1412,7 @@ function NewAgentCard({
         }}>
           <IconAgent size={22} strokeWidth={1.8}/>
         </div>
-        <div style={{ fontSize: 12.5, color: t.text2 }}>{tr('dash.bubble.name_label')}</div>
+        <div style={{ fontSize: 13, color: t.text2 }}>{tr('dash.bubble.name_label')}</div>
         <input
           ref={inputRef}
           value={draft}
@@ -1454,7 +1426,7 @@ function NewAgentCard({
             width: '100%', boxSizing: 'border-box',
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
             borderRadius: 10, padding: '10px 12px',
-            fontFamily: t.fontSans, fontSize: 13.5, color: t.text0,
+            fontFamily: t.fontSans, fontSize: 14, color: t.text0,
             outline: 'none',
           }}
         />
@@ -1477,7 +1449,7 @@ function NewAgentCard({
                   type="button"
                   onClick={() => { setCustomMode(false); setBaseBranch(b); }}
                   style={{
-                    padding: '5px 10px', borderRadius: 999,
+                    padding: '6px 10px', borderRadius: 999,
                     border: `1px solid ${active ? t.accent : t.glassBorder}`,
                     background: active ? t.accentFaint : t.bg2,
                     color: active ? t.accent : t.text1,
@@ -1489,7 +1461,7 @@ function NewAgentCard({
               type="button"
               onClick={() => setCustomMode(true)}
               style={{
-                padding: '5px 10px', borderRadius: 999,
+                padding: '6px 10px', borderRadius: 999,
                 border: `1px solid ${customMode ? t.accent : t.glassBorder}`,
                 background: customMode ? t.accentFaint : t.bg2,
                 color: customMode ? t.accent : t.text2,
@@ -1506,7 +1478,7 @@ function NewAgentCard({
               style={{
                 marginTop: 6, width: '100%', boxSizing: 'border-box',
                 background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                borderRadius: 8, padding: '7px 10px',
+                borderRadius: 8, padding: '8px 10px',
                 fontFamily: t.fontMono, fontSize: 12, color: t.text0,
                 outline: 'none',
               }}
@@ -1519,7 +1491,7 @@ function NewAgentCard({
             onClick={() => { setDraft(''); setNaming(false); }}
             style={{
               flex: 1, height: 32, borderRadius: 999, border: `1px solid ${t.glassBorder}`,
-              background: 'transparent', color: t.text1, fontFamily: t.fontSans, fontSize: 12.5,
+              background: 'transparent', color: t.text1, fontFamily: t.fontSans, fontSize: 13,
               cursor: 'pointer',
             }}>{tr('common.cancel')}</button>
           <button
@@ -1527,11 +1499,11 @@ function NewAgentCard({
             onClick={submit}
             style={{
               flex: 1, height: 32, borderRadius: 999, border: `1px solid ${t.accent}`,
-              background: t.accent, color: t.accentOn, fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+              background: t.accent, color: t.accentOn, fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
               cursor: 'pointer',
             }}>{tr('common.create')}</button>
         </div>
-        <div style={{ fontSize: 10.5, color: t.text3 }}>{tr('dash.bubble.enter_hint')}</div>
+        <div style={{ fontSize: 11, color: t.text3 }}>{tr('dash.bubble.enter_hint')}</div>
       </div>
     );
   }
@@ -1544,7 +1516,7 @@ function NewAgentCard({
         ...glassEffect(t, { hovered: h, intensity: 'subtle' }),
         border: `1px dashed ${h ? t.accentDim : t.glassBorder}`,
         background: h ? t.accentFaint : t.glassBg,
-        borderRadius: 18, minHeight: isPhone ? 84 : 200,
+        borderRadius: 16, minHeight: isPhone ? 84 : 112,
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', gap: 10, cursor: 'pointer',
         color: h ? t.accent : t.text2,
@@ -1590,10 +1562,10 @@ function WorkspaceChip({
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
         title={workspace || tr('wsp.chip.assign')}
         style={{
-          display: 'flex', alignItems: 'center', gap: 5,
+          display: 'flex', alignItems: 'center', gap: 6,
           background: t.bg3, border: `1px solid ${t.glassBorder}`,
           borderRadius: 999, padding: '4px 10px',
-          fontFamily: t.fontMono, fontSize: 10.5, color: workspace ? t.text1 : t.text3,
+          fontFamily: t.fontMono, fontSize: 11, color: workspace ? t.text1 : t.text3,
           cursor: 'pointer', maxWidth: '100%', minWidth: 0,
         }}>
         <IconFolder size={10}/>
@@ -1616,7 +1588,7 @@ function WorkspaceChip({
             display: 'flex', flexDirection: 'column',
           }}>
           {workspaces.length === 0 ? (
-            <div style={{ padding: 10, fontSize: 11.5, color: t.text3 }}>
+            <div style={{ padding: 10, fontSize: 12, color: t.text3 }}>
               {tr('wsp.chip.empty_picker')}
             </div>
           ) : workspaces.map((ws) => (
@@ -1624,7 +1596,7 @@ function WorkspaceChip({
               key={ws} type="button"
               onClick={() => { onChange(ws); setOpen(false); }}
               style={{
-                ...menuItemStyle(t), fontFamily: t.fontMono, fontSize: 11.5,
+                ...menuItemStyle(t), fontFamily: t.fontMono, fontSize: 12,
                 color: ws === workspace ? t.accent : t.text1,
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
@@ -1681,9 +1653,9 @@ function BubbleMenu({
       {categories.length > 0 && (
         <>
           <div style={{
-            fontSize: 9.5, color: t.text3, letterSpacing: 0.4,
-            textTransform: 'uppercase', fontWeight: 600,
-            padding: '6px 10px 3px',
+            fontSize: 11, color: t.text3,
+            fontWeight: 500,
+            padding: '6px 10px 4px',
           }}>{tr('dash.category.label')}</div>
           {categories.map((c) => {
             const active = currentCategoryIds?.includes(c.id) ?? false;
@@ -1726,7 +1698,7 @@ function menuItemStyle(t: ReturnType<typeof useTokens>): CSSProperties {
   return {
     display: 'flex', alignItems: 'center', gap: 8,
     padding: '8px 10px', borderRadius: 8, border: 0, background: 'transparent',
-    color: t.text1, fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+    color: t.text1, fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
     textAlign: 'left',
   };
 }
@@ -1755,6 +1727,7 @@ function GridView({
   const t = useTokens();
   const tr = useT();
   const ordered = lastOpenedFirst(bubbles);
+  const changeCounts = useBubbleChangeCountMap(bubbles);
 
   // Modo admin "todos": una sección por dueño. Modo normal: por workspace (si 2+).
   const groups = (() => {
@@ -1788,7 +1761,7 @@ function GridView({
   const gridStyle: CSSProperties = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))',
-    gap: 14,
+    gap: 16,
   };
 
   const renderCard = (b: Bubble, i: number) => (
@@ -1798,11 +1771,7 @@ function GridView({
       initial={{ opacity: 0, scale: 0.92, y: 12 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.94, y: -8 }}
-      transition={{
-        type: 'spring', stiffness: 320, damping: 28,
-        delay: Math.min(i * 0.03, 0.25),
-      }}
-      whileHover={{ y: -2 }}
+      transition={tween(Math.min(i * 0.03, 0.25))}
     >
       <AgentBubble
         bubble={b}
@@ -1814,6 +1783,7 @@ function GridView({
         onToggleCategory={(catId) => onToggleCategory(b.id, catId)}
         ownerLabel={ownerLabelFor(b)}
         readOnly={!!ownerLabelFor(b)}
+        changes={changeCounts.get(b.id) ?? 0}
       />
     </motion.div>
   );
@@ -1823,8 +1793,7 @@ function GridView({
       layout
       initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 280, damping: 26, delay: 0.1 }}
-      whileHover={{ y: -2 }}
+      transition={tween(0.1)}
     >
       <NewAgentCard onCreate={onCreateAgent} workspaces={workspaces}/>
     </motion.div>
@@ -1842,7 +1811,7 @@ function GridView({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {groups.map((g) => (
         <div key={g.key}>
           <div style={{
@@ -1850,14 +1819,14 @@ function GridView({
           }}>
             <IconLayers size={13} strokeWidth={2}/>
             <span style={{
-              fontFamily: t.fontSans, fontSize: 13, fontWeight: 600, color: t.text0,
+              fontFamily: t.fontSans, fontSize: 13, fontWeight: 500, color: t.text0,
             }}>{g.label}</span>
             {g.path && (
-              <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>
+              <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>
                 {g.path}
               </span>
             )}
-            <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>
+            <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>
               · {g.items.length}
             </span>
           </div>
@@ -1924,7 +1893,6 @@ function KanbanView({
     ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
 
   const { categories, move: moveCategory } = useCategories();
-  const workingIds = useWorkingBubbleIds(bubbles);
   type Drag = { kind: 'card'; id: string; from: string } | { kind: 'col'; id: string };
   const [drag, setDrag] = useState<Drag | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
@@ -1974,7 +1942,6 @@ function KanbanView({
       {nameDialog}
       {visibleCols.map((col) => {
         const items = col.items;
-        const hasActive = items.some((b) => workingIds.has(b.id));
         const isTarget = drag?.kind === 'card'
           ? drag.from !== col.id
           : drag?.kind === 'col' && drag.id !== col.id;
@@ -2004,7 +1971,7 @@ function KanbanView({
             }}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+            transition={tween()}
             style={{
               // En el teléfono una columna de 280px deja ver ~46px de la
               // siguiente y ninguna entera. Con 85vw la columna activa llena
@@ -2014,7 +1981,7 @@ function KanbanView({
               background: isOver ? `color-mix(in oklch, ${col.color} 10%, ${t.bg2})` : t.bg2,
               border: `1px ${isTarget ? 'dashed' : 'solid'} ${isOver ? col.color : t.glassBorder}`,
               opacity: drag?.kind === 'col' && drag.id === col.id ? 0.45 : 1,
-              borderRadius: 14,
+              borderRadius: 16,
               padding: 12,
               minHeight: 200,
               transition: 'background 140ms, border-color 140ms',
@@ -2036,15 +2003,14 @@ function KanbanView({
               }}>
               <span style={{
                 width: 8, height: 8, borderRadius: '50%', background: col.color,
-                boxShadow: hasActive ? `0 0 6px ${col.color}` : 'none',
               }}/>
               <span style={{
-                fontFamily: t.fontSans, fontSize: 12.5, color: t.text0, fontWeight: 600,
-                letterSpacing: -0.1, flex: 1,
+                fontFamily: t.fontSans, fontSize: 13, color: t.text0, fontWeight: 500,
+                flex: 1,
               }}>{col.label}</span>
               <span style={{
                 fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-                padding: '1px 7px', borderRadius: 999,
+                padding: '1px 8px', borderRadius: 999,
                 background: t.bg3,
               }}>{items.length}</span>
             </div>
@@ -2057,12 +2023,8 @@ function KanbanView({
                     initial={{ opacity: 0, scale: 0.95, y: 8 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: -8 }}
-                    transition={{
-                      type: 'spring', stiffness: 360, damping: 28,
-                      delay: Math.min(i * 0.02, 0.15),
-                    }}
-                    whileHover={{ y: -2 }}
-                  >
+                    transition={tween(Math.min(i * 0.02, 0.15))}
+                                >
                     <div
                       draggable={canDrag(b)}
                       onDragStart={(e) => {
@@ -2084,8 +2046,8 @@ function KanbanView({
               </AnimatePresence>
               {items.length === 0 && (
                 <div style={{
-                  padding: '14px 8px', textAlign: 'center',
-                  fontSize: 11.5, color: t.text3, fontFamily: t.fontSans,
+                  padding: '16px 8px', textAlign: 'center',
+                  fontSize: 12, color: t.text3, fontFamily: t.fontSans,
                 }}>{tr(drag?.kind === 'card' && isTarget ? 'dash.kanban.drop_here' : 'dash.empty.cell')}</div>
               )}
             </div>
@@ -2098,7 +2060,7 @@ function KanbanView({
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   padding: '8px 10px', border: `1px dashed ${t.glassBorder}`,
                   borderRadius: 10, background: 'transparent', cursor: 'pointer',
-                  color: t.text2, fontFamily: t.fontSans, fontSize: 11.5,
+                  color: t.text2, fontFamily: t.fontSans, fontSize: 12,
                 }}>
                 <IconAgent size={13} strokeWidth={2}/> {tr('dash.new_bubble')}
               </button>
@@ -2346,41 +2308,40 @@ function KanbanCard({ bubble, onOpen, ownerLabel }: { bubble: Bubble; onOpen: ()
         border: `1px solid ${isActive ? sColor : t.glassBorder}`,
         cursor: 'pointer',
         boxShadow: isActive
-          ? `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 14px color-mix(in oklch, ${sColor} 30%, transparent), ${t.shadowMd}`
+          ? `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`
           : `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`,
         transition: 'border-color 180ms, box-shadow 180ms, transform 180ms',
       }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <span style={{
           width: 26, height: 26, borderRadius: 8, flexShrink: 0,
-          background: bubble.accent || t.bg3,
-          color: t.text0,
+          background: t.bg3,
+          color: t.text1,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
+          fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
         }}>{bubbleLetter(bubble.title)}</span>
         <span style={{
           flex: 1, minWidth: 0,
-          fontFamily: t.fontSans, fontSize: 12.5, color: t.text0, fontWeight: 500,
+          fontFamily: t.fontSans, fontSize: 13, color: t.text0, fontWeight: 500,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{bubble.title}</span>
         {isActive && (
           <span style={{
             width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
             background: sColor,
-            boxShadow: `0 0 6px ${sColor}`,
             animation: 'eco-shimmer 1.1s ease-in-out infinite',
           }}/>
         )}
       </div>
       {ownerLabel && (
         <div style={{
-          fontFamily: t.fontSans, fontSize: 10.5, color: t.accent, fontWeight: 500,
+          fontFamily: t.fontSans, fontSize: 11, color: t.accent, fontWeight: 500,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }} title={tr('dash.bubble.owner')}>{ownerLabel}</div>
       )}
       {bubble.workspace && (
         <div style={{
-          fontFamily: t.fontMono, fontSize: 10, color: t.text3,
+          fontFamily: t.fontMono, fontSize: 11, color: t.text3,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{bubble.workspace.split('/').pop()}</div>
       )}
@@ -2424,7 +2385,7 @@ function FocusControl({ categories, selected, onChange, shown, total }: {
           title={tr('graph.focus.title')}
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
-            padding: '5px 10px', borderRadius: 999,
+            padding: '6px 10px', borderRadius: 999,
             background: active ? `color-mix(in oklch, ${t.accent} 16%, ${t.bg2})` : t.bg2,
             border: `1px solid ${active ? t.accent : t.glassBorder}`,
             color: active ? t.text0 : t.text1, fontFamily: t.fontSans, fontSize: 11,
@@ -2475,7 +2436,7 @@ function FocusControl({ categories, selected, onChange, shown, total }: {
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '6px 8px', borderRadius: 8, border: 'none',
                   background: on ? `color-mix(in oklch, ${c.color} 14%, transparent)` : 'transparent',
-                  color: t.text0, fontFamily: t.fontSans, fontSize: 12.5,
+                  color: t.text0, fontFamily: t.fontSans, fontSize: 13,
                   cursor: 'pointer', textAlign: 'left',
                 }}>
                 <span style={{
@@ -3060,7 +3021,7 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
   };
   const pillStyle: CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 2,
-    padding: 3, borderRadius: 999,
+    padding: 4, borderRadius: 999,
     background: t.bg2, border: `1px solid ${t.glassBorder}`,
     boxShadow: t.shadowMd,
   };
@@ -3074,7 +3035,7 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
   };
   const viewBtnStyle: CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 6,
-    padding: '5px 10px', borderRadius: 999,
+    padding: '6px 10px', borderRadius: 999,
     background: t.bg2, border: `1px solid ${t.glassBorder}`,
     color: t.text1, fontFamily: t.fontSans, fontSize: 11,
     cursor: 'pointer', boxShadow: t.shadowMd, whiteSpace: 'nowrap',
@@ -3221,33 +3182,34 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
         {/* Glow radial del centro — se mueve junto con el hub Eco al panear. */}
         <motion.circle
           cx={cx} cy={cy} r={Math.min(W, H) * 0.5} fill="url(#eco-glow)"
-          animate={{ scale: [1, 1.04, 1] }}
-          transition={{ duration: 5, ease: 'easeInOut', repeat: Infinity }}
+          animate={anyWorking ? { scale: [1, 1.04, 1] } : { scale: 1 }}
+          transition={anyWorking ? { duration: 5, ease: 'easeInOut', repeat: Infinity } : tween()}
           style={{ transformOrigin: `${cx}px ${cy}px`, pointerEvents: 'none' }}
         />
         {/* Hub central — respira sutil (escala el círculo de fondo) y
             emite 2 anillos expansivos cuando hay actividad en cualquier nodo. */}
         <motion.g
           style={{ transformOrigin: `${cx}px ${cy}px` }}
-          animate={{ scale: [1, 1.05, 1] }}
-          transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
+          animate={anyWorking ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+          transition={anyWorking ? { duration: 3.6, ease: 'easeInOut', repeat: Infinity } : tween()}>
           <circle cx={cx} cy={cy} r={ECO_HUB_R} fill={t.bg1}
             stroke={t.accent} strokeWidth="1" strokeOpacity="0.6"/>
         </motion.g>
-        {/* Anillo expansivo 1 */}
+        {/* Los anillos solo salen cuando algún agente trabaja. */}
+        {anyWorking && <>
         <motion.circle
           cx={cx} cy={cy} r={ECO_HUB_R - 6} fill="none"
           stroke={t.accent} strokeWidth="0.5"
           animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.5, 0, 0.5] }}
           transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity }}
         />
-        {/* Anillo expansivo 2, desfasado */}
         <motion.circle
           cx={cx} cy={cy} r={ECO_HUB_R - 6} fill="none"
           stroke={t.accent} strokeWidth="0.5"
           animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.3, 0, 0.3] }}
           transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity, delay: 1.2 }}
         />
+        </>}
         {/* Focus: brillo interior teñido y anillos que CONVERGEN hacia el
             núcleo, uno por categoría elegida (la idea es "concentración",
             no expansión). */}
@@ -3285,9 +3247,7 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
           textAnchor="middle" dominantBaseline="middle"
           fill={t.text0}
           fontFamily='-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif'
-          fontSize={ownerMode ? 30 : 24} fontWeight="300" letterSpacing="0.6"
-          animate={{ opacity: [0.85, 1, 0.85] }}
-          transition={{ duration: 3.6, ease: 'easeInOut', repeat: Infinity }}>
+          fontSize={ownerMode ? 30 : 24} fontWeight="300" letterSpacing="0.6">
           eco
         </motion.text>
 
@@ -3605,7 +3565,7 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
                 style={isActive ? { filter: `drop-shadow(0 0 8px ${sColor})` } : undefined}/>
               <text x={0} y={1} textAnchor="middle" dominantBaseline="middle"
                 fill={n.accent} fontFamily={t.fontSans} fontSize="13" fontWeight="600"
-                style={{ textTransform: 'uppercase', pointerEvents: 'none' }}>
+                style={{ pointerEvents: 'none' }}>
                 {bubbleLetter(n.title)}
               </text>
               <text x={0} y={n.size + 16} textAnchor="middle"
@@ -3828,7 +3788,6 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
       }}>
         <span style={{
           width: 4, height: 4, borderRadius: '50%', background: t.accent,
-          boxShadow: `0 0 6px ${t.accent}`,
         }}/>
         {tr('graph.legend.nodes', { n: bubbles.length })}
         {hierarchical && (
@@ -3873,7 +3832,7 @@ function DashboardRail({
       width: 280, flexShrink: 0,
       borderRight: `1px solid ${t.glassBorder}`,
       padding: '20px 16px',
-      display: 'flex', flexDirection: 'column', gap: 18,
+      display: 'flex', flexDirection: 'column', gap: 20,
       overflow: 'auto',
     }}>
       <div>
@@ -3928,16 +3887,9 @@ function RecentRow({ bubble, active, onClick }: { bubble: Bubble; active: boolea
         padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
         background: active ? t.bg3 : (h ? t.bg2 : 'transparent'),
       }}>
-      <div style={{
-        width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-        background: t.bg3, color: t.text2,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <IconTerminal size={12}/>
-      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontFamily: t.fontSans, fontSize: 12, color: t.text1,
+          fontFamily: t.fontSans, fontSize: 13, color: active ? t.text0 : t.text1,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{bubble.title}</div>
       </div>
@@ -3962,11 +3914,11 @@ function FolderRow({ path, count, changes, onClick }: { path: string; count: num
         background: !empty && h ? t.bg3 : 'transparent',
         opacity: empty ? 0.55 : 1,
       }}>
-      <div style={{ color: count > 0 ? t.accent : t.text2 }}>
+      <div style={{ color: t.text3, display: 'flex' }}>
         <IconFolder size={14}/>
       </div>
       <span style={{
-        flex: 1, fontFamily: t.fontMono, fontSize: 11.5, color: t.text1,
+        flex: 1, fontFamily: t.fontSans, fontSize: 13, color: t.text1,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{workspaceName(path)}</span>
       {changes > 0 && (
@@ -3974,8 +3926,7 @@ function FolderRow({ path, count, changes, onClick }: { path: string; count: num
           title={tr('dash.rail.folder_changes', { n: changes })}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '1px 6px', background: `color-mix(in oklch, ${t.warn} 16%, transparent)`,
-            color: t.warn, borderRadius: 999, fontSize: 10, fontWeight: 600,
+            color: t.warn, fontSize: 12,
           }}>
           <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.warn }}/>
           {changes}
@@ -3984,10 +3935,7 @@ function FolderRow({ path, count, changes, onClick }: { path: string; count: num
       {count > 0 && (
         <span
           title={tr('dash.rail.folder_bubbles', { n: count })}
-          style={{
-            padding: '1px 6px', background: t.accentFaint, color: t.accent,
-            borderRadius: 999, fontSize: 10, fontWeight: 500,
-          }}>{count}</span>
+          style={{ minWidth: 16, textAlign: 'right', color: t.text3, fontSize: 12 }}>{count}</span>
       )}
     </div>
   );

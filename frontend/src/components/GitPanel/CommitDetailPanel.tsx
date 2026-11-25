@@ -160,7 +160,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
           <ShaPill sha={summary.sha} abbrev={summary.abbrev}/>
           <div style={{
-            fontFamily: t.fontSans, fontSize: 14, fontWeight: 600, color: t.text0,
+            fontFamily: t.fontSans, fontSize: 14, fontWeight: 500, color: t.text0,
             flex: '1 1 auto', minWidth: 0,
           }}>{summary.subject}</div>
         </div>
@@ -172,7 +172,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
           <pre style={{
             margin: 0, padding: '6px 8px', borderRadius: 6,
             background: t.bg2, color: t.text1,
-            fontFamily: t.fontMono, fontSize: 11.5, lineHeight: 1.5,
+            fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.5,
             whiteSpace: 'pre-wrap', maxHeight: 140, overflow: 'auto',
           }}>{summary.body}</pre>
         )}
@@ -193,8 +193,8 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
                 zIndex: 10,
               }}>
                 <div style={{
-                  padding: '6px 10px', fontSize: 10.5, color: t.text3,
-                  textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
+                  padding: '6px 10px', fontSize: 11, color: t.text3,
+                  fontWeight: 500,
                 }}>{tr('git.commit.apply_to')}</div>
                 {(branchesData?.branches ?? [])
                   .filter((b) => !b.isRemote)
@@ -215,8 +215,8 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
                       </span>
                       {b.isCurrent && (
                         <span style={{
-                          fontSize: 9.5, fontWeight: 700, color: t.accent,
-                          padding: '1px 5px', borderRadius: 3,
+                          fontSize: 11, fontWeight: 600, color: t.accent,
+                          padding: '1px 6px', borderRadius: 4,
                           background: t.accentFaint,
                         }}>{tr('git.commit.current_tag')}</span>
                       )}
@@ -257,7 +257,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
                     onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
                     <div style={{ fontWeight: 500 }}>--{m}</div>
-                    <div style={{ fontSize: 10.5, color: t.text3, marginTop: 1 }}>
+                    <div style={{ fontSize: 11, color: t.text3, marginTop: 1 }}>
                       {m === 'soft' && tr('git.commit.reset.soft_desc')}
                       {m === 'mixed' && tr('git.commit.reset.mixed_desc')}
                       {m === 'hard' && tr('git.commit.reset.hard_desc')}
@@ -316,7 +316,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
               <pre style={{
                 margin: 0, padding: '12px 20px',
                 background: t.bg1, borderBottom: `1px solid ${t.glassBorder}`,
-                color: t.text2, fontFamily: t.fontMono, fontSize: 11.5,
+                color: t.text2, fontFamily: t.fontMono, fontSize: 12,
                 whiteSpace: 'pre-wrap',
               }}>{stat}</pre>
             )}
@@ -357,10 +357,10 @@ function CherryPickConfirm({
         ...dialogSurface(t, { border: t.accent }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>
           {tr('git.cherry.title')}
         </div>
-        <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
+        <div style={{ fontSize: 13, color: t.text1, lineHeight: 1.55 }}>
           {tr('git.cherry.body_a')}{' '}
           <code style={{
             fontFamily: t.fontMono, padding: '1px 6px', borderRadius: 4,
@@ -369,12 +369,12 @@ function CherryPickConfirm({
           {' '}— <em>{commitSubject}</em> — {tr('git.cherry.body_b')}{' '}
           <code style={{
             fontFamily: t.fontMono, padding: '1px 6px', borderRadius: 4,
-            background: t.accentFaint, color: t.accent, fontWeight: 600,
+            background: t.accentFaint, color: t.accent, fontWeight: 500,
           }}>{targetBranch}</code>.
         </div>
         {isSwitching && (
           <div style={{
-            fontSize: 11.5, color: t.warn,
+            fontSize: 12, color: t.warn,
             padding: '8px 10px', borderRadius: 6,
             background: `color-mix(in oklch, ${t.warn} 10%, transparent)`,
             border: `1px solid color-mix(in oklch, ${t.warn} 40%, transparent)`,
@@ -391,9 +391,9 @@ function CherryPickConfirm({
           <button type="button"
             onClick={onConfirm}
             style={{
-              height: 28, padding: '0 14px', borderRadius: 7, border: 0,
+              height: 28, padding: '0 16px', borderRadius: 8, border: 0,
               background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
             }}>{tr('git.cherry.confirm')}</button>
         </div>
@@ -424,7 +424,7 @@ function ResetHardConfirm({
         ...dialogSurface(t, { border: t.err }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.err }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: t.err }}>
           {tr('git.reset.title')}
         </div>
         <div style={{ fontSize: 12, color: t.text1, lineHeight: 1.5 }}>
@@ -432,16 +432,16 @@ function ResetHardConfirm({
         </div>
         {info.lostSubjects && info.lostSubjects.length > 0 && (
           <ul style={{
-            margin: 0, padding: '0 0 0 18px',
-            color: t.text2, fontSize: 11.5, lineHeight: 1.6,
+            margin: 0, padding: '0 0 0 20px',
+            color: t.text2, fontSize: 12, lineHeight: 1.6,
           }}>
             {info.lostSubjects.map((s, i) => <li key={i}>{s}</li>)}
           </ul>
         )}
-        <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
           {tr('git.reset.reflog_hint')}
         </div>
-        <div style={{ fontSize: 11.5, color: t.text1 }}>
+        <div style={{ fontSize: 12, color: t.text1 }}>
           {tr('git.reset.phrase_prompt')}
         </div>
         <input
@@ -459,10 +459,10 @@ function ResetHardConfirm({
             onClick={onConfirm}
             disabled={!enabled}
             style={{
-              height: 28, padding: '0 14px', borderRadius: 7, border: 0,
+              height: 28, padding: '0 16px', borderRadius: 8, border: 0,
               background: enabled ? t.err : t.bg3,
               color: enabled ? '#fff' : t.text3,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
               cursor: enabled ? 'pointer' : 'not-allowed',
             }}>{tr('git.reset.confirm')}</button>
         </div>
@@ -488,7 +488,7 @@ function DiffRender({ diff }: { diff: string }) {
     <pre style={{
       margin: 0, padding: '8px 0',
       background: t.bg0,
-      fontFamily: t.fontMono, fontSize: 11.5, lineHeight: 1.55,
+      fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.55,
     }}>
       {lines.map((line, i) => {
         let color = t.text1;

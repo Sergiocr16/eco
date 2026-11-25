@@ -106,12 +106,12 @@ function TabPill({
           title={tr('browser.tab.isolated_badge_tooltip')}
           style={{
             flexShrink: 0,
-            padding: '1px 5px',
-            borderRadius: 3,
+            padding: '1px 6px',
+            borderRadius: 4,
             background: `color-mix(in oklch, ${t.warn} 20%, transparent)`,
             border: `1px solid ${t.warn}`,
             color: t.warn,
-            fontSize: 9, fontWeight: 700, letterSpacing: 0.3,
+            fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
             fontFamily: t.fontMono,
           }}
         >ISO</span>

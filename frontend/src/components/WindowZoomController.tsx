@@ -39,10 +39,10 @@ export function WindowZoomController() {
     <div style={{
       position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)',
       zIndex: 400, pointerEvents: 'none',
-      padding: '7px 14px', borderRadius: 999,
+      padding: '8px 16px', borderRadius: 999,
       background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
       boxShadow: t.shadowLg, color: t.text0,
-      fontFamily: t.fontMono, fontSize: 12.5, fontVariantNumeric: 'tabular-nums',
+      fontFamily: t.fontMono, fontSize: 13, fontVariantNumeric: 'tabular-nums',
       letterSpacing: 0.2,
     }}>
       {Math.round(zoom * 100)}%
