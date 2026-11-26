@@ -753,7 +753,7 @@ function TabBtn({
         boxShadow: dragOver ? `inset 3px 0 0 ${t.accent}` : 'none',
       }}
     >
-      <Icon size={iconOnly ? 18 : 14}/>
+      <span style={{ display: 'inline-flex', color: t.text0 }}><Icon size={iconOnly ? 18 : 14}/></span>
       {!iconOnly && label}
       {badge != null && badge > 0 && (
         <span style={{
