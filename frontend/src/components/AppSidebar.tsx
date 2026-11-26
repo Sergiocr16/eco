@@ -96,7 +96,7 @@ export function AppSidebar({
             style={{
               width: 44, height: isPhone ? 40 : 44, borderRadius: 12, border: 0, cursor: 'pointer',
               background: active ? t.bg3 : 'transparent',
-              color: active ? t.text0 : t.text2,
+              color: t.text0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               position: 'relative', transition: T_UI,
             }}

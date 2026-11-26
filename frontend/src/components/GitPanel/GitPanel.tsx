@@ -165,7 +165,7 @@ function SubtabBtn({
         cursor: 'pointer',
         whiteSpace: 'nowrap',
       }}>
-      {icon}
+      {icon && <span style={{ display: 'inline-flex', color: t.text0 }}>{icon}</span>}
       <span>{label}</span>
       {badge !== undefined && badge > 0 && (
         <span style={{

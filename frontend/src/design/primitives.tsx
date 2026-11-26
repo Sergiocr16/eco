@@ -199,7 +199,7 @@ export function IconBtn({ icon: Icon, onClick, title, active, size = 32, style =
         width: box, height: box, flexShrink: 0,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         background: active ? t.bg3 : (h ? t.bg3 : 'transparent'),
-        color: active ? t.text0 : (h ? t.text0 : t.text1),
+        color: t.text0,
         border: `1px solid ${active ? t.glassBorder : 'transparent'}`,
         borderRadius: box >= 32 ? 10 : 8,
         cursor: 'pointer', transition: T_UI,

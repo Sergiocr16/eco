@@ -96,7 +96,7 @@ function TabPill({
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.bg1; }}
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
     >
-      <IconGlobe size={11} style={{ flexShrink: 0, color: active ? t.accent : t.text3 }}/>
+      <IconGlobe size={11} style={{ flexShrink: 0, color: t.text0 }}/>
       <span style={{
         flex: 1, minWidth: 0,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
