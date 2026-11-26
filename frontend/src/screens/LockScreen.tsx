@@ -5,7 +5,6 @@ import { Btn } from '@/design/primitives';
 import { IconArrowL } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 import { useProfile } from '@/hooks/useProfile';
-import { DriftingOrbs } from './AuthScreen';
 
 type Props = {
   mode: 'locked' | 'setup';
@@ -46,7 +45,6 @@ export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignO
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1, background: t.windowBg, backgroundImage: t.windowBgImage, color: t.text0, overflow: 'hidden' }}>
-      <DriftingOrbs/>
       <div style={{
         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
         zIndex: 2, width: `min(340px, calc(${vw(100)} - 48px))`,
@@ -57,8 +55,7 @@ export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignO
           width: 84, height: 84, borderRadius: '50%', overflow: 'hidden',
           background: profile.photo ? t.bg2 : t.accent, color: t.accentOn,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 600, fontSize: 34, marginBottom: 16,
-          boxShadow: `0 0 60px 10px color-mix(in oklch, ${t.accent} 22%, transparent)`,
+          fontWeight: 500, fontSize: 32, marginBottom: 16,
           border: `1px solid ${t.glassBorder}`,
         }}>
           {profile.photo
@@ -66,10 +63,10 @@ export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignO
             : profile.initial}
         </div>
 
-        <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: -0.3, marginBottom: 2 }}>
+        <div style={{ fontSize: 20, fontWeight: 500, marginBottom: 2 }}>
           {username ?? '—'}
         </div>
-        <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 22, textAlign: 'center', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 13, color: t.text2, marginBottom: 24, textAlign: 'center', lineHeight: 1.5 }}>
           {mode === 'setup' ? tr('lock.setup.sub') : tr('lock.sub')}
         </div>
 
@@ -82,7 +79,7 @@ export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignO
 
         {err && (
           <div style={{
-            marginTop: 14, fontSize: 12, color: t.err, padding: '8px 12px', width: '100%', textAlign: 'center',
+            marginTop: 16, fontSize: 12, color: t.err, padding: '8px 12px', width: '100%', textAlign: 'center',
             background: `color-mix(in oklch, ${t.err} 8%, transparent)`,
             border: `1px solid color-mix(in oklch, ${t.err} 30%, transparent)`, borderRadius: 8,
           }}>{err}</div>
@@ -94,7 +91,7 @@ export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignO
             : (busy ? tr('lock.unlock_loading') : tr('lock.unlock'))}
         </Btn>
 
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 18, marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 16 }}>
           {mode === 'setup' && <button onClick={onSkip} style={linkBtn(t)}>{tr('lock.setup.skip')}</button>}
           <button onClick={onSignOut} style={linkBtn(t)}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconArrowL size={12}/> {tr('lock.signout')}</span>
@@ -114,7 +111,7 @@ function PinDots({ value, onChange, placeholder, autoFocus, onEnter }: {
   const [focused, setFocused] = useState(false);
   return (
     <div style={{
-      position: 'relative', borderRadius: 14, background: t.bg2,
+      position: 'relative', borderRadius: 16, background: t.bg2,
       border: `1px solid ${focused ? t.accent : t.glassBorder}`,
       transition: 'border-color 140ms', overflow: 'hidden',
     }}>
@@ -149,5 +146,5 @@ function PinDots({ value, onChange, placeholder, autoFocus, onEnter }: {
 }
 
 function linkBtn(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return { background: 'transparent', border: 0, padding: 0, cursor: 'pointer', color: t.text2, fontFamily: t.fontSans, fontSize: 11.5 };
+  return { background: 'transparent', border: 0, padding: 0, cursor: 'pointer', color: t.text2, fontFamily: t.fontSans, fontSize: 12 };
 }

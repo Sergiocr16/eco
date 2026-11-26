@@ -25,7 +25,7 @@ import { hydrateNotesAll } from './components/NotesPanel/types';
 import { hydrateWorkspaceConfig, getWorkspaceConfig } from './lib/workspace-config';
 import { setRole } from './lib/auth-role';
 import { WorkspacePicker } from './components/WorkspacePicker';
-import { AuthScreen, DriftingOrbs } from './screens/AuthScreen';
+import { AuthScreen } from './screens/AuthScreen';
 import { LockScreen } from './screens/LockScreen';
 import { OnboardingWizard, hasOnboarded } from './screens/OnboardingWizard';
 import { useAuth } from './hooks/useAuth';
@@ -147,25 +147,22 @@ function SoloLockedScreen() {
         position: 'fixed', inset: 0, zIndex: 1, overflow: 'hidden',
         background: t.windowBg, backgroundImage: t.windowBgImage, color: t.text0, fontFamily: t.fontSans,
       }}>
-      {/* Mismo fondo animado que la pantalla del PIN (auroras + partículas). */}
-      <DriftingOrbs/>
 
       <div style={{
         position: 'absolute', top: '50%', left: '50%',
         transform: 'translate(-50%, -50%)', zIndex: 2,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexDirection: 'column', gap: 14, padding: 24,
+        flexDirection: 'column', gap: 16, padding: 24,
         width: `min(380px, calc(${vw(100)} - 48px))`, textAlign: 'center',
       }}>
         <div style={{
           width: 52, height: 52, borderRadius: '50%',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: t.bg2, border: `1px solid ${t.glassBorder}`, color: t.text2,
-          boxShadow: `0 0 44px 8px color-mix(in oklch, ${t.accent} 20%, transparent)`,
         }}>
           <IconLock size={22} strokeWidth={2}/>
         </div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: t.text0 }}>{tr('solo.locked.title')}</div>
+        <div style={{ fontSize: 16, fontWeight: 500, color: t.text0 }}>{tr('solo.locked.title')}</div>
         <div style={{ fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
           {tr('solo.locked.sub')}
         </div>
@@ -174,7 +171,7 @@ function SoloLockedScreen() {
       {/* eco · version — abajo a la derecha, igual que en el PIN. */}
       <div style={{
         position: 'absolute', bottom: 14, right: 18, zIndex: 2,
-        color: t.text3, fontSize: 10.5, fontFamily: t.fontMono,
+        color: t.text3, fontSize: 11, fontFamily: t.fontMono,
         pointerEvents: 'none', display: 'flex', alignItems: 'baseline', gap: 6,
       }}>
         <span style={{ color: t.text2, fontWeight: 500 }}>eco</span>
@@ -886,13 +883,13 @@ function ConfirmCloseBubble({
         style={{
           width: 'min(420px, 100%)',
           ...dialogSurface(t),
-          borderRadius: 18,
+          borderRadius: 20,
           padding: 24,
         }}>
         <h2 style={{
-          margin: 0, fontSize: 17, fontWeight: 600, color: t.text0, letterSpacing: -0.3,
+          margin: 0, fontSize: 16, fontWeight: 500, color: t.text0,
         }}>{heading}</h2>
-        <p style={{ margin: '8px 0 18px', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
+        <p style={{ margin: '8px 0 20px', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
           {body}
         </p>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -900,7 +897,7 @@ function ConfirmCloseBubble({
             type="button"
             onClick={onCancel}
             style={{
-              padding: '8px 14px', borderRadius: 10,
+              padding: '8px 16px', borderRadius: 10,
               background: t.bg3, color: t.text0,
               border: `1px solid ${t.glassBorder}`,
               cursor: 'pointer',
@@ -913,13 +910,11 @@ function ConfirmCloseBubble({
               onConfirm();
             }}
             style={{
-              padding: '8px 14px', borderRadius: 10,
+              padding: '8px 16px', borderRadius: 10,
               background: t.err, color: t.accentOn,
               border: 0, cursor: 'pointer',
               fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-              boxShadow: `0 0 18px color-mix(in oklch, ${t.err} ${reConfirm ? 60 : 30}%, transparent)`,
-              animation: reConfirm ? 'eco-shimmer 0.9s ease-in-out infinite' : undefined,
-            }}>{reConfirm ? '⚠️  Click otra vez para confirmar' : 'Cerrar igual'}</button>
+            }}>{reConfirm ? 'Clic otra vez para confirmar' : 'Cerrar igual'}</button>
         </div>
       </div>
     </div>

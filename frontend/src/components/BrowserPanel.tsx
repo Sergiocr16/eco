@@ -420,7 +420,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             style={{
               minWidth: 38, padding: '0 4px', height: 22, border: 0, borderRadius: 4,
               background: 'transparent', color: t.text1, cursor: 'pointer',
-              fontFamily: t.fontMono, fontSize: 10.5,
+              fontFamily: t.fontMono, fontSize: 11,
             }}>{Math.round(zoom * 100)}%</button>
           <button type="button" onClick={() => bumpZoom('in')} title={tr('browser.zoom_in')}
             style={{ ...zoomBtnStyle(t) }}>+</button>
@@ -434,7 +434,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             style={{
               ...navBtnStyle(t),
               opacity: activeTab?.url ? 1 : 0.4,
-              fontFamily: t.fontMono, fontSize: 10, fontWeight: 600,
+              fontFamily: t.fontMono, fontSize: 11, fontWeight: 500,
               width: 32,
             }}>{'{ }'}</button>
         )}
@@ -535,7 +535,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
               padding: '2px 10px', borderRadius: 999,
               background: t.bg2,
               color: t.text2,
-              fontFamily: t.fontMono, fontSize: 10.5,
+              fontFamily: t.fontMono, fontSize: 11,
               border: `1px solid ${t.glassBorder}`,
               maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
@@ -550,7 +550,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
           style={{
             padding: '4px 12px', height: compact ? 32 : 26, flexShrink: 0, borderRadius: 8, border: 0,
             background: t.accent, color: t.accentOn,
-            fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
             cursor: draft.trim() ? 'pointer' : 'not-allowed',
             opacity: draft.trim() ? 1 : 0.5,
           }}>{tr('browser.go')}</button>}
@@ -563,7 +563,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             aria-pressed={tabStripOpen}
             style={{
               ...navBtnStyle(t),
-              fontFamily: t.fontMono, fontSize: 12, fontWeight: 600,
+              fontFamily: t.fontMono, fontSize: 12, fontWeight: 500,
               color: tabStripOpen ? t.accent : t.text1,
               border: `1.5px solid ${tabStripOpen ? t.accent : t.text3}`,
               background: 'transparent',
@@ -645,19 +645,19 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
           {loadFailed && activeTab?.url && (
             <div style={{
               position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-              padding: '10px 14px', borderRadius: 10,
+              padding: '10px 16px', borderRadius: 10,
               background: t.bg1, border: `1px solid ${t.warn}`,
-              color: t.text0, fontSize: 12.5, lineHeight: 1.5,
+              color: t.text0, fontSize: 13, lineHeight: 1.5,
               maxWidth: 'min(420px, 90%)',
               boxShadow: t.shadowLg, zIndex: 10,
               display: 'flex', alignItems: 'flex-start', gap: 10,
             }}>
               <div style={{
-                flexShrink: 0, marginTop: 1, color: t.warn, fontSize: 18, lineHeight: 1,
+                flexShrink: 0, marginTop: 1, color: t.warn, fontSize: 20, lineHeight: 1,
               }}>!</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 500, marginBottom: 4 }}>{tr('browser.blocked.title')}</div>
-                <div style={{ fontSize: 11.5, color: t.text2 }}>
+                <div style={{ fontSize: 12, color: t.text2 }}>
                   {tr('browser.blocked.desc')}
                 </div>
               </div>
@@ -725,7 +725,7 @@ function TabContent({
               style={{
                 padding: '6px 12px', borderRadius: 999,
                 background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                color: t.text1, fontFamily: t.fontMono, fontSize: 11.5,
+                color: t.text1, fontFamily: t.fontMono, fontSize: 12,
                 cursor: 'pointer',
               }}>{s.label}</button>
           ))}

@@ -124,12 +124,12 @@ export function PullRequestsList({ workspace, bubbleId }: Props) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontFamily: t.fontMono, fontSize: 11.5, color: t.text0, fontWeight: 500,
+            fontFamily: t.fontMono, fontSize: 12, color: t.text0, fontWeight: 500,
             lineHeight: 1.3,
           }}>
             Pull Requests
           </div>
-          <div style={{ fontSize: 10, color: t.text3, marginTop: 0 }}>
+          <div style={{ fontSize: 11, color: t.text3, marginTop: 0 }}>
             {data?.ok === false
               ? 'no disponible'
               : loading && !data
@@ -142,7 +142,7 @@ export function PullRequestsList({ workspace, bubbleId }: Props) {
             onClick={(e) => { e.stopPropagation(); void refresh(); }}
             title="Refrescar"
             style={{
-              width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
+              width: 22, height: 22, border: 0, borderRadius: 6, padding: 0,
               background: 'transparent', color: t.text3, cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
@@ -170,14 +170,14 @@ export function PullRequestsList({ workspace, bubbleId }: Props) {
             transition={{ duration: 0.16 }}
             style={{ overflow: 'hidden' }}>
             <div style={{
-              padding: '5px 7px',
+              padding: '6px 8px',
               borderRadius: 6,
               background: actionMsg.kind === 'ok'
                 ? `color-mix(in oklch, ${t.ok} 14%, transparent)`
                 : `color-mix(in oklch, ${t.err} 14%, transparent)`,
               color: actionMsg.kind === 'ok' ? t.ok : t.err,
-              fontFamily: t.fontMono, fontSize: 10.5,
-              display: 'flex', alignItems: 'flex-start', gap: 5,
+              fontFamily: t.fontMono, fontSize: 11,
+              display: 'flex', alignItems: 'flex-start', gap: 6,
               maxHeight: 90, overflow: 'auto', wordBreak: 'break-word',
             }}>
               <span style={{ flexShrink: 0, marginTop: 1 }}>
@@ -310,15 +310,15 @@ function PrRow({ pr, onClick }: { pr: PullRequest; onClick: () => void }) {
       }}>
       <span style={{
         flexShrink: 0, marginTop: 2,
-        fontFamily: t.fontMono, fontSize: 10.5,
+        fontFamily: t.fontMono, fontSize: 11,
         color: pr.isDraft ? t.text3 : t.accent,
-        fontWeight: 600,
+        fontWeight: 500,
       }}>
         #{pr.number}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontSize: 11.5, color: t.text0, fontWeight: 500,
+          fontSize: 12, color: t.text0, fontWeight: 500,
           lineHeight: 1.35,
           overflow: 'hidden', textOverflow: 'ellipsis',
           display: '-webkit-box',
@@ -330,12 +330,12 @@ function PrRow({ pr, onClick }: { pr: PullRequest; onClick: () => void }) {
         </div>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6, marginTop: 8,
-          fontSize: 9.5, color: t.text3, fontFamily: t.fontMono,
+          fontSize: 11, color: t.text3, fontFamily: t.fontMono,
           flexWrap: 'wrap', rowGap: 4,
           minWidth: 0,
         }}>
           <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 3,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
             minWidth: 0, maxWidth: '100%',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             flexShrink: 1,
@@ -345,18 +345,18 @@ function PrRow({ pr, onClick }: { pr: PullRequest; onClick: () => void }) {
           </span>
           {pr.isDraft && (
             <span style={{
-              padding: '0 4px', borderRadius: 3,
+              padding: '0 4px', borderRadius: 4,
               background: t.bg3, color: t.text2,
-              fontSize: 8.5, textTransform: 'uppercase', letterSpacing: 0.4,
+              fontSize: 11,
               flexShrink: 0,
             }}>draft</span>
           )}
           {pr.isFork && (
             <span style={{
-              padding: '0 4px', borderRadius: 3,
+              padding: '0 4px', borderRadius: 4,
               background: `color-mix(in oklch, ${t.warn} 18%, transparent)`,
               color: t.warn,
-              fontSize: 8.5, textTransform: 'uppercase', letterSpacing: 0.4,
+              fontSize: 11,
               flexShrink: 0,
             }}>fork</span>
           )}
@@ -407,7 +407,7 @@ function CheckoutConfirmDialog({
           display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
         }}>
           <span style={{
-            width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
             background: t.accentFaint, color: t.accent,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           }}>
@@ -415,7 +415,7 @@ function CheckoutConfirmDialog({
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h3 style={{
-              margin: 0, fontSize: 15, fontWeight: 600, color: t.text0, letterSpacing: -0.2,
+              margin: 0, fontSize: 16, fontWeight: 500, color: t.text0,
             }}>
               Ir a la rama del PR #{pr.number} para revisar
             </h3>
@@ -433,16 +433,16 @@ function CheckoutConfirmDialog({
         <div style={{
           padding: '10px 12px', borderRadius: 10,
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          marginBottom: 14,
+          marginBottom: 16,
         }}>
-          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>
+          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>
             Eco va a hacer <code style={mono(t)}>gh pr checkout {pr.number}</code> en el worktree de este agente.
             La rama actual (<code style={mono(t)}>{'eco/<id>'}</code>) queda al margen — podés volver desde el BranchPicker después.
             {pr.isFork && (
               <div style={{
                 marginTop: 6, padding: '4px 8px', borderRadius: 6,
                 background: `color-mix(in oklch, ${t.warn} 14%, transparent)`,
-                color: t.warn, fontSize: 10.5, fontFamily: t.fontMono,
+                color: t.warn, fontSize: 11, fontFamily: t.fontMono,
               }}>
                 Este PR viene de un fork. <code style={mono(t)}>gh</code> creará un remote temporal y una rama local prefijada con el fork.
               </div>
@@ -453,26 +453,26 @@ function CheckoutConfirmDialog({
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <a href={pr.url} target="_blank" rel="noopener noreferrer"
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
-              fontSize: 12.5, textDecoration: 'none',
-              display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontSize: 13, textDecoration: 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
             }}>
             <IconExt size={10}/> Ver en GitHub
           </a>
           <button type="button" onClick={onCancel}
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
-              fontSize: 12.5, cursor: 'pointer',
+              fontSize: 13, cursor: 'pointer',
             }}>Cancelar</button>
           <button type="button" onClick={onConfirm}
             style={{
-              padding: '9px 14px', borderRadius: 9,
+              padding: '8px 16px', borderRadius: 8,
               background: t.accent, color: t.accentOn, border: 0,
-              fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer',
             }}>Ir a la rama</button>
         </div>
       </motion.div>
@@ -482,8 +482,8 @@ function CheckoutConfirmDialog({
 
 function mono(t: ReturnType<typeof useTokens>) {
   return {
-    fontFamily: t.fontMono, fontSize: 10.5,
-    padding: '1px 5px', borderRadius: 4,
+    fontFamily: t.fontMono, fontSize: 11,
+    padding: '1px 6px', borderRadius: 4,
     background: t.bg3, color: t.text1,
   };
 }

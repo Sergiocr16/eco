@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode, type MouseEvent } from 'react';
+import { T_UI } from './motion';
 import { useTokens } from './theme';
 import type { Tokens } from './tokens';
 import { AGENT_TYPES, type AgentType, type AgentState, stateColor } from './tokens';
@@ -129,7 +130,6 @@ export function Btn({ children, kind = 'ghost', size = 'md', icon: Icon, onClick
       background: h ? t.accent : t.accentDim,
       color: t.accentOn,
       border: `1px solid ${t.accent}`,
-      boxShadow: h ? `0 0 24px ${t.accentGlow}` : 'none',
     },
     secondary: {
       background: h ? t.bg4 : t.bg3,
@@ -159,9 +159,9 @@ export function Btn({ children, kind = 'ghost', size = 'md', icon: Icon, onClick
         display: 'inline-flex', alignItems: 'center', gap: sizes.gap,
         height: sizes.h, padding: `0 ${sizes.px}px`,
         fontFamily: t.fontSans, fontSize: sizes.fs, fontWeight: 500,
-        borderRadius: 999, cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.4 : 1, letterSpacing: -0.1,
-        transition: 'all 140ms ease',
+        borderRadius: 8, cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+        transition: T_UI,
         whiteSpace: 'nowrap',
         ...styles[kind], ...style,
       }}
@@ -198,11 +198,11 @@ export function IconBtn({ icon: Icon, onClick, title, active, size = 32, style =
       style={{
         width: box, height: box, flexShrink: 0,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        background: active ? t.accentFaint : (h ? t.bg3 : 'transparent'),
-        color: active ? t.accent : (h ? t.text0 : t.text1),
-        border: `1px solid ${active ? t.accentDim : 'transparent'}`,
+        background: active ? t.bg3 : (h ? t.bg3 : 'transparent'),
+        color: active ? t.text0 : (h ? t.text0 : t.text1),
+        border: `1px solid ${active ? t.glassBorder : 'transparent'}`,
         borderRadius: box >= 32 ? 10 : 8,
-        cursor: 'pointer', transition: 'all 140ms',
+        cursor: 'pointer', transition: T_UI,
         ...style,
       }}
     >
@@ -216,7 +216,7 @@ export function StatusDot({ color, pulse = false, size = 8 }: { color: string; p
     <span style={{ position: 'relative', width: size, height: size, display: 'inline-block' }}>
       <span style={{
         position: 'absolute', inset: 0, borderRadius: '50%',
-        background: color, boxShadow: `0 0 8px ${color}`,
+        background: color, boxShadow: pulse ? `0 0 8px ${color}` : 'none',
       }}/>
       {pulse && (
         <span style={{
@@ -241,12 +241,12 @@ export function Pill({ children, color, bg, icon: Icon, style = {} }: PillProps)
   const finalColor = color ?? t.text2;
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      height: 22, padding: '0 9px',
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      height: 22, padding: '0 8px',
       background: bg || `color-mix(in oklch, ${finalColor} 12%, transparent)`,
       color: finalColor, borderRadius: 999,
       fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-      letterSpacing: -0.1, whiteSpace: 'nowrap',
+      whiteSpace: 'nowrap',
       border: `1px solid color-mix(in oklch, ${finalColor} 25%, transparent)`,
       ...style,
     }}>
@@ -264,7 +264,7 @@ export function Kbd({ children }: { children: ReactNode }) {
       minWidth: 18, height: 18, padding: '0 4px',
       background: t.bg3, border: `1px solid ${t.glassBorder}`,
       borderRadius: 4, color: t.text1,
-      fontFamily: t.fontMono, fontSize: 10.5, fontWeight: 500,
+      fontFamily: t.fontMono, fontSize: 11, fontWeight: 500,
     }}>{children}</span>
   );
 }
@@ -278,7 +278,8 @@ type AgentGlyphProps = {
   accent?: string;
 };
 
-export function AgentGlyph({ type = 'general', size = 36, state = 'running', letter, accent }: AgentGlyphProps) {
+// Neutral on purpose: color on the glyph is reserved for the state dot.
+export function AgentGlyph({ type = 'general', size = 36, state = 'running', letter }: AgentGlyphProps) {
   const t = useTokens();
   const meta = AGENT_TYPES[type] ?? AGENT_TYPES.general;
   const sColor = stateColor(state, t);
@@ -287,15 +288,15 @@ export function AgentGlyph({ type = 'general', size = 36, state = 'running', let
     <div style={{
       width: size, height: size, position: 'relative',
       borderRadius: '50%',
-      background: accent ? `color-mix(in oklch, ${accent} 18%, ${t.bg3})` : t.bg3,
-      border: `0.5px solid ${accent ? `color-mix(in oklch, ${accent} 40%, transparent)` : t.glassBorder}`,
+      background: t.bg3,
+      border: `1px solid ${t.glassBorder}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       flexShrink: 0,
     }}>
       <span style={{
         fontFamily: t.fontSans, fontSize: size * (display.length === 1 ? 0.44 : 0.36),
-        fontWeight: 600,
-        color: accent ?? t.text1, letterSpacing: -0.3,
+        fontWeight: 500,
+        color: t.text1, letterSpacing: -0.3,
         textTransform: 'uppercase',
       }}>{display}</span>
       {(state === 'running' || state === 'thinking') && (
@@ -331,13 +332,12 @@ export function SectionLabel({ children, count, action }: SectionLabelProps) {
       display: 'flex', alignItems: 'center', gap: 8,
       padding: '0 4px 10px', color: t.text2,
       fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-      letterSpacing: 0.5, textTransform: 'uppercase',
     }}>
       <span>{children}</span>
       {count != null && (
         <span style={{
-          padding: '1px 7px', background: t.bg3, borderRadius: 999,
-          fontSize: 10, color: t.text1, letterSpacing: 0,
+          padding: '1px 8px', background: t.bg3, borderRadius: 999,
+          fontSize: 11, color: t.text1, letterSpacing: 0,
         }}>{count}</span>
       )}
       <div style={{ flex: 1 }}/>
@@ -361,18 +361,19 @@ export function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: 
       disabled={disabled}
       style={{
         width: w, height: h, flexShrink: 0, borderRadius: 999,
-        background: on ? t.accent : t.bg4,
-        border: `1px solid ${on ? t.accent : t.glassBorder}`,
+        background: on ? t.text1 : t.bg4,
+        border: `1px solid ${on ? t.text1 : t.glassBorder}`,
         position: 'relative', cursor: disabled ? 'not-allowed' : 'pointer', padding: 0,
-        transition: 'all 200ms',
+        transition: T_UI,
         opacity: disabled ? 0.5 : 1,
       }}
     >
       <span style={{
-        position: 'absolute', top: 2, left: on ? w - knob - 4 : 2,
+        position: 'absolute', top: 2, left: 2,
+        transform: `translateX(${on ? w - knob - 6 : 0}px)`,
         width: knob, height: knob, borderRadius: '50%',
-        background: on ? t.accentOn : t.text1,
-        transition: 'left 200ms',
+        background: on ? t.windowBg : t.text1,
+        transition: T_UI,
       }}/>
     </button>
   );
@@ -386,8 +387,8 @@ export function fieldStyle(t: Tokens): CSSProperties {
   return {
     width: '100%', boxSizing: 'border-box',
     background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    borderRadius: 10, padding: mob ? '13px 14px' : '11px 14px',
-    fontFamily: t.fontSans, fontSize: mob ? 16 : 13.5, color: t.text0,
+    borderRadius: 10, padding: mob ? '12px 16px' : '12px 16px',
+    fontFamily: t.fontSans, fontSize: mob ? 16 : 14, color: t.text0,
     outline: 'none',
   };
 }
@@ -398,7 +399,7 @@ export function FormField({ label, hint, children }: { label: string; hint?: Rea
     <label style={{ display: 'block' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
-        fontSize: 11.5, color: t.text2, fontWeight: 500,
+        fontSize: 12, color: t.text2, fontWeight: 500,
       }}>
         <span>{label}</span>
         <div style={{ flex: 1 }}/>

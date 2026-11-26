@@ -616,8 +616,7 @@ function LeftViewTab({ active, label, onClick }: {
         border: 0,
         borderBottom: `2px solid ${active ? t.accent : 'transparent'}`,
         cursor: 'pointer',
-        fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
-        textTransform: 'uppercase', letterSpacing: 0.5,
+        fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
       }}
     >
       {label}
@@ -643,18 +642,18 @@ function StaleConflictDialog({ path, onReload, onOverwrite, onCancel }: {
       }}
     >
       <div style={{
-        maxWidth: 420, width: '90%', padding: 18,
+        maxWidth: 420, width: '90%', padding: 20,
         background: t.windowBg, border: `1px solid ${t.glassBorder}`,
         borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
         boxShadow: t.shadowLg,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
           {tr('files.editor.stale_title')}
         </div>
         <div style={{ fontSize: 13, color: t.text1, marginBottom: 8 }}>
           {tr('files.editor.stale_body')}
         </div>
-        <div style={{ fontSize: 12, color: t.text2, fontFamily: t.fontMono, marginBottom: 14, wordBreak: 'break-all' }}>
+        <div style={{ fontSize: 12, color: t.text2, fontFamily: t.fontMono, marginBottom: 16, wordBreak: 'break-all' }}>
           {path}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -686,7 +685,7 @@ function StaleConflictDialog({ path, onReload, onOverwrite, onCancel }: {
             style={{
               padding: '6px 12px', borderRadius: t.r2,
               background: t.accent, color: t.accentOn, border: 0,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 600,
+              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
             }}
           >
             {tr('files.editor.stale_reload')}

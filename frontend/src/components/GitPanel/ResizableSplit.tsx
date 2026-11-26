@@ -1,4 +1,5 @@
 import { cssZoom } from '@/lib/ui-zoom';
+import { T_UI } from '@/design/motion';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
 import { useIsPhone } from '@/hooks/useMediaQuery';
@@ -192,7 +193,7 @@ function PaneBtn({ active, onClick, children }: { active: boolean; onClick: () =
         background: active ? t.accentFaint : t.bg2,
         color: active ? t.accent : t.text2,
         fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-        cursor: 'pointer', transition: 'all 140ms',
+        cursor: 'pointer', transition: T_UI,
       }}>
       {children}
     </button>

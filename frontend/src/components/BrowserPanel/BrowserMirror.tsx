@@ -38,6 +38,27 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
   const keysRef = useRef<HTMLInputElement | null>(null);
   const sockRef = useRef<WebSocket | null>(null);
   const frameSize = useRef({ w: 0, h: 0 });
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  // The frame is drawn at the largest size that fits the stage, up or down:
+  // max-width/max-height alone only shrank it, so a small desktop webview
+  // showed as a thumbnail in a wide panel.
+  const [fit, setFit] = useState<{ w: number; h: number } | null>(null);
+  const refit = useCallback(() => {
+    const stage = stageRef.current;
+    const { w, h } = frameSize.current;
+    if (!stage || !w || !h) return;
+    const s = Math.min(stage.clientWidth / w, stage.clientHeight / h);
+    if (!Number.isFinite(s) || s <= 0) return;
+    const next = { w: Math.floor(w * s), h: Math.floor(h * s) };
+    setFit((prev) => (prev && prev.w === next.w && prev.h === next.h ? prev : next));
+  }, []);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const ro = new ResizeObserver(refit);
+    ro.observe(stage);
+    return () => ro.disconnect();
+  }, [refit]);
   const gotFrame = useRef(false);
 
   const send = useCallback((msg: Record<string, unknown>) => {
@@ -71,7 +92,9 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
         let msg: ServerMsg;
         try { msg = JSON.parse(String(ev.data)) as ServerMsg; } catch { return; }
         if (msg.type === 'frame') {
+          const resized = frameSize.current.w !== msg.w || frameSize.current.h !== msg.h;
           frameSize.current = { w: msg.w, h: msg.h };
+          if (resized) refit();
           gotFrame.current = true;
           if (imgRef.current) imgRef.current.src = `data:image/jpeg;base64,${msg.data}`;
           setStatus('live');
@@ -98,7 +121,7 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
       sockRef.current = null;
       if (ws) { ws.onclose = null; ws.onmessage = null; try { ws.close(); } catch { /* noop */ } }
     };
-  }, [bubbleId]);
+  }, [bubbleId, refit]);
 
   // Posición normalizada dentro de la imagen (0..1). El <img> mide lo mismo
   // que el frame dibujado, así que su rect es el de la página.
@@ -187,7 +210,7 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
     padding: '4px 10px', borderRadius: 999, maxWidth: 180, flexShrink: 0,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const,
     background: active ? t.accentFaint : t.bg2, color: active ? t.accent : t.text2,
-    border: `1px solid ${active ? t.accent : t.glassBorder}`, fontSize: 11.5, cursor: 'pointer',
+    border: `1px solid ${active ? t.accent : t.glassBorder}`, fontSize: 12, cursor: 'pointer',
   });
 
   const overlayText = status === 'no_desktop' ? tr('browser.mirror.no_desktop')
@@ -241,7 +264,7 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
           style={{ position: 'absolute', opacity: 0, width: 1, height: 1, fontSize: 16, border: 0, padding: 0, pointerEvents: 'none' }}
         />
       </div>
-      <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.bg1 }}>
+      <div ref={stageRef} style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.bg1, overflow: 'hidden' }}>
         <img
           ref={imgRef}
           alt=""
@@ -252,7 +275,8 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
           onPointerCancel={() => { drag.current = null; }}
           onContextMenu={(e) => e.preventDefault()}
           style={{
-            maxWidth: '100%', maxHeight: '100%', display: status === 'live' ? 'block' : 'none',
+            ...(fit ? { width: fit.w, height: fit.h } : { maxWidth: '100%', maxHeight: '100%' }),
+            flexShrink: 0, display: status === 'live' ? 'block' : 'none',
             touchAction: 'none', userSelect: 'none', background: 'white',
           }}
         />

@@ -203,7 +203,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
             style={{
               flex: 1, minWidth: 0,
               background: t.bg2, border: `1px solid ${t.accent}`,
-              borderRadius: 6, padding: '4px 7px',
+              borderRadius: 6, padding: '4px 8px',
               fontFamily: t.fontMono, fontSize: 11, color: t.text0,
               outline: 'none',
             }}
@@ -215,7 +215,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
           <button type="button" onClick={() => void doRename()}
             title={tr('branch.save_tooltip')}
             style={{
-              width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
+              width: 22, height: 22, border: 0, borderRadius: 6, padding: 0,
               background: t.accent, color: t.accentOn, cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             }}>
@@ -224,7 +224,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
           <button type="button" onClick={() => { setRenaming(false); setNewName(''); }}
             title={tr('branch.cancel_tooltip')}
             style={{
-              width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
+              width: 22, height: 22, border: 0, borderRadius: 6, padding: 0,
               background: t.bg3, color: t.text2, cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             }}>
@@ -253,7 +253,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontFamily: t.fontMono, fontSize: 11.5, color: t.text0, fontWeight: 500,
+                fontFamily: t.fontMono, fontSize: 12, color: t.text0, fontWeight: 500,
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 lineHeight: 1.3,
               }}>
@@ -261,7 +261,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
               </div>
               {(currentInfo || (data && data.branches.length > 0)) && (
                 <div style={{
-                  fontSize: 10, color: t.text3, marginTop: 0, display: 'flex', gap: 6, alignItems: 'center',
+                  fontSize: 11, color: t.text3, marginTop: 0, display: 'flex', gap: 6, alignItems: 'center',
                 }}>
                   {currentInfo?.ahead != null && currentInfo.ahead > 0 && (
                     <span style={{ color: t.ok, fontFamily: t.fontMono }}>↑{currentInfo.ahead}</span>
@@ -275,7 +275,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
             </div>
             {!noRepo && (
               <span style={{
-                color: t.text1, fontSize: 18, fontFamily: t.fontMono, fontWeight: 600,
+                color: t.text1, fontSize: 20, fontFamily: t.fontMono, fontWeight: 500,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 width: 22, height: 22,
                 transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
@@ -295,7 +295,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
                   onClick={() => onRenameAgent(currentBranch)}
                   title={tr('branch.rename_agent_tooltip', { name: currentBranch })}
                   style={{
-                    width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
+                    width: 22, height: 22, border: 0, borderRadius: 6, padding: 0,
                     background: 'transparent', color: t.text3, cursor: 'pointer',
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     flexShrink: 0,
@@ -310,7 +310,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
                 onClick={() => { setNewName(currentBranch); setRenaming(true); }}
                 title={tr('branch.rename_branch_tooltip')}
                 style={{
-                  width: 22, height: 22, border: 0, borderRadius: 5, padding: 0,
+                  width: 22, height: 22, border: 0, borderRadius: 6, padding: 0,
                   background: 'transparent', color: t.text3, cursor: 'pointer',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   flexShrink: 0,
@@ -346,14 +346,14 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
               overflow: 'hidden',
             }}>
             <div style={{
-              padding: '5px 7px',
+              padding: '6px 8px',
               borderRadius: 6,
               background: actionMsg.kind === 'ok'
                 ? `color-mix(in oklch, ${t.ok} 14%, transparent)`
                 : `color-mix(in oklch, ${t.err} 14%, transparent)`,
               color: actionMsg.kind === 'ok' ? t.ok : t.err,
-              fontFamily: t.fontMono, fontSize: 10.5,
-              display: 'flex', alignItems: 'flex-start', gap: 5,
+              fontFamily: t.fontMono, fontSize: 11,
+              display: 'flex', alignItems: 'flex-start', gap: 6,
               maxHeight: 90, overflow: 'auto',
               wordBreak: 'break-word',
             }}>
@@ -386,8 +386,8 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
             }}>
               {/* Búsqueda */}
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '4px 7px', borderRadius: 6,
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '4px 8px', borderRadius: 6,
                 background: t.bg2, border: `1px solid ${t.glassBorder}`,
                 marginBottom: 6,
               }}>
@@ -410,7 +410,7 @@ export function BranchPicker({ workspace, bubbleId, onRenameAgent }: Props) {
                 )}
               </div>
               {/* Tabs local / remoto */}
-              <div style={{ display: 'flex', gap: 3, marginBottom: 6 }}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
                 <SubTab active={tab === 'local'} onClick={() => setTab('local')}>
                   {tr('branch.tab.local')} {data ? `· ${data.branches.filter((b) => !b.isRemote).length}` : ''}
                 </SubTab>
@@ -510,15 +510,15 @@ function DirtyChangesDialog({
           display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
         }}>
           <span style={{
-            width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
             background: `color-mix(in oklch, ${t.warn} 16%, transparent)`,
             color: t.warn,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 16, fontWeight: 600,
+            fontSize: 16, fontWeight: 500,
           }}>!</span>
           <div style={{ flex: 1 }}>
             <h3 style={{
-              margin: 0, fontSize: 15, fontWeight: 600, color: t.text0, letterSpacing: -0.2,
+              margin: 0, fontSize: 16, fontWeight: 500, color: t.text0,
             }}>{tr('branch.dirty.title')}</h3>
             <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>
               {tr('branch.dirty.body', { branch })}
@@ -528,18 +528,18 @@ function DirtyChangesDialog({
 
         {files.length > 0 && (
           <div style={{
-            marginTop: 6, marginBottom: 14,
+            marginTop: 6, marginBottom: 16,
             padding: '8px 10px', borderRadius: 8,
             background: t.bg2, border: `1px solid ${t.glassBorder}`,
             maxHeight: 140, overflowY: 'auto',
           }}>
             <div style={{
-              fontSize: 10, color: t.text3, textTransform: 'uppercase',
-              letterSpacing: 0.5, fontWeight: 600, marginBottom: 6,
+              fontSize: 11, color: t.text3,
+              fontWeight: 500, marginBottom: 6,
             }}>{files.length === 1 ? tr('branch.dirty.files_count_one', { n: files.length }) : tr('branch.dirty.files_count_many', { n: files.length })}</div>
             {files.map((f) => (
               <div key={f} style={{
-                fontFamily: t.fontMono, fontSize: 11.5, color: t.text1,
+                fontFamily: t.fontMono, fontSize: 12, color: t.text1,
                 padding: '2px 0',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>{f}</div>
@@ -547,11 +547,11 @@ function DirtyChangesDialog({
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
           {/* Opción: llevar */}
           <button type="button" onClick={onCarry}
             style={{
-              padding: '12px 14px', borderRadius: 10, textAlign: 'left',
+              padding: '12px 16px', borderRadius: 10, textAlign: 'left',
               background: t.bg2, color: t.text0,
               border: `1px solid ${t.accent}`,
               cursor: 'pointer',
@@ -559,10 +559,10 @@ function DirtyChangesDialog({
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = t.bg2; }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: t.accent }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: t.accent }}>
               {tr('branch.dirty.carry.title', { branch })}
             </div>
-            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 12, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>
               {tr('branch.dirty.carry.desc')}
             </div>
           </button>
@@ -574,17 +574,17 @@ function DirtyChangesDialog({
               setConfirmDiscard(true);
             }}
             style={{
-              padding: '12px 14px', borderRadius: 10, textAlign: 'left',
+              padding: '12px 16px', borderRadius: 10, textAlign: 'left',
               background: confirmDiscard ? `color-mix(in oklch, ${t.err} 14%, transparent)` : t.bg2,
               color: t.text0,
               border: `1px solid ${confirmDiscard ? t.err : t.glassBorder}`,
               cursor: 'pointer',
               transition: 'background 140ms, border-color 140ms',
             }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: confirmDiscard ? t.err : t.text1 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: confirmDiscard ? t.err : t.text1 }}>
               {confirmDiscard ? tr('branch.dirty.discard.title_confirm') : tr('branch.dirty.discard.title', { branch })}
             </div>
-            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 12, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>
               {confirmDiscard
                 ? tr('branch.dirty.discard.desc_confirm')
                 : tr('branch.dirty.discard.desc')}
@@ -594,10 +594,10 @@ function DirtyChangesDialog({
 
         <button type="button" onClick={onCancel}
           style={{
-            width: '100%', padding: '9px 14px', borderRadius: 9,
+            width: '100%', padding: '8px 16px', borderRadius: 8,
             background: 'transparent', color: t.text2,
             border: `1px solid ${t.glassBorder}`,
-            fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer',
+            fontSize: 13, fontFamily: 'inherit', cursor: 'pointer',
           }}>{tr('common.cancel')}</button>
       </motion.div>
     </motion.div>
@@ -652,10 +652,10 @@ function SubTab({ active, onClick, children }: { active: boolean; onClick: () =>
       type="button"
       onClick={onClick}
       style={{
-        padding: '3px 7px', borderRadius: 5, border: 0, cursor: 'pointer',
+        padding: '4px 8px', borderRadius: 6, border: 0, cursor: 'pointer',
         background: active ? t.bg3 : 'transparent',
         color: active ? t.accent : t.text2,
-        fontFamily: t.fontSans, fontSize: 10, fontWeight: 500,
+        fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
       }}>{children}</button>
   );
 }
@@ -677,7 +677,7 @@ function BranchRow({
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
         width: '100%', display: 'flex', alignItems: 'center', gap: 6,
-        padding: '5px 6px', border: 0, borderRadius: 6,
+        padding: '6px 6px', border: 0, borderRadius: 6,
         background: branch.isCurrent
           ? `color-mix(in oklch, ${t.accent} 14%, transparent)`
           : h ? t.bg3 : 'transparent',
@@ -700,10 +700,10 @@ function BranchRow({
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{branch.name}</span>
       {branch.ahead != null && branch.ahead > 0 && (
-        <span style={{ fontFamily: t.fontMono, fontSize: 9, color: t.ok, flexShrink: 0 }}>↑{branch.ahead}</span>
+        <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.ok, flexShrink: 0 }}>↑{branch.ahead}</span>
       )}
       {branch.behind != null && branch.behind > 0 && (
-        <span style={{ fontFamily: t.fontMono, fontSize: 9, color: t.warn, flexShrink: 0 }}>↓{branch.behind}</span>
+        <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.warn, flexShrink: 0 }}>↓{branch.behind}</span>
       )}
     </button>
   );

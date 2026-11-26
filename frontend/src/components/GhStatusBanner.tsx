@@ -35,10 +35,10 @@ export function GhStatusBanner() {
         border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
         color: t.text1,
       }}>
-        <span style={{ color: t.ok, fontWeight: 600 }}>
+        <span style={{ color: t.ok, fontWeight: 500 }}>
           {tr('github.gh_status.installed', { version: version ?? '' })}
         </span>
-        <span style={{ color: t.text3, fontSize: 11.5 }}>
+        <span style={{ color: t.text3, fontSize: 12 }}>
           {tr('github.gh_status.installed_note')}
         </span>
       </div>
@@ -52,10 +52,10 @@ export function GhStatusBanner() {
       border: `1px solid color-mix(in oklch, ${t.warn} 30%, ${t.glassBorder})`,
       color: t.text1,
     }}>
-      <span style={{ color: t.warn, fontWeight: 600 }}>
+      <span style={{ color: t.warn, fontWeight: 500 }}>
         {tr('github.gh_status.missing')}
       </span>
-      <span style={{ color: t.text2, fontSize: 11.5 }}>
+      <span style={{ color: t.text2, fontSize: 12 }}>
         {tr('github.gh_status.missing_note')}
       </span>
       <code style={{

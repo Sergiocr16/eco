@@ -107,8 +107,8 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
           <IconBolt size={11}/>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500, color: t.text0 }}>{tr('commit.title')}</div>
-          <div style={{ fontSize: 10, color: t.text3 }}>{tr('commit.sub')}</div>
+          <div style={{ fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, color: t.text0 }}>{tr('commit.title')}</div>
+          <div style={{ fontSize: 11, color: t.text3 }}>{tr('commit.sub')}</div>
         </div>
       </div>
 
@@ -116,7 +116,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
         <div style={{
           marginTop: 8, padding: '6px 8px', borderRadius: 6,
           background: `color-mix(in oklch, ${t.ok} 12%, transparent)`,
-          color: t.ok, fontFamily: t.fontMono, fontSize: 10.5,
+          color: t.ok, fontFamily: t.fontMono, fontSize: 11,
           whiteSpace: 'pre-wrap', maxHeight: 80, overflow: 'auto',
         }}>{commitResult}</div>
       )}
@@ -124,7 +124,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
         <div style={{
           marginTop: 8, padding: '6px 8px', borderRadius: 6,
           background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-          color: t.err, fontFamily: t.fontMono, fontSize: 10.5,
+          color: t.err, fontFamily: t.fontMono, fontSize: 11,
           whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
         }}>{err}</div>
       )}
@@ -135,7 +135,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
           onChange={(e) => setTitle(e.target.value)}
           placeholder={tr('commit.field.title')}
           disabled={phase === 'committing'}
-          style={{ ...fieldBase, fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500 }}
+          style={{ ...fieldBase, fontFamily: t.fontSans, fontSize: 12, fontWeight: 500 }}
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void commit(); }}
         />
         <textarea
@@ -154,7 +154,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
             style={{
               flex: 1, height: 26, border: 0, borderRadius: 6,
               background: t.bg3, color: t.text1,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
               cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
             }}>
@@ -174,7 +174,7 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
             style={{
               flex: 1.3, height: 26, border: 0, borderRadius: 6,
               background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 600,
+              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
               cursor: (phase === 'committing' || !title.trim()) ? 'default' : 'pointer',
               opacity: (phase === 'committing' || !title.trim()) ? 0.6 : 1,
             }}>

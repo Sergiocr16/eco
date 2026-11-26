@@ -109,15 +109,15 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
           }}>
           <IconBranch size={12}/>
           <code style={{
-            fontFamily: t.fontMono, fontSize: 11.5,
+            fontFamily: t.fontMono, fontSize: 12,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             flex: 1, minWidth: 0,
           }}>{detached ? `${tr('git.topbar.branch.detached_prefix')} ${branchName}` : branchName}</code>
           {op.inProgress && (
             <span style={{
-              padding: '1px 5px', borderRadius: 4,
+              padding: '1px 6px', borderRadius: 4,
               background: t.err, color: '#fff',
-              fontSize: 9.5, fontWeight: 700,
+              fontSize: 11, fontWeight: 600,
             }}>!</span>
           )}
         </div>
@@ -133,7 +133,7 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
             onMouseLeave={() => setHoverPr(false)}
             title={tr('git.minidock.pr_tooltip', { n: currentPr.number, title: currentPr.title })}
             style={{
-              display: 'flex', flexDirection: 'column', gap: 5,
+              display: 'flex', flexDirection: 'column', gap: 6,
               padding: '6px 8px', borderRadius: 8,
               background: hoverPr ? t.accentFaint : t.bg3,
               border: `1px solid ${hoverPr ? t.accent : t.glassBorder}`,
@@ -143,19 +143,19 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
             }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{
-              fontFamily: t.fontMono, fontSize: 10.5, fontWeight: 700,
+              fontFamily: t.fontMono, fontSize: 11, fontWeight: 600,
               color: STATE_COLOR[currentPr.state] ?? t.accent,
               flexShrink: 0,
             }}>{task ? task.id : `#${currentPr.number}`}</span>
             <span style={{ flex: 1 }}/>
             {task && (
-              <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3, flexShrink: 0 }}>#{currentPr.number}</span>
+              <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3, flexShrink: 0 }}>#{currentPr.number}</span>
             )}
             <span style={{
-              padding: '1px 5px', borderRadius: 4,
+              padding: '1px 6px', borderRadius: 4,
               background: `color-mix(in oklch, ${STATE_COLOR[currentPr.state] ?? t.accent} 18%, transparent)`,
               color: STATE_COLOR[currentPr.state] ?? t.accent,
-              fontSize: 9, fontWeight: 700, letterSpacing: 0.4,
+              fontSize: 11, fontWeight: 600, letterSpacing: 0.4,
               flexShrink: 0,
             }}>{currentPr.isDraft ? 'DRAFT' : currentPr.state}</span>
             </div>
@@ -166,7 +166,7 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
             {currentPr.state === 'OPEN' && (checks.total > 0 || conflicting) && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: t.text2 }}>
                 {checks.total > 0 && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <span style={{
                       width: 7, height: 7, borderRadius: '50%',
                       background: checks.failed > 0 ? t.err : checks.pending > 0 ? t.warn : t.ok,
@@ -188,15 +188,15 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
         {baseBranch && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
-            padding: '4px 8px', borderRadius: 7,
+            padding: '4px 8px', borderRadius: 8,
             background: t.bg3,
-            fontSize: 10.5, color: t.text3,
+            fontSize: 11, color: t.text3,
           }}
           title={tr('git.minidock.worktree_from_tooltip', { branch: baseBranch })}>
             <span>{tr('git.minidock.worktree_from_label')}</span>
             <code style={{
-              fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
-              padding: '0 4px', borderRadius: 3,
+              fontFamily: t.fontMono, fontSize: 11, color: t.text2,
+              padding: '0 4px', borderRadius: 4,
               background: t.bg2,
             }}>{baseBranch}</code>
           </div>

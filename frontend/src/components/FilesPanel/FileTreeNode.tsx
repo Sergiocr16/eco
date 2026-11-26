@@ -43,7 +43,7 @@ export const FileTreeNode = memo(function FileTreeNode({
           : 'transparent',
         border: 0,
         color: isDirty ? t.warn : (isActive ? t.text0 : (hasDirtyDescendant ? t.text0 : t.text1)),
-        fontWeight: isDirty ? 600 : (hasDirtyDescendant ? 500 : 400),
+        fontWeight: isDirty ? 500 : (hasDirtyDescendant ? 500 : 400),
         fontFamily: t.fontSans,
         fontSize: 13,
         cursor: 'pointer',

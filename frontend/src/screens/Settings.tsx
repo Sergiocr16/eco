@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
+import { T_UI } from '@/design/motion';
 import { lockOnStartEnabled, setLockOnStart } from '@/lib/lock-pin';
 import { useTheme, useTokens } from '@/design/theme';
 import { terminalBg, terminalFg } from '@/lib/terminal-theme';
@@ -85,8 +86,8 @@ export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | n
         }}>
         {!isPhone && (
           <div style={{
-            padding: '8px 12px 12px', fontSize: 15, fontWeight: 600,
-            color: t.text0, letterSpacing: -0.2,
+            padding: '8px 12px 12px', fontSize: 16, fontWeight: 500,
+            color: t.text0,
           }}>{tr('settings.title')}</div>
         )}
         {sections.map((s) => (
@@ -95,7 +96,7 @@ export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | n
             onClick={() => setSec(s.id)}
             style={{
               display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 10,
-              padding: isPhone ? '9px 14px' : '8px 12px',
+              padding: isPhone ? '8px 16px' : '8px 12px',
               borderRadius: isPhone ? 999 : 8,
               border: isPhone
                 ? `1px solid ${sec === s.id ? t.accentDim : t.glassBorder}`
@@ -131,8 +132,8 @@ export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | n
 function Header({ title, sub }: { title: string; sub: string }) {
   const t = useTokens();
   return (
-    <div style={{ marginBottom: 22 }}>
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>{title}</h2>
+    <div style={{ marginBottom: 24 }}>
+      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.4 }}>{title}</h2>
       <p style={{ margin: '4px 0 0', fontSize: 13, color: t.text2 }}>{sub}</p>
     </div>
   );
@@ -149,21 +150,21 @@ function Row({ icon: Icon, title, desc, control, danger }: {
   const mob = isPhoneNow();
   return (
     <div style={{
-      display: 'flex', alignItems: mob ? 'flex-start' : 'center', gap: mob ? 10 : 14,
-      padding: '14px 0', borderBottom: `1px solid ${t.glassBorder}`,
+      display: 'flex', alignItems: mob ? 'flex-start' : 'center', gap: mob ? 10 : 16,
+      padding: '16px 0', borderBottom: `1px solid ${t.glassBorder}`,
       ...(mob ? { flexWrap: 'wrap' as const } : {}),
     }}>
       {Icon && (
         <div style={{
-          width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
           background: t.bg3, color: danger ? t.err : t.text1,
           border: `1px solid ${t.glassBorder}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}><Icon size={15}/></div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, color: danger ? t.err : t.text0, fontWeight: 500 }}>{title}</div>
-        {desc && <div style={{ fontSize: 12, color: t.text2, marginTop: 3, lineHeight: 1.5 }}>{desc}</div>}
+        <div style={{ fontSize: 14, color: danger ? t.err : t.text0, fontWeight: 500 }}>{title}</div>
+        {desc && <div style={{ fontSize: 12, color: t.text2, marginTop: 4, lineHeight: 1.5 }}>{desc}</div>}
       </div>
       <div style={mob ? { flexBasis: '100%', minWidth: 0 } : undefined}>{control}</div>
     </div>
@@ -284,10 +285,10 @@ function WorktreesCleanRow() {
       control={
         <button type="button" onClick={() => void prune()} disabled={busy}
           style={{
-            padding: '6px 14px', borderRadius: 8,
+            padding: '6px 16px', borderRadius: 8,
             border: `1px solid ${t.glassBorder}`,
             background: t.bg2, color: t.text0,
-            fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+            fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
             cursor: busy ? 'wait' : 'pointer',
             opacity: busy ? 0.6 : 1,
           }}>
@@ -378,7 +379,7 @@ function SuggestionsEditor() {
           placeholder={tr('settings.suggestions.add_placeholder')}
           style={{
             flex: 1, background: 'transparent', border: 0, outline: 'none',
-            fontFamily: t.fontSans, fontSize: 13.5, color: t.text0, padding: '8px 10px',
+            fontFamily: t.fontSans, fontSize: 14, color: t.text0, padding: '8px 10px',
           }}
         />
         <Btn kind="primary" size="sm" onClick={handleAdd} disabled={!draft.trim()}>
@@ -387,7 +388,7 @@ function SuggestionsEditor() {
       </Glass>
 
       {s.suggestions.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: t.text2, padding: '12px 4px' }}>
+        <div style={{ fontSize: 13, color: t.text2, padding: '12px 4px' }}>
           {tr('settings.suggestions.empty')}
         </div>
       ) : (
@@ -468,8 +469,8 @@ function SectionAgents() {
       <Header title={tr('settings.agents.title')} sub={tr('settings.agents.sub')}/>
 
       <div style={{
-        display: 'inline-flex', gap: 2, padding: 3, marginBottom: 16,
-        borderRadius: 9, background: t.bg2, border: `1px solid ${t.glassBorder}`,
+        display: 'inline-flex', gap: 2, padding: 4, marginBottom: 16,
+        borderRadius: 8, background: t.bg2, border: `1px solid ${t.glassBorder}`,
       }}>
         {(['claude', 'codex'] as const).map((p) => (
           <button
@@ -477,10 +478,10 @@ function SectionAgents() {
             type="button"
             onClick={() => setProvider(p)}
             style={{
-              padding: '5px 16px', borderRadius: 7, border: 0, cursor: 'pointer',
+              padding: '6px 16px', borderRadius: 8, border: 0, cursor: 'pointer',
               background: provider === p ? t.bg0 : 'transparent',
               color: provider === p ? t.accent : t.text2,
-              fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+              fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
               transition: 'background 140ms, color 140ms',
             }}
           >{tr(`settings.agents.provider.${p}`)}</button>
@@ -510,11 +511,11 @@ function ModelInfoRow() {
   }, []);
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 14,
-      padding: '14px 0', borderBottom: `1px solid ${t.glassBorder}`,
+      display: 'flex', alignItems: 'center', gap: 16,
+      padding: '16px 0', borderBottom: `1px solid ${t.glassBorder}`,
     }}>
       <div style={{
-        width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
         background: t.bg3, color: t.accent,
         border: `1px solid ${t.glassBorder}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -522,16 +523,16 @@ function ModelInfoRow() {
         <IconCpu size={15}/>
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13.5, color: t.text0, fontWeight: 500, marginBottom: 3 }}>
+        <div style={{ fontSize: 14, color: t.text0, fontWeight: 500, marginBottom: 4 }}>
           {tr('settings.claude.model_info.title')}
         </div>
-        <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
           {tr('settings.claude.model_info.desc')}
         </div>
       </div>
       <code style={{
-        fontFamily: t.fontMono, fontSize: 11.5, color: t.text0,
-        padding: '5px 10px', borderRadius: 6,
+        fontFamily: t.fontMono, fontSize: 12, color: t.text0,
+        padding: '6px 10px', borderRadius: 6,
         background: t.bg2, border: `1px solid ${t.glassBorder}`,
       }}>{model}</code>
     </div>
@@ -574,29 +575,28 @@ function CliAuthStatusCard({ provider, cfg }: { provider: CliProvider; cfg: Prov
     : tr(`${cfg.i18n}.auth.using_none`);
 
   return (
-    <Glass radius={12} style={{ padding: 14, marginBottom: 16 }}>
+    <Glass radius={12} style={{ padding: 16, marginBottom: 16 }}>
       {/* Header: cuál método está activo AHORA */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
         paddingBottom: 12, borderBottom: `1px solid ${t.glassBorder}`,
       }}>
         <span style={{
           width: 10, height: 10, borderRadius: '50%',
           background: headerColor,
-          boxShadow: `0 0 8px ${headerColor}`,
         }}/>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: t.text0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
             {headerText}
           </div>
-          <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>
             {tr(`${cfg.i18n}.auth.priority_hint`)}
           </div>
         </div>
       </div>
 
       {/* Opción A: CLI */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
         <div style={{
           width: 32, height: 32, borderRadius: 8, flexShrink: 0,
           background: status.cliLoggedIn ? t.accentFaint : t.bg2,
@@ -607,23 +607,22 @@ function CliAuthStatusCard({ provider, cfg }: { provider: CliProvider; cfg: Prov
           <IconTerminal size={15}/>
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
               {tr(`${cfg.i18n}.auth.cli_title`)}
             </span>
             {method === 'cli' && (
               <span style={{
-                padding: '1px 7px', borderRadius: 999,
+                padding: '1px 8px', borderRadius: 999,
                 background: t.accentFaint, color: t.accent,
-                fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase',
-                letterSpacing: 0.4,
+                fontSize: 11, fontWeight: 500,
               }}>{tr(`${cfg.i18n}.auth.active`)}</span>
             )}
           </div>
-          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5, marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 4 }}>
             {tr(`${cfg.i18n}.auth.cli_desc`)}
           </div>
-          <div style={{ fontSize: 10.5, color: t.text3, fontFamily: t.fontMono }}>
+          <div style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>
             {status.cliInstalled
               ? `${tr(`${cfg.i18n}.auth.cli_installed`)} ${status.cliVersion ?? ''}`
               : tr(`${cfg.i18n}.auth.cli_not_installed`)}
@@ -639,8 +638,8 @@ function CliAuthStatusCard({ provider, cfg }: { provider: CliProvider; cfg: Prov
       {/* Separador "o" */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
-        marginBottom: 14, fontSize: 10, color: t.text3,
-        textTransform: 'uppercase', fontWeight: 500, letterSpacing: 1,
+        marginBottom: 16, fontSize: 11, color: t.text3,
+        fontWeight: 500,
       }}>
         <div style={{ flex: 1, height: 1, background: t.glassBorder }}/>
         {tr(`${cfg.i18n}.auth.or`)}
@@ -659,20 +658,19 @@ function CliAuthStatusCard({ provider, cfg }: { provider: CliProvider; cfg: Prov
           <IconKey size={15}/>
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
               {tr(`${cfg.i18n}.auth.apikey_title`)}
             </span>
             {method === 'apikey' && (
               <span style={{
-                padding: '1px 7px', borderRadius: 999,
+                padding: '1px 8px', borderRadius: 999,
                 background: t.accentFaint, color: t.accent,
-                fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase',
-                letterSpacing: 0.4,
+                fontSize: 11, fontWeight: 500,
               }}>{tr(`${cfg.i18n}.auth.active`)}</span>
             )}
           </div>
-          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
             {tr(`${cfg.i18n}.auth.apikey_desc`)}
           </div>
         </div>
@@ -733,12 +731,12 @@ function ApiKeyEditor({ provider, cfg }: { provider: CliProvider; cfg: ProviderC
 
   return (
     <div style={{
-      padding: '14px 0', borderBottom: `1px solid ${t.glassBorder}`,
+      padding: '16px 0', borderBottom: `1px solid ${t.glassBorder}`,
       display: 'flex', flexDirection: 'column', gap: 10,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <div style={{
-          width: 32, height: 32, borderRadius: 9,
+          width: 32, height: 32, borderRadius: 8,
           background: t.bg3, color: t.accent,
           border: `1px solid ${t.glassBorder}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -746,10 +744,10 @@ function ApiKeyEditor({ provider, cfg }: { provider: CliProvider; cfg: ProviderC
           <IconKey size={15}/>
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13.5, color: t.text0, fontWeight: 500 }}>
+          <div style={{ fontSize: 14, color: t.text0, fontWeight: 500 }}>
             {tr(`${cfg.i18n}.apikey.title`)}
           </div>
-          <div style={{ fontSize: 12, color: t.text2, marginTop: 3, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: t.text2, marginTop: 4, lineHeight: 1.5 }}>
             {tr(`${cfg.i18n}.apikey.desc`)}
           </div>
         </div>
@@ -775,7 +773,7 @@ function ApiKeyEditor({ provider, cfg }: { provider: CliProvider; cfg: ProviderC
           placeholder={cfg.keyPlaceholder}
           style={{
             flex: 1, background: 'transparent', border: 0, outline: 'none',
-            fontFamily: t.fontMono, fontSize: 12.5, color: t.text0, padding: '6px 10px',
+            fontFamily: t.fontMono, fontSize: 13, color: t.text0, padding: '6px 10px',
           }}
         />
         <Btn kind="primary" size="sm" onClick={handleSave} disabled={busy || !draft.trim()} icon={IconCheck}>
@@ -787,10 +785,10 @@ function ApiKeyEditor({ provider, cfg }: { provider: CliProvider; cfg: ProviderC
       </Glass>
 
       {error && (
-        <div style={{ fontSize: 11.5, color: t.err, paddingLeft: 4 }}>{error}</div>
+        <div style={{ fontSize: 12, color: t.err, paddingLeft: 4 }}>{error}</div>
       )}
       {success && (
-        <div style={{ fontSize: 11.5, color: t.ok, paddingLeft: 4 }}>
+        <div style={{ fontSize: 12, color: t.ok, paddingLeft: 4 }}>
           {tr(`${cfg.i18n}.apikey.success`)}
         </div>
       )}
@@ -844,10 +842,10 @@ function SectionGithub() {
           border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
           display: 'flex', flexDirection: 'column', gap: 6,
         }}>
-          <div style={{ fontSize: 14, color: t.text0, fontWeight: 600 }}>
+          <div style={{ fontSize: 14, color: t.text0, fontWeight: 500 }}>
             {tr('settings.github.connected_as', { username: gh.username ?? '' })}
           </div>
-          <div style={{ fontSize: 12.5, color: t.text1 }}>
+          <div style={{ fontSize: 13, color: t.text1 }}>
             {tr('settings.github.commit_email', { email: gh.email ?? '' })}
           </div>
           {gh.maskedPat && (
@@ -856,7 +854,7 @@ function SectionGithub() {
             </div>
           )}
           {gh.validatedAt && (
-            <div style={{ fontSize: 11.5, color: t.text3 }}>
+            <div style={{ fontSize: 12, color: t.text3 }}>
               {tr('settings.github.validated_at', { date: new Date(gh.validatedAt).toLocaleString() })}
             </div>
           )}
@@ -887,7 +885,7 @@ function SectionGithub() {
       {showForm && (
         <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
           <div>
-            <label style={{ display: 'block', fontSize: 12.5, color: t.text1, marginBottom: 6, fontFamily: t.fontSans }}>
+            <label style={{ display: 'block', fontSize: 13, color: t.text1, marginBottom: 6, fontFamily: t.fontSans }}>
               {tr('settings.github.pat_label')}
             </label>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -915,7 +913,7 @@ function SectionGithub() {
                 }}
               >{showPat ? tr('settings.github.pat_hide') : tr('settings.github.pat_show')}</button>
             </div>
-            <div style={{ fontSize: 11.5, color: t.text3, marginTop: 6, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: t.text3, marginTop: 6, lineHeight: 1.5 }}>
               {tr('settings.github.recommended_scopes')}
             </div>
             <div style={{ marginTop: 6 }}>
@@ -926,7 +924,7 @@ function SectionGithub() {
 
           {(needEmail || email) && (
             <div>
-              <label style={{ display: 'block', fontSize: 12.5, color: t.text1, marginBottom: 6, fontFamily: t.fontSans }}>
+              <label style={{ display: 'block', fontSize: 13, color: t.text1, marginBottom: 6, fontFamily: t.fontSans }}>
                 {tr('settings.github.email_label')}
               </label>
               <input
@@ -942,7 +940,7 @@ function SectionGithub() {
                 }}
               />
               {needEmail && (
-                <div style={{ fontSize: 11.5, color: t.warn, marginTop: 6 }}>
+                <div style={{ fontSize: 12, color: t.warn, marginTop: 6 }}>
                   {tr('settings.github.email_required_note')}
                   {loginHint && (
                     <span style={{ marginLeft: 6, color: t.text2 }}>
@@ -970,7 +968,7 @@ function SectionGithub() {
               style={{
                 padding: '8px 16px', borderRadius: 8, border: 0,
                 background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 13, fontWeight: 600,
+                fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
                 cursor: saving || !pat.trim() ? 'not-allowed' : 'pointer',
                 opacity: saving || !pat.trim() ? 0.6 : 1,
               }}
@@ -980,7 +978,7 @@ function SectionGithub() {
                 type="button"
                 onClick={() => { setEditing(false); setPat(''); setEmail(''); setError(null); setNeedEmail(false); }}
                 style={{
-                  padding: '8px 14px', borderRadius: 8, border: `1px solid ${t.glassBorder}`,
+                  padding: '8px 16px', borderRadius: 8, border: `1px solid ${t.glassBorder}`,
                   background: 'transparent', color: t.text1,
                   fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
                 }}
@@ -1001,14 +999,14 @@ function SectionGithub() {
           }}
         >
           <div style={{
-            maxWidth: 400, width: '90%', padding: 18,
+            maxWidth: 400, width: '90%', padding: 20,
             ...dialogSurface(t),
             borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
           }}>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
               {tr('settings.github.remove_confirm_title')}
             </div>
-            <div style={{ fontSize: 13, color: t.text1, marginBottom: 14 }}>
+            <div style={{ fontSize: 13, color: t.text1, marginBottom: 16 }}>
               {tr('settings.github.remove_confirm_body')}
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -1028,7 +1026,7 @@ function SectionGithub() {
                 style={{
                   padding: '6px 12px', borderRadius: t.r2,
                   background: t.err, color: '#fff', border: 0,
-                  cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 600,
+                  cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
                 }}
               >{tr('settings.github.remove')}</button>
             </div>
@@ -1105,7 +1103,7 @@ export function FoldersManager() {
     }}>
       <Header title={tr('settings.folders.title')} sub={tr('settings.folders.sub')}/>
 
-      <Glass radius={14} style={{ padding: 12, marginBottom: 18 }}>
+      <Glass radius={14} style={{ padding: 12, marginBottom: 20 }}>
         {/* Botón principal: elegir con Finder. Más prominente. */}
         {hasNativePicker && (
           <Btn
@@ -1148,7 +1146,7 @@ export function FoldersManager() {
         {addError && (
           <div style={{
             marginTop: 8, padding: '6px 10px', borderRadius: 6,
-            background: t.bg2, fontSize: 11.5, color: t.err,
+            background: t.bg2, fontSize: 12, color: t.err,
             fontFamily: t.fontMono, lineHeight: 1.4,
             wordBreak: 'break-word',
           }}>{addError}</div>
@@ -1191,7 +1189,7 @@ export function FoldersManager() {
         </div>
       )}
       {ws.error && (
-        <div style={{ marginTop: 14, fontSize: 12, color: t.err }}>{ws.error}</div>
+        <div style={{ marginTop: 16, fontSize: 12, color: t.err }}>{ws.error}</div>
       )}
     </div>
   );
@@ -1217,7 +1215,7 @@ function FolderCard({ workspace, open, onToggle, onRemove }: {
     ? tr('settings.folders.summary_dual')
     : (cfg.server.main.trim() || tr('settings.folders.summary_no_server'));
   return (
-    <Glass radius={12} style={{ padding: isPhone ? 10 : 14 }}>
+    <Glass radius={12} style={{ padding: isPhone ? 10 : 16 }}>
       <div
         role="button"
         tabIndex={0}
@@ -1233,7 +1231,7 @@ function FolderCard({ workspace, open, onToggle, onRemove }: {
         <div style={{ color: t.accent, flexShrink: 0 }}><IconFolder size={18}/></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontFamily: t.fontMono, fontSize: isPhone ? 11.5 : 13, color: t.text0,
+            fontFamily: t.fontMono, fontSize: isPhone ? 12 : 13, color: t.text0,
             // En el teléfono un path largo con ellipsis deja ver solo el
             // principio, que es la parte que menos identifica la carpeta.
             // Cortado por el final se lee el nombre real.
@@ -1298,7 +1296,7 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
       }}>
         <IconBranch size={11}/>
         <span>{tr('settings.bases.label')}</span>
-        {savedFlash && <span style={{ color: t.ok, fontSize: 10.5 }}>{tr('settings.bases.saved')}</span>}
+        {savedFlash && <span style={{ color: t.ok, fontSize: 11 }}>{tr('settings.bases.saved')}</span>}
       </div>
       <input
         value={draft}
@@ -1311,7 +1309,7 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
         style={{
           width: '100%', boxSizing: 'border-box',
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          borderRadius: 8, padding: isPhoneNow() ? '10px' : '7px 10px',
+          borderRadius: 8, padding: isPhoneNow() ? '10px' : '8px 10px',
           fontFamily: t.fontMono,
           // 16px evita el auto-zoom de iOS al enfocar.
           fontSize: isPhoneNow() ? 16 : 12,
@@ -1319,7 +1317,7 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
           outline: 'none',
         }}
       />
-      <div style={{ marginTop: 4, fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
+      <div style={{ marginTop: 4, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
         {tr('settings.bases.hint')}
       </div>
     </div>
@@ -1493,7 +1491,7 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
   const inputStyle = {
     width: '100%', boxSizing: 'border-box' as const,
     background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    borderRadius: 8, padding: isPhoneNow() ? '10px 10px' : '7px 10px',
+    borderRadius: 8, padding: isPhoneNow() ? '10px 10px' : '8px 10px',
     fontFamily: t.fontMono,
     // 16px evita el auto-zoom de iOS al enfocar cualquiera de estos campos.
     fontSize: isPhoneNow() ? 16 : 12,
@@ -1508,7 +1506,7 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
       }}>
         <IconCpu size={11}/>
         <span>{tr('settings.srv.label')}</span>
-        {savedFlash && <span style={{ color: t.ok, fontSize: 10.5 }}>{tr('settings.bases.saved')}</span>}
+        {savedFlash && <span style={{ color: t.ok, fontSize: 11 }}>{tr('settings.bases.saved')}</span>}
       </div>
 
       <label style={{
@@ -1610,7 +1608,7 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
             }}/>
         </div>
         {importMsg && (
-          <div style={{ marginTop: 4, fontSize: 10.5, color: importMsg.ok > 0 ? t.ok : t.warn }}>
+          <div style={{ marginTop: 4, fontSize: 11, color: importMsg.ok > 0 ? t.ok : t.warn }}>
             {importMsg.ok > 0
               ? tr('settings.srv.env.import_ok', { n: importMsg.ok })
               : tr('settings.srv.env.import_empty')}
@@ -1618,25 +1616,25 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
           </div>
         )}
         {envInvalid && (
-          <div style={{ marginTop: 4, fontSize: 10.5, color: t.err }}>
+          <div style={{ marginTop: 4, fontSize: 11, color: t.err }}>
             {tr('settings.srv.env.invalid')}
           </div>
         )}
         {envTooLong && (
-          <div style={{ marginTop: 4, fontSize: 10.5, color: t.err }}>
+          <div style={{ marginTop: 4, fontSize: 11, color: t.err }}>
             {tr('settings.srv.env.too_long')}
           </div>
         )}
-        <div style={{ marginTop: 4, fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
+        <div style={{ marginTop: 4, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
           {tr('settings.srv.env.hint')}
         </div>
-        <div style={{ marginTop: 8, fontSize: 10.5, color: t.text3 }}>
+        <div style={{ marginTop: 8, fontSize: 11, color: t.text3 }}>
           {tr('settings.srv.env.format_label')}
         </div>
         <div style={{
           marginTop: 4, padding: '8px 10px', borderRadius: 8,
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
+          fontFamily: t.fontMono, fontSize: 11, color: t.text2,
           whiteSpace: 'pre', overflowX: 'auto', lineHeight: 1.7,
         }}>
           {tr('settings.srv.env.format_example')}
@@ -1647,7 +1645,7 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
         <Btn kind="secondary" size="sm" onClick={() => void commit()} disabled={!dirty || envInvalid || envTooLong}>
           {tr('common.save')}
         </Btn>
-        <span style={{ fontSize: 10.5, color: t.text3, lineHeight: 1.5 }}>
+        <span style={{ fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
           {tr('settings.srv.hint')}
         </span>
       </div>
@@ -1736,11 +1734,11 @@ function SectionAppearance() {
       <Header title={tr('settings.appearance.title')} sub={tr('settings.appearance.sub')}/>
 
       <SectionLabel>{tr('settings.appearance.theme')}</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
         {basicModes.map((m) => (
           <div key={m.id} style={{
-            padding: 14, border: `1px solid ${mode === m.id ? t.accentDim : t.glassBorder}`,
-            borderRadius: 14, background: mode === m.id ? t.accentFaint : t.bg2,
+            padding: 16, border: `1px solid ${mode === m.id ? t.accentDim : t.glassBorder}`,
+            borderRadius: 16, background: mode === m.id ? t.accentFaint : t.bg2,
           }}>
             <button type="button" onClick={() => setMode(m.id)} style={{
               display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent',
@@ -1761,7 +1759,7 @@ function SectionAppearance() {
       </div>
 
       <SectionLabel>{tr('settings.appearance.theme.curated')}</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
         {curatedThemes.map((v) => {
           const selected = mode === v.id;
           // Color de firma del tema — el dot muestra de qué color "se ve" el
@@ -1771,7 +1769,7 @@ function SectionAppearance() {
             <div key={v.id} style={{
               padding: 8, border: `1px solid ${selected ? t.accentDim : t.glassBorder}`,
               borderRadius: 12, background: selected ? t.accentFaint : t.bg2,
-              transition: 'all 140ms',
+              transition: T_UI,
             }}>
             <button type="button" onClick={() => setMode(v.id)} style={{
               display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent',
@@ -1787,11 +1785,10 @@ function SectionAppearance() {
                   position: 'absolute', bottom: 5, right: 5,
                   width: 8, height: 8, borderRadius: '50%',
                   background: sig,
-                  boxShadow: `0 0 4px ${sig}`,
                 }}/>
               </div>
               <div style={{
-                fontSize: 11.5, color: selected ? t.accent : t.text1, fontWeight: 500,
+                fontSize: 12, color: selected ? t.accent : t.text1, fontWeight: 500,
                 display: 'flex', alignItems: 'center', gap: 4,
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
@@ -1818,12 +1815,12 @@ function SectionAppearance() {
           {tr('settings.appearance.accent.reset')}
         </button>
       </div>
-      <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
         {tr('settings.appearance.accent.override_desc')}
       </div>
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10,
-        marginBottom: 22,
+        marginBottom: 24,
       }}>
         {ACCENT_HUES.map((a) => {
           const selected = accentHue === a.hue;
@@ -1847,7 +1844,7 @@ function SectionAppearance() {
                   : `0 1px 3px rgba(0,0,0,0.2)`,
               }}/>
               <span style={{
-                fontSize: 10.5, color: selected ? t.accent : t.text2,
+                fontSize: 11, color: selected ? t.accent : t.text2,
                 fontFamily: t.fontSans, fontWeight: 500,
                 textAlign: 'center', whiteSpace: 'nowrap',
               }}>{a.name.replace(' (Eco)', '')}</span>
@@ -1857,7 +1854,7 @@ function SectionAppearance() {
       </div>
 
       <SectionLabel>{tr('settings.appearance.zoom')}</SectionLabel>
-      <div style={{ marginBottom: 22 }}>
+      <div style={{ marginBottom: 24 }}>
         <UiZoomRow/>
       </div>
 
@@ -1870,7 +1867,7 @@ function SectionAppearance() {
         defaultOn
         broadcastEvent={CLAUDE_THEME_SYNC_EVENT}
       />
-      <div style={{ marginBottom: 22 }}>
+      <div style={{ marginBottom: 24 }}>
         <TerminalFontRows/>
       </div>
 
@@ -1900,15 +1897,15 @@ function CategoryManager() {
   };
 
   return (
-    <div style={{ marginBottom: 22 }}>
+    <div style={{ marginBottom: 24 }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
-        padding: '8px 10px 8px 14px', borderRadius: 12,
+        padding: '8px 10px 8px 16px', borderRadius: 12,
         background: t.bg2, border: `1px solid ${t.glassBorder}`,
       }}>
         <span style={{
           width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-          background: nextColor, boxShadow: `0 0 6px ${nextColor}88`,
+          background: nextColor,
         }}/>
         <input
           value={draftName}
@@ -1928,7 +1925,7 @@ function CategoryManager() {
 
       {categories.length === 0 ? (
         <div style={{
-          padding: '14px 12px', borderRadius: 12, textAlign: 'center',
+          padding: '16px 12px', borderRadius: 12, textAlign: 'center',
           background: t.bg2, border: `1px dashed ${t.glassBorder}`,
           fontSize: 12, color: t.text2, lineHeight: 1.5,
         }}>
@@ -1987,11 +1984,11 @@ function CategoryCard({ name, color, onName, onColor, onRemove }: {
         title={tr('settings.categories.pick_color')}
         aria-label={tr('settings.categories.pick_color')}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 5,
-          borderRadius: 999, padding: '3px 10px',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          borderRadius: 999, padding: '4px 10px',
           background: `color-mix(in oklch, ${color} 16%, transparent)`,
           border: `1px solid color-mix(in oklch, ${color} 45%, transparent)`,
-          color, fontSize: 11.5, fontWeight: 500, fontFamily: t.fontSans,
+          color, fontSize: 12, fontWeight: 500, fontFamily: t.fontSans,
           cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, maxWidth: 160,
         }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }}/>
@@ -2058,7 +2055,7 @@ function CategoryCard({ name, color, onName, onColor, onRemove }: {
           <label style={{
             display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, paddingTop: 10,
             borderTop: `1px solid ${t.glassBorder}`,
-            fontSize: 11.5, color: t.text1, fontFamily: t.fontSans, cursor: 'pointer',
+            fontSize: 12, color: t.text1, fontFamily: t.fontSans, cursor: 'pointer',
           }}>
             <input
               type="color"
@@ -2067,7 +2064,7 @@ function CategoryCard({ name, color, onName, onColor, onRemove }: {
               style={{ width: 22, height: 22, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
             />
             {tr('settings.categories.custom_color')}
-            <span style={{ marginLeft: 'auto', fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>{color}</span>
+            <span style={{ marginLeft: 'auto', fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>{color}</span>
           </label>
         </div>
       )}
@@ -2096,7 +2093,7 @@ function Stepper({ value, onDec, onInc, decDisabled, incDisabled, decTitle, incT
       border: `1px solid ${t.glassBorder}`, background: t.bg3,
       color: disabled ? t.text3 : t.text0, cursor: disabled ? 'default' : 'pointer',
       opacity: disabled ? 0.5 : 1,
-      fontFamily: t.fontMono, fontSize: 15, lineHeight: 1,
+      fontFamily: t.fontMono, fontSize: 16, lineHeight: 1,
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     }}>{label}</button>
   );
@@ -2104,7 +2101,7 @@ function Stepper({ value, onDec, onInc, decDisabled, incDisabled, decTitle, incT
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isPhoneNow() ? { justifyContent: 'flex-end' } : null) }}>
       {btn('−', onDec, !!decDisabled, decTitle)}
       <span style={{
-        minWidth: 56, textAlign: 'center', fontFamily: t.fontMono, fontSize: 12.5,
+        minWidth: 56, textAlign: 'center', fontFamily: t.fontMono, fontSize: 13,
         color: t.text0, fontVariantNumeric: 'tabular-nums',
       }}>{value}</span>
       {btn('+', onInc, !!incDisabled, incTitle)}
@@ -2186,7 +2183,7 @@ function TerminalFontRows() {
       {/* Muestra con los colores reales del terminal: fuente y tamaño se ven
           acá antes de abrir una burbuja. */}
       <div style={{
-        marginTop: 12, padding: '10px 14px', borderRadius: 10,
+        marginTop: 12, padding: '10px 16px', borderRadius: 10,
         background: terminalBg(t, isLight), color: terminalFg(t, isLight),
         fontFamily: termFontStack(prefs.fontFamilyId), fontSize: prefs.fontSize, lineHeight: 1.25,
         whiteSpace: 'pre', overflowX: 'auto',
@@ -2234,8 +2231,8 @@ function SectionIntegrations() {
       <Header title={tr('settings.integrations.title')} sub={tr('settings.integrations.sub')}/>
 
       <SectionLabel>{tr('settings.obsidian.label')}</SectionLabel>
-      <Glass radius={14} style={{ padding: 18, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+      <Glass radius={14} style={{ padding: 20, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
           <div style={{
             width: 44, height: 44, borderRadius: 12, flexShrink: 0,
             background: t.accentFaint, color: t.accent,
@@ -2247,13 +2244,13 @@ function SectionIntegrations() {
             <div style={{ fontSize: 14, fontWeight: 500, color: t.text0, marginBottom: 4 }}>
               {tr('settings.integrations.obsidian.title')}
             </div>
-            <div style={{ fontSize: 12.5, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
               {tr('settings.integrations.obsidian.desc')}
             </div>
 
             <div style={{
               padding: 10, marginBottom: 12, borderRadius: 10,
-              background: t.bg2, fontSize: 11.5, color: t.text2,
+              background: t.bg2, fontSize: 12, color: t.text2,
               display: 'flex', flexDirection: 'column', gap: 6,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2267,7 +2264,7 @@ function SectionIntegrations() {
               </div>
               {obs.vaultPath && (
                 <div style={{
-                  fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                  fontFamily: t.fontMono, fontSize: 11, color: t.text3,
                   paddingLeft: 16, wordBreak: 'break-all',
                 }}>
                   {obs.enabled && validVault ? '✓ activo: ' : ''}{obs.vaultPath}
@@ -2308,7 +2305,7 @@ function SectionIntegrations() {
                   <button type="button" onClick={() => void refresh()}
                     style={{
                       border: 0, background: 'transparent', cursor: 'pointer',
-                      color: t.text3, fontSize: 10.5, padding: '2px 6px',
+                      color: t.text3, fontSize: 11, padding: '2px 6px',
                     }}
                     title={tr('settings.obsidian.refresh_tooltip')}>
                     {tr('settings.obsidian.refresh_btn')}
@@ -2329,26 +2326,26 @@ function SectionIntegrations() {
                           background: selected ? t.accentFaint : t.bg2,
                           color: t.text0,
                           cursor: 'pointer', textAlign: 'left',
-                          transition: 'all 140ms',
+                          transition: T_UI,
                         }}>
                         <div style={{
                           width: 28, height: 28, borderRadius: 6, flexShrink: 0,
                           background: selected ? t.accent : t.bg3,
                           color: selected ? t.accentOn : t.text1,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontFamily: t.fontSans, fontSize: 13, fontWeight: 600,
+                          fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
                         }}>{v.name.charAt(0).toUpperCase()}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 500, color: t.text0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
                             {v.name}
                             {v.open && (
-                              <span style={{ marginLeft: 8, fontSize: 9.5, color: t.ok, fontWeight: 500 }}>
+                              <span style={{ marginLeft: 8, fontSize: 11, color: t.ok, fontWeight: 500 }}>
                                 · {tr('settings.integrations.obsidian.vault_open')}
                               </span>
                             )}
                           </div>
                           <div style={{
-                            fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                            fontFamily: t.fontMono, fontSize: 11, color: t.text3,
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                           }}>{v.path}</div>
                         </div>
@@ -2381,7 +2378,7 @@ function SectionIntegrations() {
 
             {/* Modo de guardado: built-in vs custom command. */}
             <div style={{
-              marginTop: 14, padding: 10, borderRadius: 10,
+              marginTop: 16, padding: 10, borderRadius: 10,
               border: `1px solid ${t.glassBorder}`, background: t.bg2,
             }}>
               <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 8 }}>
@@ -2416,7 +2413,7 @@ function SectionIntegrations() {
                     autoCorrect="off"
                     style={{ ...fieldStyle(t), width: '100%', fontFamily: t.fontMono, fontSize: 12 }}
                   />
-                  <div style={{ fontSize: 10.5, color: t.text3, marginTop: 4, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 11, color: t.text3, marginTop: 4, lineHeight: 1.5 }}>
                     Se ejecuta con shell habilitado, cwd = workspace de la burbuja, y el markdown de la sesión se pipea por stdin.
                   </div>
                 </div>
@@ -2430,7 +2427,7 @@ function SectionIntegrations() {
                   onChange={(v) => { if (mode === 'custom' ? !!commandDraft.trim() : (validVault || !v)) void persist(v, obs.vaultPath); }}
                   disabled={mode === 'custom' ? !commandDraft.trim() : !validVault}
                 />
-                <span style={{ fontSize: 12.5, color: t.text1 }}>
+                <span style={{ fontSize: 13, color: t.text1 }}>
                   {tr('settings.integrations.obsidian.enabled_label')}
                 </span>
               </div>
@@ -2445,12 +2442,12 @@ function SectionIntegrations() {
 
             {msg && (
               <div style={{
-                marginTop: 10, fontSize: 11.5,
+                marginTop: 10, fontSize: 12,
                 color: msg.ok ? t.ok : t.err,
               }}>{msg.text}</div>
             )}
 
-            <div style={{ marginTop: 14, padding: 10, borderRadius: 8, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
+            <div style={{ marginTop: 16, padding: 10, borderRadius: 8, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
               <strong style={{ color: t.text2 }}>{tr('settings.integrations.obsidian.howto')}</strong>{' '}
               {tr('settings.integrations.obsidian.howto_desc')}
             </div>
@@ -2461,12 +2458,12 @@ function SectionIntegrations() {
       {/* SectionLabel solo trae padding INFERIOR, así que dos secciones
           seguidas quedan pegadas: la tarjeta de una termina contra el rótulo
           de la siguiente. El aire va acá, en el separador entre secciones. */}
-      <div style={{ marginTop: 26 }}>
+      <div style={{ marginTop: 24 }}>
         <SectionLabel>{tr('settings.tailnet.label')}</SectionLabel>
       </div>
       <TailnetCard/>
 
-      <div style={{ marginTop: 26 }}>
+      <div style={{ marginTop: 24 }}>
         <SectionLabel>{tr('settings.mcp.label')}</SectionLabel>
       </div>
       <McpCard/>
@@ -2496,10 +2493,10 @@ function TailnetCard() {
     <Glass radius={14} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: t.text0 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: t.text0 }}>
             {tr('settings.tailnet.title')}
           </div>
-          <div style={{ fontSize: 12, color: t.text2, marginTop: 3, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: t.text2, marginTop: 4, lineHeight: 1.5 }}>
             {tr('settings.tailnet.desc')}
           </div>
         </div>
@@ -2551,13 +2548,13 @@ function TailnetCard() {
         background: t.bg2, border: `1px solid ${t.glassBorder}`,
       }}>
         <div style={{
-          fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
-          letterSpacing: 0.5, fontWeight: 600, marginBottom: 8,
+          fontSize: 11, color: t.text2,
+          fontWeight: 500, marginBottom: 8,
         }}>{tr('settings.tailnet.reqs.title')}</div>
         <ul style={{
           margin: 0, paddingLeft: 16,
           display: 'flex', flexDirection: 'column', gap: 6,
-          fontSize: 11.5, color: t.text2, lineHeight: 1.5,
+          fontSize: 12, color: t.text2, lineHeight: 1.5,
         }}>
           <li>{tr('settings.tailnet.reqs.app')}</li>
           <li>{tr('settings.tailnet.reqs.magicdns')}</li>
@@ -2567,7 +2564,7 @@ function TailnetCard() {
         </ul>
       </div>
 
-      <div style={{ fontSize: 11.5, color: t.text3, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12, color: t.text3, lineHeight: 1.5 }}>
         {tr('settings.tailnet.hint')}
       </div>
     </Glass>
@@ -2629,8 +2626,8 @@ function McpCard() {
     : tr('settings.mcp.status.not_installed');
 
   return (
-    <Glass radius={14} style={{ padding: 18, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+    <Glass radius={14} style={{ padding: 20, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 12, flexShrink: 0,
           background: t.accentFaint, color: t.accent,
@@ -2642,13 +2639,13 @@ function McpCard() {
           <div style={{ fontSize: 14, fontWeight: 500, color: t.text0, marginBottom: 4 }}>
             {tr('settings.mcp.title')}
           </div>
-          <div style={{ fontSize: 12.5, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
             {tr('settings.mcp.desc')}
           </div>
 
           <div style={{
             padding: 10, marginBottom: 12, borderRadius: 10,
-            background: t.bg2, fontSize: 11.5, color: t.text2,
+            background: t.bg2, fontSize: 12, color: t.text2,
             display: 'flex', flexDirection: 'column', gap: 6,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2657,7 +2654,7 @@ function McpCard() {
             </div>
             {mcp.binaryPath && (
               <div style={{
-                fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+                fontFamily: t.fontMono, fontSize: 11, color: t.text3,
                 paddingLeft: 16, wordBreak: 'break-all',
               }}>
                 {mcp.binaryPath}
@@ -2666,7 +2663,7 @@ function McpCard() {
           </div>
 
           {mcp.error && (
-            <div style={{ marginBottom: 12, fontSize: 11.5, color: t.err }}>
+            <div style={{ marginBottom: 12, fontSize: 12, color: t.err }}>
               {mcp.error}
             </div>
           )}
@@ -2695,12 +2692,12 @@ function McpCard() {
           </div>
 
           {msg && (
-            <div style={{ marginTop: 10, fontSize: 11.5, color: msg.ok ? t.ok : t.err }}>
+            <div style={{ marginTop: 10, fontSize: 12, color: msg.ok ? t.ok : t.err }}>
               {msg.text}
             </div>
           )}
 
-          <div style={{ marginTop: 14, padding: 10, borderRadius: 8, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
+          <div style={{ marginTop: 16, padding: 10, borderRadius: 8, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
             <strong style={{ color: t.text2 }}>{tr('settings.mcp.howto')}</strong>{' '}
             {tr('settings.mcp.howto_desc')}
           </div>
@@ -2727,7 +2724,7 @@ function ModeRow({ active, title, desc, onClick, t }: {
         border: `1px solid ${active ? t.accent : t.glassBorder}`,
         background: active ? t.accentFaint : t.bg3,
         color: t.text0, cursor: 'pointer', textAlign: 'left',
-        transition: 'all 140ms',
+        transition: T_UI,
       }}>
       <span style={{
         flexShrink: 0, marginTop: 2,
@@ -2737,7 +2734,7 @@ function ModeRow({ active, title, desc, onClick, t }: {
         boxShadow: active ? `inset 0 0 0 2px ${t.bg3}` : 'none',
       }}/>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 500, color: t.text0 }}>{title}</div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{title}</div>
         <div style={{ fontSize: 11, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>{desc}</div>
       </div>
     </button>
@@ -2814,10 +2811,10 @@ function UpdatesRow() {
               : tr('settings.about.updates.desc');
 
   const btnStyle: CSSProperties = {
-    padding: '6px 14px', borderRadius: 8,
+    padding: '6px 16px', borderRadius: 8,
     border: `1px solid ${t.glassBorder}`,
     background: t.bg2, color: t.text0,
-    fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+    fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
     cursor: checking ? 'wait' : 'pointer', opacity: !supported ? 0.5 : 1,
   };
 
@@ -2873,8 +2870,8 @@ function ViewportDiagnostics() {
   if (!isMobileNow()) return null;
   return (
     <div style={{ padding: '10px 12px', borderRadius: 10, background: t.bg2, border: `1px solid ${t.glassBorder}` }}>
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{tr('settings.about.viewport.title')}</div>
-      <div style={{ fontSize: 11.5, color: t.text2, margin: '3px 0 8px', lineHeight: 1.5 }}>
+      <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{tr('settings.about.viewport.title')}</div>
+      <div style={{ fontSize: 12, color: t.text2, margin: '4px 0 8px', lineHeight: 1.5 }}>
         {tr('settings.about.viewport.desc')}
       </div>
       <pre style={{ margin: 0, fontFamily: t.fontMono, fontSize: 12, color: t.text1, whiteSpace: 'pre-wrap' }}>
@@ -2913,7 +2910,7 @@ function SectionAbout() {
   const sections: AboutSectionDef[] = [
     { id: 'what',       group: 'start',     icon: IconInfo,     title: tr('settings.about.what.title'),
       keywords: 'overview qué hace eco descripción introducción',
-      render: () => <p style={{ margin: 0, lineHeight: 1.7, fontSize: 13.5, color: t.text1 }}>{tr('settings.about.what.body')}</p> },
+      render: () => <p style={{ margin: 0, lineHeight: 1.7, fontSize: 14, color: t.text1 }}>{tr('settings.about.what.body')}</p> },
     { id: 'quickstart', group: 'start',     icon: IconBolt,     title: tr('settings.about.quickstart.title'),
       keywords: 'inicio rápido empezar primer paso instalar setup claude cli api key wake word listener',
       render: () => <QuickStartList/> },
@@ -2983,14 +2980,14 @@ function SectionAbout() {
       <ViewportDiagnostics/>
       {/* Hero */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 18,
+        display: 'flex', alignItems: 'center', gap: 20,
         padding: '6px 4px 20px',
         borderBottom: `1px solid ${t.glassBorder}`,
       }}>
         <EcoMark size={56}/>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600, color: t.text0, letterSpacing: -0.5 }}>Eco</h2>
-          <p style={{ margin: '3px 0 0', fontSize: 12.5, color: t.text2, lineHeight: 1.5 }}>
+          <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.5 }}>Eco</h2>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
             {tr('settings.about.tagline')}
           </p>
           <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
@@ -3019,10 +3016,10 @@ function SectionAbout() {
             placeholder={tr('settings.about.search.placeholder')}
             style={{
               width: '100%', boxSizing: 'border-box',
-              padding: '9px 12px 9px 34px',
-              borderRadius: 9, border: `1px solid ${t.glassBorder}`,
+              padding: '8px 12px 8px 34px',
+              borderRadius: 8, border: `1px solid ${t.glassBorder}`,
               background: t.bg2, color: t.text0,
-              fontFamily: t.fontSans, fontSize: 12.5,
+              fontFamily: t.fontSans, fontSize: 13,
               outline: 'none',
             }}
           />
@@ -3075,8 +3072,8 @@ function SectionAbout() {
             return (
               <div key={g.id} style={{ marginBottom: 8 }}>
                 <div style={{
-                  fontSize: 10, color: t.text3, textTransform: 'uppercase',
-                  letterSpacing: 0.6, fontWeight: 600,
+                  fontSize: 11, color: t.text3,
+                  fontWeight: 500,
                   padding: '6px 12px',
                 }}>{g.label}</div>
                 {items.map((s) => {
@@ -3092,7 +3089,7 @@ function SectionAbout() {
                         padding: '8px 12px', borderRadius: 8, border: 0,
                         background: isActive ? t.bg3 : 'transparent',
                         color: isActive ? t.text0 : t.text1,
-                        fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+                        fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
                         cursor: 'pointer', textAlign: 'left',
                         transition: 'background 120ms ease',
                       }}
@@ -3116,29 +3113,29 @@ function SectionAbout() {
           flex: 1, minWidth: 0,
           background: t.bg2,
           border: `1px solid ${t.glassBorder}`,
-          borderRadius: 14,
-          padding: '22px 26px',
+          borderRadius: 16,
+          padding: '24px 24px',
         }}>
           {activeSection ? (
             <>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                marginBottom: 14, paddingBottom: 12,
+                marginBottom: 16, paddingBottom: 12,
                 borderBottom: `1px solid ${t.glassBorder}`,
               }}>
                 <span style={{
-                  width: 32, height: 32, borderRadius: 9,
+                  width: 32, height: 32, borderRadius: 8,
                   background: t.accentFaint, color: t.accent,
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <activeSection.icon size={16}/>
                 </span>
                 <h3 style={{
-                  margin: 0, fontSize: 17, fontWeight: 600, color: t.text0,
-                  letterSpacing: -0.3,
+                  margin: 0, fontSize: 16, fontWeight: 500, color: t.text0,
+                  
                 }}>{activeSection.title}</h3>
               </div>
-              <div style={{ color: t.text1, fontSize: 12.5, lineHeight: 1.55 }}>
+              <div style={{ color: t.text1, fontSize: 13, lineHeight: 1.55 }}>
                 {activeSection.render()}
               </div>
             </>
@@ -3160,12 +3157,12 @@ function Chip({ children, mono, color }: { children: ReactNode; mono?: boolean; 
   const t = useTokens();
   return (
     <span style={{
-      padding: '3px 9px', borderRadius: 999,
+      padding: '4px 8px', borderRadius: 999,
       background: color ? `color-mix(in oklch, ${color} 14%, transparent)` : t.bg3,
       color: color ?? t.text1,
       border: `1px solid ${color ? `color-mix(in oklch, ${color} 32%, transparent)` : t.glassBorder}`,
       fontFamily: mono ? t.fontMono : t.fontSans,
-      fontSize: 10.5, fontWeight: 500,
+      fontSize: 11, fontWeight: 500,
     }}>{children}</span>
   );
 }
@@ -3198,13 +3195,13 @@ function FeatureGrid() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span style={{
-              width: 26, height: 26, borderRadius: 7,
+              width: 26, height: 26, borderRadius: 8,
               background: t.accentFaint, color: t.accent,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}><f.icon size={13}/></span>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{f.title}</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{f.title}</span>
           </div>
-          <p style={{ margin: 0, fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{f.body}</p>
+          <p style={{ margin: 0, fontSize: 12, color: t.text2, lineHeight: 1.5 }}>{f.body}</p>
         </div>
       ))}
     </div>
@@ -3253,7 +3250,7 @@ function Tutorial({ title, steps }: { title: string; steps: string[] }) {
   const t = useTokens();
   return (
     <div>
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 6 }}>{title}</div>
       <ol style={{
         margin: 0, paddingLeft: 24,
         display: 'flex', flexDirection: 'column', gap: 4,
@@ -3311,11 +3308,10 @@ function PrivacyList() {
           <span style={{
             width: 10, height: 10, borderRadius: '50%', marginTop: 4, flexShrink: 0,
             background: r.local ? t.ok : t.warn,
-            boxShadow: `0 0 6px ${r.local ? t.ok : t.warn}`,
           }}/>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: t.text0 }}>{r.label}</div>
-            <div style={{ fontSize: 11.5, color: t.text2, marginTop: 2 }}>{r.desc}</div>
+            <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>{r.desc}</div>
           </div>
           <Chip color={r.local ? t.ok : t.warn} mono>
             {r.local ? tr('settings.about.priv.local') : tr('settings.about.priv.cloud')}
@@ -3341,10 +3337,10 @@ function StackList() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
       {rows.map((r) => (
         <div key={r.layer} style={{
-          display: 'flex', gap: 14, padding: '6px 0',
+          display: 'flex', gap: 16, padding: '6px 0',
           borderBottom: `1px solid ${t.glassBorder}`,
         }}>
-          <span style={{ width: 110, fontSize: 11.5, color: t.text2, fontWeight: 500, flexShrink: 0 }}>{r.layer}</span>
+          <span style={{ width: 110, fontSize: 12, color: t.text2, fontWeight: 500, flexShrink: 0 }}>{r.layer}</span>
           <span style={{ flex: 1, fontFamily: t.fontMono, fontSize: 11, color: t.text1 }}>{r.tech}</span>
         </div>
       ))}
@@ -3368,11 +3364,11 @@ function QuickStartList() {
             width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
             background: t.accent, color: t.accentOn,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
+            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
           }}>{s.num}</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>{s.title}</div>
-            <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55, marginTop: 2 }}>{s.body}</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{s.title}</div>
+            <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55, marginTop: 2 }}>{s.body}</div>
           </div>
         </div>
       ))}
@@ -3391,17 +3387,17 @@ function SlashCommandsList() {
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
-      <div style={{ fontSize: 11.5, color: t.text2, marginBottom: 6 }}>
+      <div style={{ fontSize: 12, color: t.text2, marginBottom: 6 }}>
         {tr('settings.about.slash.intro')}
       </div>
       {cmds.map((it) => (
         <div key={it.cmd} style={{ display: 'flex', gap: 10 }}>
           <code style={{
             flexShrink: 0, fontFamily: t.fontMono, fontSize: 11, color: t.accent,
-            padding: '2px 8px', borderRadius: 5, background: t.bg3,
+            padding: '2px 8px', borderRadius: 6, background: t.bg3,
             alignSelf: 'flex-start', whiteSpace: 'nowrap',
           }}>{it.cmd}</code>
-          <span style={{ flex: 1, fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{it.desc}</span>
+          <span style={{ flex: 1, fontSize: 12, color: t.text2, lineHeight: 1.5 }}>{it.desc}</span>
         </div>
       ))}
     </div>
@@ -3424,8 +3420,8 @@ function FaqList() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
       {items.map((it, i) => (
         <div key={i}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0, marginBottom: 4 }}>{it.q}</div>
-          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>{it.a}</div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 4 }}>{it.q}</div>
+          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>{it.a}</div>
         </div>
       ))}
     </div>
@@ -3450,10 +3446,10 @@ function TroubleshootingList() {
           padding: 10, borderRadius: 8,
           background: t.bg1, border: `1px solid ${t.glassBorder}`,
         }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: t.warn, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: t.warn, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
             <IconAlert size={11}/> {it.p}
           </div>
-          <div style={{ fontSize: 11.5, color: t.text1, lineHeight: 1.5 }}>{it.s}</div>
+          <div style={{ fontSize: 12, color: t.text1, lineHeight: 1.5 }}>{it.s}</div>
         </div>
       ))}
     </div>
@@ -3476,17 +3472,17 @@ function NetworkList() {
       {rows.map((r, i) => (
         <div key={i} style={{
           display: 'flex', alignItems: 'center', gap: 8,
-          padding: '7px 10px', borderRadius: 6,
+          padding: '8px 10px', borderRadius: 6,
           background: t.bg1, border: `1px solid ${t.glassBorder}`,
         }}>
-          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text1, width: 90, flexShrink: 0 }}>{r.src}</span>
-          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>→</span>
-          <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.accent, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.dst}</span>
+          <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text1, width: 90, flexShrink: 0 }}>{r.src}</span>
+          <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>→</span>
+          <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.dst}</span>
           <span style={{
-            fontSize: 9.5, padding: '2px 7px', borderRadius: 999,
+            fontSize: 11, padding: '2px 8px', borderRadius: 999,
             background: r.kind === 'local' ? `color-mix(in oklch, ${t.ok} 14%, transparent)` : `color-mix(in oklch, ${t.warn} 14%, transparent)`,
             color: r.kind === 'local' ? t.ok : t.warn,
-            fontFamily: t.fontMono, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4,
+            fontFamily: t.fontMono, fontWeight: 500,
           }}>{r.kind}</span>
           <span style={{ fontSize: 11, color: t.text2, flex: 2, minWidth: 0 }}>{r.desc}</span>
         </div>
@@ -3512,29 +3508,29 @@ function MobileList() {
     tr('settings.about.mobile.note.tablet'),
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 6 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {steps.map((s) => (
           <div key={s.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <span style={{
               width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
               background: t.accentFaint, color: t.accent,
-              fontSize: 11, fontWeight: 700,
+              fontSize: 11, fontWeight: 600,
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             }}>{s.k}</span>
-            <span style={{ flex: 1, fontSize: 12.5, color: t.text1, lineHeight: 1.6 }}>{s.d}</span>
+            <span style={{ flex: 1, fontSize: 13, color: t.text1, lineHeight: 1.6 }}>{s.d}</span>
           </div>
         ))}
       </div>
       <div>
         <div style={{
-          fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
-          letterSpacing: 0.5, fontWeight: 600, marginBottom: 6,
+          fontSize: 11, color: t.text2,
+          fontWeight: 500, marginBottom: 6,
         }}>{tr('settings.about.mobile.notes.title')}</div>
         <ul style={{
           margin: 0, paddingLeft: 16,
           display: 'flex', flexDirection: 'column', gap: 6,
-          fontSize: 11.5, color: t.text2, lineHeight: 1.55,
+          fontSize: 12, color: t.text2, lineHeight: 1.55,
         }}>
           {notes.map((n, i) => <li key={i}>{n}</li>)}
         </ul>
@@ -3560,7 +3556,7 @@ function FilesList() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
       {rows.map((r, i) => (
         <div key={i} style={{
-          display: 'flex', gap: 12, padding: '7px 10px', borderRadius: 6,
+          display: 'flex', gap: 12, padding: '8px 10px', borderRadius: 6,
           background: t.bg1, border: `1px solid ${t.glassBorder}`,
           // Path fijo de 200px + descripción no entran: en móvil se apilan.
           ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 4 } : {}),
@@ -3570,7 +3566,7 @@ function FilesList() {
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             ...(isPhoneNow() ? { width: '100%' } : { width: 200, flexShrink: 0 }),
           }}>{r.path}</code>
-          <span style={{ flex: 1, fontSize: 11.5, color: t.text2, lineHeight: 1.5 }}>{r.desc}</span>
+          <span style={{ flex: 1, fontSize: 12, color: t.text2, lineHeight: 1.5 }}>{r.desc}</span>
         </div>
       ))}
     </div>
@@ -3599,25 +3595,25 @@ function DevList() {
     { k: 'npm run serve:web',  d: tr('settings.about.dev.scripts.serveweb') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 6 }}>
       <div>
-        <div style={{ fontSize: 10.5, color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>{tr('settings.about.dev.env.title')}</div>
+        <div style={{ fontSize: 11, color: t.text2, fontWeight: 500, marginBottom: 6 }}>{tr('settings.about.dev.env.title')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {envs.map((e) => (
             <div key={e.k} style={{ display: 'flex', gap: 10, padding: '4px 0', ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 2 } : {}) }}>
               <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, ...(isPhoneNow() ? { width: '100%' } : { width: 170, flexShrink: 0 }) }}>{e.k}</code>
-              <span style={{ flex: 1, fontSize: 11.5, color: t.text2 }}>{e.d}</span>
+              <span style={{ flex: 1, fontSize: 12, color: t.text2 }}>{e.d}</span>
             </div>
           ))}
         </div>
       </div>
       <div>
-        <div style={{ fontSize: 10.5, color: t.text2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>{tr('settings.about.dev.scripts.title')}</div>
+        <div style={{ fontSize: 11, color: t.text2, fontWeight: 500, marginBottom: 6 }}>{tr('settings.about.dev.scripts.title')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {scripts.map((s) => (
             <div key={s.k} style={{ display: 'flex', gap: 10, padding: '4px 0', ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 2 } : {}) }}>
               <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, ...(isPhoneNow() ? { width: '100%' } : { width: 170, flexShrink: 0 }) }}>{s.k}</code>
-              <span style={{ flex: 1, fontSize: 11.5, color: t.text2 }}>{s.d}</span>
+              <span style={{ flex: 1, fontSize: 12, color: t.text2 }}>{s.d}</span>
             </div>
           ))}
         </div>
@@ -3634,21 +3630,21 @@ function SupportList() {
       <p style={{ margin: 0, fontSize: 12, color: t.text2, lineHeight: 1.6 }}>{tr('settings.about.support.intro')}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.bug.t')}</div>
-          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>{tr('settings.about.support.bug.b')}</div>
+          <div style={{ fontSize: 12, fontWeight: 500, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.bug.t')}</div>
+          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>{tr('settings.about.support.bug.b')}</div>
         </div>
         <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.logs.t')}</div>
-          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.logs.t')}</div>
+          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>
             {tr('settings.about.support.logs.b')}{' '}
-            <code style={{ fontFamily: t.fontMono, fontSize: 10.5, padding: '1px 5px', borderRadius: 4, background: t.bg3 }}>
+            <code style={{ fontFamily: t.fontMono, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: t.bg3 }}>
               /Applications/Eco.app/Contents/MacOS/Eco
             </code>
           </div>
         </div>
         <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.reset.t')}</div>
-          <div style={{ fontSize: 11.5, color: t.text2, lineHeight: 1.55 }}>{tr('settings.about.support.reset.b')}</div>
+          <div style={{ fontSize: 12, fontWeight: 500, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.reset.t')}</div>
+          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>{tr('settings.about.support.reset.b')}</div>
         </div>
       </div>
     </div>
@@ -3659,22 +3655,22 @@ function CreditsBody() {
   const t = useTokens();
   const tr = useT();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginTop: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 4 }}>
       {/* Card principal — autor */}
       <div style={{
-        display: 'flex', gap: 14, alignItems: 'center',
-        padding: 16, borderRadius: 14,
+        display: 'flex', gap: 16, alignItems: 'center',
+        padding: 16, borderRadius: 16,
         background: t.bg1, border: `1px solid ${t.glassBorder}`,
       }}>
         <div style={{
           width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
           background: t.accentFaint, color: t.accent,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 22, fontWeight: 600, fontFamily: t.fontSans,
+          fontSize: 24, fontWeight: 500, fontFamily: t.fontSans,
           border: `1px solid ${t.accent}`,
         }}>S</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: t.text0, letterSpacing: -0.2 }}>
+          <div style={{ fontSize: 16, fontWeight: 500, color: t.text0, }}>
             Sergio Castro
           </div>
           <div style={{ fontSize: 12, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
@@ -3685,17 +3681,17 @@ function CreditsBody() {
           }}>
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '3px 9px', borderRadius: 999,
+              padding: '4px 8px', borderRadius: 999,
               background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              fontFamily: t.fontMono, fontSize: 10.5, color: t.text1,
+              fontFamily: t.fontMono, fontSize: 11, color: t.text1,
             }}>
               <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.ok }}/>
               Aditum
             </span>
             <span style={{
-              padding: '3px 9px', borderRadius: 999,
+              padding: '4px 8px', borderRadius: 999,
               background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              fontFamily: t.fontMono, fontSize: 10.5, color: t.text2,
+              fontFamily: t.fontMono, fontSize: 11, color: t.text2,
             }}>Florida, USA</span>
           </div>
         </div>
@@ -3714,8 +3710,8 @@ function CreditsBody() {
       {/* Agradecimientos */}
       <div>
         <div style={{
-          fontSize: 10.5, color: t.text2, textTransform: 'uppercase',
-          letterSpacing: 0.6, fontWeight: 600, marginBottom: 8,
+          fontSize: 11, color: t.text2,
+          fontWeight: 500, marginBottom: 8,
         }}>{tr('settings.about.credits.thanks_to')}</div>
         <p style={{
           margin: 0, fontSize: 12, color: t.text2, lineHeight: 1.6,
@@ -3749,8 +3745,8 @@ function MetaCell({ label, value }: { label: string; value: string }) {
       background: t.bg2, border: `1px solid ${t.glassBorder}`,
     }}>
       <div style={{
-        fontSize: 9.5, color: t.text3, textTransform: 'uppercase',
-        letterSpacing: 0.5, fontWeight: 600, marginBottom: 4,
+        fontSize: 11, color: t.text3,
+        fontWeight: 500, marginBottom: 4,
       }}>{label}</div>
       <div style={{
         fontFamily: t.fontMono, fontSize: 12, color: t.text0, fontWeight: 500,

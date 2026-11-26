@@ -71,11 +71,11 @@ export function SkillsPicker({ workspace, onRun }: Props) {
         <IconZap size={13}/>
         <span>Skills</span>
         <span style={{
-          minWidth: 16, height: 16, padding: '0 5px',
+          minWidth: 16, height: 16, padding: '0 6px',
           borderRadius: 999,
           background: open ? t.accent : t.bg3,
           color: open ? t.accentOn : t.text2,
-          fontFamily: t.fontMono, fontSize: 10, fontWeight: 600,
+          fontFamily: t.fontMono, fontSize: 11, fontWeight: 500,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         }}>{loading ? '…' : skills.length}</span>
       </button>
@@ -91,7 +91,7 @@ export function SkillsPicker({ workspace, onRun }: Props) {
             backdropFilter: 'blur(40px) saturate(180%)',
             WebkitBackdropFilter: 'blur(40px) saturate(180%)',
             border: `1px solid ${t.glassBorderHi}`,
-            borderRadius: 14,
+            borderRadius: 16,
             boxShadow: t.shadowLg,
             overflow: 'hidden',
           }}>
@@ -100,10 +100,10 @@ export function SkillsPicker({ workspace, onRun }: Props) {
             borderBottom: `1px solid ${t.glassBorder}`,
           }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
                 Skills disponibles
               </div>
-              <div style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>
+              <div style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>
                 {skills.length} {skills.length === 1 ? 'skill' : 'skills'}
               </div>
             </div>
@@ -115,8 +115,8 @@ export function SkillsPicker({ workspace, onRun }: Props) {
               style={{
                 width: '100%', boxSizing: 'border-box',
                 background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                borderRadius: 8, padding: '7px 10px',
-                fontFamily: t.fontSans, fontSize: 12.5, color: t.text0,
+                borderRadius: 8, padding: '8px 10px',
+                fontFamily: t.fontSans, fontSize: 13, color: t.text0,
                 outline: 'none',
               }}
             />
@@ -126,18 +126,18 @@ export function SkillsPicker({ workspace, onRun }: Props) {
             flex: 1, overflow: 'auto', padding: 6,
           }}>
             {loading ? (
-              <div style={{ padding: 18, color: t.text3, fontSize: 12.5, textAlign: 'center' }}>
+              <div style={{ padding: 20, color: t.text3, fontSize: 13, textAlign: 'center' }}>
                 Cargando…
               </div>
             ) : filtered.length === 0 ? (
-              <div style={{ padding: '14px 16px', color: t.text2, fontSize: 12, lineHeight: 1.55 }}>
+              <div style={{ padding: '16px 16px', color: t.text2, fontSize: 12, lineHeight: 1.55 }}>
                 {query ? (
                   'Ningún match para esa búsqueda.'
                 ) : (
                   <>
                     <div style={{ color: t.text1, fontWeight: 500, marginBottom: 6 }}>Sin skills detectados</div>
                     Eco busca skills en:
-                    <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontFamily: t.fontMono, fontSize: 11, color: t.text2 }}>
+                    <ul style={{ margin: '6px 0 0', paddingLeft: 20, fontFamily: t.fontMono, fontSize: 11, color: t.text2 }}>
                       <li><code>{workspace || '<workspace>'}/.claude/skills/</code></li>
                       <li><code>~/.claude/skills/</code> (globales)</li>
                       <li><code>~/.claude/commands/</code> (slash commands)</li>
@@ -158,9 +158,9 @@ export function SkillsPicker({ workspace, onRun }: Props) {
                   {favs.length > 0 && (
                     <>
                       <div style={{
-                        padding: '6px 10px 4px', fontSize: 10,
-                        color: t.text3, textTransform: 'uppercase',
-                        letterSpacing: 0.6, fontWeight: 600, fontFamily: t.fontMono,
+                        padding: '6px 10px 4px', fontSize: 11,
+                        color: t.text3,
+                        fontWeight: 500, fontFamily: t.fontMono,
                       }}>★ Favoritos</div>
                       {favs.map((s) => (
                         <SkillRow
@@ -173,9 +173,9 @@ export function SkillsPicker({ workspace, onRun }: Props) {
                       ))}
                       {others.length > 0 && (
                         <div style={{
-                          padding: '8px 10px 4px', fontSize: 10,
-                          color: t.text3, textTransform: 'uppercase',
-                          letterSpacing: 0.6, fontWeight: 600, fontFamily: t.fontMono,
+                          padding: '8px 10px 4px', fontSize: 11,
+                          color: t.text3,
+                          fontWeight: 500, fontFamily: t.fontMono,
                         }}>Todos</div>
                       )}
                     </>
@@ -232,7 +232,7 @@ function SkillRow({
           fontFamily: t.fontSans, color: t.text1, minWidth: 0,
         }}>
         <div style={{
-          width: 26, height: 26, borderRadius: 7, flexShrink: 0,
+          width: 26, height: 26, borderRadius: 8, flexShrink: 0,
           background: t.bg2, color: skill.kind === 'agent' ? t.warn : t.accent,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           marginTop: 1,
@@ -242,13 +242,13 @@ function SkillRow({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
             <span style={{
-              fontFamily: t.fontMono, fontSize: 12.5, color: t.text0, fontWeight: 500,
+              fontFamily: t.fontMono, fontSize: 13, color: t.text0, fontWeight: 500,
             }}>{skill.name}</span>
             <SourceChip source={skill.source} plugin={skill.plugin}/>
           </div>
           {skill.description && (
             <div style={{
-              fontSize: 11.5, color: t.text2, lineHeight: 1.4,
+              fontSize: 12, color: t.text2, lineHeight: 1.4,
               display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
               overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{skill.description}</div>
@@ -261,7 +261,7 @@ function SkillRow({
           onClick={(e) => { e.stopPropagation(); onToggleFav(); }}
           title={favored ? 'Quitar de favoritos' : 'Marcar como favorito'}
           style={{
-            width: 22, height: 22, padding: 0, borderRadius: 5, border: 0,
+            width: 22, height: 22, padding: 0, borderRadius: 6, border: 0,
             background: 'transparent', cursor: 'pointer',
             color: favored ? t.warn : t.text3,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -290,7 +290,7 @@ function SourceChip({ source, plugin }: { source: SkillInfo['source']; plugin?: 
       padding: '1px 6px', borderRadius: 999,
       background: `color-mix(in oklch, ${color} 14%, transparent)`,
       border: `1px solid color-mix(in oklch, ${color} 30%, transparent)`,
-      color, fontFamily: t.fontMono, fontSize: 9.5, letterSpacing: 0.2,
+      color, fontFamily: t.fontMono, fontSize: 11, letterSpacing: 0.2,
       whiteSpace: 'nowrap',
     }}>{label}</span>
   );

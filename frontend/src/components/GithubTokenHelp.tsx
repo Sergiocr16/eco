@@ -32,20 +32,20 @@ export function GithubTokenHelp() {
 
       {open && (
         <div style={{
-          marginTop: 10, padding: 14, borderRadius: 10,
+          marginTop: 10, padding: 16, borderRadius: 10,
           background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          color: t.text1, fontSize: 12.5,
+          color: t.text1, fontSize: 13,
         }}>
           <div style={{ color: t.text2, marginBottom: 10 }}>
             {tr('settings.github.help_intro')}
           </div>
 
-          <ol style={{ paddingLeft: 18, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <ol style={{ paddingLeft: 20, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <li>{tr('settings.github.help_step1')}</li>
             <li>{tr('settings.github.help_step2')}</li>
             <li>{tr('settings.github.help_step3')}</li>
             <li>
-              <div style={{ fontWeight: 600, color: t.text0, marginBottom: 6 }}>
+              <div style={{ fontWeight: 500, color: t.text0, marginBottom: 6 }}>
                 {tr('settings.github.help_scopes_title')}
               </div>
               <ul style={{ paddingLeft: 0, margin: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -80,9 +80,9 @@ function ScopeRow({ scope, note, required }: { scope: string; note: string; requ
       <span style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: 14, height: 14, flexShrink: 0, marginTop: 2,
-        borderRadius: 3, background: required ? t.accent : 'transparent',
+        borderRadius: 4, background: required ? t.accent : 'transparent',
         border: `1.5px solid ${required ? t.accent : t.text3}`,
-        color: t.accentOn, fontSize: 9, fontWeight: 700, lineHeight: 1,
+        color: t.accentOn, fontSize: 11, fontWeight: 600, lineHeight: 1,
       }}>
         {required ? '✓' : ''}
       </span>
@@ -90,7 +90,7 @@ function ScopeRow({ scope, note, required }: { scope: string; note: string; requ
         <code style={{
           padding: '1px 6px', borderRadius: 4,
           background: t.bg3, color: t.text0,
-          fontFamily: t.fontMono, fontSize: 11.5,
+          fontFamily: t.fontMono, fontSize: 12,
           marginRight: 6,
         }}>{scope}</code>
         <span style={{ color: t.text2 }}>{note}</span>

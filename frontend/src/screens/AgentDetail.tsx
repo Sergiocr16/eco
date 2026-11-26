@@ -87,9 +87,9 @@ function HeaderMenu({
       {categories.length > 0 && (
         <>
           <div style={{
-            fontSize: 9.5, color: t.text3, letterSpacing: 0.4,
-            textTransform: 'uppercase', fontWeight: 600,
-            padding: '6px 10px 3px',
+            fontSize: 11, color: t.text3,
+            fontWeight: 500,
+            padding: '6px 10px 4px',
           }}>{tr('dash.category.label')}</div>
           {categories.map((c) => {
             const active = currentCategoryIds?.includes(c.id) ?? false;
@@ -125,13 +125,13 @@ function HeaderMenu({
         <IconFolder size={12}/>
         <span style={{ flex: 1 }}>{tr('detail.menu.change_workspace')}</span>
         <span style={{
-          fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+          fontFamily: t.fontMono, fontSize: 11, color: t.text3,
           maxWidth: 100, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{currentWorkspace.split('/').filter(Boolean).slice(-2).join('/') || '—'}</span>
       </button>
       {wsOpen && (
         <div style={{
-          marginLeft: 22, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
+          marginLeft: 24, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
           maxHeight: 200, overflow: 'auto',
           borderLeft: `1px solid ${t.glassBorder}`,
         }}>
@@ -170,7 +170,7 @@ function menuItemStyleAt(t: ReturnType<typeof useTokens>): React.CSSProperties {
   return {
     display: 'flex', alignItems: 'center', gap: 8,
     padding: '8px 10px', borderRadius: 8, border: 0, background: 'transparent',
-    color: t.text1, fontFamily: t.fontSans, fontSize: 12.5, cursor: 'pointer',
+    color: t.text1, fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
     textAlign: 'left' as const,
   };
 }
@@ -458,11 +458,11 @@ export function AgentDetail({
                 }}
                 style={{
                   background: t.bg3, border: `1px solid ${t.accent}`,
-                  borderRadius: 8, padding: '3px 10px',
-                  fontFamily: t.fontSans, fontWeight: 600,
+                  borderRadius: 8, padding: '4px 10px',
+                  fontFamily: t.fontSans, fontWeight: 500,
                   // 16px en móvil evita el auto-zoom de iOS al enfocar.
-                  fontSize: isPhone ? 16 : 15,
-                  color: t.text0, letterSpacing: -0.3, outline: 'none',
+                  fontSize: isPhone ? 16 : 16,
+                  color: t.text0, outline: 'none',
                   // El minWidth de 200 empujaba el header entero en el
                   // teléfono, donde el título tiene ~180px de espacio.
                   ...(isPhone
@@ -475,8 +475,8 @@ export function AgentDetail({
                 onDoubleClick={() => { setDraft(bubble.title); setRenaming(true); }}
                 title={tr('dash.bubble.rename_tip')}
                 style={{
-                  margin: 0, fontFamily: t.fontSans, fontSize: compact ? 13 : 15, fontWeight: 600,
-                  color: t.text0, letterSpacing: -0.3, cursor: 'text',
+                  margin: 0, fontFamily: t.fontSans, fontSize: compact ? 13 : 16, fontWeight: 500,
+                  color: t.text0, cursor: 'text',
                   // `flex` en vez de `maxWidth: 100%`: así el título cede
                   // ancho y los chips de categoría entran en la MISMA línea
                   // cuando caben, en vez de empujarlos siempre abajo.
@@ -498,7 +498,7 @@ export function AgentDetail({
                 title={category.name}
                 aria-label={category.name}
                 style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   borderRadius: 999,
                   background: `color-mix(in oklch, ${category.color} 16%, transparent)`,
                   border: `1px solid color-mix(in oklch, ${category.color} 45%, transparent)`,
@@ -511,7 +511,7 @@ export function AgentDetail({
                   // de toque decente (28px) aunque el dibujo sea chico.
                   ...(isPhone
                     ? { width: 28, height: 28, padding: 0 }
-                    : { padding: '2px 9px' }),
+                    : { padding: '2px 8px' }),
                 }}>
                 <span style={{
                   borderRadius: '50%', background: category.color,
@@ -527,7 +527,7 @@ export function AgentDetail({
                 style={{
                   flex: '0 9999 auto', minWidth: 0,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  fontFamily: t.fontMono, fontSize: 11.5, color: t.text2,
+                  fontFamily: t.fontMono, fontSize: 12, color: t.text2,
                 }}>
                 {bubble.workspace || '—'} · {tr('detail.header.id')} {bubble.id.slice(0, 10)}
               </span>
@@ -741,10 +741,10 @@ function TabBtn({
       aria-label={iconOnly ? label : undefined}
       style={{
         position: 'relative', flexShrink: 0,
-        display: 'flex', alignItems: 'center', gap: 7,
-        padding: iconOnly ? '13px 14px' : compact ? '11px 14px' : '12px 14px',
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: iconOnly ? '12px 16px' : compact ? '12px 16px' : '12px 16px',
         background: 'transparent', border: 0,
-        borderBottom: `2px solid ${showPin ? t.warn : active ? t.accent : 'transparent'}`,
+        borderBottom: `2px solid ${showPin ? t.warn : active ? t.text1 : 'transparent'}`,
         color: active ? t.text0 : t.text2, cursor: 'pointer',
         fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
         transition: 'color 140ms', marginBottom: -1,
@@ -757,9 +757,9 @@ function TabBtn({
       {!iconOnly && label}
       {badge != null && badge > 0 && (
         <span style={{
-          padding: '1px 6px', background: active ? t.accentFaint : t.bg3,
-          color: active ? t.accent : t.text2,
-          borderRadius: 999, fontSize: 10, fontWeight: 500, fontFamily: t.fontMono,
+          padding: '1px 6px', background: t.bg3,
+          color: active ? t.text1 : t.text2,
+          borderRadius: 999, fontSize: 11, fontWeight: 500, fontFamily: t.fontMono,
         }}>{badge}</span>
       )}
       {onTogglePin && (
@@ -775,7 +775,7 @@ function TabBtn({
           }}
           style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 18, height: 18, borderRadius: 5, marginRight: -4,
+            width: 18, height: 18, borderRadius: 6, marginRight: -4,
             color: pinned ? t.warn : t.text3,
             background: pinned ? `color-mix(in oklch, ${t.warn} 16%, transparent)` : 'transparent',
           }}>
@@ -902,7 +902,7 @@ function TerminalTabs({ bubble }: { bubble: Bubble }) {
           title={tr('detail.terminal.new_tooltip')}
           style={{
             marginLeft: 4,
-            padding: '4px 9px', borderRadius: 7, border: `1px dashed ${t.glassBorder}`,
+            padding: '4px 8px', borderRadius: 8, border: `1px dashed ${t.glassBorder}`,
             background: 'transparent', color: t.text2, cursor: 'pointer',
             fontFamily: t.fontSans, fontSize: 12, lineHeight: 1,
           }}
@@ -960,14 +960,14 @@ function CodexPane({ bubble, mounted }: { bubble: Bubble; mounted: boolean }) {
         alignItems: 'center', justifyContent: 'center', gap: 12,
         padding: 24, background: terminalBg(t, isLight), color: terminalFg(t, isLight),
       }}>
-        <div style={{ fontFamily: t.fontSans, fontSize: 14, fontWeight: 600 }}>
+        <div style={{ fontFamily: t.fontSans, fontSize: 14, fontWeight: 500 }}>
           {tr('detail.terminal.codex.missing.title')}
         </div>
-        <div style={{ fontFamily: t.fontSans, fontSize: 12.5, color: t.text2, textAlign: 'center', maxWidth: 420, lineHeight: 1.6 }}>
+        <div style={{ fontFamily: t.fontSans, fontSize: 13, color: t.text2, textAlign: 'center', maxWidth: 420, lineHeight: 1.6 }}>
           {tr('detail.terminal.codex.missing.desc')}
         </div>
         <code style={{
-          fontFamily: t.fontMono, fontSize: 12, padding: '8px 12px', borderRadius: 7,
+          fontFamily: t.fontMono, fontSize: 12, padding: '8px 12px', borderRadius: 8,
           background: '#161923', color: '#e5e7eb', border: '1px solid #262a36',
         }}>npm i -g @openai/codex</code>
         <button
@@ -975,7 +975,7 @@ function CodexPane({ bubble, mounted }: { bubble: Bubble; mounted: boolean }) {
           onClick={retry}
           disabled={retrying}
           style={{
-            marginTop: 4, padding: '6px 14px', borderRadius: 7,
+            marginTop: 4, padding: '6px 16px', borderRadius: 8,
             border: `1px solid ${t.accent}`, background: 'transparent', color: t.accent,
             cursor: retrying ? 'default' : 'pointer', opacity: retrying ? 0.6 : 1,
             fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
@@ -1011,9 +1011,9 @@ function TermTabBtn({
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: onClose ? '4px 6px 4px 10px' : '4px 10px',
-        borderRadius: 7,
+        borderRadius: 8,
         background: active ? t.bg3 : 'transparent',
-        color: active ? t.accent : t.text2,
+        color: active ? t.text0 : t.text2,
         cursor: 'pointer',
         fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
         transition: 'background 140ms, color 140ms',
@@ -1115,7 +1115,7 @@ function SkillsCard({
       </div>
       {favSkills.length === 0 ? (
         <div style={{
-          padding: '12px 14px', borderRadius: 12,
+          padding: '12px 16px', borderRadius: 12,
           background: `linear-gradient(135deg, ${t.accentFaint} 0%, ${t.bg2} 100%)`,
           border: `1px dashed ${t.glassBorder}`,
           fontSize: 11, color: t.text2, lineHeight: 1.5,
@@ -1142,8 +1142,7 @@ function SkillsCard({
               width: '100%', display: 'flex', alignItems: 'center', gap: 8,
               padding: '4px 4px 8px', border: 0, background: 'transparent',
               color: t.text2, cursor: 'pointer', textAlign: 'left',
-              fontFamily: t.fontSans, fontSize: 10.5, fontWeight: 600,
-              letterSpacing: 0.4, textTransform: 'uppercase',
+              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
             }}>
             <span style={{
               fontSize: 14, color: t.text1, lineHeight: 1,
@@ -1154,8 +1153,8 @@ function SkillsCard({
             }}>▾</span>
             <span>Favoritos</span>
             <span style={{
-              padding: '1px 7px', background: t.bg3, borderRadius: 999,
-              fontSize: 10, color: t.text1, letterSpacing: 0,
+              padding: '1px 8px', background: t.bg3, borderRadius: 999,
+              fontSize: 11, color: t.text1, letterSpacing: 0,
             }}>{favSkills.length}</span>
           </button>
           {!favCollapsed && (
@@ -1206,7 +1205,7 @@ function SkillsCard({
                 </span>
                 {/* Nombre + descripción inline en una sola fila */}
                 <code style={{
-                  fontFamily: t.fontMono, fontSize: 11.5, fontWeight: 600,
+                  fontFamily: t.fontMono, fontSize: 12, fontWeight: 500,
                   color: running ? t.accent : t.text0,
                   whiteSpace: 'nowrap',
                   flexShrink: 0,
@@ -1214,7 +1213,7 @@ function SkillsCard({
                 {desc && (
                   <span style={{
                     flex: 1, minWidth: 0,
-                    fontSize: 10.5, color: t.text3, lineHeight: 1,
+                    fontSize: 11, color: t.text3, lineHeight: 1,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>{desc}</span>
                 )}
@@ -1328,7 +1327,6 @@ function CollapsibleSection({
           border: 0, background: 'transparent',
           color: t.text2, cursor: 'pointer',
           fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-          letterSpacing: 0.5, textTransform: 'uppercase',
           textAlign: 'left',
         }}>
         <span style={{
@@ -1341,14 +1339,14 @@ function CollapsibleSection({
         <span>{title}</span>
         {count != null && (
           <span style={{
-            padding: '1px 7px', background: t.bg3, borderRadius: 999,
-            fontSize: 10, color: t.text1, letterSpacing: 0,
+            padding: '1px 8px', background: t.bg3, borderRadius: 999,
+            fontSize: 11, color: t.text1, letterSpacing: 0,
           }}>{count}</span>
         )}
         {accentDot && (
           <span style={{
             width: 6, height: 6, borderRadius: '50%',
-            background: t.accent, boxShadow: `0 0 6px ${t.accent}`,
+            background: t.accent,
             animation: 'eco-shimmer 1.4s ease-in-out infinite',
           }} title="Hay novedades"/>
         )}
@@ -1392,7 +1390,7 @@ function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubb
           width: 30, height: 30, border: 0, borderRadius: 8,
           background: 'transparent', color: t.text1, cursor: 'pointer',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: t.fontMono, fontSize: 18, fontWeight: 600,
+          fontFamily: t.fontMono, fontSize: 20, fontWeight: 500,
           lineHeight: 1,
         }}
         onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
@@ -1534,7 +1532,6 @@ function AgentSidebar({
               padding: '6px 4px 10px',
               color: t.text2,
               fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-              letterSpacing: 0.5, textTransform: 'uppercase',
             }}>Git</div>
             <GitMiniDock
               workspace={bubble.workspace}
@@ -1610,7 +1607,7 @@ function AgentSidebar({
             width: 30, height: 30, border: 0, borderRadius: 8,
             background: 'transparent', color: t.text2, cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'monospace', fontSize: 18, fontWeight: 600,
+            fontFamily: 'monospace', fontSize: 20, fontWeight: 500,
             lineHeight: 1,
           }}
           onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
@@ -1622,8 +1619,8 @@ function AgentSidebar({
           tiene su header a la izquierda, así que no se traslapan. */}
       <div style={{
         flex: 1, overflow: 'auto',
-        padding: '14px 18px 20px',
-        display: 'flex', flexDirection: 'column', gap: 18,
+        padding: '16px 20px 20px',
+        display: 'flex', flexDirection: 'column', gap: 20,
       }}>
         {sectionOrder.map(renderSection)}
       </div>
@@ -1734,8 +1731,8 @@ function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         flexShrink: 0,
         ...(isPhone
-          ? { width: 30, height: 30, padding: 0, borderRadius: 15, marginBottom: 2 }
-          : { height: 26, padding: '0 10px', borderRadius: 13, marginBottom: 4 }),
+          ? { width: 30, height: 30, padding: 0, borderRadius: 16, marginBottom: 2 }
+          : { height: 26, padding: '0 10px', borderRadius: 12, marginBottom: 4 }),
         border: `1px solid ${err ? t.err : t.glassBorder}`,
         background: 'transparent',
         color: t.text1,
@@ -1832,7 +1829,7 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
           background: t.bg2,
           color: t.text0,
           cursor: busy ? 'not-allowed' : 'pointer',
-          fontFamily: t.fontSans, fontSize: 12.5, fontWeight: 500,
+          fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
           display: 'flex', alignItems: 'center', gap: 8,
           opacity: busy ? 0.6 : 1,
           transition: 'background 140ms',
@@ -1847,7 +1844,7 @@ function SaveToObsidianButton({ bubble }: { bubble: Bubble }) {
           marginTop: 6, padding: '6px 10px', borderRadius: 6,
           background: result.ok ? t.accentFaint : t.bg2,
           color: result.ok ? t.accent : t.err,
-          fontSize: 10.5, fontFamily: t.fontMono, lineHeight: 1.4,
+          fontSize: 11, fontFamily: t.fontMono, lineHeight: 1.4,
           wordBreak: 'break-word',
         }}>{result.text}</div>
       )}

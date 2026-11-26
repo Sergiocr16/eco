@@ -275,7 +275,7 @@ export function FileEditor({
                 padding: '4px 10px', borderRadius: 6,
                 background: 'transparent', color: t.text1,
                 border: `1px solid ${t.glassBorder}`,
-                fontSize: 11, fontWeight: 600,
+                fontSize: 11, fontWeight: 500,
                 fontFamily: t.fontSans, cursor: 'pointer',
                 whiteSpace: 'nowrap', flexShrink: 0,
               }}>
@@ -373,7 +373,7 @@ function Breadcrumb({ path, onRevealDir }: { path: string; onRevealDir?: (dir: s
   return (
     <div style={{
       display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: 2,
-      padding: '3px 10px', minHeight: 24, overflow: 'auto', flexShrink: 0,
+      padding: '4px 10px', minHeight: 24, overflow: 'auto', flexShrink: 0,
       borderBottom: `1px solid ${t.glassBorder}`, background: t.bg1,
       fontFamily: t.fontSans, fontSize: 11, color: t.text2,
     }}>
@@ -385,13 +385,13 @@ function Breadcrumb({ path, onRevealDir }: { path: string; onRevealDir?: (dir: s
             {i > 0 && <span style={{ color: t.text3, padding: '0 1px' }}>›</span>}
             {isLast && <FileTypeIcon path={path} size={12}/>}
             {isLast ? (
-              <span style={{ color: t.text1, fontWeight: 600 }}>{seg}</span>
+              <span style={{ color: t.text1, fontWeight: 500 }}>{seg}</span>
             ) : (
               <button
                 type="button"
                 onClick={() => onRevealDir?.(dirPath)}
                 style={{
-                  background: 'transparent', border: 0, padding: '1px 3px', borderRadius: 4,
+                  background: 'transparent', border: 0, padding: '1px 4px', borderRadius: 4,
                   color: t.text2, cursor: onRevealDir ? 'pointer' : 'default',
                   fontFamily: t.fontSans, fontSize: 11,
                 }}
@@ -427,10 +427,10 @@ function FloatingSendButton({ coords, hostRect, label, onClick }: {
       style={{
         position: 'absolute',
         left, top,
-        padding: '5px 10px', borderRadius: t.r2,
+        padding: '6px 10px', borderRadius: t.r2,
         background: t.accent, color: t.accentOn,
         border: 0, cursor: 'pointer',
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
+        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
         boxShadow: t.shadowMd,
         zIndex: 20,
       }}

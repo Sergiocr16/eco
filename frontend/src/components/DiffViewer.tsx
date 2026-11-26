@@ -315,7 +315,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
       {!hideHeader && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 10,
-          padding: isPhone ? '8px 10px' : '12px 18px',
+          padding: isPhone ? '8px 10px' : '12px 20px',
           borderBottom: `1px solid ${t.glassBorder}`,
           // En el teléfono el header del diff (icono, ruta, dos toggles,
           // búsqueda y cerrar) no entra en una fila: envuelve en dos.
@@ -330,7 +330,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
-              fontFamily: t.fontMono, fontSize: 12.5, color: t.text0,
+              fontFamily: t.fontMono, fontSize: 13, color: t.text0,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{path}</div>
             <div style={{ fontSize: 11, color: t.text2, marginTop: 1 }}>
@@ -347,7 +347,7 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
             <div style={{
               display: 'inline-flex', alignItems: 'center',
               background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              borderRadius: 7, padding: 2,
+              borderRadius: 8, padding: 2,
             }}>
               {(['unstaged', 'all'] as const).map((s) => (
                 <button key={s} type="button"
@@ -356,10 +356,10 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                     ? tr('diff.scope.unstaged_tooltip')
                     : tr('diff.scope.all_tooltip')}
                   style={{
-                    padding: '4px 10px', borderRadius: 5, border: 0,
+                    padding: '4px 10px', borderRadius: 6, border: 0,
                     background: diffScope === s ? t.accent : 'transparent',
                     color: diffScope === s ? t.accentOn : t.text2,
-                    fontSize: 11, fontWeight: 600,
+                    fontSize: 11, fontWeight: 500,
                     fontFamily: t.fontSans, cursor: 'pointer',
                   }}>
                   {s === 'unstaged' ? tr('diff.scope.unstaged') : tr('diff.scope.all')}
@@ -377,10 +377,10 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
                 ? tr('diff.compact.expand_tooltip')
                 : tr('diff.compact.compact_tooltip')}
               style={{
-                padding: '5px 10px', borderRadius: 7,
+                padding: '6px 10px', borderRadius: 8,
                 background: t.bg2, color: t.text1,
                 border: `1px solid ${t.glassBorder}`,
-                fontSize: 11, fontWeight: 600,
+                fontSize: 11, fontWeight: 500,
                 fontFamily: t.fontSans, cursor: 'pointer',
               }}>
               {compactMode ? tr('diff.compact.full') : tr('diff.compact.compact')}
@@ -436,18 +436,17 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
         {reviewMode && result?.mode === 'git' && result.hasChanges && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 18px',
+            padding: '8px 20px',
             background: t.bg1,
             borderBottom: `1px solid ${t.glassBorder}`,
           }}>
             {fileAccepted && (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
-                padding: '3px 8px', borderRadius: 999,
+                padding: '4px 8px', borderRadius: 999,
                 background: `color-mix(in oklch, ${t.ok} 18%, transparent)`,
                 color: t.ok,
-                fontSize: 10.5, fontWeight: 600,
-                textTransform: 'uppercase', letterSpacing: 0.4,
+                fontSize: 11, fontWeight: 500,
               }}>
                 <IconCheck size={9}/> {tr('diff.reviewed')}
               </span>
@@ -456,11 +455,11 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
             <button type="button" onClick={() => void discardFileAll()}
               title={tr('diff.discard_file_tooltip')}
               style={{
-                padding: '6px 12px', borderRadius: 7,
+                padding: '6px 12px', borderRadius: 8,
                 background: 'transparent', color: t.err,
                 border: `1px solid ${t.err}`,
-                fontSize: 11.5, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 600,
-                display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontSize: 12, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 500,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
               }}>
               <IconTrash size={10}/> {tr('diff.discard_file')}
             </button>
@@ -468,13 +467,13 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
               disabled={fileAccepted}
               title={tr('diff.accept_file_tooltip')}
               style={{
-                padding: '6px 14px', borderRadius: 7,
+                padding: '6px 16px', borderRadius: 8,
                 background: fileAccepted ? t.bg3 : t.ok, color: fileAccepted ? t.text3 : '#fff',
                 border: 0,
-                fontSize: 11.5, fontWeight: 600,
+                fontSize: 12, fontWeight: 500,
                 cursor: fileAccepted ? 'default' : 'pointer',
                 fontFamily: t.fontSans,
-                display: 'inline-flex', alignItems: 'center', gap: 5,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
               }}>
               <IconCheck size={10}/> {fileAccepted ? tr('diff.reviewed') : tr('diff.accept_file')}
             </button>
@@ -484,8 +483,8 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
         {/* Mensaje transitorio de acción */}
         {actionMsg && (
           <div style={{
-            padding: '6px 18px',
-            fontSize: 11.5, fontFamily: t.fontMono,
+            padding: '6px 20px',
+            fontSize: 12, fontFamily: t.fontMono,
             color: actionMsg.kind === 'ok' ? t.ok : t.err,
             background: actionMsg.kind === 'ok'
               ? `color-mix(in oklch, ${t.ok} 10%, transparent)`
@@ -575,7 +574,7 @@ export function DiffViewer({ open, path, workspace, bubbleId, onClose, pathList,
         style={{
           width: `min(1200px, ${vw(96)})`, height: vh(90),
           ...dialogSurface(t),
-          borderRadius: 18,
+          borderRadius: 20,
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
         <DiffPane
@@ -686,7 +685,7 @@ class HunkActionsWidget extends WidgetType {
     const c = this.get();
     const t = c.t;
     const wrap = document.createElement('div');
-    wrap.style.cssText = `display:flex;gap:6px;justify-content:flex-end;align-items:center;padding:3px 10px;background:${t.bg1};border-top:1px solid ${t.glassBorder};font-family:${t.fontSans};`;
+    wrap.style.cssText = `display:flex;gap:6px;justify-content:flex-end;align-items:center;padding:4px 10px;background:${t.bg1};border-top:1px solid ${t.glassBorder};font-family:${t.fontSans};`;
     const mk = (label: string, kind: 'accept' | 'reject') => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -814,7 +813,7 @@ function DiffMergeView({
           hunkActionsField,
         ],
       },
-      collapseUnchanged: compactMode ? { margin: 3, minSize: 4 } : undefined,
+      collapseUnchanged: compactMode ? { margin: 4, minSize: 4 } : undefined,
       highlightChanges: true,
       gutter: true,
       orientation: 'a-b',
@@ -901,7 +900,7 @@ function DiffMergeView({
           padding: '6px 12px',
           background: t.bg1,
           borderBottom: `1px solid ${t.glassBorder}`,
-          fontSize: 11.5, fontFamily: t.fontSans,
+          fontSize: 12, fontFamily: t.fontSans,
         }}>
           <button type="button" onClick={prevChunk}
             title={tr('diff.prev_change')}
@@ -924,7 +923,7 @@ function DiffMergeView({
 
 function navBtnStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
   return {
-    padding: '3px 8px', borderRadius: 6,
+    padding: '4px 8px', borderRadius: 6,
     background: 'transparent', color: t.text1,
     border: `1px solid ${t.glassBorder}`,
     fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans,
@@ -1043,7 +1042,7 @@ function DiffRender({
   if (mode === 'plain') {
     return (
       <pre style={{
-        margin: 0, padding: '14px 18px',
+        margin: 0, padding: '16px 20px',
         fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.6,
         color: t.text1, whiteSpace: 'pre',
         overflow: 'auto',
@@ -1090,7 +1089,7 @@ function DiffRender({
                 ? `color-mix(in oklch, ${t.ok} 10%, transparent)`
                 : `color-mix(in oklch, oklch(70% 0.14 240) 8%, transparent)`,
               color: accepted ? t.ok : 'oklch(70% 0.14 240)',
-              fontFamily: t.fontMono, fontSize: 11.5,
+              fontFamily: t.fontMono, fontSize: 12,
               borderTop: `1px solid ${t.glassBorder}`,
               borderBottom: `1px solid ${t.glassBorder}`,
             }}>
@@ -1105,11 +1104,11 @@ function DiffRender({
                     onClick={() => onRejectHunk?.(h.origIndex, h.rawText)}
                     title={tr('diff.revert_hunk_tooltip')}
                     style={{
-                      padding: '3px 8px', borderRadius: 5,
+                      padding: '4px 8px', borderRadius: 6,
                       background: 'transparent', color: t.err,
                       border: `1px solid color-mix(in oklch, ${t.err} 50%, transparent)`,
-                      fontSize: 10.5, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 600,
-                      display: 'inline-flex', alignItems: 'center', gap: 3,
+                      fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 500,
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
                     }}>
                     <IconX size={9}/> {tr('diff.reject')}
                   </button>
@@ -1118,13 +1117,13 @@ function DiffRender({
                     disabled={accepted}
                     title={tr('diff.accept_hunk_tooltip')}
                     style={{
-                      padding: '3px 10px', borderRadius: 5,
+                      padding: '4px 10px', borderRadius: 6,
                       background: accepted ? t.bg3 : t.ok, color: accepted ? t.text3 : '#fff',
                       border: 0,
-                      fontSize: 10.5, fontWeight: 600,
+                      fontSize: 11, fontWeight: 500,
                       cursor: accepted ? 'default' : 'pointer',
                       fontFamily: t.fontSans,
-                      display: 'inline-flex', alignItems: 'center', gap: 3,
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
                     }}>
                     <IconCheck size={9}/> {accepted ? tr('diff.accepted_short') : tr('diff.accept')}
                   </button>
@@ -1165,7 +1164,7 @@ function highlightMatch(text: string, q: string): React.ReactNode {
     out.push(
       <mark key={idx} style={{
         background: 'oklch(85% 0.18 90 / 0.55)',
-        color: 'inherit', padding: 0, borderRadius: 2,
+        color: 'inherit', padding: 0, borderRadius: 4,
       }}>{text.slice(idx, idx + q.length)}</mark>
     );
     i = idx + q.length;

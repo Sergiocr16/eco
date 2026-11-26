@@ -161,7 +161,7 @@ export function ChangesView({ files, workspace, bubbleId, loading }: Props) {
             display: 'flex', alignItems: 'center', gap: 8,
             flexShrink: 0,
           }}>
-            <div style={{ flex: 1, fontSize: 11.5, color: t.text2, minWidth: 0 }}>
+            <div style={{ flex: 1, fontSize: 12, color: t.text2, minWidth: 0 }}>
               <strong style={{ color: t.text0 }}>{files.length}</strong> {files.length === 1 ? tr('git.changes.file_one') : tr('git.changes.file_many')}
               {reviewMode && pending > 0 && (
                 <span style={{ marginLeft: 6, color: t.warn }}>
@@ -255,11 +255,11 @@ function DiscardAllDialog({ count, onCancel, onConfirm }: {
       }}
     >
       <div style={{
-        maxWidth: 440, width: '90%', padding: 18,
+        maxWidth: 440, width: '90%', padding: 20,
         ...dialogSurface(t),
         borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
           {tr('git.changes.discard_all_title')}
         </div>
         <div style={{ fontSize: 13, color: t.text1, marginBottom: 16, lineHeight: 1.5 }}>
@@ -285,7 +285,7 @@ function DiscardAllDialog({ count, onCancel, onConfirm }: {
             style={{
               padding: '6px 12px', borderRadius: t.r2,
               background: t.err, color: '#fff', border: 0,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 600,
+              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
             }}
           >
             {tr('git.changes.discard_all')}
@@ -325,7 +325,7 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
         // 5 hijos en una fila con targets de 22px: en táctil se sube la
         // altura y se esconde el botón de abrir-en-editor (queda un toque
         // más lejos, desde el propio panel de Files).
-        padding: isPhone ? '12px 12px' : '7px 12px',
+        padding: isPhone ? '12px 12px' : '8px 12px',
         display: 'flex', alignItems: 'center', gap: 8,
         background: isSelected ? t.accentFaint : 'transparent',
         borderLeft: isSelected ? `3px solid ${t.accent}` : '3px solid transparent',
@@ -341,21 +341,20 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
           style={{
             width: 8, height: 8, borderRadius: '50%',
             background: dotColor,
-            boxShadow: accepted ? 'none' : `0 0 5px ${dotColor}`,
             flexShrink: 0,
           }}/>
       )}
       <IconFile size={12}/>
       <code style={{
-        flex: 1, fontFamily: t.fontMono, fontSize: 11.5,
+        flex: 1, fontFamily: t.fontMono, fontSize: 12,
         color: t.text0,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         minWidth: 0,
       }}>{display}</code>
       {hasUnstaged && file.change === 'created' && (
         <span style={{
-          fontSize: 9, fontWeight: 700, color: t.ok,
-          padding: '1px 5px', borderRadius: 3,
+          fontSize: 11, fontWeight: 600, color: t.ok,
+          padding: '1px 6px', borderRadius: 4,
           background: `color-mix(in oklch, ${t.ok} 14%, transparent)`,
         }}>+</span>
       )}

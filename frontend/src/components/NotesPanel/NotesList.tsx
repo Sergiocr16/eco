@@ -94,7 +94,7 @@ export function NotesList({
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder={tr('notes.search')}
           style={{
-            padding: '5px 10px', borderRadius: t.r2,
+            padding: '6px 10px', borderRadius: t.r2,
             background: t.bg1, color: t.text0,
             border: `1px solid ${t.glassBorder}`, outline: 'none',
             fontSize: 12, fontFamily: t.fontSans,
@@ -104,9 +104,12 @@ export function NotesList({
       {/* Lista */}
       <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
         {filtered.length === 0 ? (
-          <div style={{ padding: 14, color: t.text2, fontSize: 12, fontFamily: t.fontSans }}>
-            {notes.length === 0 ? tr('notes.empty_desc') : tr('notes.no_match')}
-          </div>
+          // With no notes at all the editor side already shows the empty state.
+          notes.length === 0 ? null : (
+            <div style={{ padding: 16, color: t.text2, fontSize: 12, fontFamily: t.fontSans }}>
+              {tr('notes.no_match')}
+            </div>
+          )
         ) : (
           filtered.map((n) => (
             <NoteRow
@@ -157,7 +160,7 @@ function NoteRow({ note, active, onActivate, onDelete }: {
         }}>
           {title}
         </div>
-        <span style={{ color: t.text3, fontSize: 10.5, fontFamily: t.fontMono, flexShrink: 0 }}>
+        <span style={{ color: t.text3, fontSize: 11, fontFamily: t.fontMono, flexShrink: 0 }}>
           {stamp}
         </span>
         <button
@@ -179,7 +182,7 @@ function NoteRow({ note, active, onActivate, onDelete }: {
       </div>
       {preview && (
         <div style={{
-          color: t.text2, fontSize: 11.5, fontFamily: t.fontSans,
+          color: t.text2, fontSize: 12, fontFamily: t.fontSans,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {preview}

@@ -43,13 +43,13 @@ export function ViewportMenu({ selection, disabled, onChange }: Props) {
           title={tr('browser.viewport.label')}
           aria-label={tr('browser.viewport.label')}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
             height: 26, padding: '0 8px', border: 0, borderRadius: 6,
             background: viewport === 'desktop' ? t.bg2 : `color-mix(in oklch, ${t.accent} 18%, transparent)`,
             color: viewport === 'desktop' ? t.text1 : t.accent,
             cursor: disabled ? 'not-allowed' : 'pointer',
             opacity: disabled ? 0.4 : 1,
-            fontFamily: t.fontMono, fontSize: 10.5, whiteSpace: 'nowrap',
+            fontFamily: t.fontMono, fontSize: 11, whiteSpace: 'nowrap',
           }}
         >
           <TriggerIcon size={12}/>
@@ -169,7 +169,7 @@ function FamilyMenu({ family, label, selection, onChange }: {
             <DropdownMenu.Item key={m.id} onSelect={() => enter({ deviceModel: m.id })}
               style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
               <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{m.name}</span>
-              <span style={{ fontFamily: t.fontMono, fontSize: 10.5, color: t.text3 }}>{m.width}×{m.height}</span>
+              <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>{m.width}×{m.height}</span>
               <span style={{ width: 13, display: 'inline-flex' }}>
                 {active && model.id === m.id && <Check size={13} color={t.accent}/>}
               </span>
@@ -215,8 +215,8 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   const t = useTokens();
   return (
     <div style={{
-      padding: '4px 10px 2px', fontFamily: t.fontSans, fontSize: 10.5, fontWeight: 600,
-      letterSpacing: 0.4, textTransform: 'uppercase', color: t.text3,
+      padding: '4px 10px 2px', fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
+      color: t.text3,
     }}>{children}</div>
   );
 }

@@ -28,7 +28,7 @@ export function ServerHeaderControl({ bubbleId, workspace }: { bubbleId: string;
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0,
-      height: 32, padding: '0 3px 0 0', borderRadius: 10,
+      height: 32, padding: '0 4px 0 0', borderRadius: 10,
       border: `1px solid ${t.glassBorder}`, background: t.glassBg,
     }}>
       <button

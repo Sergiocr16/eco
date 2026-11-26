@@ -115,11 +115,11 @@ export function PRsView({ workspace, bubbleId }: Props) {
       left={
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: t.bg0 }}>
           <div style={{
-            padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8,
             borderBottom: `1px solid ${t.glassBorder}`,
             flexShrink: 0,
           }}>
-            <div style={{ flex: 1, fontSize: 11.5, color: t.text2 }}>
+            <div style={{ flex: 1, fontSize: 12, color: t.text2 }}>
               <strong style={{ color: t.text0 }}>{prs.length}</strong> {prs.length === 1 ? tr('prs.list.open_one') : tr('prs.list.open_many')}
             </div>
             <button type="button"
@@ -172,7 +172,7 @@ function PrRow({ pr, active, onClick }: { pr: PullRequest; active: boolean; onCl
     <button type="button"
       onClick={onClick}
       style={{
-        width: '100%', padding: '10px 14px',
+        width: '100%', padding: '10px 16px',
         display: 'flex', flexDirection: 'column', gap: 4,
         border: 0, background: active ? t.accentFaint : 'transparent',
         borderLeft: active ? `3px solid ${t.accent}` : '3px solid transparent',
@@ -184,20 +184,20 @@ function PrRow({ pr, active, onClick }: { pr: PullRequest; active: boolean; onCl
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{
           fontFamily: t.fontMono, fontSize: 11,
-          color: pr.isDraft ? t.text3 : t.accent, fontWeight: 700,
+          color: pr.isDraft ? t.text3 : t.accent, fontWeight: 600,
           flexShrink: 0,
         }}>#{pr.number}</span>
         <div style={{
           flex: 1, minWidth: 0,
-          fontSize: 12.5, fontWeight: 500, color: t.text0,
+          fontSize: 13, fontWeight: 500, color: t.text0,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{pr.title}</div>
       </div>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6, marginTop: 2,
-        fontSize: 10.5, color: t.text3, flexWrap: 'wrap',
+        fontSize: 11, color: t.text3, flexWrap: 'wrap',
       }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <IconUser size={9}/>
           <span>{pr.author || tr('common.empty_dash')}</span>
         </span>
@@ -205,17 +205,17 @@ function PrRow({ pr, active, onClick }: { pr: PullRequest; active: boolean; onCl
         <span>{formatRelTime(pr.updatedAt || pr.createdAt)}</span>
         {pr.isDraft && (
           <span style={{
-            padding: '0 5px', borderRadius: 3,
+            padding: '0 6px', borderRadius: 4,
             background: t.bg3, color: t.text2,
-            fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
+            fontSize: 11, fontWeight: 500,
           }}>{tr('prs.list.draft')}</span>
         )}
         {pr.isFork && (
           <span style={{
-            padding: '0 5px', borderRadius: 3,
+            padding: '0 6px', borderRadius: 4,
             background: `color-mix(in oklch, ${t.warn} 18%, transparent)`,
             color: t.warn,
-            fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
+            fontSize: 11, fontWeight: 500,
           }}>{tr('prs.list.fork')}</span>
         )}
         {(pr.additions != null || pr.deletions != null) && (
@@ -438,11 +438,11 @@ function PrDetailPane({
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span style={{
             fontFamily: t.fontMono, fontSize: 12,
-            color: isDraft ? t.text3 : t.accent, fontWeight: 700,
+            color: isDraft ? t.text3 : t.accent, fontWeight: 600,
           }}>#{number}</span>
           <div style={{
             flex: 1, minWidth: 0,
-            fontSize: 14, fontWeight: 600, color: t.text0,
+            fontSize: 14, fontWeight: 500, color: t.text0,
           }}>{title}</div>
           <StateBadge state={state} isDraft={isDraft}/>
         </div>
@@ -468,10 +468,10 @@ function PrDetailPane({
           {url && (
             <a href={url} target="_blank" rel="noopener noreferrer"
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '6px 10px', borderRadius: 7,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 10px', borderRadius: 8,
                 background: 'transparent', border: `1px solid ${t.glassBorder}`,
-                color: t.text2, fontSize: 11.5, textDecoration: 'none',
+                color: t.text2, fontSize: 12, textDecoration: 'none',
               }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.glassBorder; e.currentTarget.style.color = t.text2; }}>
@@ -483,7 +483,7 @@ function PrDetailPane({
             disabled={!!busyAction}
             title={tr('prs.detail.refresh_comments')}
             style={{
-              width: 28, height: 28, padding: 0, borderRadius: 7,
+              width: 28, height: 28, padding: 0, borderRadius: 8,
               background: 'transparent', border: `1px solid ${t.glassBorder}`,
               color: t.text2, cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -541,7 +541,7 @@ function PrDetailPane({
           background: t.bg1,
           display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
         }}>
-          <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: t.text3 }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: t.text3 }}>
             {isDraft
               ? tr('prs.detail.draft_hint')
               : tr('prs.detail.actions_on', { n: number })}
@@ -552,10 +552,10 @@ function PrDetailPane({
               disabled={!!busyAction}
               title={tr('prs.detail.ready_tooltip')}
               style={{
-                height: 32, padding: '0 14px', borderRadius: 8,
+                height: 32, padding: '0 16px', borderRadius: 8,
                 background: 'transparent', border: `1px solid ${t.accent}`,
                 color: t.accent,
-                fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
+                fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
                 cursor: busyAction ? 'wait' : 'pointer',
               }}>
               {busyAction === 'ready' ? '…' : tr('prs.detail.ready_btn')}
@@ -565,10 +565,10 @@ function PrDetailPane({
             onClick={() => setCloseConfirm({ comment: '' })}
             disabled={!!busyAction}
             style={{
-              height: 32, padding: '0 14px', borderRadius: 8,
+              height: 32, padding: '0 16px', borderRadius: 8,
               background: 'transparent', border: `1px solid ${t.err}`,
               color: t.err,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
               cursor: busyAction ? 'wait' : 'pointer',
             }}>
             {busyAction === 'close' ? '…' : tr('prs.detail.close_btn')}
@@ -578,10 +578,10 @@ function PrDetailPane({
             disabled={!!busyAction || isDraft}
             title={isDraft ? tr('prs.detail.draft_cant_merge') : tr('prs.detail.merge_tooltip')}
             style={{
-              height: 32, padding: '0 14px', borderRadius: 8, border: 0,
+              height: 32, padding: '0 16px', borderRadius: 8, border: 0,
               background: isDraft ? t.bg3 : t.accent,
               color: isDraft ? t.text3 : t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
               cursor: busyAction || isDraft ? 'not-allowed' : 'pointer',
             }}>
             {busyAction === 'merge' ? '…' : tr('prs.detail.merge_btn')}
@@ -660,14 +660,14 @@ function MergeConfirm({
         ...dialogSurface(t, { border: t.accent }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>
           {tr('prs.merge_confirm.title', { n: prNumber })}
         </div>
-        <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
+        <div style={{ fontSize: 13, color: t.text1, lineHeight: 1.55 }}>
           {tr('prs.merge_confirm.body_pre')} <strong>{commitsCount}</strong> {commitsCount === 1 ? tr('prs.merge_confirm.commit_one') : tr('prs.merge_confirm.commit_many')}{' '}
-          <code style={{ fontFamily: t.fontMono, padding: '1px 5px', borderRadius: 4, background: t.bg3, color: t.text0 }}>{headRef}</code>{' '}
+          <code style={{ fontFamily: t.fontMono, padding: '1px 6px', borderRadius: 4, background: t.bg3, color: t.text0 }}>{headRef}</code>{' '}
           {tr('prs.merge_confirm.into')}{' '}
-          <code style={{ fontFamily: t.fontMono, padding: '1px 5px', borderRadius: 4, background: t.bg3, color: t.text0 }}>{baseRef}</code>{' '}
+          <code style={{ fontFamily: t.fontMono, padding: '1px 6px', borderRadius: 4, background: t.bg3, color: t.text0 }}>{baseRef}</code>{' '}
           {tr('prs.merge_confirm.into_remote')}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -684,7 +684,7 @@ function MergeConfirm({
                 onChange={() => setMethod(m.id)}
                 style={{ margin: '4px 0 0' }}/>
               <div>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: method === m.id ? t.accent : t.text0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: method === m.id ? t.accent : t.text0 }}>
                   {m.label}
                 </div>
                 <div style={{ fontSize: 11, color: t.text2, marginTop: 2 }}>{m.desc}</div>
@@ -698,16 +698,16 @@ function MergeConfirm({
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onCancel}
             style={{
-              height: 28, padding: '0 14px', borderRadius: 7,
+              height: 28, padding: '0 16px', borderRadius: 8,
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
               fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
             }}>{tr('common.cancel')}</button>
           <button type="button" onClick={() => onConfirm(method)}
             style={{
-              height: 28, padding: '0 14px', borderRadius: 7, border: 0,
+              height: 28, padding: '0 16px', borderRadius: 8, border: 0,
               background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
             }}>{tr('prs.merge_confirm.confirm')}</button>
         </div>
@@ -737,10 +737,10 @@ function ReadyConfirm({
         ...dialogSurface(t, { border: t.accent }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>
           {tr('prs.ready_confirm.title', { n: prNumber })}
         </div>
-        <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
+        <div style={{ fontSize: 13, color: t.text1, lineHeight: 1.55 }}>
           <em>{title}</em>
         </div>
         <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
@@ -749,16 +749,16 @@ function ReadyConfirm({
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onCancel}
             style={{
-              height: 28, padding: '0 14px', borderRadius: 7,
+              height: 28, padding: '0 16px', borderRadius: 8,
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
               fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
             }}>{tr('common.cancel')}</button>
           <button type="button" onClick={onConfirm}
             style={{
-              height: 28, padding: '0 14px', borderRadius: 7, border: 0,
+              height: 28, padding: '0 16px', borderRadius: 8, border: 0,
               background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
             }}>{tr('prs.ready_confirm.confirm')}</button>
         </div>
@@ -790,10 +790,10 @@ function CloseConfirm({
         ...dialogSurface(t, { border: t.err }),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.err }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: t.err }}>
           {tr('prs.close_confirm.title', { n: prNumber })}
         </div>
-        <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
+        <div style={{ fontSize: 13, color: t.text1, lineHeight: 1.55 }}>
           <em>{title}</em>
         </div>
         <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
@@ -813,16 +813,16 @@ function CloseConfirm({
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onCancel}
             style={{
-              height: 28, padding: '0 14px', borderRadius: 7,
+              height: 28, padding: '0 16px', borderRadius: 8,
               background: 'transparent', color: t.text2,
               border: `1px solid ${t.glassBorder}`,
               fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
             }}>{tr('common.cancel')}</button>
           <button type="button" onClick={() => onConfirm(comment)}
             style={{
-              height: 28, padding: '0 14px', borderRadius: 7, border: 0,
+              height: 28, padding: '0 16px', borderRadius: 8, border: 0,
               background: t.err, color: '#fff',
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
+              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
             }}>{tr('prs.detail.close_btn')}</button>
         </div>
@@ -840,9 +840,9 @@ function StateBadge({ state, isDraft }: { state: string; isDraft: boolean }) {
   const label = isDraft ? 'DRAFT' : state;
   return (
     <span style={{
-      padding: '2px 8px', borderRadius: 5,
+      padding: '2px 8px', borderRadius: 6,
       background: `color-mix(in oklch, ${color} 16%, transparent)`,
-      color, fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+      color, fontSize: 11, fontWeight: 600, letterSpacing: 0.4,
       flexShrink: 0,
     }}>{label}</span>
   );
@@ -854,7 +854,7 @@ function BranchPill({ name }: { name: string }) {
   return (
     <code style={{
       fontFamily: t.fontMono, fontSize: 11,
-      padding: '1px 6px', borderRadius: 5,
+      padding: '1px 6px', borderRadius: 6,
       background: t.bg3, color: t.text0,
     }}>{name || tr('common.empty_dash')}</code>
   );
@@ -887,18 +887,18 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
 
   return (
     <div style={{
-      padding: '14px 20px',
+      padding: '16px 20px',
       borderBottom: `1px solid ${t.glassBorder}`,
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        fontSize: 11.5, color: t.text2, marginBottom: 8,
+        fontSize: 12, color: t.text2, marginBottom: 8,
       }}>
         <span style={{
           width: 22, height: 22, borderRadius: '50%',
           background: t.bg3, color: t.text1,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 10, fontWeight: 700,
+          fontSize: 11, fontWeight: 600,
           flexShrink: 0,
         }}>{(author || '?').slice(0, 1).toUpperCase()}</span>
         <strong style={{ color: t.text0 }}>{author || tr('prs.detail.anon')}</strong>
@@ -907,21 +907,21 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
           {kindLabel}
         </span>
         {createdAt && (
-          <span style={{ marginLeft: 'auto', color: t.text3, fontSize: 10.5 }}>
+          <span style={{ marginLeft: 'auto', color: t.text3, fontSize: 11 }}>
             {formatRelTime(createdAt)}
           </span>
         )}
       </div>
       {body ? (
         <div style={{
-          padding: '10px 14px', borderRadius: 8,
+          padding: '10px 16px', borderRadius: 8,
           background: kind === 'body' ? t.bg2 : t.bg1,
           border: `1px solid ${t.glassBorder}`,
         }}>
           <Markdown source={body}/>
         </div>
       ) : (
-        <div style={{ fontSize: 11.5, color: t.text3, fontStyle: 'italic' }}>
+        <div style={{ fontSize: 12, color: t.text3, fontStyle: 'italic' }}>
           {tr('prs.detail.no_text')}
         </div>
       )}
@@ -939,7 +939,7 @@ function ErrorBlock({ error, code }: { error: string; code?: string }) {
     : null;
   return (
     <div style={{
-      padding: '12px 14px', borderRadius: 10,
+      padding: '12px 16px', borderRadius: 10,
       background: `color-mix(in oklch, ${t.warn} 10%, transparent)`,
       color: t.text1,
       fontSize: 12, lineHeight: 1.5,

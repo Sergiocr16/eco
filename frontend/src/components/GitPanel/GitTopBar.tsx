@@ -191,11 +191,11 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
           onClick={() => onRenameAgent(branchName)}
           title={tr('git.topbar.rename_agent_tooltip', { name: branchName })}
           style={{
-            height: 28, padding: '0 10px', borderRadius: 7,
+            height: 28, padding: '0 10px', borderRadius: 8,
             border: `1px solid ${t.glassBorder}`,
             background: t.bg2, color: t.text1,
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 500,
+            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
             cursor: 'pointer',
             whiteSpace: 'nowrap',
           }}
@@ -211,7 +211,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
         <button type="button"
           onClick={() => setMoreMenuOpen((v) => !v)}
           style={{
-            height: 28, width: 28, padding: 0, borderRadius: 7,
+            height: 28, width: 28, padding: 0, borderRadius: 8,
             border: `1px solid ${t.glassBorder}`,
             background: t.bg2, color: t.text1,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -336,11 +336,11 @@ function SyncButton({
         marginLeft: 2,
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 28, padding: '0 12px',
-        borderRadius: 7,
+        borderRadius: 8,
         border,
         background: bg,
         color: fg,
-        fontFamily: t.fontSans, fontSize: 11.5, fontWeight: 600,
+        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
         cursor: busy ? 'wait' : (disabled ? 'not-allowed' : 'pointer'),
         opacity: disabled ? 0.45 : 1,
         whiteSpace: 'nowrap',
@@ -368,8 +368,8 @@ function SyncButton({
           {behind > 0 && (
             <span title={behind === 1 ? tr('git.topbar.sync.behind_one', { n: behind }) : tr('git.topbar.sync.behind_many', { n: behind })}
               style={{
-                fontFamily: t.fontMono, fontSize: 10.5, fontWeight: 700,
-                padding: '0 5px', borderRadius: 4,
+                fontFamily: t.fontMono, fontSize: 11, fontWeight: 600,
+                padding: '0 6px', borderRadius: 4,
                 background: badgeBg,
                 color: actionable ? t.accentOn : t.warn,
               }}>↓{behind}</span>
@@ -377,8 +377,8 @@ function SyncButton({
           {ahead > 0 && (
             <span title={ahead === 1 ? tr('git.topbar.sync.ahead_one', { n: ahead }) : tr('git.topbar.sync.ahead_many', { n: ahead })}
               style={{
-                fontFamily: t.fontMono, fontSize: 10.5, fontWeight: 700,
-                padding: '0 5px', borderRadius: 4,
+                fontFamily: t.fontMono, fontSize: 11, fontWeight: 600,
+                padding: '0 6px', borderRadius: 4,
                 background: badgeBg,
                 color: actionable ? t.accentOn : t.ok,
               }}>↑{ahead}</span>
@@ -404,7 +404,7 @@ function BranchChip({ branchName, detached, isOpen, onToggle }: {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 28, padding: '0 10px',
-        borderRadius: 7,
+        borderRadius: 8,
         background: isOpen ? t.accentFaint : t.bg2,
         border: `1px solid ${isOpen ? t.accent : t.glassBorder}`,
         color: t.text0,
@@ -417,7 +417,7 @@ function BranchChip({ branchName, detached, isOpen, onToggle }: {
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         flex: 1, minWidth: 0, textAlign: 'left',
       }}>{detached ? `${tr('git.topbar.branch.detached_prefix')} ${branchName}` : branchName}</code>
-      <span style={{ color: t.text2, fontSize: 10 }}>▾</span>
+      <span style={{ color: t.text2, fontSize: 11 }}>▾</span>
     </button>
   );
 }
@@ -460,7 +460,7 @@ function MoreMenu({ t, onClose, onRename, onMerge, onPRs, onRenameAgent }: {
         <button key={i} type="button"
           onClick={it.onClick}
           style={{
-            width: '100%', padding: '7px 10px', textAlign: 'left',
+            width: '100%', padding: '8px 10px', textAlign: 'left',
             border: 0, background: 'transparent', borderRadius: 6,
             color: t.text1,
             fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
@@ -560,7 +560,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
             placeholder={tr('git.topbar.dropdown.search')}
             style={{
               flex: 1, background: 'transparent', border: 0,
-              fontFamily: t.fontMono, fontSize: 12.5, color: t.text0,
+              fontFamily: t.fontMono, fontSize: 13, color: t.text0,
               outline: 'none',
             }}/>
         </div>
@@ -577,7 +577,7 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
                 padding: '4px 12px', borderRadius: 6, border: 0,
                 background: tab === k ? t.accentDim : 'transparent',
                 color: tab === k ? t.accentOn : t.text2,
-                fontFamily: t.fontSans, fontSize: 11.5, fontWeight: tab === k ? 600 : 500,
+                fontFamily: t.fontSans, fontSize: 12, fontWeight: tab === k ? 500 : 500,
                 cursor: 'pointer',
               }}>
               {k === 'local' ? tr('git.topbar.dropdown.local') : tr('git.topbar.dropdown.remote')}
@@ -613,18 +613,18 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
                 <code style={{
                   flex: 1, fontFamily: t.fontMono, fontSize: 12,
                   color: b.isCurrent ? t.accent : t.text0,
-                  fontWeight: b.isCurrent ? 600 : 400,
+                  fontWeight: b.isCurrent ? 500 : 400,
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>{b.name}</code>
                 {(b.ahead !== undefined && b.ahead > 0) && (
-                  <span style={{ fontSize: 10.5, color: t.ok, fontFamily: t.fontMono }}>↑{b.ahead}</span>
+                  <span style={{ fontSize: 11, color: t.ok, fontFamily: t.fontMono }}>↑{b.ahead}</span>
                 )}
                 {(b.behind !== undefined && b.behind > 0) && (
-                  <span style={{ fontSize: 10.5, color: t.warn, fontFamily: t.fontMono }}>↓{b.behind}</span>
+                  <span style={{ fontSize: 11, color: t.warn, fontFamily: t.fontMono }}>↓{b.behind}</span>
                 )}
                 {b.lastCommit && (
                   <span style={{
-                    fontSize: 10, color: t.text3,
+                    fontSize: 11, color: t.text3,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     maxWidth: 140,
                   }}>{b.lastCommit.relTime}</span>
@@ -638,13 +638,13 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
           <div style={{
             padding: '8px 12px', borderTop: `1px solid ${t.err}`,
             background: `color-mix(in oklch, ${t.err} 10%, transparent)`,
-            color: t.err, fontSize: 11.5,
+            color: t.err, fontSize: 12,
           }}>{err}</div>
         )}
 
         <div style={{
           padding: '6px 12px', borderTop: `1px solid ${t.glassBorder}`,
-          fontSize: 10.5, color: t.text3,
+          fontSize: 11, color: t.text3,
         }}>
           {tr('git.topbar.dropdown.tip')}
         </div>
@@ -697,7 +697,7 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
         ...dialogSurface(t),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('git.topbar.rename.title')}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>{tr('git.topbar.rename.title')}</div>
         <div style={{ fontSize: 12, color: t.text2 }}>
           {tr('git.topbar.rename.body')} <code style={{ fontFamily: t.fontMono }}>{current}</code>:
         </div>
@@ -713,7 +713,7 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
           }}/>
         {err && (
           <div style={{
-            fontSize: 11.5, color: t.err, fontFamily: t.fontMono,
+            fontSize: 12, color: t.err, fontFamily: t.fontMono,
             padding: '4px 6px', borderRadius: 4, background: t.bg2,
           }}>{err}</div>
         )}
@@ -791,7 +791,7 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
         ...dialogSurface(t),
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>{tr('git.topbar.merge.title')}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>{tr('git.topbar.merge.title')}</div>
         <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
           {tr('git.topbar.merge.body', { branch: currentBranch })}
         </div>
@@ -830,10 +830,10 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   width: '100%', textAlign: 'left',
-                  padding: '7px 12px', border: 0,
+                  padding: '8px 12px', border: 0,
                   background: sel ? t.accentFaint : 'transparent',
                   color: sel ? t.accent : t.text1,
-                  fontFamily: t.fontMono, fontSize: 12.5,
+                  fontFamily: t.fontMono, fontSize: 13,
                   cursor: busy ? 'default' : 'pointer',
                 }}
                 onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = t.bg3; }}
@@ -877,7 +877,7 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
 
 function ghostBtn(t: ReturnType<typeof useTokens>): React.CSSProperties {
   return {
-    height: 28, padding: '0 14px', borderRadius: 7,
+    height: 28, padding: '0 16px', borderRadius: 8,
     background: 'transparent', color: t.text2,
     border: `1px solid ${t.glassBorder}`,
     fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
@@ -885,10 +885,10 @@ function ghostBtn(t: ReturnType<typeof useTokens>): React.CSSProperties {
 }
 function primaryBtn(t: ReturnType<typeof useTokens>, disabled: boolean): React.CSSProperties {
   return {
-    height: 28, padding: '0 14px', borderRadius: 7, border: 0,
+    height: 28, padding: '0 16px', borderRadius: 8, border: 0,
     background: disabled ? t.bg3 : t.accent,
     color: disabled ? t.text3 : t.accentOn,
-    fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
+    fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
 }

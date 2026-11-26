@@ -119,7 +119,7 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
               onClick={() => closeThisWindow(bubbleId)}
               style={{
                 padding: '8px 16px', borderRadius: 8, border: `1px solid ${t.glassBorder}`,
-                background: t.bg2, color: t.text1, cursor: 'pointer', fontSize: 12.5,
+                background: t.bg2, color: t.text1, cursor: 'pointer', fontSize: 13,
               }}>{tr('solo.close')}</button>
           </div>
         )}

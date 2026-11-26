@@ -157,11 +157,11 @@ function SubtabBtn({
       onClick={onClick}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '5px 12px', borderRadius: 7,
+        padding: '6px 12px', borderRadius: 8,
         border: 0,
-        background: active ? t.accentDim : 'transparent',
-        color: active ? t.accentOn : t.text1,
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: active ? 600 : 500,
+        background: active ? t.bg3 : 'transparent',
+        color: active ? t.text0 : t.text2,
+        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
         cursor: 'pointer',
         whiteSpace: 'nowrap',
       }}>
@@ -169,11 +169,11 @@ function SubtabBtn({
       <span>{label}</span>
       {badge !== undefined && badge > 0 && (
         <span style={{
-          minWidth: 18, height: 18, padding: '0 5px',
-          borderRadius: 9,
-          background: active ? t.accentOn : t.accent,
-          color: active ? t.accentDim : t.accentOn,
-          fontSize: 10, fontWeight: 700,
+          minWidth: 18, height: 18, padding: '0 6px',
+          borderRadius: 8,
+          background: t.bg4,
+          color: t.text1,
+          fontSize: 11, fontWeight: 500,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         }}>{badge}</span>
       )}

@@ -32,10 +32,10 @@ export function ArchivedScreen({ bubbles, onUnarchive, onDelete, onOpen }: Props
 
   return (
     <div style={{ padding: '28px 32px', overflow: 'auto', height: '100%' }}>
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: t.text0, letterSpacing: -0.4 }}>
+      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.4 }}>
         {tr('archived.title')}
       </h2>
-      <p style={{ margin: '4px 0 18px', fontSize: 13, color: t.text2 }}>
+      <p style={{ margin: '4px 0 20px', fontSize: 13, color: t.text2 }}>
         {tr('archived.sub')}
       </p>
 
@@ -118,8 +118,8 @@ function ArchivedRow({ bubble, onUnarchive, onOpen, onDelete }: {
   const stamp = formatArchivedStamp(bubble.archivedAt ?? 0, tr);
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 14,
-      padding: '12px 14px',
+      display: 'flex', alignItems: 'center', gap: 16,
+      padding: '12px 16px',
       background: t.bg2, border: `1px solid ${t.glassBorder}`,
       borderRadius: 12, fontFamily: t.fontSans,
     }}>
@@ -135,7 +135,7 @@ function ArchivedRow({ bubble, onUnarchive, onOpen, onDelete }: {
       >
         <AgentGlyph size={36} state="idle" letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text0,
+          <div style={{ fontSize: 14, fontWeight: 500, color: t.text0,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {bubble.title}
           </div>
@@ -153,7 +153,7 @@ function ArchivedRow({ bubble, onUnarchive, onOpen, onDelete }: {
         onClick={onUnarchive}
         title={tr('archived.unarchive_tooltip')}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 5,
+          display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '6px 12px', borderRadius: 6,
           background: 'transparent', color: t.ok,
           border: `1px solid ${t.ok}`,
@@ -168,7 +168,7 @@ function ArchivedRow({ bubble, onUnarchive, onOpen, onDelete }: {
         onClick={onDelete}
         title={tr('archived.delete_permanent_tooltip')}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 5,
+          display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '6px 12px', borderRadius: 6,
           background: 'transparent', color: t.err,
           border: `1px solid ${t.err}`,
@@ -201,7 +201,7 @@ function ConfirmDeleteDialog({ bubble, onCancel, onConfirm }: {
       }}
     >
       <div style={{
-        maxWidth: 440, width: '90%', padding: 22,
+        maxWidth: 440, width: '90%', padding: 24,
         ...dialogSurface(t),
         borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
       }}>
@@ -215,7 +215,7 @@ function ConfirmDeleteDialog({ bubble, onCancel, onConfirm }: {
           }}>
             <IconTrash size={16}/>
           </div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>
+          <div style={{ fontSize: 16, fontWeight: 500 }}>
             {tr('archived.delete_confirm_title')}
           </div>
           <span style={{ flex: 1 }}/>
@@ -232,7 +232,7 @@ function ConfirmDeleteDialog({ bubble, onCancel, onConfirm }: {
         <div style={{ fontSize: 13, color: t.text1, marginBottom: 6 }}>
           «{bubble.title}»
         </div>
-        <div style={{ fontSize: 12.5, color: t.text2, marginBottom: 18, lineHeight: 1.55 }}>
+        <div style={{ fontSize: 13, color: t.text2, marginBottom: 20, lineHeight: 1.55 }}>
           {tr('archived.delete_confirm_body')}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -240,7 +240,7 @@ function ConfirmDeleteDialog({ bubble, onCancel, onConfirm }: {
             type="button"
             onClick={onCancel}
             style={{
-              padding: '8px 14px', borderRadius: 8,
+              padding: '8px 16px', borderRadius: 8,
               background: 'transparent', color: t.text1,
               border: `1px solid ${t.glassBorder}`,
               cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
@@ -250,9 +250,9 @@ function ConfirmDeleteDialog({ bubble, onCancel, onConfirm }: {
             type="button"
             onClick={onConfirm}
             style={{
-              padding: '8px 14px', borderRadius: 8,
+              padding: '8px 16px', borderRadius: 8,
               background: t.err, color: '#fff', border: 0,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 600,
+              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
             }}
           >{tr('archived.delete_permanent')}</button>
         </div>
