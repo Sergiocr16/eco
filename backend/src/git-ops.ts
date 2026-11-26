@@ -9,6 +9,7 @@ import { buildSafeEnv } from './security.js';
 import { config } from './config.js';
 import { githubEnvOverrides, gitIdentityArgs } from './github-runtime.js';
 import { toGitPath } from './platform.js';
+import { worktreeBranchName } from './worktree-manager.js';
 
 const GIT_TIMEOUT = 10_000;
 
@@ -252,7 +253,117 @@ export function listBranches(workspace: string): BranchListResult {
 
 export type GitActionResult =
   | { ok: true; message: string }
-  | { ok: false; error: string; code?: string; files?: string[] };
+  | { ok: false; error: string; code?: string; files?: string[]; holder?: BranchHolder };
+
+// Otro worktree del mismo repo tiene checked-out la rama que pedimos.
+export type BranchHolder = {
+  path: string;
+  branch?: string;
+  /** Id de la bubble si el worktree vive en ~/.eco/worktrees/<bubbleId>. */
+  bubbleId?: string;
+  dirty: boolean;
+};
+
+const WORKTREE_CONFLICT_RE = /already (?:used|checked out) by worktree at '([^']+)'/;
+
+function ecoWorktreesRoot(): string {
+  return pathResolve(homedir(), '.eco', 'worktrees');
+}
+
+// git reporta el path con '/' incluso en Windows; normalizamos al sep del SO.
+function normPath(p: string): string {
+  return pathResolve(p.replace(/\//g, pathSep));
+}
+
+function registeredWorktrees(workspace: string): string[] {
+  const r = git(['worktree', 'list', '--porcelain'], workspace);
+  if (!r.ok) return [];
+  return r.stdout.split('\n')
+    .filter((l) => l.startsWith('worktree '))
+    .map((l) => normPath(l.slice('worktree '.length).trim()));
+}
+
+function describeHolder(path: string): BranchHolder {
+  const norm = normPath(path);
+  const root = ecoWorktreesRoot();
+  const bubbleId = norm.startsWith(root + pathSep)
+    ? norm.slice(root.length + 1).split(pathSep)[0] || undefined
+    : undefined;
+  const st = git(['status', '--porcelain'], norm);
+  return { path: norm, bubbleId, dirty: st.ok && st.stdout.trim().length > 0 };
+}
+
+/**
+ * Libera la rama que tiene otro worktree sin tocar su contenido: el HEAD sigue
+ * en el mismo commit, así que los cambios sin commitear se conservan. Una
+ * bubble de Eco pasa a una rama propia `eco/<id>` (sus próximos commits no
+ * quedan sueltos); cualquier otro worktree queda en detached HEAD.
+ */
+function releaseBranchFromWorktree(workspace: string, holderPath: string): { ok: true } | { ok: false; error: string } {
+  const target = normPath(holderPath);
+  if (!registeredWorktrees(workspace).includes(target)) {
+    return { ok: false, error: `${holderPath} no es un worktree de este repo` };
+  }
+  const { bubbleId } = describeHolder(target);
+  let args = ['checkout', '--detach'];
+  if (bubbleId) {
+    const base = worktreeBranchName(bubbleId);
+    let name = base;
+    for (let i = 2; refExists(target, `refs/heads/${name}`); i++) {
+      name = `${base}-${i}`;
+    }
+    args = ['checkout', '-b', name];
+  }
+  const r = git(args, target);
+  if (!r.ok) return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 600) || 'no se pudo liberar la rama' };
+  console.log('[git-ops] rama liberada del worktree', target, '→', args.join(' '));
+  return { ok: true };
+}
+
+function conflictResult(workspace: string, error: string): GitActionResult | 'retry' | null {
+  const m = error.match(WORKTREE_CONFLICT_RE);
+  if (!m || !m[1]) return null;
+  // Entrada administrativa de un worktree cuyo directorio ya no existe.
+  if (!existsSync(normPath(m[1]))) {
+    git(['worktree', 'prune'], workspace);
+    return 'retry';
+  }
+  return {
+    ok: false,
+    error: error.trim().slice(0, 600),
+    code: 'checkout.branch_in_other_worktree',
+    holder: {
+      ...describeHolder(m[1]),
+      branch: error.match(/'([^']+)' is already (?:used|checked out) by worktree/)?.[1],
+    },
+  };
+}
+
+/**
+ * Corre un checkout y, si la rama la tiene otro worktree, devuelve
+ * `checkout.branch_in_other_worktree` para que la UI pregunte. Con
+ * `takeOverFrom` (el worktree que el user confirmó) libera esa rama antes.
+ * Si al reintentar la tiene OTRO worktree, se vuelve a preguntar.
+ */
+async function checkoutWithTakeover(
+  workspace: string,
+  takeOverFrom: string | undefined,
+  attempt: () => GitActionResult | Promise<GitActionResult>,
+): Promise<GitActionResult> {
+  if (takeOverFrom) {
+    const rel = releaseBranchFromWorktree(workspace, takeOverFrom);
+    if (!rel.ok) return { ok: false, error: rel.error };
+  }
+  let r = await attempt();
+  if (r.ok) return r;
+  const c = conflictResult(workspace, r.error);
+  if (c === null) return r;
+  if (c !== 'retry') return c;
+  r = await attempt();
+  if (r.ok) return r;
+  const again = conflictResult(workspace, r.error);
+  return again && again !== 'retry' ? again : r;
+}
 
 // Modos para resolver el conflicto cuando hay cambios sin commitear y el
 // checkout fallaría:
@@ -284,36 +395,62 @@ function maybeCleanupEcoBranch(workspace: string, prevBranch: string, mode: Chec
   git(['branch', flag, prevBranch], workspace);
 }
 
+function refExists(workspace: string, ref: string): boolean {
+  return git(['show-ref', '--verify', '--quiet', ref], workspace).ok;
+}
+
+// Las ramas locales también llevan '/' (hotfix/TAR-1), así que remoto vs
+// local se decide por la ref y no por el nombre.
+function resolveCheckoutRef(workspace: string, branch: string): { name: string; track: boolean } {
+  if (refExists(workspace, `refs/heads/${branch}`)) return { name: branch, track: false };
+  if (refExists(workspace, `refs/remotes/${branch}`)) {
+    const local = branch.slice(branch.indexOf('/') + 1);
+    if (local && refExists(workspace, `refs/heads/${local}`)) return { name: local, track: false };
+    return { name: branch, track: true };
+  }
+  return { name: branch, track: false };
+}
+
 export function checkoutBranch(
   workspace: string,
   branch: string,
   create = false,
   mode: CheckoutMode = 'plain',
+  takeOverFrom?: string,
+): Promise<GitActionResult> {
+  if (!isRepo(workspace)) return Promise.resolve({ ok: false, error: 'No es un repositorio git' });
+  if (!branch || /[\s'"`;|&$<>()\\]/.test(branch)) return Promise.resolve({ ok: false, error: 'Nombre de rama inválido' });
+  return checkoutWithTakeover(workspace, takeOverFrom, () => checkoutBranchOnce(workspace, branch, create, mode));
+}
+
+function checkoutBranchOnce(
+  workspace: string,
+  branch: string,
+  create: boolean,
+  mode: CheckoutMode,
 ): GitActionResult {
-  if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
-  if (!branch || /[\s'"`;|&$<>()\\]/.test(branch)) return { ok: false, error: 'Nombre de rama inválido' };
 
   // Rama actual ANTES del checkout — para limpiar la `eco/<id>` huérfana
   // si el user se mueve a otra rama.
   const prevBranchR = git(['rev-parse', '--abbrev-ref', 'HEAD'], workspace);
   const prevBranch = prevBranchR.ok ? prevBranchR.stdout.trim() : '';
 
-  // Si pedimos checkout de un branch remoto sin crear local, hacemos `checkout -t`
-  // que crea un local trackeando el remoto.
-  const isRemoteRef = branch.includes('/') && !create;
+  // Un remoto sin copia local se checkoutea con `-t` (crea el local que lo
+  // trackea); si ya hay local, se usa ese.
+  const target = create ? { name: branch, track: false } : resolveCheckoutRef(workspace, branch);
   const baseArgs = create
     ? ['checkout', '-b', branch]
-    : isRemoteRef
-      ? ['checkout', '-t', branch]
-      : ['checkout', branch];
+    : target.track
+      ? ['checkout', '-t', target.name]
+      : ['checkout', target.name];
 
   // Discard: fuerza el checkout descartando los cambios locales.
   if (mode === 'discard') {
     const forceArgs = create
       ? ['checkout', '-b', branch, '--force']
-      : isRemoteRef
-        ? ['checkout', '-t', branch, '--force']
-        : ['checkout', '-f', branch];
+      : target.track
+        ? ['checkout', '-t', target.name, '--force']
+        : ['checkout', '-f', target.name];
     const r = git(forceArgs, workspace);
     if (!r.ok) {
       const msg = (r.stderr || r.stdout).trim() || 'checkout falló';
@@ -358,40 +495,22 @@ export function checkoutBranch(
   // Modo default: intentamos checkout normal. Si falla con "would be
   // overwritten by checkout" devolvemos un código especial para que el frontend
   // pueda preguntar qué hacer.
-  let r = git(baseArgs, workspace);
+  // Si la rama la tiene otro worktree, checkoutWithTakeover lo convierte en
+  // una pregunta al user. Antes se borraba ese worktree con --force sin avisar.
+  const r = git(baseArgs, workspace);
   if (!r.ok) {
-    const stderr = (r.stderr || r.stdout) || '';
-    // Caso típico: la rama está checked-out por OTRO worktree de Eco huérfano
-    // (~/.eco/worktrees/<bubble>). Buscamos ese worktree, lo removemos a la
-    // fuerza, y reintentamos el checkout. Solo limpiamos worktrees nuestros
-    // — nunca tocamos worktrees del user fuera de ~/.eco/.
-    const conflictMatch = stderr.match(/already used by worktree at '([^']+)'/);
-    if (conflictMatch && conflictMatch[1]) {
-      const conflictingPath = conflictMatch[1];
-      const ecoRoot = pathResolve(homedir(), '.eco', 'worktrees');
-      // git reporta el path con '/' incluso en Windows; normalizamos al sep del SO.
-      const normConflict = conflictingPath.replace(/\//g, pathSep);
-      if (normConflict === ecoRoot || normConflict.startsWith(ecoRoot + pathSep)) {
-        console.log('[git-ops] auto-removiendo worktree huérfano de Eco:', conflictingPath);
-        git(['worktree', 'remove', conflictingPath, '--force'], workspace);
-        git(['worktree', 'prune'], workspace);
-        r = git(baseArgs, workspace);
-      }
+    const msg = (r.stderr || r.stdout).trim() || 'checkout falló';
+    // Detectamos el caso de "local changes would be overwritten" para que el
+    // frontend pida confirmación al user (llevar/descartar).
+    if (/would be overwritten by (checkout|merge)/i.test(msg) || /commit your changes or stash/i.test(msg)) {
+      return {
+        ok: false,
+        error: msg.slice(0, 600),
+        code: 'checkout.dirty_working_tree',
+        files: listDirtyFiles(workspace),
+      };
     }
-    if (!r.ok) {
-      const msg = (r.stderr || r.stdout).trim() || 'checkout falló';
-      // Detectamos el caso de "local changes would be overwritten" para que el
-      // frontend pida confirmación al user (llevar/descartar).
-      if (/would be overwritten by (checkout|merge)/i.test(msg) || /commit your changes or stash/i.test(msg)) {
-        return {
-          ok: false,
-          error: msg.slice(0, 600),
-          code: 'checkout.dirty_working_tree',
-          files: listDirtyFiles(workspace),
-        };
-      }
-      return { ok: false, error: msg.slice(0, 600) };
-    }
+    return { ok: false, error: msg.slice(0, 600) };
   }
   maybeCleanupEcoBranch(workspace, prevBranch, mode);
   return { ok: true, message: r.stdout.trim() || `Cambiado a «${branch}»` };
@@ -1268,19 +1387,23 @@ export async function readyPullRequest(workspace: string, number: number): Promi
  * pierde la rama actual del worktree (igual que con checkoutBranch),
  * pero como cada agente tiene su propio worktree, no afecta a otros.
  */
-export async function checkoutPullRequest(workspace: string, number: number): Promise<GitActionResult> {
+export async function checkoutPullRequest(
+  workspace: string,
+  number: number,
+  takeOverFrom?: string,
+): Promise<GitActionResult> {
   if (!isRepo(workspace)) return { ok: false, error: 'No es un repositorio git' };
   if (!(await ghAvailable())) return { ok: false, error: 'gh CLI no instalado' };
   if (!Number.isFinite(number) || number < 1) return { ok: false, error: 'número de PR inválido' };
 
-  const r = await spawnAsync('gh', ['pr', 'checkout', String(number)], {
-    cwd: workspace,
-    timeout: 60_000,
-    env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
-  });
-  if (r.status !== 0) {
+  return checkoutWithTakeover(workspace, takeOverFrom, async () => {
+    const r = await spawnAsync('gh', ['pr', 'checkout', String(number)], {
+      cwd: workspace,
+      timeout: 60_000,
+      env: buildSafeEnv({ GIT_TERMINAL_PROMPT: '0', ...githubEnvOverrides() }),
+    });
+    if (r.status === 0) return { ok: true, message: `Checkout del PR #${number} OK` };
     const err = ((r.stderr ?? '').toString() || (r.stdout ?? '').toString()).trim();
     return { ok: false, error: err.slice(0, 600) || 'gh pr checkout falló' };
-  }
-  return { ok: true, message: `Checkout del PR #${number} OK` };
+  });
 }

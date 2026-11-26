@@ -9,6 +9,7 @@ import { fetchCommit, type LogEntry } from '@/hooks/useGitLog';
 import { useBranches } from '@/hooks/useBranches';
 import { ShaPill, SubpanelLoading, useFormatRelTime } from './shared';
 import { useT } from '@/hooks/useI18n';
+import { BranchTakeoverDialog, branchHolderFrom, type BranchHolderInfo } from './BranchTakeoverDialog';
 
 type Props = {
   workspace: string;
@@ -36,11 +37,13 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
   // Confirmación previa al cherry-pick: { targetBranch } cuando el user
   // eligió rama pero aún no confirmó el "Sí, aplicar".
   const [cherryConfirm, setCherryConfirm] = useState<{ branch: string } | null>(null);
+  // La rama destino del cherry-pick la tiene otro worktree: preguntamos si traerla.
+  const [takeover, setTakeover] = useState<{ branch: string; holder: BranchHolderInfo } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError(null); setDiff(''); setStat(''); setTruncated(false);
-    setActionMsg(null); setShowCherryMenu(false); setCherryConfirm(null); setShowResetMenu(false); setResetConfirm(null);
+    setActionMsg(null); setShowCherryMenu(false); setCherryConfirm(null); setTakeover(null); setShowResetMenu(false); setResetConfirm(null);
     void fetchCommit(workspace, bubbleId, summary.sha).then((r) => {
       if (cancelled) return;
       if (r.ok) {
@@ -94,7 +97,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
   }
 
   // Paso 2: el user confirma → hacemos checkout (si hace falta) + cherry-pick.
-  async function runCherryPick(targetBranch: string) {
+  async function runCherryPick(targetBranch: string, takeOverFrom?: string) {
     setCherryConfirm(null);
     const currentBranch = branchesData?.current;
     // Si el destino es distinto a la rama actual, hacemos checkout primero.
@@ -106,9 +109,12 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
         const r = await apiFetch('/git/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workspace, bubbleId, branch: targetBranch }),
+          body: JSON.stringify({ workspace, bubbleId, branch: targetBranch, takeOverFrom }),
         });
         const d = await r.json().catch(() => ({}));
+        const holder = branchHolderFrom(d);
+        setTakeover(holder ? { branch: targetBranch, holder } : null);
+        if (holder) { setBusyAction(null); return; }
         if (!r.ok || !d.ok) {
           // Si hay cambios sin commitear, el backend devuelve checkout.dirty_working_tree.
           const hint = d.code === 'checkout.dirty_working_tree'
@@ -120,6 +126,7 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
         }
         ecoEmit('eco:git_refresh', { bubbleId });
       } catch (e) {
+        setTakeover(null);
         setActionMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
         setBusyAction(null);
         return;
@@ -281,6 +288,14 @@ export function CommitDetailPanel({ workspace, bubbleId, summary }: Props) {
       </div>
 
       {/* Confirm modal de cherry-pick */}
+      {takeover && (
+        <BranchTakeoverDialog
+          holder={takeover.holder}
+          busy={busyAction === 'cherry'}
+          onCancel={() => setTakeover(null)}
+          onConfirm={() => void runCherryPick(takeover.branch, takeover.holder.path)}
+        />
+      )}
       {cherryConfirm && (
         <CherryPickConfirm
           targetBranch={cherryConfirm.branch}

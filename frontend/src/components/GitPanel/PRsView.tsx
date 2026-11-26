@@ -10,6 +10,7 @@ import { EmptyState, SubpanelLoading, useFormatRelTime } from './shared';
 import { Markdown } from './Markdown';
 import { usePullRequests, type PullRequest } from '@/hooks/usePullRequests';
 import { useT } from '@/hooks/useI18n';
+import { BranchTakeoverDialog, branchHolderFrom, type BranchHolderInfo } from './BranchTakeoverDialog';
 
 type PrComment = {
   author: string;
@@ -250,6 +251,8 @@ function PrDetailPane({
   const [mergeConfirm, setMergeConfirm] = useState<{ method: 'merge' | 'squash' | 'rebase' } | null>(null);
   const [closeConfirm, setCloseConfirm] = useState<{ comment: string } | null>(null);
   const [readyConfirm, setReadyConfirm] = useState(false);
+  // La rama del PR está checked-out en otro worktree: preguntamos si traerla.
+  const [takeover, setTakeover] = useState<BranchHolderInfo | null>(null);
 
   useEffect(() => {
     if (!msg) return;
@@ -279,22 +282,27 @@ function PrDetailPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
-  async function checkout() {
+  async function checkout(takeOverFrom?: string) {
     setBusyAction('checkout'); setMsg(null);
     try {
       const r = await apiFetch('/git/pr/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace, bubbleId, number: prNumber }),
+        body: JSON.stringify({ workspace, bubbleId, number: prNumber, takeOverFrom }),
       });
       const d = await r.json().catch(() => ({}));
       if (d.ok) {
+        setTakeover(null);
         setMsg({ kind: 'ok', text: d.message || tr('prs.checkout.ok', { n: prNumber }) });
         onAfterCheckout();
+      } else if (branchHolderFrom(d)) {
+        setTakeover(branchHolderFrom(d));
       } else {
+        setTakeover(null);
         setMsg({ kind: 'err', text: d.error || tr('prs.checkout.fail') });
       }
     } catch (e) {
+      setTakeover(null);
       setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
     } finally {
       setBusyAction(null);
@@ -591,6 +599,14 @@ function PrDetailPane({
           initialMethod={mergeConfirm.method}
           onCancel={() => setMergeConfirm(null)}
           onConfirm={(method) => void doMerge(method)}
+        />
+      )}
+      {takeover && (
+        <BranchTakeoverDialog
+          holder={takeover}
+          busy={busyAction === 'checkout'}
+          onCancel={() => setTakeover(null)}
+          onConfirm={() => void checkout(takeover.path)}
         />
       )}
       {readyConfirm && (
