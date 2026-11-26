@@ -110,9 +110,14 @@ function normalizeBubble(raw: unknown): Bubble | null {
 }
 
 // Valor que se manda al servidor por bubble (mismo thinning que localStorage).
+// `ptyOpen` is runtime state of this host, not part of the doc: every client
+// gets the same pty_status, and a client that wrote it back with a stale copy
+// of the bubble (e.g. still unarchived) overwrote a newer archive.
 function bubbleDocValue(b: Bubble): Bubble {
+  const rest: Bubble = { ...b };
+  delete rest.ptyOpen;
   return {
-    ...b,
+    ...rest,
     status: 'idle',
     unread: 0,
     messages: b.messages.slice(-MAX_MESSAGES_IN_STORAGE).map(thinMessageForStorage),
@@ -178,6 +183,9 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
   // locales que el servidor no tenía — migración del localStorage).
   const syncedRef = useRef<Map<string, string>>(new Map());
   const hydratedRef = useRef(false);
+  // Bubbles with a live PTY on this host, from pty_status (replayed on every WS
+  // connect). Docs from Firestore never carry ptyOpen, so it is re-applied here.
+  const ptyRunningRef = useRef<Set<string>>(new Set());
 
   // No crear "Conversación principal" automática. Si hay burbujas guardadas,
   // restauramos activeBubbleId si es necesario. Sin burbujas → dashboard vacío.
@@ -285,7 +293,8 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
       const serverBubbles = Object.entries(docs)
         .filter(([k]) => k.startsWith(BUBBLE_DOC_PREFIX))
         .map(([, d]) => normalizeBubble(d.value))
-        .filter((b): b is Bubble => !!b);
+        .filter((b): b is Bubble => !!b)
+        .map((b) => ({ ...b, ptyOpen: ptyRunningRef.current.has(b.id) }));
       const seeded = new Map<string, string>();
       for (const b of serverBubbles) seeded.set(b.id, JSON.stringify(bubbleDocValue(b)));
       syncedRef.current = seeded;
@@ -331,8 +340,9 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
         setBubbles((prev) => prev.filter((x) => x.id !== id));
         return;
       }
-      const b = normalizeBubble(value);
-      if (!b) return;
+      const parsed = normalizeBubble(value);
+      if (!parsed) return;
+      const b: Bubble = { ...parsed, ptyOpen: ptyRunningRef.current.has(parsed.id) };
       syncedRef.current.set(b.id, JSON.stringify(bubbleDocValue(b)));
       setBubbles((prev) => {
         const idx = prev.findIndex((x) => x.id === b.id);
@@ -525,6 +535,8 @@ export function useBubbles(defaultWorkspace = '', userId: string | null = null):
   }, []);
 
   const setBubblePtyOpen = useCallback((id: string, open: boolean) => {
+    if (open) ptyRunningRef.current.add(id);
+    else ptyRunningRef.current.delete(id);
     setBubbles((prev) => prev.map((b) => b.id === id ? { ...b, ptyOpen: open } : b));
   }, []);
 
