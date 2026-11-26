@@ -1332,7 +1332,7 @@ app.post('/worktree/create', (req: Request, res: Response) => {
 // Valid git ref name (branch/tag): no shell metachars, spaces or path tricks.
 const BRANCH_RE = /^[A-Za-z0-9._\-/]{1,256}$/;
 
-app.post('/git/checkout', (req: Request, res: Response) => {
+app.post('/git/checkout', async (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
   if (!dir) return;
   const branch = typeof req.body?.branch === 'string' ? req.body.branch : '';
@@ -1340,8 +1340,32 @@ app.post('/git/checkout', (req: Request, res: Response) => {
   const rawMode = typeof req.body?.mode === 'string' ? req.body.mode : 'plain';
   const mode: gitOps.CheckoutMode = (rawMode === 'carry' || rawMode === 'discard') ? rawMode : 'plain';
   if (!BRANCH_RE.test(branch)) return errResponse(res, 400, 'http.invalid_body', 'invalid branch name');
-  res.json(gitOps.checkoutBranch(dir, branch, create, mode));
+  const takeOverFrom = parseTakeOverFrom(req, res);
+  if (takeOverFrom === null) return;
+  sendCheckoutResult(req, res, await gitOps.checkoutBranch(dir, branch, create, mode, takeOverFrom));
 });
+
+// Worktree que el user confirmó liberar (diálogo "Mover a esta burbuja").
+// undefined = no vino; null = inválido (ya respondió 400).
+function parseTakeOverFrom(req: Request, res: Response): string | undefined | null {
+  const raw = req.body?.takeOverFrom;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'string' || !raw || raw.length > 1024) {
+    errResponse(res, 400, 'http.invalid_body', 'takeOverFrom inválido');
+    return null;
+  }
+  return raw;
+}
+
+// El título de la bubble que tiene la rama ayuda a decidir en el diálogo.
+function sendCheckoutResult(req: Request, res: Response, result: gitOps.GitActionResult): void {
+  if (!result.ok && result.holder?.bubbleId) {
+    const holderBubble = findBubble(result.holder.bubbleId, req.ecoUser?.id);
+    res.json({ ...result, holderTitle: holderBubble?.title, holderArchived: holderBubble?.archived });
+    return;
+  }
+  res.json(result);
+}
 
 app.post('/git/pull', (req: Request, res: Response) => {
   const dir = effectiveWorkspaceFromReq(req, res);
@@ -1399,7 +1423,9 @@ app.post('/git/pr/checkout', async (req: Request, res: Response) => {
   if (!dir) return;
   const num = Number(req.body?.number);
   if (!Number.isFinite(num) || num < 1) return errResponse(res, 400, 'http.invalid_body', 'number requerido');
-  res.json(await gitOps.checkoutPullRequest(dir, num));
+  const takeOverFrom = parseTakeOverFrom(req, res);
+  if (takeOverFrom === null) return;
+  sendCheckoutResult(req, res, await gitOps.checkoutPullRequest(dir, num, takeOverFrom));
 });
 
 // Detalle completo de un PR: descripción + comentarios + reviews + commits.

@@ -9,6 +9,7 @@ import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useBranches, type BranchInfo } from '@/hooks/useBranches';
 import { useT } from '@/hooks/useI18n';
 import { useIsPhone } from '@/hooks/useMediaQuery';
+import { BranchTakeoverDialog, branchHolderFrom, type BranchHolderInfo } from './BranchTakeoverDialog';
 
 type Props = {
   workspace: string;
@@ -36,6 +37,9 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
   const [mergeOpen, setMergeOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // La rama elegida en el dropdown la tiene otro worktree: preguntamos si traerla.
+  const [takeover, setTakeover] = useState<{ branch: string; holder: BranchHolderInfo } | null>(null);
+  const [takeoverBusy, setTakeoverBusy] = useState(false);
 
   useEffect(() => {
     if (!msg) return;
@@ -108,6 +112,33 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
     } finally {
       setBusy(null);
       ecoEmit('eco:git_busy', { bubbleId, busy: false, kind: syncAction });
+    }
+  }
+
+  async function takeOverBranch(branch: string, holderPath: string) {
+    setTakeoverBusy(true);
+    try {
+      const r = await apiFetch('/git/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace, bubbleId, branch, takeOverFrom: holderPath }),
+      });
+      const d = await r.json().catch(() => ({}));
+      const holder = branchHolderFrom(d);
+      if (holder) { setTakeover({ branch, holder }); return; }
+      setTakeover(null);
+      if (!r.ok || !d.ok) {
+        const hint = d.code === 'checkout.dirty_working_tree' ? tr('git.cherry.dirty_hint') : '';
+        setMsg({ kind: 'err', text: (d.error || `HTTP ${r.status}`) + hint });
+        return;
+      }
+      ecoEmit('eco:git_refresh', { bubbleId });
+      refreshBranches();
+    } catch (e) {
+      setTakeover(null);
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : tr('common.error') });
+    } finally {
+      setTakeoverBusy(false);
     }
   }
 
@@ -213,6 +244,19 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
             ecoEmit('eco:git_refresh', { bubbleId });
             refreshBranches();
           }}
+          onBranchHeld={(branch, holder) => {
+            setBranchMenuOpen(false);
+            setTakeover({ branch, holder });
+          }}
+        />
+      )}
+
+      {takeover && (
+        <BranchTakeoverDialog
+          holder={takeover.holder}
+          busy={takeoverBusy}
+          onCancel={() => setTakeover(null)}
+          onConfirm={() => void takeOverBranch(takeover.branch, takeover.holder.path)}
         />
       )}
 
@@ -432,12 +476,13 @@ function MoreMenu({ t, onClose, onRename, onMerge, onPRs, onRenameAgent }: {
   );
 }
 
-function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone }: {
+function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone, onBranchHeld }: {
   branches: BranchInfo[];
   workspace: string;
   bubbleId: string;
   onClose: () => void;
   onCheckoutDone: () => void;
+  onBranchHeld: (branch: string, holder: BranchHolderInfo) => void;
 }) {
   const t = useTokens();
   const tr = useT();
@@ -471,6 +516,8 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
         body: JSON.stringify({ workspace, bubbleId, branch }),
       });
       const d = await r.json().catch(() => ({}));
+      const holder = branchHolderFrom(d);
+      if (holder) { onBranchHeld(branch, holder); return; }
       if (!r.ok || !d.ok) {
         const hint = d.code === 'checkout.dirty_working_tree'
           ? tr('git.cherry.dirty_hint')
