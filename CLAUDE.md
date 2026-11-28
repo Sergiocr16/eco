@@ -470,7 +470,7 @@ eco.terminals.<bubbleId>                 ← extra terminals (no Claude) [{id,la
 #   (AgentDetail.tsx:activeTermByBubble). Abrir una burbuja siempre cae en Claude ('main').
 eco.settings.agent_provider              ← 'claude' | 'codex' — proveedor activo en Settings → Agentes & API
 eco.browser.url.<bubbleId>               ← BrowserPanel URL
-eco.browser.zoom.<bubbleId>              ← zoom (0.25..3)
+eco.browser.zoom                         ← embedded browser zoom (0.25..3), GLOBAL: the last one set applies to every browser opened afterwards (lib/browser-zoom.ts). The old per-bubble eco.browser.zoom.<bubbleId> is no longer read; removeBubble still clears it.
 eco.dev.config_collapsed.<bubbleId>      ← '1' collapsed (default true)
 eco.dev.min.<role>.<bubbleId>            ← '1' minimized in dual
 eco.dev.logheight.<bubbleId>.<role>      ← log pane height in px
@@ -737,7 +737,7 @@ The same module has `useDevServerControl` (start/stop/restart with the workspace
 
 ### Persisted zoom
 
-`eco.browser.zoom.<bubbleId>` (0.25..3). The write is **inline** in `setZoom` (wraps `setZoomState`), NOT via useEffect — avoids HMR/unmount timing.
+`eco.browser.zoom` (0.25..3), **global**, not per bubble: the last zoom set in any browser is what every browser opens with. Store + subscribers in `lib/browser-zoom.ts` (`useBrowserZoom`), so mounted panels follow live. The write is inline in `setBrowserZoom`, NOT via useEffect — avoids HMR/unmount timing.
 
 ---
 

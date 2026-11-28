@@ -6,6 +6,7 @@ import { canEmbedArbitrarySites } from '@/lib/platform';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
 import { writeToBubblePty } from '@/lib/pty-bridge';
 import { takeBrowserUrl, hasRecentBrowserActivity } from '@/lib/browser-pending';
+import { useBrowserZoom } from '@/lib/browser-zoom';
 import { useT } from '@/hooks/useI18n';
 import { useIsPhone, useIsPhoneLandscape, isPhoneNow, isPhoneLandscapeNow } from '@/hooks/useMediaQuery';
 import { BrowserTabBar } from './BrowserPanel/BrowserTabBar';
@@ -28,7 +29,6 @@ type Props = {
 
 const legacyUrlKey  = (id: string) => `eco.browser.url.${id}`;
 const tabsKey       = (id: string) => `eco.browser.tabs.${id}`;
-const zoomKey       = (id: string) => `eco.browser.zoom.${id}`;
 
 const SHORTCUTS = [
   { label: 'localhost:5174', url: 'http://localhost:5174/' },
@@ -137,18 +137,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
   const [activeTabId, setActiveTabId] = useState<string>(initial.activeTabId);
   const [draft, setDraft] = useState<string>(() => initial.tabs.find((t) => t.id === initial.activeTabId)?.url ?? '');
   const [loadFailed, setLoadFailed] = useState(false);
-  const [zoom, setZoomState] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem(zoomKey(bubbleId));
-      if (!raw) return 1;
-      const n = Number(raw);
-      return Number.isFinite(n) && n >= 0.25 && n <= 3 ? n : 1;
-    } catch { return 1; }
-  });
-  const setZoom = (next: number) => {
-    setZoomState(next);
-    try { localStorage.setItem(zoomKey(bubbleId), String(next)); } catch { /* noop */ }
-  };
+  const [zoom, setZoom] = useBrowserZoom();
 
   // Refs por tab — SmartBrowserView expone una API imperativa (reload,
   // back, forward, openDevTools). Necesitamos un ref por tab para que las
