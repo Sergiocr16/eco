@@ -1,3 +1,4 @@
+import { FocusButton } from '@/components/FocusButton';
 import { EcoGlyph } from '@/design/EcoMark';
 import { dvh, vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
@@ -12,7 +13,7 @@ import {
   IconExt,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck, IconAgent,
   IconZap, IconCpu, IconTrash, IconX,
-  IconGlobe, IconLayers, IconShield, IconGithub, IconCommand, IconSearch, IconLayoutGrid, IconLeaf, IconKanban, IconNetwork, type IconProps,
+  IconGlobe, IconLayers, IconShield, IconGithub, IconCommand, IconSearch, IconLayoutGrid, IconKanban, IconNetwork, type IconProps,
 } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
@@ -21,7 +22,7 @@ import { T_UI, tween } from '@/design/motion';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useBubbleActive, useActiveBubbleIds } from '@/hooks/useBubbleActive';
 import { useBubbleBusy, useBusyBubbleIds } from '@/hooks/usePtyBusyNotifier';
-import { useCategories, getCategoryById, sortByCategory, type Category } from '@/hooks/useCategories';
+import { useCategories, getCategoryById, sortByCategory } from '@/hooks/useCategories';
 import { useDashboardFocus } from '@/hooks/useDashboardFocus';
 import { getWorkspaceConfig } from '@/lib/workspace-config';
 import { useBubbleHasFilesMap, useBubbleChangeCountMap } from '@/hooks/useGitChanges';
@@ -105,8 +106,7 @@ export function Dashboard(props: Props) {
   // Modo focus (grilla, kanban y grafo): deja solo los agentes con alguna de
   // las categorías elegidas. Persistido; los ids de categorías borradas se
   // ignoran.
-  const { categories } = useCategories();
-  const { activeFocus, setFocus, applyFocus } = useDashboardFocus();
+  const { activeFocus, applyFocus } = useDashboardFocus();
   const scopeBubbles = showAll ? teamBubbles : bubbles;
   const [agentQuery, setAgentQuery] = useState('');
   const q = isPhone ? agentQuery.trim().toLowerCase() : '';
@@ -182,15 +182,7 @@ export function Dashboard(props: Props) {
             ]}/>
           )}
           {/* En escritorio el focus vive junto al buscador del menú. */}
-          {isPhone && categories.length > 0 && (
-            <FocusControl
-              categories={categories}
-              selected={activeFocus}
-              onChange={setFocus}
-              shown={viewBubbles.length}
-              total={scopeBubbles.length}
-            />
-          )}
+          {isPhone && <FocusButton autoFocusSearch={false}/>}
           <Segmented<DashView> size="md" iconsOnly value={effectiveView} onChange={setView} options={[
             { id: 'grid', icon: IconLayoutGrid, label: tr('dash.view.grid') },
             { id: 'kanban', icon: IconKanban, label: tr('dash.view.board') },
@@ -2148,118 +2140,6 @@ function KanbanCard({ bubble, onOpen, ownerLabel }: { bubble: Bubble; onOpen: ()
 }
 
 // Selector múltiple de categorías del modo focus (barra de vistas del Dashboard).
-function FocusControl({ categories, selected, onChange, shown, total }: {
-  categories: Category[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-  shown: number;
-  total: number;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-  const active = selected.length > 0;
-  const toggle = (id: string) =>
-    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-
-  return (
-    <div ref={rootRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button type="button" onClick={() => setOpen((v) => !v)}
-          title={tr('graph.focus.title')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '6px 10px', borderRadius: 999,
-            background: active ? `color-mix(in oklch, ${t.accent} 16%, ${t.bg2})` : t.bg2,
-            border: `1px solid ${active ? t.accent : t.glassBorder}`,
-            color: active ? t.text0 : t.text1, fontFamily: t.fontSans, fontSize: 11,
-            cursor: 'pointer', boxShadow: t.shadowMd, whiteSpace: 'nowrap',
-          }}>
-          <IconLeaf size={13}/>
-          {active
-            ? tr('graph.focus.active', { shown, total })
-            : tr('graph.focus.label')}
-        </button>
-        {active && (
-          <button type="button" onClick={() => onChange([])}
-            title={tr('graph.focus.clear')}
-            style={{
-              width: 26, height: 26, borderRadius: 999,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              color: t.text1, cursor: 'pointer', boxShadow: t.shadowMd,
-            }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-              <path d="M6 6l12 12 M18 6L6 18"/>
-            </svg>
-          </button>
-        )}
-      </div>
-      {open && (
-        <div style={{
-          position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30,
-          minWidth: 220, maxHeight: 320, overflowY: 'auto',
-          padding: 6, borderRadius: 12,
-          ...glassEffect(t, { intensity: 'strong' }),
-          boxShadow: t.shadowLg,
-          display: 'flex', flexDirection: 'column', gap: 2,
-        }}>
-          <div style={{
-            padding: '4px 8px 6px', fontFamily: t.fontSans, fontSize: 11,
-            color: t.text3,
-          }}>{tr('graph.focus.hint')}</div>
-          {categories.map((c) => {
-            const on = selected.includes(c.id);
-            return (
-              <button key={c.id} type="button" onClick={() => toggle(c.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '6px 8px', borderRadius: 8, border: 'none',
-                  background: on ? `color-mix(in oklch, ${c.color} 14%, transparent)` : 'transparent',
-                  color: t.text0, fontFamily: t.fontSans, fontSize: 13,
-                  cursor: 'pointer', textAlign: 'left',
-                }}>
-                <span style={{
-                  width: 14, height: 14, borderRadius: 4, flexShrink: 0,
-                  border: `1.5px solid ${on ? c.color : t.glassBorder}`,
-                  background: on ? c.color : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {on && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
-                      stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M5 12l5 5 9-10"/>
-                    </svg>
-                  )}
-                </span>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }}/>
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {c.name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace', ownerNames }: {
   bubbles: Bubble[];
   // Categorías del modo focus (las bubbles ya llegan filtradas): tiñen la

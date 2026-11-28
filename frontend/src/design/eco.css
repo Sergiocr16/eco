@@ -586,7 +586,12 @@ select.eco-field { padding-right: 32px; }
   background: var(--hover); color: var(--tx); cursor: pointer;
 }
 .eco-focusbtn:hover { background: var(--raised); }
-.eco-focusbtn.is-on { color: var(--ac); box-shadow: inset 0 0 0 1px var(--ac); }
+.eco-focusbtn.is-on { color: var(--tx); }
+.eco-focusbtn__ring {
+  position: absolute; inset: 0; border-radius: inherit; padding: 2px; pointer-events: none;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
 .eco-focusmenu__title { display: flex; align-items: center; gap: 9px; padding: 8px 10px 10px; font-size: 14.5px; font-weight: 500; }
 .eco-focusmenu__title > svg { color: var(--ac); }
 .eco-focusbtn__n {
