@@ -31,26 +31,19 @@ export function GitBusyToast({ bubbleId }: { bubbleId: string }) {
     <div
       role="status"
       aria-live="polite"
+      className="eco-label"
       style={{
         position: 'absolute', top: 14, right: 18,
         display: 'inline-flex', alignItems: 'center', gap: 8,
         padding: '8px 16px', borderRadius: 999,
-        background: t.glassBg,
-        border: `1px solid color-mix(in oklch, ${t.accent} 45%, ${t.glassBorder})`,
-        color: t.text0, fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
+        background: t.bg,
+        border: `1px solid ${t.line2}`,
+        fontSize: 12.5,
         boxShadow: t.shadowMd,
         zIndex: 200,
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
       }}
     >
-      <span style={{
-        width: 11, height: 11, borderRadius: '50%',
-        border: `1.7px solid color-mix(in oklch, ${t.accent} 25%, transparent)`,
-        borderTopColor: t.accent,
-        animation: 'eco-spin 0.7s linear infinite',
-        display: 'inline-block', flexShrink: 0,
-      }}/>
+      <span className="eco-spinner"/>
       <span>{active.label}</span>
     </div>
   );

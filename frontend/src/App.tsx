@@ -1,8 +1,10 @@
 import { vw } from '@/lib/ui-zoom';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { cssZoom } from './lib/ui-zoom';
 import { ThemeProvider, useTokens } from './design/theme';
 import { useClaudeThemeSync } from '@/hooks/useClaudeThemeSync';
-import { AppSidebar, MOBILE_NAV_HEIGHT, type Screen } from './components/AppSidebar';
+import { AppSidebar, MOBILE_NAV_HEIGHT, SIDEBAR_WIDTH, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MINI, type Screen } from './components/AppSidebar';
+import { IconChevL, IconChevR } from './design/icons';
 import { BubbleDock } from './components/BubbleDock';
 import { Dashboard } from './screens/Dashboard';
 import { AgentDetail } from './screens/AgentDetail';
@@ -36,12 +38,11 @@ import { ecoBackend, ecoToken } from './lib/eco-config';
 import { getTopInset, SAFE_TOP } from './lib/platform';
 import { DOCK_RESERVED_BOTTOM } from './components/BubbleDock';
 import { DockBubbleStatus } from './components/DockStatusBar';
-import { useIsPhone } from './hooks/useMediaQuery';
+import { useIsPhone, useIsTablet } from './hooks/useMediaQuery';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { useSideInsets } from './hooks/useSideInsets';
 import { getSoloBubbleId } from './lib/solo';
-import { IconLock } from './design/icons';
-import { scrimStyle, dialogSurface } from './design/primitives';
+import { IconLock, IconArchive } from './design/icons';
 import { WindowZoomController } from './components/WindowZoomController';
 import { UpdateBanner } from './components/UpdateBanner';
 import { bubbleStreamHandlers } from './lib/bubble-socket';
@@ -145,7 +146,7 @@ function SoloLockedScreen() {
       className="eco-keep-animating"
       style={{
         position: 'fixed', inset: 0, zIndex: 1, overflow: 'hidden',
-        background: t.windowBg, backgroundImage: t.windowBgImage, color: t.text0, fontFamily: t.fontSans,
+        background: t.bg, color: t.text0, fontFamily: t.fontSans,
       }}>
 
       <div style={{
@@ -158,7 +159,7 @@ function SoloLockedScreen() {
         <div style={{
           width: 52, height: 52, borderRadius: '50%',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: t.bg2, border: `1px solid ${t.glassBorder}`, color: t.text2,
+          background: t.card, color: t.text2,
         }}>
           <IconLock size={22} strokeWidth={2}/>
         </div>
@@ -181,8 +182,9 @@ function SoloLockedScreen() {
   );
 }
 
-function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
+export function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   const t = useTokens();
+  const tr = useT();
   useClaudeThemeSync();
 
   const [screen, setScreen] = useState<Screen>('dashboard');
@@ -580,9 +582,57 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
   // el terminal cada píxel vertical cuenta y el header ya tiene "volver".
   const showMobileNav = isPhone && screen !== 'detail';
 
-  // Dentro del detalle de una bubble (escritorio y tablet) el rail lateral no
-  // se dibuja: el panel gana sus 64px y el header trae el botón de inicio.
-  const hideRail = !isPhone && screen === 'detail';
+  // La barra lateral se queda también dentro del detalle. En tablet arranca
+  // colapsada, pero el usuario la abre igual con el botón del borde.
+  const isTablet = useIsTablet();
+  const [sidebarPref, setSidebarPref] = useState<boolean | null>(() => {
+    try {
+      const v = window.localStorage.getItem('eco.sidebar.collapsed');
+      return v === null ? null : v === '1';
+    } catch { return null; }
+  });
+  const sidebarCollapsed = sidebarPref ?? isTablet;
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed;
+    try { window.localStorage.setItem('eco.sidebar.collapsed', next ? '1' : '0'); } catch { /* noop */ }
+    setSidebarPref(next);
+  };
+  // Ancho de la barra expandida: se arrastra desde el borde de la hoja.
+  const [sidebarFullWidth, setSidebarFullWidth] = useState<number>(() => {
+    try {
+      const v = Number(window.localStorage.getItem('eco.sidebar.width'));
+      return v >= SIDEBAR_WIDTH_MIN && v <= SIDEBAR_WIDTH_MAX ? v : SIDEBAR_WIDTH;
+    } catch { return SIDEBAR_WIDTH; }
+  });
+  const [sidebarResizing, setSidebarResizing] = useState(false);
+  const saveSidebarWidth = (w: number) => {
+    setSidebarFullWidth(w);
+    try { window.localStorage.setItem('eco.sidebar.width', String(w)); } catch { /* noop */ }
+  };
+  const startSidebarResize = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarFullWidth;
+    const z = cssZoom();
+    let last = startW;
+    setSidebarResizing(true);
+    const onMove = (ev: PointerEvent) => {
+      last = Math.round(Math.min(SIDEBAR_WIDTH_MAX,
+        Math.max(SIDEBAR_WIDTH_MIN, startW + (ev.clientX - startX) / z)));
+      setSidebarFullWidth(last);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      setSidebarResizing(false);
+      saveSidebarWidth(last);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
+  const sidebarWidth = isPhone ? 0 : sidebarCollapsed ? SIDEBAR_WIDTH_MINI : sidebarFullWidth;
   const sidebarProps = {
     onScreenChange: handleScreenChange,
     agentCount: activeCount,
@@ -591,15 +641,21 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
     onLock: auth.lock,
     onSignOut: auth.signOut,
     onChangePassword: auth.changePassword,
+    bubbles: bubbles.bubbles,
+    activeBubbleId: screen === 'detail' ? detailBubbleId : null,
+    onOpenAgent: handleOpenAgent,
+    onRenameAgent: (id: string, title: string) => bubbles.renameBubble(id, title),
+    onRemoveAgent: (id: string) => requestCloseBubble(id),
+    onToggleCategory: (id: string, catId: string | undefined) => bubbles.toggleBubbleCategory(id, catId),
+    collapsed: sidebarCollapsed,
+    showTiles: !dockEnabled,
   };
 
   return (
     <>
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,
-        background: t.windowBg,
-        // Temas glass: degradado de luces detrás de todos los paneles.
-        backgroundImage: t.windowBgImage,
+        background: isPhone ? t.sheet : t.bg,
       }}/>
       {/* Región arrastrable invisible que cubre los traffic lights y el resto
           de la titlebar. -webkit-app-region: drag permite mover la ventana
@@ -619,7 +675,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
           SAFE_TOP suma la barra de estado en táctil — también en el iPad, que
           no es "phone" pero desde iPadOS 26 pone un blur sobre lo que quede
           debajo de la barra. Fuera de iOS resuelve a 0px. */}
-      <div style={{
+      <div data-sidebar-resizing={sidebarResizing ? '' : undefined} style={{
         position: 'fixed',
         top: `calc(${topInset}px + ${SAFE_TOP})`,
         left: sideInsets.left, right: sideInsets.right,
@@ -631,10 +687,33 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         // acá solo se reserva su alto como padding del contenido.
         flexDirection: 'row',
         transition: 'bottom 200ms ease',
+        ['--sidebar-w' as string]: `${sidebarFullWidth}px`,
       }}>
-        {!isPhone && !hideRail && <AppSidebar screen={screen} {...sidebarProps}/>}
+        {!isPhone && <AppSidebar screen={screen} {...sidebarProps}/>}
+        <div className="eco-app eco-sheet" style={isPhone ? undefined : { margin: '10px 10px 10px 0' }}>
+          {!isPhone && (
+            <button type="button" className="eco-edge-btn" onClick={toggleSidebar}
+              title={tr(sidebarCollapsed ? 'nav.sidebar.expand' : 'nav.sidebar.collapse')}
+              aria-label={tr(sidebarCollapsed ? 'nav.sidebar.expand' : 'nav.sidebar.collapse')}
+              style={{ position: 'absolute', left: -14, top: 28, zIndex: 45 }}>
+              {sidebarCollapsed ? <IconChevR size={14}/> : <IconChevL size={14}/>}
+            </button>
+          )}
+          {!isPhone && !sidebarCollapsed && (
+            <div className="eco-sidebar-resize" role="separator" aria-orientation="vertical"
+              title={tr('nav.sidebar.resize')}
+              onPointerDown={startSidebarResize}
+              onDoubleClick={() => saveSidebarWidth(SIDEBAR_WIDTH)}/>
+          )}
+          {/* Un iframe o webview bajo el cursor se traga los eventos del arrastre. */}
+          {sidebarResizing && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9998, cursor: 'col-resize' }}/>
+          )}
         <div style={{
           flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', position: 'relative',
+          // Columna flex: sin esto las páginas crecen a su contenido y no hacen scroll.
+          display: 'flex', flexDirection: 'column',
+          borderRadius: 'inherit',
           ...(showMobileNav ? { paddingBottom: MOBILE_NAV_HEIGHT } : null),
         }}>
           <ScreenError error={socket.error}/>
@@ -662,7 +741,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   if (detachedIds.has(id)) return null;
                   const isActive = id === detailBubbleId && screen === 'detail';
                   return (
-                    <div key={id} style={{
+                    <div key={id} className="eco-screen-in" style={{
                       position: 'absolute', inset: 0,
                       display: isActive ? 'flex' : 'none',
                       flexDirection: 'column',
@@ -671,7 +750,6 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                         bubble={b}
                         workspaces={workspacesHook.list.workspaces}
                         onBack={handleBackFromDetail}
-                        homeInDock={dockVisible}
                         onRename={(title) => bubbles.renameBubble(b.id, title)}
                         onClose={() => {
                           requestCloseBubble(b.id, { afterClose: handleBackFromDetail });
@@ -716,6 +794,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
                   />
                 ) : null}
         </div>
+        </div>
       </div>
 
       <ConfirmCloseBubble
@@ -749,7 +828,7 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
         // Solo dentro del detalle de un agente se marca esa burbuja.
         activeBubbleId={screen === 'detail' ? detailBubbleId : null}
         onOpenAgent={handleOpenAgent}
-        railWidth={hideRail ? 0 : undefined}
+        railWidth={sidebarWidth}
         onGoHome={handleBackFromDetail}
         detailBubble={screen === 'detail' ? bubbles.bubbles.find((b) => b.id === detailBubbleId) ?? null : null}
       />
@@ -767,22 +846,10 @@ function Shell({ auth }: { auth: ReturnType<typeof useAuth> }) {
 // Pref del dock — escuchamos cambios del toggle de Ajustes vía custom event
 // y storage event (cross-tab). Compartido entre App.tsx (para el inset) y
 // FloatingBubbleDock (para renderizar o no).
+// Los agentes viven siempre en la barra lateral: el dock de abajo ya no es
+// una opción.
 function useDockPref(): boolean {
-  const [enabled, setEnabled] = useState<boolean>(() => {
-    try { return window.localStorage.getItem('eco.dock.enabled') !== '0'; } catch { return true; }
-  });
-  useEffect(() => {
-    const sync = () => {
-      try { setEnabled(window.localStorage.getItem('eco.dock.enabled') !== '0'); } catch { /* noop */ }
-    };
-    window.addEventListener('storage', sync);
-    window.addEventListener('eco:dock-pref-change', sync);
-    return () => {
-      window.removeEventListener('storage', sync);
-      window.removeEventListener('eco:dock-pref-change', sync);
-    };
-  }, []);
-  return enabled;
+  return false;
 }
 
 // Dock flotante en bottom-center, controlado por la pref `eco.dock.enabled`.
@@ -826,7 +893,7 @@ function ScreenError({ error }: { error: string | null }) {
   return (
     <div style={{
       position: 'absolute', top: 12, right: 24, zIndex: 30,
-      background: `color-mix(in oklch, ${t.err} 14%, ${t.bg1})`,
+      background: `color-mix(in oklch, ${t.err} 14%, ${t.sheet})`,
       border: `1px solid color-mix(in oklch, ${t.err} 30%, transparent)`,
       color: t.err, padding: '8px 12px', borderRadius: 10,
       fontSize: 12, fontFamily: t.fontSans,
@@ -842,7 +909,6 @@ function ConfirmCloseBubble({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const t = useTokens();
   // Doble confirmación: el primer click pide la confirmación EXTRA — el user
   // tiene que volver a clickear para perder de verdad. Reset cuando el
   // bubble/reason cambia.
@@ -870,51 +936,26 @@ function ConfirmCloseBubble({
       ? `La burbuja está ${busyLabel} y tiene cambios sin commitear. Al archivar se interrumpe el trabajo en curso; el worktree y todos los cambios se conservan.`
       : `La burbuja está ${busyLabel}. Al archivar se interrumpe el trabajo en curso; el worktree y todos los cambios se conservan.`;
   return (
-    <div
-      onClick={onCancel}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 230,
-        ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(420px, 100%)',
-          ...dialogSurface(t),
-          borderRadius: 20,
-          padding: 24,
-        }}>
-        <h2 style={{
-          margin: 0, fontSize: 16, fontWeight: 500, color: t.text0,
-        }}>{heading}</h2>
-        <p style={{ margin: '8px 0 20px', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
-          {body}
-        </p>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+    <div className="eco-scrim" onClick={onCancel} style={{ zIndex: 230 }}>
+      <div className="eco-dialog eco-dialog--sm eco-dialog--danger" role="alertdialog" aria-modal="true"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile eco-dialog__tile--danger"><IconArchive size={20}/></span>
+          <h2 className="eco-dialog__title">{heading}</h2>
+        </div>
+        <p className="eco-dialog__body">{body}</p>
+        <div className="eco-dialog__actions">
           <button
             type="button"
             onClick={onCancel}
-            style={{
-              padding: '8px 16px', borderRadius: 10,
-              background: t.bg3, color: t.text0,
-              border: `1px solid ${t.glassBorder}`,
-              cursor: 'pointer',
-              fontFamily: t.fontSans, fontSize: 13,
-            }}>Cancelar</button>
+            className="eco-btn eco-btn--soft">Cancelar</button>
           <button
             type="button"
             onClick={() => {
               if (!reConfirm) { setReConfirm(true); return; }
               onConfirm();
             }}
-            style={{
-              padding: '8px 16px', borderRadius: 10,
-              background: t.err, color: t.accentOn,
-              border: 0, cursor: 'pointer',
-              fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-            }}>{reConfirm ? 'Clic otra vez para confirmar' : 'Cerrar igual'}</button>
+            className="eco-btn eco-btn--danger-solid">{reConfirm ? 'Clic otra vez para confirmar' : 'Cerrar igual'}</button>
         </div>
       </div>
     </div>

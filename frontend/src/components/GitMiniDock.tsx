@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTokens } from '@/design/theme';
+import type { Tokens } from '@/design/tokens';
 import { IconBranch } from '@/design/icons';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useBranches } from '@/hooks/useBranches';
@@ -23,11 +24,9 @@ type Props = {
   onGoToGit: () => void;
 };
 
-const STATE_COLOR: Record<string, string> = {
-  OPEN: '#22c55e',
-  MERGED: '#a855f7',
-  CLOSED: '#ef4444',
-};
+export function prStateColor(t: Tokens, state: string): string {
+  return state === 'OPEN' ? t.ok : state === 'MERGED' ? t.info : state === 'CLOSED' ? t.err : t.text3;
+}
 
 // Los PR de una tarea llevan su id y nombre en el título, separados por " | "
 // ("HOTFIX | PROD | TAR-1306 | Importar consumos…").
@@ -45,8 +44,6 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
   const tr = useT();
   const { data: branchesData } = useBranches(workspace, bubbleId);
   const op = useGitOpStatus(workspace, bubbleId);
-  const [hover, setHover] = useState(false);
-  const [hoverPr, setHoverPr] = useState(false);
   const { pr: currentPr, refresh: refreshPr } = useCurrentPr(workspace, bubbleId);
 
   const branchName = branchesData?.current ?? tr('common.empty_dash');
@@ -80,128 +77,96 @@ export function GitMiniDock({ workspace, bubbleId, baseBranch, onGoToGit }: Prop
   // El card entero es clickeable: abre el tab Git. El chip de PR tiene su
   // propio onClick + stopPropagation para que sólo dispare la navegación
   // al detalle del PR, no a la sub-pestaña por default.
+  const stateColor = currentPr ? prStateColor(t, currentPr.state) : t.text3;
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onGoToGit}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGoToGit(); } }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       title={tr('git.minidock.tooltip')}
-      style={{ cursor: 'pointer' }}>
-      <div style={{
-        padding: 10, borderRadius: 12,
-        display: 'flex', flexDirection: 'column', gap: 8,
-        background: t.bg2,
-        border: hover ? `1px solid ${t.accent}` : '1px solid transparent',
-        transition: 'border-color 120ms',
-      }}>
-        {/* Rama actual */}
-        <div
-          title={op.inProgress ? tr(OP_LABEL_KEYS[op.inProgress]) : (detached ? tr('git.topbar.branch.detached_tooltip', { name: branchName }) : tr('git.topbar.branch.current_tooltip', { name: branchName }))}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '4px 8px', borderRadius: 8,
-            background: t.bg3,
-            ...(op.inProgress ? { border: `1px solid ${t.err}` } : {}),
-            color: t.text0,
-          }}>
-          <IconBranch size={12}/>
-          <code style={{
-            fontFamily: t.fontMono, fontSize: 12,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            flex: 1, minWidth: 0,
-          }}>{detached ? `${tr('git.topbar.branch.detached_prefix')} ${branchName}` : branchName}</code>
-          {op.inProgress && (
-            <span style={{
-              padding: '1px 6px', borderRadius: 4,
-              background: t.err, color: '#fff',
-              fontSize: 11, fontWeight: 600,
-            }}>!</span>
-          )}
-        </div>
-
-        {/* PR asociado a la rama actual (si existe) */}
-        {currentPr && (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={openPrDetail}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPrDetail(e as unknown as React.MouseEvent); } }}
-            onMouseEnter={(e) => { e.stopPropagation(); setHoverPr(true); }}
-            onMouseLeave={() => setHoverPr(false)}
-            title={tr('git.minidock.pr_tooltip', { n: currentPr.number, title: currentPr.title })}
-            style={{
-              display: 'flex', flexDirection: 'column', gap: 6,
-              padding: '6px 8px', borderRadius: 8,
-              background: hoverPr ? t.accentFaint : t.bg3,
-              border: `1px solid ${hoverPr ? t.accent : t.glassBorder}`,
-              color: t.text0,
-              cursor: 'pointer',
-              transition: 'background 120ms, border-color 120ms',
-            }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{
-              fontFamily: t.fontMono, fontSize: 11, fontWeight: 600,
-              color: STATE_COLOR[currentPr.state] ?? t.accent,
-              flexShrink: 0,
-            }}>{task ? task.id : `#${currentPr.number}`}</span>
-            <span style={{ flex: 1 }}/>
-            {task && (
-              <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3, flexShrink: 0 }}>#{currentPr.number}</span>
-            )}
-            <span style={{
-              padding: '1px 6px', borderRadius: 4,
-              background: `color-mix(in oklch, ${STATE_COLOR[currentPr.state] ?? t.accent} 18%, transparent)`,
-              color: STATE_COLOR[currentPr.state] ?? t.accent,
-              fontSize: 11, fontWeight: 600, letterSpacing: 0.4,
-              flexShrink: 0,
-            }}>{currentPr.isDraft ? 'DRAFT' : currentPr.state}</span>
-            </div>
-            <span style={{
-              fontSize: 12, lineHeight: 1.35, color: t.text0,
-              overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
-            }}>{task?.name || currentPr.title}</span>
-            {currentPr.state === 'OPEN' && (checks.total > 0 || conflicting) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: t.text2 }}>
-                {checks.total > 0 && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{
-                      width: 7, height: 7, borderRadius: '50%',
-                      background: checks.failed > 0 ? t.err : checks.pending > 0 ? t.warn : t.ok,
-                    }}/>
-                    {checks.failed > 0
-                      ? tr('git.minidock.checks_failed', { n: checks.failed, total: checks.total })
-                      : checks.pending > 0
-                        ? tr('git.minidock.checks_pending', { n: checks.passed, total: checks.total })
-                        : tr('git.minidock.checks_ok', { total: checks.total })}
-                  </span>
-                )}
-                {conflicting && <span style={{ color: t.err }}>{tr('git.minidock.conflicts')}</span>}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* baseBranch (de dónde salió el worktree) */}
-        {baseBranch && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '4px 8px', borderRadius: 8,
-            background: t.bg3,
-            fontSize: 11, color: t.text3,
-          }}
-          title={tr('git.minidock.worktree_from_tooltip', { branch: baseBranch })}>
-            <span>{tr('git.minidock.worktree_from_label')}</span>
-            <code style={{
-              fontFamily: t.fontMono, fontSize: 11, color: t.text2,
-              padding: '0 4px', borderRadius: 4,
-              background: t.bg2,
-            }}>{baseBranch}</code>
-          </div>
+      className="eco-vstack"
+      style={{ gap: 10, cursor: 'pointer' }}>
+      {/* Rama actual */}
+      <div
+        className="eco-hstack eco-mono"
+        title={op.inProgress ? tr(OP_LABEL_KEYS[op.inProgress]) : (detached ? tr('git.topbar.branch.detached_tooltip', { name: branchName }) : tr('git.topbar.branch.current_tooltip', { name: branchName }))}
+        style={{
+          gap: 8, minHeight: 36, padding: '0 14px', borderRadius: 18,
+          background: t.raised, fontSize: 12.5,
+          ...(op.inProgress ? { boxShadow: `inset 0 0 0 1px ${t.err}` } : {}),
+        }}>
+        <span className="eco-muted" style={{ display: 'inline-flex', flex: 'none' }}><IconBranch size={14}/></span>
+        <span className="eco-truncate eco-grow">
+          {detached ? `${tr('git.topbar.branch.detached_prefix')} ${branchName}` : branchName}
+        </span>
+        {op.inProgress && (
+          <span style={{
+            flex: 'none', padding: '1px 7px', borderRadius: 7,
+            background: t.err, color: t.sheet,
+            fontSize: 11, fontWeight: 600,
+          }}>!</span>
         )}
       </div>
+
+      {/* PR asociado a la rama actual (si existe) */}
+      {currentPr && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={openPrDetail}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPrDetail(e as unknown as React.MouseEvent); } }}
+          title={tr('git.minidock.pr_tooltip', { n: currentPr.number, title: currentPr.title })}
+          className="eco-vstack"
+          style={{
+            gap: 6, padding: '14px 16px', borderRadius: 16,
+            background: t.raised, cursor: 'pointer',
+          }}>
+          <div className="eco-hstack eco-mono" style={{ gap: 8, fontSize: 12 }}>
+            <span className="eco-grow eco-truncate" style={{ fontWeight: 500, color: stateColor }}>
+              {task ? task.id : `#${currentPr.number}`}
+            </span>
+            {task && <span className="eco-faint" style={{ flex: 'none' }}>#{currentPr.number}</span>}
+            <span style={{
+              flex: 'none', padding: '1px 8px', borderRadius: 8,
+              background: `color-mix(in oklab, ${stateColor} 14%, transparent)`,
+              color: stateColor,
+              fontSize: 11, fontWeight: 500, textTransform: 'capitalize',
+            }}>{(currentPr.isDraft ? 'draft' : currentPr.state).toLowerCase()}</span>
+          </div>
+          <span className="eco-label" style={{
+            lineHeight: 1.35, textWrap: 'pretty',
+            overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+          }}>{task?.name || currentPr.title}</span>
+          {currentPr.state === 'OPEN' && (checks.total > 0 || conflicting) && (
+            <div className="eco-hstack eco-hstack--wrap eco-muted" style={{ gap: '4px 10px', fontSize: 12.5 }}>
+              {checks.total > 0 && (
+                <span className="eco-hstack" style={{ gap: 8 }}>
+                  <span className="eco-dot" style={{
+                    width: 7, height: 7,
+                    background: checks.failed > 0 ? t.err : checks.pending > 0 ? t.warn : t.ok,
+                  }}/>
+                  {checks.failed > 0
+                    ? tr('git.minidock.checks_failed', { n: checks.failed, total: checks.total })
+                    : checks.pending > 0
+                      ? tr('git.minidock.checks_pending', { n: checks.passed, total: checks.total })
+                      : tr('git.minidock.checks_ok', { total: checks.total })}
+                </span>
+              )}
+              {conflicting && <span style={{ color: t.err }}>{tr('git.minidock.conflicts')}</span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* baseBranch (de dónde salió el worktree) */}
+      {baseBranch && (
+        <div className="eco-sub eco-truncate"
+          title={tr('git.minidock.worktree_from_tooltip', { branch: baseBranch })}>
+          {tr('git.minidock.worktree_from_label')}{' '}
+          <span className="eco-mono eco-muted">{baseBranch}</span>
+        </div>
+      )}
     </div>
   );
 }

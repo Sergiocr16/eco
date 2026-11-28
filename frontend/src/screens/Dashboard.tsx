@@ -1,17 +1,18 @@
+import { EcoGlyph } from '@/design/EcoMark';
 import { dvh, vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '@/lib/api';
 import { motion, AnimatePresence } from 'motion/react';
-import { useTokens } from '@/design/theme';
+import { useTokens, useTheme } from '@/design/theme';
 import {
-  Glass, glassEffect, IconBtn, StatusDot, Pill, AgentGlyph, SectionLabel, bubbleLetter,
+  Glass, glassEffect, IconBtn, StatusDot, AgentGlyph, bubbleLetter, Chip, Segmented,
 } from '@/design/primitives';
 import {
-  IconGrid, IconGraph, IconExt, IconColumns,
+  IconExt,
   IconPause, IconPlay, IconResume, IconMore, IconFolder, IconTerminal, IconCheck, IconAgent,
-  IconClock, IconAlert, IconZap, IconCpu, IconTrash, IconX,
-  IconGlobe, IconLayers, IconShield, IconGithub, IconCommand, IconSearch, type IconProps,
+  IconZap, IconCpu, IconTrash, IconX,
+  IconGlobe, IconLayers, IconShield, IconGithub, IconCommand, IconSearch, IconLayoutGrid, IconLeaf, IconKanban, IconNetwork, type IconProps,
 } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
 import { stateColor, type AgentState } from '@/design/tokens';
@@ -24,13 +25,14 @@ import { useCategories, getCategoryById, sortByCategory, type Category } from '@
 import { useDashboardFocus } from '@/hooks/useDashboardFocus';
 import { getWorkspaceConfig } from '@/lib/workspace-config';
 import { useBubbleHasFilesMap, useBubbleChangeCountMap } from '@/hooks/useGitChanges';
-import { workspaceName } from '@/lib/workspace-name';
+
 import { useTeamBubbles } from '@/components/AdminGraph';
 import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { SAFE_BOTTOM, SAFE_TOP } from '@/lib/platform';
 import { cssZoom } from '@/lib/ui-zoom';
 import type { JSX } from 'react';
+import { Orb } from '@yogesharc/thinking-orbs';
 
 type Props = {
   bubbles: Bubble[];
@@ -51,7 +53,7 @@ type Props = {
 export function Dashboard(props: Props) {
   const t = useTokens();
   const tr = useT();
-  const { bubbles: rawBubbles, activeBubbleId, onOpenAgent, onCreateAgent, onFocus, onRename, onRemove, onChangeWorkspace, onToggleCategory, onSetCategories, availableWorkspaces, role, userId } = props;
+  const { bubbles: rawBubbles, onOpenAgent, onCreateAgent, onRename, onRemove, onChangeWorkspace, onToggleCategory, onSetCategories, availableWorkspaces, role, userId } = props;
   // Filtramos los archivados: no aparecen en Dashboard (viven en su propia
   // pantalla). Esto incluye stats, vistas y nodos del grafo.
   const bubbles = rawBubbles.filter((b) => !b.archived);
@@ -106,7 +108,10 @@ export function Dashboard(props: Props) {
   const { categories } = useCategories();
   const { activeFocus, setFocus, applyFocus } = useDashboardFocus();
   const scopeBubbles = showAll ? teamBubbles : bubbles;
+  const [agentQuery, setAgentQuery] = useState('');
+  const q = isPhone ? agentQuery.trim().toLowerCase() : '';
   const viewBubbles = applyFocus([...scopeBubbles])
+    .filter((b) => !q || b.title.toLowerCase().includes(q) || (b.workspace ?? '').toLowerCase().includes(q))
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const focusEmpty = activeFocus.length > 0 && viewBubbles.length === 0;
   // Clic inerte sobre agentes ajenos: el admin solo abre los que realmente posee.
@@ -133,93 +138,77 @@ export function Dashboard(props: Props) {
     else if (dir === 'down') el.scrollBy({ top: step, behavior: 'smooth' });
   }), []);
 
+  const projects = new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 1;
+  const allIdle = running.length === 0 && waiting.length === 0 && errors.length === 0;
+
   return (
     <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
-      {/* El rail de 280px es lo que hace que en 390px el ancho disponible ya
-          arranque en negativo (64 sidebar + 280 rail + 64 padding > 390). */}
-      {!isPhone && (
-        <DashboardRail
-          bubbles={bubbles}
-          activeBubbleId={activeBubbleId}
-          availableWorkspaces={availableWorkspaces}
-          onFocus={onFocus}
-          onOpenAgent={onOpenAgent}
-        />
-      )}
-
-      <div ref={mainScrollRef} style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        // El padding inferior solo separa del final de la lista: el safe area
-        // ya lo cubre la barra de navegación, que va debajo de este scroll.
-        padding: isPhone ? '12px 12px 16px' : '28px 32px 110px',
-        overflowY: 'auto', overflowX: 'hidden', position: 'relative',
-      }}>
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={tween()}
-          style={{
-            display: 'flex', alignItems: 'center', gap: isPhone ? 16 : 24,
-            padding: isPhone ? '4px 2px 20px' : '12px 8px 32px', flexWrap: 'wrap',
-          }}>
-          <div style={isPhone
-            ? { flex: '1 1 100%', minWidth: 0 }
-            : { flex: '1 1 280px', maxWidth: 380, minWidth: 240 }}>
-            <div style={{
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 400,
-              color: t.text2,
-            }}>{todayLabel(new Date(), lang)}</div>
-            <h1 style={{
-              margin: '6px 0 16px', fontFamily: t.fontSans, fontSize: isPhone ? 24 : 30,
-              fontWeight: 500, color: t.text0,
-              lineHeight: 1.15,
-            }}>
+      <div ref={mainScrollRef} className="eco-page eco-page--scroll" style={{ overflowX: 'hidden', position: 'relative' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: isPhone ? 12 : 18, alignItems: 'stretch' }}>
+          <div style={{ flex: '1.4 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
+            {/* En el teléfono no hay barra lateral: la marca vive aquí. */}
+            {isPhone ? (
+              <div className="eco-hstack" style={{ gap: 9 }}>
+                <EcoGlyph size={24}/>
+                <span style={{ fontSize: 16, fontWeight: 600 }}>eco</span>
+                <div className="eco-eyebrow" style={{ marginLeft: 'auto', textAlign: 'right' }}>{todayLabel(new Date(), lang)}</div>
+              </div>
+            ) : (
+              <div className="eco-eyebrow">{todayLabel(new Date(), lang)}</div>
+            )}
+            <h1 className="eco-title">
               {tr(active.length === 1 ? 'dash.active_summary_one' : 'dash.active_summary_many', { n: active.length })}
               <br/>
-              {(() => {
-                const projects = new Set(bubbles.map((b) => b.workspace).filter(Boolean)).size || 1;
-                return tr(projects === 1 ? 'dash.in_projects' : 'dash.in_projects_many', { n: projects });
-              })()}
+              {tr(projects === 1 ? 'dash.in_projects' : 'dash.in_projects_many', { n: projects })}
             </h1>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {running.length > 0 && <Pill color={t.ok} icon={IconZap}>{tr('dash.stat.running', { n: running.length })}</Pill>}
-              {waiting.length > 0 && <Pill color={t.warn} icon={IconClock}>{tr('dash.stat.waiting', { n: waiting.length })}</Pill>}
-              {errors.length > 0 && <Pill color={t.err} icon={IconAlert}>{tr('dash.stat.errors', { n: errors.length })}</Pill>}
-              {running.length === 0 && waiting.length === 0 && errors.length === 0 && (
-                <Pill color={t.text2}>{tr('dash.stat.idle')}</Pill>
-              )}
+            <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
+              {running.length > 0 && <Chip tone="ok" dot={t.ok}>{tr('dash.stat.running', { n: running.length })}</Chip>}
+              {waiting.length > 0 && <Chip tone="warn" dot={t.warn}>{tr('dash.stat.waiting', { n: waiting.length })}</Chip>}
+              {errors.length > 0 && <Chip tone="err" dot={t.err}>{tr('dash.stat.errors', { n: errors.length })}</Chip>}
+              {allIdle && <Chip dot style={{ color: t.text1 }}>{tr('dash.stat.idle')}</Chip>}
             </div>
           </div>
-
           <DashboardCards bubbles={bubbles} onOpenAgent={onOpenAgent} compact={isPhone}/>
-        </motion.div>
+        </div>
 
-        <SectionLabel count={viewBubbles.length} action={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {isAdmin && (
-              <div style={{ display: 'flex', gap: 4, marginRight: 4 }}>
-                <ScopeBtn active={scope === 'mine'} onClick={() => setScope('mine')}>{tr('dash.scope.mine')}</ScopeBtn>
-                <ScopeBtn active={scope === 'all'} onClick={() => setScope('all')}>{tr('dash.scope.all')}</ScopeBtn>
-              </div>
-            )}
-            {categories.length > 0 && (
-              <FocusControl
-                categories={categories}
-                selected={activeFocus}
-                onChange={setFocus}
-                shown={viewBubbles.length}
-                total={scopeBubbles.length}
-              />
-            )}
-            <div style={{ display: 'flex', gap: 4 }}>
-              <IconBtn icon={IconGrid} size={28} active={effectiveView === 'grid'} onClick={() => setView('grid')}/>
-              <IconBtn icon={IconColumns} size={28} active={effectiveView === 'kanban'} onClick={() => setView('kanban')}/>
-              <IconBtn icon={IconGraph} size={28} active={effectiveView === 'graph'} onClick={() => setView('graph')}/>
-            </div>
-            <CreateAgentButton onCreate={onCreateAgent} workspaces={availableWorkspaces}/>
-          </div>
-        }>{tr('dash.section.agents')}</SectionLabel>
+        <div className="eco-hstack eco-hstack--wrap">
+          <h2 className="eco-h2">{tr('dash.section.agents')}</h2>
+          <span className="eco-count">{viewBubbles.length}</span>
+          <div className="eco-spacer"/>
+          {isAdmin && (
+            <Segmented<DashScope> size="md" value={scope} onChange={setScope} options={[
+              { id: 'mine', label: tr('dash.scope.mine') },
+              { id: 'all', label: tr('dash.scope.all') },
+            ]}/>
+          )}
+          {/* En escritorio el focus vive junto al buscador del menú. */}
+          {isPhone && categories.length > 0 && (
+            <FocusControl
+              categories={categories}
+              selected={activeFocus}
+              onChange={setFocus}
+              shown={viewBubbles.length}
+              total={scopeBubbles.length}
+            />
+          )}
+          <Segmented<DashView> size="md" iconsOnly value={effectiveView} onChange={setView} options={[
+            { id: 'grid', icon: IconLayoutGrid, label: tr('dash.view.grid') },
+            { id: 'kanban', icon: IconKanban, label: tr('dash.view.board') },
+            { id: 'graph', icon: IconNetwork, label: tr('dash.view.graph') },
+          ]}/>
+          <CreateAgentButton onCreate={onCreateAgent} workspaces={availableWorkspaces}/>
+        </div>
 
+        {isPhone && (
+          <label className="eco-inputbar">
+            <IconSearch size={16}/>
+            <input className="eco-input-bare" value={agentQuery} onChange={(e) => setAgentQuery(e.target.value)}
+              placeholder={tr('nav.search_agents')} aria-label={tr('nav.search_agents')} style={{ fontSize: 16 }}/>
+          </label>
+        )}
+
+        {/* Cada cambio de vista entra con una transición corta. */}
+        <div key={effectiveView + (showAll ? ':all' : '')} className="eco-pane">
         {focusEmpty && effectiveView !== 'graph' ? (
           <div style={{
             padding: '40px 16px', textAlign: 'center',
@@ -253,46 +242,26 @@ export function Dashboard(props: Props) {
         ) : showAll ? (
           // Admin en modo "todos": el MISMO GraphView agrupado por usuario
           // (Eco → usuario → sus bubbles), con todas las animaciones/controles.
-          <GraphView
-            bubbles={applyFocus(teamBubbles)}
-            focusIds={activeFocus}
-            groupMode="owner"
-            ownerNames={ownerNames}
-            onOpenAgent={openGuarded}
-          />
+          <div className="eco-graphsurface">
+            <GraphView
+              bubbles={applyFocus(teamBubbles)}
+              focusIds={activeFocus}
+              groupMode="owner"
+              ownerNames={ownerNames}
+              onOpenAgent={openGuarded}
+            />
+          </div>
         ) : (
-          <GraphView bubbles={applyFocus(bubbles)} focusIds={activeFocus} onOpenAgent={onOpenAgent}/>
+          <div className="eco-graphsurface">
+            <GraphView bubbles={applyFocus(bubbles)} focusIds={activeFocus} onOpenAgent={onOpenAgent}/>
+          </div>
         )}
+        </div>
       </div>
 
       {/* El input global se removió del Dashboard. Para crear un agente
           nuevo, usar el botón "+" del grid. */}
     </div>
-  );
-}
-
-// Botón de texto segmentado para el toggle de alcance (Mis agentes / Todos).
-function ScopeBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  const t = useTokens();
-  const [h, setH] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={{
-        height: 28, padding: '0 10px',
-        display: 'inline-flex', alignItems: 'center',
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-        background: active ? t.accentFaint : (h ? t.bg3 : 'transparent'),
-        color: active ? t.accent : (h ? t.text0 : t.text1),
-        border: `1px solid ${active ? t.accentDim : 'transparent'}`,
-        borderRadius: 8, cursor: 'pointer', transition: T_UI, whiteSpace: 'nowrap',
-      }}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -351,36 +320,17 @@ function CardShell({
   onClick?: () => void;
   children: ReactNode;
 }) {
-  const t = useTokens();
-  const [hover, setHover] = useState(false);
   return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+    <div onClick={onClick}
+      className={`eco-card${onClick ? ' eco-card--click' : ''}`}
       style={{
-        ...glassEffect(t, { hovered: hover, intensity: 'normal' }),
-        borderRadius: 16,
-        padding: '16px 16px',
-        cursor: onClick ? 'pointer' : 'default',
-        position: 'relative',
-        transition: T_UI,
-        border: `1px solid ${accentBorder ? t.accent : (hover ? t.glassBorderHi : t.glassBorder)}`,
-        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`,
-        overflow: 'hidden',
-        // Llena 100% del slot del flex container — así todas las cards
-        // quedan exactamente del mismo ancho y alto aunque su contenido varíe.
-        width: '100%',
-        height: '100%',
-        boxSizing: 'border-box',
-        display: 'flex',
-        flexDirection: 'column',
+        width: '100%', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column',
+        ...(accentBorder ? { boxShadow: 'inset 0 0 0 1px var(--ac-line)' } : null),
       }}>
       {children}
     </div>
   );
 }
-
 
 function LiveAgentsCard({ bubbles }: { bubbles: Bubble[] }) {
   const t = useTokens();
@@ -400,22 +350,17 @@ function LiveAgentsCard({ bubbles }: { bubbles: Bubble[] }) {
 
   return (
     <CardShell icon={IconZap} iconColor={t.accent}>
-      <div style={{
-        fontSize: 11, color: t.text2, fontFamily: t.fontSans,
-        fontWeight: 500,
-        marginBottom: 4,
-      }}>{tr('dash.card.live.title')}</div>
+      <div className="eco-eyebrow" style={{ fontSize: 11, marginBottom: 8 }}>{tr('dash.card.live.title')}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{
-          fontSize: 32, fontFamily: t.fontSans, fontWeight: 500,
-          color: t.text0, letterSpacing: -0.5,
+          fontSize: 36, lineHeight: 1.05, letterSpacing: '-0.03em', color: t.text0,
         }}>{active}</span>
-        <span style={{ fontSize: 13, color: t.text3 }}>/ {total}</span>
+        <span style={{ fontFamily: t.fontMono, color: t.text3 }}>/ {total}</span>
       </div>
       {/* Mini barra horizontal apilada: running | waiting | errors | idle */}
       <div style={{
         height: 6, borderRadius: 4, marginTop: 8,
-        background: t.bg3, overflow: 'hidden',
+        background: t.raised, overflow: 'hidden',
         display: 'flex',
       }}>
         {running > 0 && <div style={{ width: `${pct(running)}%`, background: t.ok }}/>}
@@ -570,11 +515,7 @@ function ResourcesCard({ bubbles }: { bubbles: Bubble[] }) {
 
   return (
     <CardShell icon={IconLayers} iconColor={t.busy}>
-      <div style={{
-        fontSize: 11, color: t.text2, fontFamily: t.fontSans,
-        fontWeight: 500,
-        marginBottom: 8,
-      }}>{tr('dash.card.res.title')}</div>
+      <div className="eco-eyebrow" style={{ fontSize: 11, marginBottom: 8 }}>{tr('dash.card.res.title')}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {openItems.length === 0 ? (
           <span style={{ fontSize: 12, color: t.text3 }}>{tr('dash.card.res.empty')}</span>
@@ -622,11 +563,7 @@ function SystemStatusCard() {
 
   return (
     <CardShell icon={IconShield} iconColor={t.ok}>
-      <div style={{
-        fontSize: 11, color: t.text2, fontFamily: t.fontSans,
-        fontWeight: 500,
-        marginBottom: 8,
-      }}>{tr('dash.card.sys.title')}</div>
+      <div className="eco-eyebrow" style={{ fontSize: 11, marginBottom: 8 }}>{tr('dash.card.sys.title')}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {rows.map((r, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -710,13 +647,14 @@ function AgentBubble({
       style={{
         position: 'relative',
         ...glassEffect(t, { hovered: hover, intensity: 'normal' }),
-        borderRadius: 16,
-        padding: isPhone ? '12px 12px 10px' : '16px 16px 12px',
+        borderRadius: 18,
+        padding: isPhone ? '14px 14px 12px' : '16px',
         cursor: renaming ? 'default' : 'pointer',
         transition: T_UI,
         overflow: 'visible',
+        flex: 1, minWidth: 0,
         display: 'flex', flexDirection: 'column', gap: 12,
-        ...(busy ? { borderColor: `color-mix(in oklch, ${t.ok} 55%, transparent)` } : null),
+        ...(busy ? { boxShadow: `inset 0 0 0 1px ${t.accentLine}` } : null),
       }}
     >
       <div style={{
@@ -807,35 +745,21 @@ function AgentBubble({
           <span style={{
             minWidth: 0,
             display: 'inline-flex', alignItems: 'center', gap: 4,
-            flexWrap: 'wrap', justifyContent: 'flex-end',
+            flexWrap: 'wrap',
           }}>
-            {/* En el teléfono el chip se reduce al punto de color: el nombre
-                completo no entraba al lado del estado, y el color ya es el
-                identificador — el nombre sigue en el tooltip y en el menú. */}
-            {bubbleCategories.map((category) => (isPhone ? (
-              <span
-                key={category.id}
-                title={category.name}
-                aria-label={category.name}
-                style={{
-                  width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-                  background: `color-mix(in oklch, ${category.color} 55%, transparent)`,
-                  border: `1.5px solid ${category.color}`,
-                }}/>
-            ) : (
+            {bubbleCategories.map((category) => (
               <span key={category.id} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '1px 8px', borderRadius: 6,
-                background: t.bg2,
-                border: `1px solid ${t.glassBorder}`,
-                fontSize: 11, color: t.text1,
-                whiteSpace: 'nowrap', maxWidth: 110,
+                display: 'inline-flex', alignItems: 'center', gap: 7,
+                padding: '2px 10px', borderRadius: 11,
+                background: t.raised,
+                fontSize: 12, color: t.text0,
+                whiteSpace: 'nowrap', maxWidth: 130,
                 overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: category.color, flexShrink: 0 }}/>
                 {category.name}
               </span>
-            )))}
+            ))}
           </span>
       </div>
       )}
@@ -918,94 +842,62 @@ function WorkspacePicker({ workspaces, selected, onSelect, onSubmit }: {
   onSelect: (ws: string) => void;
   onSubmit: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
-  const isPhone = useIsPhone();
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
   const visible = q ? workspaces.filter((ws) => ws.toLowerCase().includes(q)) : workspaces;
   if (workspaces.length <= 1) return null;
   const home = getHome();
   return (
-    <div>
-      <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
-        {tr('dash.bubble.workspace_label')}
-      </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
-        padding: isPhone ? '10px 12px' : '8px 10px', borderRadius: 8,
-        background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      }}>
-        <IconSearch size={13} style={{ color: t.text2, flexShrink: 0 }}/>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            // Con un único match, Enter lo elige y crea: el teclado alcanza
-            // sin bajar a la lista.
-            if (e.key === 'Enter' && visible.length === 1) {
-              onSelect(visible[0]!);
-              onSubmit();
-            }
-          }}
-          placeholder={tr('dash.bubble.workspace_search')}
-          style={{
-            flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none',
-            // 16px: por debajo de eso iOS hace auto-zoom al enfocar.
-            fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13, color: t.text0,
-          }}
-        />
-      </div>
-      {/* La lista scrollea sola: con muchas carpetas empujaba los botones
-          fuera de la ventana. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
-        {visible.length === 0 && (
-          <div style={{ fontSize: 12, color: t.text3, padding: '10px 4px', textAlign: 'center' }}>
-            {tr('dash.bubble.workspace_no_match')}
-          </div>
-        )}
-        {visible.map((ws) => {
-          const active = selected === ws;
-          const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
-          const display = ws.startsWith(home) ? '~' + ws.slice(home.length) : ws;
-          return (
-            <button
-              key={ws}
-              type="button"
-              onClick={() => onSelect(ws)}
-              title={ws}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: isPhone ? '12px' : '8px 10px', borderRadius: 8,
-                border: `1px solid ${active ? t.accent : t.glassBorder}`,
-                background: active ? t.accentFaint : t.bg2,
-                color: active ? t.accent : t.text1,
-                cursor: 'pointer', textAlign: 'left',
-                transition: T_UI,
-              }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                background: active ? t.accent : t.bg3,
-                color: active ? t.accentOn : t.text2,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <IconFolder size={11}/>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-                  color: active ? t.accent : t.text0,
-                }}>{name}</div>
-                <div style={{
-                  fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-                  marginTop: 1,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>{display}</div>
-              </div>
-              {active && <IconCheck size={13}/>}
-            </button>
-          );
-        })}
+    <div className="eco-dialog__section">
+      <div className="eco-field-label">{tr('dash.bubble.workspace_label')}</div>
+      <div className="eco-optlist">
+        <label className="eco-optlist__search">
+          <IconSearch size={15}/>
+          <input
+            className="eco-input-bare"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              // Con un único match, Enter lo elige y crea: el teclado alcanza
+              // sin bajar a la lista.
+              if (e.key === 'Enter' && visible.length === 1) {
+                onSelect(visible[0]!);
+                onSubmit();
+              }
+            }}
+            placeholder={tr('dash.bubble.workspace_search')}
+          />
+        </label>
+        {/* La lista scrollea sola: con muchas carpetas empujaba los botones
+            fuera de la ventana. */}
+        <div className="eco-optlist__scroll" style={{ maxHeight: 236 }}>
+          {visible.length === 0 && (
+            <div className="eco-faint" style={{ padding: '12px 4px', textAlign: 'center' }}>
+              {tr('dash.bubble.workspace_no_match')}
+            </div>
+          )}
+          {visible.map((ws) => {
+            const active = selected === ws;
+            const name = ws.split('/').filter(Boolean).slice(-1)[0] || ws;
+            const display = ws.startsWith(home) ? '~' + ws.slice(home.length) : ws;
+            return (
+              <button
+                key={ws}
+                type="button"
+                onClick={() => onSelect(ws)}
+                title={ws}
+                className={`eco-option${active ? ' is-on' : ''}`}>
+                <span className="eco-option__tile"><IconFolder size={16}/></span>
+                <span className="eco-option__text">
+                  <span className="eco-option__title">{name}</span>
+                  <span className="eco-option__sub">{display}</span>
+                </span>
+                {active && <IconCheck size={16} className="eco-option__check"/>}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1019,7 +911,6 @@ function NameAgentDialog({
   onCreate: (title?: string, workspace?: string, baseBranch?: string) => void;
   workspaces: string[];
 }) {
-  const t = useTokens();
   const tr = useT();
   const isPhone = useIsPhone();
   const keyboardInset = useKeyboardInset();
@@ -1104,190 +995,108 @@ function NameAgentDialog({
     onCreate(v || undefined, selectedWs || undefined, branch || undefined);
   }
 
-  return (
+  // Portal: la hoja del shell crea un contexto de apilamiento y el velo debe
+  // cubrir también la barra lateral y el dock.
+  return createPortal(
     <div
+      className="eco-scrim"
       onClick={onClose}
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0,
-        // El overlay es fixed, así que el teclado de iOS lo taparía por abajo.
-        // Cortarlo en la altura del teclado deja la sheet completa a la vista.
-        bottom: keyboardInset,
-        zIndex: 200,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        display: 'flex', justifyContent: 'center',
-        alignItems: isPhone ? 'flex-end' : 'center',
-        padding: isPhone ? 0 : 24,
-      }}>
+      // El overlay es fixed, así que el teclado de iOS lo taparía por abajo.
+      // Cortarlo en la altura del teclado deja la sheet completa a la vista.
+      style={{ bottom: keyboardInset }}>
       <div
+        className="eco-dialog"
+        role="dialog" aria-modal="true" aria-label={tr('dash.bubble.new')}
         onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(440px, 100%)',
-          background: t.windowBg, border: `1px solid ${t.glassBorderHi}`,
-          boxShadow: t.shadowLg,
-          display: 'flex', flexDirection: 'column', gap: 12,
-          ...(isPhone ? {
-            // Sheet anclada abajo: el pulgar llega a los botones sin estirarse,
-            // que es el patrón de cualquier modal de iOS.
-            borderRadius: '20px 20px 0 0',
-            padding: `20px 16px calc(20px + ${keyboardInset > 0 ? '0px' : SAFE_BOTTOM})`,
-            maxHeight: dvh(85), overflowY: 'auto',
-          } : {
-            borderRadius: 16,
-            padding: 20,
-            // Sin tope de altura, con muchas carpetas el diálogo crecía más
-            // que la ventana y los botones quedaban fuera de pantalla, justo
-            // donde flota el dock. Ahora el panel nunca pasa del alto útil.
-            maxHeight: vh(85), overflowY: 'auto',
-          }),
-        }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: t.accentFaint, color: t.accent,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconAgent size={18} strokeWidth={2}/>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: t.text0 }}>
-              {tr('dash.bubble.new')}
-            </div>
-            <div style={{ fontSize: 12, color: t.text2, marginTop: 1 }}>
-              {tr('dash.bubble.name_label')}
-            </div>
-          </div>
+        // Sin tope de altura, con muchas carpetas el diálogo crecía más que la
+        // ventana y los botones quedaban fuera de pantalla.
+        style={{ maxHeight: isPhone ? dvh(85) : vh(88), ...(isPhone && keyboardInset > 0 ? { paddingBottom: 20 } : null) }}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile"><IconAgent size={20} strokeWidth={2}/></span>
+          <h2 className="eco-dialog__title">{tr('dash.bubble.new')}</h2>
+          <IconBtn icon={IconX} size={32} onClick={onClose} title={tr('common.close')}/>
         </div>
         {workspaces.length === 0 ? (
           <>
-            <div style={{
-              padding: '16px 4px 6px', textAlign: 'center',
-              display: 'flex', flexDirection: 'column', gap: 6,
-            }}>
-              <div style={{ fontSize: 13, color: t.text0, fontWeight: 500 }}>
-                {tr('wsp.no_workspaces')}
-              </div>
-              <div style={{ fontSize: 12, color: t.text2 }}>
-                {tr('wsp.ask_admin')}
+            <div className="eco-dialog__section" style={{ textAlign: 'center', padding: '8px 4px' }}>
+              <div className="eco-label">{tr('wsp.no_workspaces')}</div>
+              <div className="eco-dialog__body">{tr('wsp.ask_admin')}</div>
+            </div>
+            <div className="eco-dialog__foot">
+              <div className="eco-dialog__actions">
+                <button type="button" onClick={onClose} className="eco-btn eco-btn--lg eco-btn--outline">
+                  {tr('common.close')}
+                </button>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                height: 36, borderRadius: 999, border: `1px solid ${t.glassBorder}`,
-                background: 'transparent', color: t.text1,
-                fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
-              }}>
-              {tr('common.close')}
-            </button>
           </>
         ) : (
         <>
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-          placeholder={tr('dash.bubble.name_placeholder')}
-          style={{
-            width: '100%', boxSizing: 'border-box',
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            borderRadius: 10, padding: isPhone ? '12px 16px' : '10px 12px',
-            // 16px: por debajo de eso iOS hace auto-zoom al enfocar.
-            fontFamily: t.fontSans, fontSize: isPhone ? 16 : 14, color: t.text0,
-            outline: 'none',
-          }}
-        />
+        <div className="eco-dialog__section">
+          <label className="eco-field-label" htmlFor="eco-new-agent-name">{tr('dash.bubble.name_label')}</label>
+          <input
+            id="eco-new-agent-name"
+            ref={inputRef}
+            className="eco-field"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+            placeholder={tr('dash.bubble.name_placeholder')}
+          />
+        </div>
         <WorkspacePicker workspaces={workspaces} selected={selectedWs} onSelect={setSelectedWs} onSubmit={submit}/>
         {/* Selector de rama base — siempre visible cuando hay workspace
             seleccionado. Favoritos vienen de Settings → Carpetas → ws actual.
             Si no hay favoritos para este ws, mostramos solo "otra…". */}
-        <div>
-          <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
+        <div className="eco-dialog__section">
+          <div className="eco-field-label">
             {tr('dash.bubble.base_branch_label')} {favorites.length === 0 && (
-              <span style={{ color: t.text3, fontWeight: 400 }}>
-                {tr('dash.bubble.base_branch_no_favorites')}
-              </span>
+              <span className="eco-faint">{tr('dash.bubble.base_branch_no_favorites')}</span>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {favorites.map((b: string) => {
-                const active = !customMode && baseBranch === b;
-                return (
-                  <button
-                    key={b}
-                    type="button"
-                    onClick={() => { setCustomMode(false); setBaseBranch(b); }}
-                    style={{
-                      padding: isPhone ? '12px 16px' : '6px 10px', borderRadius: 999,
-                      border: `1px solid ${active ? t.accent : t.glassBorder}`,
-                      background: active ? t.accentFaint : t.bg2,
-                      color: active ? t.accent : t.text1,
-                      fontFamily: t.fontMono, fontSize: isPhone ? 13 : 11, cursor: 'pointer',
-                    }}>{b}</button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => setCustomMode(true)}
-                style={{
-                  padding: isPhone ? '12px 16px' : '6px 10px', borderRadius: 999,
-                  border: `1px solid ${customMode ? t.accent : t.glassBorder}`,
-                  background: customMode ? t.accentFaint : t.bg2,
-                  color: customMode ? t.accent : t.text2,
-                  fontFamily: t.fontSans, fontSize: isPhone ? 13 : 11, cursor: 'pointer',
-                }}>{tr('dash.bubble.base_branch_other')}</button>
-            </div>
+              const active = !customMode && baseBranch === b;
+              return (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => { setCustomMode(false); setBaseBranch(b); }}
+                  className={`eco-choice eco-choice--mono${active ? ' is-on' : ''}`}>{b}</button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setCustomMode(true)}
+              className={`eco-choice eco-choice--dashed${customMode ? ' is-on' : ''}`}>{tr('dash.bubble.base_branch_other')}</button>
+          </div>
           {customMode && (
             <input
+              className="eco-field eco-field--mono"
               value={customDraft}
               onChange={(e) => setCustomDraft(e.target.value)}
               placeholder={tr('dash.branch_name_placeholder')}
               spellCheck={false}
               autoCorrect="off"
-              style={{
-                marginTop: 6, width: '100%', boxSizing: 'border-box',
-                background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                borderRadius: 8, padding: '8px 10px',
-                fontFamily: t.fontMono, fontSize: 12, color: t.text0,
-                outline: 'none',
-              }}
             />
           )}
         </div>
-        <div style={{ fontSize: 11, color: t.text3 }}>
-          {tr('dash.bubble.enter_hint')}
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              flex: 1, height: isPhone ? 48 : 36, borderRadius: 999,
-              border: `1px solid ${t.glassBorder}`,
-              background: 'transparent', color: t.text1,
-              fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13, cursor: 'pointer',
-            }}>
-            {tr('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            style={{
-              flex: 1, height: isPhone ? 48 : 36, borderRadius: 999, border: 0,
-              background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13, fontWeight: 500,
-              cursor: 'pointer',
-            }}>
-            {tr('common.create')}
-          </button>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__hint">{tr('dash.bubble.enter_hint')}</div>
+          <div className="eco-dialog__actions">
+            <button type="button" onClick={onClose} className="eco-btn eco-btn--lg eco-btn--outline">
+              {tr('common.cancel')}
+            </button>
+            <button type="button" onClick={submit} className="eco-btn eco-btn--lg eco-btn--primary">
+              {tr('common.create')}
+            </button>
+          </div>
         </div>
         </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1768,6 +1577,8 @@ function GridView({
     <motion.div
       key={b.id}
       layout
+      // La celda se estira al alto de la fila; la tarjeta la llena.
+      style={{ display: 'flex', minWidth: 0 }}
       initial={{ opacity: 0, scale: 0.92, y: 12 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.94, y: -8 }}
@@ -1887,7 +1698,6 @@ function KanbanView({
 }) {
   const t = useTokens();
   const tr = useT();
-  const isPhone = useIsPhone();
   const { open: openNameDialog, dialog: nameDialog } = useNameAgentDialog(onCreateAgent, workspaces);
   const ownerLabelFor = (b: Bubble): string | undefined =>
     ownerNames && b.ownerId && b.ownerId !== readOnlyOwnerId ? ownerNames[b.ownerId] : undefined;
@@ -1935,10 +1745,9 @@ function KanbanView({
   if (visibleCols.length === 0) visibleCols.push(uncategorized);
 
   return (
-    <div style={{
-      display: 'flex', gap: 12, alignItems: 'flex-start',
-      overflowX: 'auto', paddingBottom: 8,
-    }}>
+    // Mampostería: los tableros se apilan en tantas columnas como quepan, sin
+    // scroll horizontal. Uno largo ocupa su columna y los cortos se acomodan.
+    <div style={{ columnWidth: 300, columnGap: 16 }}>
       {nameDialog}
       {visibleCols.map((col) => {
         const items = col.items;
@@ -1950,7 +1759,6 @@ function KanbanView({
         return (
           <motion.div
             key={col.id}
-            layout
             onDragOver={(e: React.DragEvent) => {
               if (!isTarget) return;
               e.preventDefault();
@@ -1973,17 +1781,14 @@ function KanbanView({
             animate={{ opacity: 1, y: 0 }}
             transition={tween()}
             style={{
-              // En el teléfono una columna de 280px deja ver ~46px de la
-              // siguiente y ninguna entera. Con 85vw la columna activa llena
-              // la pantalla y asoma la que sigue, que es la señal de que hay
-              // más para scrollear al costado.
-              flex: isPhone ? `0 0 ${vw(85)}` : '0 0 280px',
-              background: isOver ? `color-mix(in oklch, ${col.color} 10%, ${t.bg2})` : t.bg2,
-              border: `1px ${isTarget ? 'dashed' : 'solid'} ${isOver ? col.color : t.glassBorder}`,
+              breakInside: 'avoid', marginBottom: 16,
+              background: isOver ? `color-mix(in oklch, ${col.color} 10%, ${t.card})` : t.card,
+              border: `1px ${isTarget ? 'dashed' : 'solid'} ${isOver ? col.color : isTarget ? t.line2 : 'transparent'}`,
               opacity: drag?.kind === 'col' && drag.id === col.id ? 0.45 : 1,
-              borderRadius: 16,
-              padding: 12,
-              minHeight: 200,
+              borderRadius: 22,
+              padding: 14,
+              // Vacío (solo visible al arrastrar) deja lugar donde soltar.
+              minHeight: items.length === 0 ? 120 : undefined,
               transition: 'background 140ms, border-color 140ms',
               display: 'flex', flexDirection: 'column', gap: 10,
             }}>
@@ -2009,9 +1814,7 @@ function KanbanView({
                 flex: 1,
               }}>{col.label}</span>
               <span style={{
-                fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-                padding: '1px 8px', borderRadius: 999,
-                background: t.bg3,
+                fontFamily: t.fontMono, fontSize: 11.5, color: t.text3,
               }}>{items.length}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2301,22 +2104,17 @@ function KanbanCard({ bubble, onOpen, ownerLabel }: { bubble: Bubble; onOpen: ()
       style={{
         width: '100%', textAlign: 'left',
         display: 'flex', flexDirection: 'column', gap: 6,
-        padding: 10, borderRadius: 12,
-        ...glassEffect(t, { intensity: 'subtle' }),
-        // El border de glassEffect lo sobreescribimos cuando el agente está activo
-        // para que muestre el color del estado.
-        border: `1px solid ${isActive ? sColor : t.glassBorder}`,
+        padding: 12, borderRadius: 14,
+        background: t.raised, color: t.text0, fontFamily: 'inherit',
+        border: `1px solid ${isActive ? sColor : 'transparent'}`,
         cursor: 'pointer',
-        boxShadow: isActive
-          ? `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`
-          : `inset 0 1px 0 rgba(255,255,255,0.06), ${t.shadowMd}`,
-        transition: 'border-color 180ms, box-shadow 180ms, transform 180ms',
+        transition: 'border-color 180ms',
       }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <span style={{
-          width: 26, height: 26, borderRadius: 8, flexShrink: 0,
-          background: t.bg3,
-          color: t.text1,
+          width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+          background: t.card,
+          color: t.text0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
         }}>{bubbleLetter(bubble.title)}</span>
@@ -2391,10 +2189,7 @@ function FocusControl({ categories, selected, onChange, shown, total }: {
             color: active ? t.text0 : t.text1, fontFamily: t.fontSans, fontSize: 11,
             cursor: 'pointer', boxShadow: t.shadowMd, whiteSpace: 'nowrap',
           }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 5h18l-7 8v6l-4-2v-4z"/>
-          </svg>
+          <IconLeaf size={13}/>
           {active
             ? tr('graph.focus.active', { shown, total })
             : tr('graph.focus.label')}
@@ -2776,6 +2571,20 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
   const focusColorOf = (b: Bubble): string | null =>
     focusCats.find((c) => (b.categoryIds ?? []).includes(c.id))?.color ?? null;
   const anyWorking = useWorkingBubbleIds(bubbles).size > 0;
+  // Tono del núcleo: el elegido en el playground para fondo oscuro; en claro
+  // ese tono no contrasta y se usa el acento.
+  const lightMode = useTheme().effectiveMode === 'light';
+  const hubColor = lightMode ? t.accent : '#fba695';
+  // Sombra en el piso bajo un orbe, para que parezca flotar. Sin eventos: el arrastre lo recibe el círculo del nodo.
+  // La librería dibuja los puntos hasta el 80 % de la mitad de su tamaño: este
+  // es el tamaño de orbe cuyos puntos llegan casi al borde de una esfera de radio r.
+  const orbSizeFor = (r: number) => Math.round((r * 2) / 0.84);
+  const sphereBase = (r: number) => (
+    <g style={{ pointerEvents: 'none' }}>
+      <ellipse cx={0} cy={r * 1.2} rx={r * 0.78} ry={r * 0.17} fill="#000"
+        opacity={lightMode ? 0.16 : 0.5} filter="url(#eco-soft)"/>
+    </g>
+  );
 
   // Tier de USUARIO (solo owner mode): un nodo por dueño, en arco horizontal
   // alrededor de Eco. Los workspaces de cada usuario orbitan SU nodo.
@@ -3080,15 +2889,24 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }}/>
       <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMidYMid meet"
-        style={{ position: 'absolute', inset: 0, touchAction: 'none' }}>
+        style={{
+          position: 'absolute', inset: 0, touchAction: 'none',
+          // El plano entero se ve desde arriba: lo de atrás se aleja.
+          transform: 'perspective(1500px) rotateX(16deg) scale(1.06)', transformOrigin: '50% 58%',
+        }}>
         <defs>
-          <pattern id="eco-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+          {/* La grilla se mueve menos que los nodos al panear: queda "al fondo". */}
+          <pattern id="eco-grid" width="32" height="32" patternUnits="userSpaceOnUse"
+            patternTransform={`translate(${pan.x * 0.2},${pan.y * 0.2})`}>
             <circle cx="16" cy="16" r="0.6" fill={t.text3} opacity="0.3"/>
           </pattern>
           <radialGradient id="eco-glow">
             <stop offset="0%" stopColor={t.accent} stopOpacity="0.18"/>
             <stop offset="100%" stopColor={t.accent} stopOpacity="0"/>
           </radialGradient>
+          <filter id="eco-soft" x="-50%" y="-200%" width="200%" height="500%">
+            <feGaussianBlur stdDeviation="3.5"/>
+          </filter>
           {/* Filtro gooey — hace que nodos cercanos se fundan tipo gota de mercurio */}
           <filter id="eco-gooey">
             <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
@@ -3107,6 +2925,8 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
         {/* Partículas tipo "estrellas" en el fondo. Twinkleando (opacity + r)
             y drifteando muy lentamente en un loop pequeño para que se sientan
             vivas. Coordenadas relativas al viewBox W×H. */}
+        {/* Paralaje: las estrellas se desplazan menos que los nodos. */}
+        <g transform={`translate(${pan.x * 0.4},${pan.y * 0.4})`}>
         {[
           { fx: 0.08, fy: 0.12, r: 2.5, dur: 7,  color: t.accent },
           { fx: 0.25, fy: 0.78, r: 2,   dur: 8,  color: 'oklch(72% 0.16 290)' },
@@ -3169,6 +2989,7 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
             </g>
           );
         })}
+        </g>
 
         {/* (Anillos orbitales removidos — el sistema se ve más limpio sin
             las elipses de fondo, dejando solo enlaces vivos núcleo→electrón.) */}
@@ -3192,24 +3013,8 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
           style={{ transformOrigin: `${cx}px ${cy}px` }}
           animate={anyWorking ? { scale: [1, 1.05, 1] } : { scale: 1 }}
           transition={anyWorking ? { duration: 3.6, ease: 'easeInOut', repeat: Infinity } : tween()}>
-          <circle cx={cx} cy={cy} r={ECO_HUB_R} fill={t.bg1}
-            stroke={t.accent} strokeWidth="1" strokeOpacity="0.6"/>
+          <circle cx={cx} cy={cy} r={ECO_HUB_R} fill="transparent"/>
         </motion.g>
-        {/* Los anillos solo salen cuando algún agente trabaja. */}
-        {anyWorking && <>
-        <motion.circle
-          cx={cx} cy={cy} r={ECO_HUB_R - 6} fill="none"
-          stroke={t.accent} strokeWidth="0.5"
-          animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.5, 0, 0.5] }}
-          transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity }}
-        />
-        <motion.circle
-          cx={cx} cy={cy} r={ECO_HUB_R - 6} fill="none"
-          stroke={t.accent} strokeWidth="0.5"
-          animate={{ r: [ECO_HUB_R - 6, ECO_HUB_R + 10, ECO_HUB_R - 6], opacity: [0.3, 0, 0.3] }}
-          transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity, delay: 1.2 }}
-        />
-        </>}
         {/* Focus: brillo interior teñido y anillos que CONVERGEN hacia el
             núcleo, uno por categoría elegida (la idea es "concentración",
             no expansión). */}
@@ -3242,14 +3047,22 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
         {/* Wordmark "eco" dentro del hub — replica /assets/eco-wordmark.svg.
             SF Pro Display, weight 300, tracking sutil. Más limpio que el arco
             para el centro del modelo de Bohr. */}
-        <motion.text
+{/* Orbe del núcleo, con los valores afinados en el playground de la
+            librería. Es un <svg> propio y toma el color de `color` del grupo. */}
+        <g transform={`translate(${cx},${cy})`}>{sphereBase(ECO_HUB_R + 12)}</g>
+        <g transform={`translate(${cx - orbSizeFor(ECO_HUB_R + 12) / 2},${cy - orbSizeFor(ECO_HUB_R + 12) / 2})`}
+          style={{ color: hubColor, pointerEvents: 'none' }}>
+          <Orb state="using" variant="tap" speed={0.95} density={0.25} dotSize={1.8}
+            size={orbSizeFor(ECO_HUB_R + 12)} label="eco"/>
+        </g>
+{/* Wordmark dentro del orbe, en su mismo color. */}
+        <text
           x={cx} y={cy + 1}
-          textAnchor="middle" dominantBaseline="middle"
-          fill={t.text0}
-          fontFamily='-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif'
-          fontSize={ownerMode ? 30 : 24} fontWeight="300" letterSpacing="0.6">
+          textAnchor="middle" dominantBaseline="middle" fill={hubColor}
+          fontFamily={t.fontSans} fontSize={ownerMode ? 26 : 21} fontWeight="500" letterSpacing="-0.2"
+          style={{ pointerEvents: 'none' }}>
           eco
-        </motion.text>
+        </text>
 
         {/* Enlaces hub Eco → nodo de usuario (solo modo owner / admin). */}
         {ownerMode && ownerNodes.map((o) => {
@@ -3418,24 +3231,14 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
           <g key={'ws-node-' + ws.key} transform={`translate(${ws.x},${ws.y})`}
             onPointerDown={(e) => startWsDrag(ws.key, e)}
             style={{ cursor: wsDragging === ws.key ? 'grabbing' : 'grab' }}>
-            {ws.active && (
-              <motion.circle cx={0} cy={0} r={WS_NODE_R}
-                fill="none" stroke={t.accent} strokeWidth={1.4}
-                animate={{ r: [WS_NODE_R, WS_NODE_R + 14], opacity: [0.45, 0] }}
-                transition={{ duration: 2.2, ease: 'easeOut', repeat: Infinity }}/>
-            )}
-            <circle cx={0} cy={0} r={WS_NODE_R}
-              fill={t.bg1}
-              stroke={ws.active ? t.accent : t.glassBorder}
-              strokeWidth={ws.active ? 1.6 : 1}
-              strokeOpacity={ws.active ? 0.8 : 0.7}/>
+            {/* Sin relleno ni borde: solo recibe el arrastre. */}
+            <circle cx={0} cy={0} r={WS_NODE_R} fill="transparent"/>
             {/* Glifo de workspace — capas apiladas (layers): un proyecto con
                 varias partes. Rombo superior + dos ecos hacia abajo. */}
-            <g fill="none" stroke={t.text1} strokeWidth={1.5}
-              strokeLinecap="round" strokeLinejoin="round">
-              <path d="M0,-8 L9,-3.5 L0,1 L-9,-3.5 Z"/>
-              <path d="M-9,0 L0,4.5 L9,0"/>
-              <path d="M-9,3.5 L0,8 L9,3.5"/>
+{sphereBase(WS_NODE_R - 2)}
+            <g transform={`translate(${-orbSizeFor(WS_NODE_R - 2) / 2},${-orbSizeFor(WS_NODE_R - 2) / 2})`}
+              style={{ color: ws.active ? t.accent : t.text1, pointerEvents: 'none' }}>
+              <Orb state="reasoning" variant="twins" speed={ws.active ? 1 : 0.6} size={orbSizeFor(WS_NODE_R - 2)}/>
             </g>
             <text x={0} y={WS_NODE_R + 15} textAnchor="middle"
               fill={t.text1} fontFamily={t.fontSans} fontSize="11.5" fontWeight="600"
@@ -3501,7 +3304,11 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
           return (
             <g key={n.id}
               transform={`translate(${n.x},${n.y})`}
-              style={{ cursor: agentDragging === n.id ? 'grabbing' : 'pointer' }}
+              style={{
+                cursor: agentDragging === n.id ? 'grabbing' : 'pointer',
+                // Plano del fondo: los agentes quietos se atenúan.
+                opacity: isActive || isHover ? 1 : 0.8,
+              }}
               onMouseEnter={() => setHover(n.id)}
               onMouseLeave={() => setHover(null)}
               onPointerDown={(e) => startAgentDrag(n.id, e)}
@@ -3803,140 +3610,4 @@ function GraphView({ bubbles, focusIds = [], onOpenAgent, groupMode = 'workspace
   // contexts de los ancestros (el Dashboard vive anidado) — así la vista
   // cubre todo, incluido el dock.
   return isFull ? createPortal(graph, document.body) : graph;
-}
-
-function DashboardRail({
-  bubbles, activeBubbleId, availableWorkspaces, onOpenAgent,
-}: {
-  bubbles: Bubble[];
-  activeBubbleId: string | null;
-  availableWorkspaces: string[];
-  onFocus: (id: string) => void;
-  onOpenAgent: (id: string) => void;
-}) {
-  const t = useTokens();
-  const tr = useT();
-  const recent = lastOpenedFirst(bubbles).slice(0, 6);
-  // Cambios git por burbuja (archivos modificados sin commitear). Lo sumamos
-  // por carpeta para mostrar cuántos cambios pendientes hay en cada workspace.
-  const changeCounts = useBubbleChangeCountMap(bubbles);
-  // Combinar carpetas que tienen burbujas con todas las disponibles
-  const usedFolders = new Set(bubbles.map((b) => b.workspace).filter(Boolean));
-  const folders = Array.from(new Set([
-    ...Array.from(usedFolders),
-    ...availableWorkspaces.filter((w) => !usedFolders.has(w)),
-  ]));
-
-  return (
-    <div style={{
-      width: 280, flexShrink: 0,
-      borderRight: `1px solid ${t.glassBorder}`,
-      padding: '20px 16px',
-      display: 'flex', flexDirection: 'column', gap: 20,
-      overflow: 'auto',
-    }}>
-      <div>
-        <SectionLabel>{tr('dash.rail.recent')}</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {recent.length === 0 ? (
-            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('dash.rail.no_activity')}</div>
-          ) : recent.map((b) => (
-            <RecentRow key={b.id} bubble={b} active={b.id === activeBubbleId} onClick={() => onOpenAgent(b.id)}/>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <SectionLabel count={folders.length}>{tr('dash.rail.active_folders')}</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {folders.length === 0 ? (
-            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('dash.rail.no_folders')}</div>
-          ) : folders.map((f) => {
-            const inFolder = bubbles.filter((b) => b.workspace === f);
-            const changes = inFolder.reduce((sum, b) => sum + (changeCounts.get(b.id) ?? 0), 0);
-            return (
-              <FolderRow
-                key={f}
-                path={f}
-                count={inFolder.length}
-                changes={changes}
-                onClick={() => {
-                  const target = inFolder.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-                  if (target) onOpenAgent(target.id);
-                }}
-              />
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{ flex: 1 }}/>
-    </div>
-  );
-}
-
-function RecentRow({ bubble, active, onClick }: { bubble: Bubble; active: boolean; onClick: () => void }) {
-  const t = useTokens();
-  const [h, setH] = useState(false);
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
-        background: active ? t.bg3 : (h ? t.bg2 : 'transparent'),
-      }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontFamily: t.fontSans, fontSize: 13, color: active ? t.text0 : t.text1,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{bubble.title}</div>
-      </div>
-    </div>
-  );
-}
-
-function FolderRow({ path, count, changes, onClick }: { path: string; count: number; changes: number; onClick: () => void }) {
-  const t = useTokens();
-  const tr = useT();
-  const [h, setH] = useState(false);
-  const empty = count === 0;
-  return (
-    <div
-      onClick={empty ? undefined : onClick}
-      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      title={empty ? tr('rail.folders.tooltip_empty', { p: path }) : tr('rail.folders.tooltip_open', { p: path })}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 10px', borderRadius: 10,
-        cursor: empty ? 'default' : 'pointer',
-        background: !empty && h ? t.bg3 : 'transparent',
-        opacity: empty ? 0.55 : 1,
-      }}>
-      <div style={{ color: t.text3, display: 'flex' }}>
-        <IconFolder size={14}/>
-      </div>
-      <span style={{
-        flex: 1, fontFamily: t.fontSans, fontSize: 13, color: t.text1,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}>{workspaceName(path)}</span>
-      {changes > 0 && (
-        <span
-          title={tr('dash.rail.folder_changes', { n: changes })}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            color: t.warn, fontSize: 12,
-          }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.warn }}/>
-          {changes}
-        </span>
-      )}
-      {count > 0 && (
-        <span
-          title={tr('dash.rail.folder_bubbles', { n: count })}
-          style={{ minWidth: 16, textAlign: 'right', color: t.text3, fontSize: 12 }}>{count}</span>
-      )}
-    </div>
-  );
 }

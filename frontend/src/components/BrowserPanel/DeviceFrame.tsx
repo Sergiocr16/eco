@@ -56,7 +56,6 @@ export function DeviceFrame({ spec, visible, children }: {
     alignItems: spec ? 'center' : 'stretch',
     justifyContent: spec ? 'center' : 'stretch',
     gap: spec ? 6 : 0,
-    background: spec ? t.bg1 : 'transparent',
     overflow: 'hidden',
   };
   const sizerStyle: CSSProperties = spec
@@ -114,9 +113,8 @@ export function DeviceFrame({ spec, visible, children }: {
         </div>
       </div>
       {spec && (
-        <div style={{
-          flex: 'none', height: CAPTION - 6, lineHeight: `${CAPTION - 6}px`,
-          fontFamily: t.fontMono, fontSize: 10.5, color: t.text3,
+        <div className="eco-num" style={{
+          flex: 'none', height: CAPTION - 6, lineHeight: `${CAPTION - 6}px`, fontSize: 10.5,
         }}>
           {spec.name ? `${spec.name} · ` : ''}{spec.width}×{spec.height} · {Math.round(scale * 100)}%
         </div>

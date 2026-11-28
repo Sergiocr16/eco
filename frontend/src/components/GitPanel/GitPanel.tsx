@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useTokens } from '@/design/theme';
 import { IconGithub, IconLayers, IconBranch } from '@/design/icons';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useT } from '@/hooks/useI18n';
@@ -38,7 +37,6 @@ function saveSubtab(bubbleId: string, sub: GitSubtab) {
 }
 
 export function GitPanel({ workspace, bubbleId, filesChanged, gitChangesLoading, onRename }: Props) {
-  const t = useTokens();
   const tr = useT();
   const isPhone = useIsPhone();
   const [sub, setSub] = useState<GitSubtab>(() => loadSubtab(bubbleId));
@@ -74,12 +72,8 @@ export function GitPanel({ workspace, bubbleId, filesChanged, gitChangesLoading,
       />
 
       {/* Sub-nav */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 4,
-        padding: '6px 16px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        background: t.bg0,
-        flexShrink: 0, overflowX: 'auto',
+      <div className="eco-hstack eco-noscrollbar" style={{
+        gap: 4, padding: '4px 16px 8px', flexShrink: 0, overflowX: 'auto',
       }}>
         {subnav.map((s) => (
           <SubtabBtn
@@ -99,7 +93,7 @@ export function GitPanel({ workspace, bubbleId, filesChanged, gitChangesLoading,
           resuelve solo y devuelve null cuando no hay ninguno, así que no
           ocupa lugar de más. */}
       {isPhone && (
-        <div className="eco-collapse-empty" style={{ padding: '8px 10px 0', flexShrink: 0 }}>
+        <div className="eco-collapse-empty" style={{ padding: '0 16px 8px', flexShrink: 0 }}>
           <CurrentPrBanner
             workspace={workspace}
             bubbleId={bubbleId}
@@ -150,32 +144,15 @@ function SubtabBtn({
   badge?: number;
   onClick: () => void;
 }) {
-  const t = useTokens();
   return (
     <button
       type="button"
       onClick={onClick}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '6px 12px', borderRadius: 8,
-        border: 0,
-        background: active ? t.bg3 : 'transparent',
-        color: active ? t.text0 : t.text2,
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-      }}>
-      {icon && <span style={{ display: 'inline-flex', color: t.text0 }}>{icon}</span>}
+      className={`eco-subtab${active ? ' is-on' : ''}`}>
+      {icon}
       <span>{label}</span>
       {badge !== undefined && badge > 0 && (
-        <span style={{
-          minWidth: 18, height: 18, padding: '0 6px',
-          borderRadius: 8,
-          background: t.bg4,
-          color: t.text1,
-          fontSize: 11, fontWeight: 500,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        }}>{badge}</span>
+        <span className="eco-num">{badge}</span>
       )}
     </button>
   );

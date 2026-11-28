@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTokens } from '@/design/theme';
+import { Btn } from '@/design/primitives';
 import { IconTrash } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
@@ -48,69 +49,40 @@ export function DiscardFileButton({ path, workspace, bubbleId, change }: Props) 
         type="button"
         title={tr('discard.retry_tooltip')}
         onClick={() => setErr(null)}
-        style={{
-          maxWidth: 260,
-          fontSize: 11, color: t.err, fontFamily: t.fontMono,
-          padding: '4px 10px', borderRadius: 6,
-          background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-          border: `1px solid ${t.err}`,
-          cursor: 'pointer', textAlign: 'left',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{err}</button>
+        className="eco-chip eco-chip--err eco-chip--btn eco-mono"
+        style={{ maxWidth: 260, height: 'var(--h-xs)', fontSize: 11.5, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>{err}</button>
     );
   }
 
   if (!confirming) {
     return (
-      <button
-        type="button"
+      <Btn
+        kind="danger" size="sm" icon={IconTrash}
         onClick={() => setConfirming(true)}
         title={change === 'created'
           ? tr('discard.tooltip.delete', { path })
-          : tr('discard.tooltip.revert', { path })}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '6px 10px', borderRadius: 8,
-          border: `1px solid ${t.glassBorder}`,
-          background: 'transparent', color: t.text2,
-          fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-          cursor: 'pointer',
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = t.err; e.currentTarget.style.borderColor = t.err; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = t.text2; e.currentTarget.style.borderColor = t.glassBorder; }}>
-        <IconTrash size={11}/>
+          : tr('discard.tooltip.revert', { path })}>
         {tr('discard.btn')}
-      </button>
+      </Btn>
     );
   }
 
   return (
-    <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6,
-      padding: '4px 6px 4px 10px', borderRadius: 8,
-      background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-      border: `1px solid ${t.err}`,
+    <div className="eco-hstack" style={{
+      display: 'inline-flex', gap: 6, padding: '3px 4px 3px 12px', borderRadius: 999,
+      background: `color-mix(in oklab, ${t.err} 13%, transparent)`,
     }}>
-      <span style={{ fontSize: 11, color: t.err, fontWeight: 500 }}>
+      <span style={{ fontSize: 12.5, color: t.err, fontWeight: 500 }}>
         {change === 'created' ? tr('discard.confirm.delete') : tr('discard.confirm.revert')}
       </span>
-      <button type="button"
-        onClick={() => void discard()}
-        disabled={busy}
-        style={{
-          padding: '4px 8px', borderRadius: 6, border: 0,
-          background: t.err, color: '#fff',
-          fontSize: 11, fontWeight: 500, cursor: busy ? 'wait' : 'pointer',
-          opacity: busy ? 0.6 : 1,
-        }}>{busy ? '…' : tr('common.yes')}</button>
-      <button type="button"
-        onClick={() => setConfirming(false)}
-        disabled={busy}
-        style={{
-          padding: '4px 8px', borderRadius: 6, border: 0,
-          background: 'transparent', color: t.text2,
-          fontSize: 11, cursor: 'pointer',
-        }}>{tr('common.no')}</button>
+      <button type="button" className="eco-btn eco-btn--xs eco-btn--danger-solid"
+        onClick={() => void discard()} disabled={busy}
+        style={busy ? { cursor: 'wait' } : undefined}>
+        {busy ? '…' : tr('common.yes')}
+      </button>
+      <Btn kind="ghost" size="sm" onClick={() => setConfirming(false)} disabled={busy}>
+        {tr('common.no')}
+      </Btn>
     </div>
   );
 }

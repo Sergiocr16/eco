@@ -3,8 +3,11 @@
 // sus frames por `/ws/browser-view` y le mandan su mouse y teclado, así el
 // usuario y el agente miran (y tocan) el mismo navegador.
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { Keyboard } from 'lucide-react';
 import { useTokens } from '@/design/theme';
-import { IconX } from '@/design/icons';
+import { IconX, IconMinus, IconPlus } from '@/design/icons';
+import { cx } from '@/design/primitives';
+import { isPhoneNow } from '@/hooks/useMediaQuery';
 import { useT } from '@/hooks/useI18n';
 import { currentIdToken } from '@/lib/firebase';
 
@@ -206,53 +209,47 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
     el.value = '';
   };
 
-  const chip = (active: boolean) => ({
-    padding: '4px 10px', borderRadius: 999, maxWidth: 180, flexShrink: 0,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const,
-    background: active ? t.accentFaint : t.bg2, color: active ? t.accent : t.text2,
-    border: `1px solid ${active ? t.accent : t.glassBorder}`, fontSize: 12, cursor: 'pointer',
-  });
-
   const overlayText = status === 'no_desktop' ? tr('browser.mirror.no_desktop')
     : status === 'waiting' ? tr('browser.mirror.waiting')
     : status === 'connecting' ? tr('browser.mirror.connecting') : '';
 
   return (
-    <div style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', flexDirection: 'column', background: t.bg0 }}>
+    <div style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', flexDirection: 'column', background: isPhoneNow() ? t.sheet : t.card }}>
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-        borderBottom: `1px solid ${t.glassBorder}`, minHeight: 40,
+        display: 'flex', alignItems: 'center', gap: 8, padding: isPhoneNow() ? '6px 8px' : '12px 14px 8px',
       }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: 4, flexShrink: 0,
-          background: status === 'live' ? t.ok : t.warn,
-        }}/>
-        <span style={{ fontSize: 12, color: t.text1, fontWeight: 500, flexShrink: 0 }}>{tr('browser.mirror.title')}</span>
-        <div className="eco-dock-scroll" style={{ display: 'flex', gap: 6, flex: 1, minWidth: 0, overflowX: 'auto' }}>
+        <span className={cx('eco-dot eco-dot--lg', status === 'live' ? 'eco-dot--ok' : 'eco-dot--warn')}/>
+        <span className="eco-label eco-truncate" style={{ fontSize: 12.5, flex: '0 1 auto', minWidth: 0 }}>{tr('browser.mirror.title')}</span>
+        <div className="eco-noscrollbar" style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0, overflowX: 'auto' }}>
           {tabs.length > 1 && tabs.map((tab) => (
-            <button key={tab.tabId} type="button" title={tab.url} style={chip(tab.active)}
+            <button key={tab.tabId} type="button" title={tab.url}
+              className={cx('eco-subtab', tab.active && 'is-on')}
+              style={{ display: 'block', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}
               onClick={() => send({ type: 'select', tabId: tab.tabId })}>
               {tabLabel(tab, tr('browser.mirror.untitled'))}
             </button>
           ))}
         </div>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+        <div className="eco-stepper" style={{ flexShrink: 0 }}>
           <button type="button" onClick={() => sendInput({ t: 'zoom', dir: 'out' })}
-            title={tr('browser.zoom_out')} aria-label={tr('browser.zoom_out')} style={{ ...chip(false), minHeight: 32, minWidth: 34 }}>−</button>
+            title={tr('browser.zoom_out')} aria-label={tr('browser.zoom_out')}
+            className="eco-iconbtn" style={STEP_BTN}><IconMinus size={13}/></button>
           <button type="button" onClick={() => sendInput({ t: 'zoom', dir: 'reset' })}
             title={tr('browser.zoom_reset')} aria-label={tr('browser.zoom_reset')}
-            style={{ ...chip(false), minHeight: 32, minWidth: 50, fontFamily: t.fontMono }}>
+            className="eco-mono"
+            style={{ minWidth: 44, padding: '0 2px', border: 0, background: 'transparent', color: t.text0, cursor: 'pointer', fontSize: 12.5 }}>
             {Math.round((tabs.find((tab) => tab.active)?.zoom ?? 1) * 100)}%
           </button>
           <button type="button" onClick={() => sendInput({ t: 'zoom', dir: 'in' })}
-            title={tr('browser.zoom_in')} aria-label={tr('browser.zoom_in')} style={{ ...chip(false), minHeight: 32, minWidth: 34 }}>+</button>
+            title={tr('browser.zoom_in')} aria-label={tr('browser.zoom_in')}
+            className="eco-iconbtn" style={STEP_BTN}><IconPlus size={13}/></button>
         </div>
-        <button type="button" onClick={() => keysRef.current?.focus()} style={{ ...chip(false), minHeight: 32 }}>
-          {tr('browser.mirror.keyboard')}
-        </button>
+        <button type="button" onClick={() => keysRef.current?.focus()}
+          title={tr('browser.mirror.keyboard')} aria-label={tr('browser.mirror.keyboard')}
+          className="eco-iconbtn eco-iconbtn--soft" style={{ flexShrink: 0 }}><Keyboard size={15}/></button>
         <button type="button" onClick={onExit} title={tr('browser.mirror.exit')} aria-label={tr('browser.mirror.exit')}
-          style={{ ...chip(false), minHeight: 32, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <IconX size={11}/>{tr('browser.mirror.exit')}
+          className={isPhoneNow() ? 'eco-iconbtn eco-iconbtn--soft' : 'eco-btn eco-btn--sm eco-btn--raised'} style={{ flexShrink: 0 }}>
+          <IconX size={13}/>{!isPhoneNow() && tr('browser.mirror.exit')}
         </button>
         {/* Recibe el teclado (físico o el del iPad). 16px: iOS hace zoom con menos. */}
         <input
@@ -264,7 +261,7 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
           style={{ position: 'absolute', opacity: 0, width: 1, height: 1, fontSize: 16, border: 0, padding: 0, pointerEvents: 'none' }}
         />
       </div>
-      <div ref={stageRef} style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.bg1, overflow: 'hidden' }}>
+      <div ref={stageRef} style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.raised, overflow: 'hidden', ...(isPhoneNow() ? null : { margin: '0 10px 10px', borderRadius: 14 }) }}>
         <img
           ref={imgRef}
           alt=""
@@ -282,11 +279,11 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
         />
         {status !== 'live' && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: 24, textAlign: 'center', maxWidth: 380 }}>
-            <div style={{ fontSize: 13, color: t.text1 }}>{overlayText}</div>
+            <div className="eco-muted">{overlayText}</div>
             {status === 'waiting' && (
               <>
-                <div style={{ fontSize: 12, color: t.text3 }}>{tr('browser.mirror.waiting_desc')}</div>
-                <button type="button" onClick={() => send({ type: 'show' })} style={{ ...chip(true), minHeight: 36, maxWidth: 'none' }}>
+                <div className="eco-sub">{tr('browser.mirror.waiting_desc')}</div>
+                <button type="button" onClick={() => send({ type: 'show' })} className="eco-btn eco-btn--solid">
                   {tr('browser.mirror.show')}
                 </button>
               </>
@@ -297,3 +294,5 @@ export function BrowserMirror({ bubbleId, onExit }: { bubbleId: string; onExit: 
     </div>
   );
 }
+
+const STEP_BTN = { width: 28, height: 28 } as const;

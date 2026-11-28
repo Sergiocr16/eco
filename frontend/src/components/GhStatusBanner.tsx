@@ -15,30 +15,15 @@ export function GhStatusBanner() {
 
   if (loading || installed === null) return null;
 
-  const baseStyle = {
-    marginTop: 8,
-    padding: '8px 12px',
-    borderRadius: 8,
-    fontFamily: t.fontSans,
-    fontSize: 12,
-    lineHeight: 1.5,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 4,
-  };
+  const stack = { marginTop: 8, flexDirection: 'column', alignItems: 'flex-start', gap: 4 } as const;
 
   if (installed) {
     return (
-      <div style={{
-        ...baseStyle,
-        background: `color-mix(in oklch, ${t.ok} 8%, transparent)`,
-        border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
-        color: t.text1,
-      }}>
-        <span style={{ color: t.ok, fontWeight: 500 }}>
+      <div className="eco-banner eco-banner--ok" style={stack}>
+        <span style={{ fontWeight: 500 }}>
           {tr('github.gh_status.installed', { version: version ?? '' })}
         </span>
-        <span style={{ color: t.text3, fontSize: 12 }}>
+        <span style={{ color: t.text2 }}>
           {tr('github.gh_status.installed_note')}
         </span>
       </div>
@@ -46,23 +31,17 @@ export function GhStatusBanner() {
   }
 
   return (
-    <div style={{
-      ...baseStyle,
-      background: `color-mix(in oklch, ${t.warn} 10%, transparent)`,
-      border: `1px solid color-mix(in oklch, ${t.warn} 30%, ${t.glassBorder})`,
-      color: t.text1,
-    }}>
-      <span style={{ color: t.warn, fontWeight: 500 }}>
+    <div className="eco-banner eco-banner--warn" style={stack}>
+      <span style={{ fontWeight: 500 }}>
         {tr('github.gh_status.missing')}
       </span>
-      <span style={{ color: t.text2, fontSize: 12 }}>
+      <span style={{ color: t.text2 }}>
         {tr('github.gh_status.missing_note')}
       </span>
       <code style={{
         fontFamily: t.fontMono, fontSize: 12,
-        padding: '4px 8px', borderRadius: 4,
-        background: t.bg1, color: t.text0,
-        alignSelf: 'flex-start',
+        padding: '2px 9px', borderRadius: 8,
+        background: t.raised, color: t.text0,
       }}>brew install gh</code>
     </div>
   );

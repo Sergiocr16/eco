@@ -1,8 +1,8 @@
-import { vw } from '@/lib/ui-zoom';
 import { useState } from 'react';
-import { useTokens } from '@/design/theme';
 import { Btn } from '@/design/primitives';
-import { IconArrowL } from '@/design/icons';
+import { EcoGlyph } from '@/design/EcoMark';
+import { IconArrowL, IconLock } from '@/design/icons';
+import { getTopInset, SAFE_TOP, SAFE_BOTTOM } from '@/lib/platform';
 import { useT } from '@/hooks/useI18n';
 import { useProfile } from '@/hooks/useProfile';
 
@@ -18,7 +18,6 @@ type Props = {
 const PIN_RE = /^\d{4,8}$/;
 
 export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignOut }: Props) {
-  const t = useTokens();
   const tr = useT();
   const profile = useProfile();
   const [pin, setPin] = useState('');
@@ -44,107 +43,82 @@ export function LockScreen({ mode, username, onUnlock, onCreate, onSkip, onSignO
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1, background: t.windowBg, backgroundImage: t.windowBgImage, color: t.text0, overflow: 'hidden' }}>
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        zIndex: 2, width: `min(340px, calc(${vw(100)} - 48px))`,
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-      }}>
-        {/* Avatar del usuario (foto o inicial) */}
-        <div style={{
-          width: 84, height: 84, borderRadius: '50%', overflow: 'hidden',
-          background: profile.photo ? t.bg2 : t.accent, color: t.accentOn,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 500, fontSize: 32, marginBottom: 16,
-          border: `1px solid ${t.glassBorder}`,
+    <div className="eco-app" style={{
+      position: 'fixed', inset: 0, zIndex: 1, background: 'var(--bg)', overflow: 'auto',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: `calc(${getTopInset() + 24}px + ${SAFE_TOP}) 24px calc(24px + ${SAFE_BOTTOM})`,
+    }}>
+      <div className="eco-hstack" style={{ alignSelf: 'flex-start' }}>
+        <EcoGlyph size={30}/>
+        <span style={{ fontSize: 16, fontWeight: 600 }}>eco</span>
+      </div>
+
+      <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
+        <div className="eco-pane" style={{
+          width: '100%', maxWidth: 360, padding: '32px 28px 24px', borderRadius: 28,
+          background: 'var(--sheet)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
         }}>
-          {profile.photo
-            ? <img src={profile.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-            : profile.initial}
-        </div>
+          {/* Avatar del usuario (foto o inicial) con la marca de bloqueo */}
+          <div style={{ position: 'relative', width: 72, height: 72, marginBottom: 10 }}>
+            <div className="eco-avatar" style={{ width: 72, height: 72, fontSize: 22 }}>
+              {profile.photo
+                ? <img src={profile.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                : profile.initial}
+            </div>
+            <div className="eco-muted" style={{
+              position: 'absolute', right: -4, bottom: -4, width: 26, height: 26, borderRadius: '50%',
+              background: 'var(--card)', border: '2px solid var(--sheet)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <IconLock size={12}/>
+            </div>
+          </div>
 
-        <div style={{ fontSize: 20, fontWeight: 500, marginBottom: 2 }}>
-          {username ?? '—'}
-        </div>
-        <div style={{ fontSize: 13, color: t.text2, marginBottom: 24, textAlign: 'center', lineHeight: 1.5 }}>
-          {mode === 'setup' ? tr('lock.setup.sub') : tr('lock.sub')}
-        </div>
+          <div className="eco-h2 eco-truncate" style={{ maxWidth: '100%' }}>{username ?? '—'}</div>
+          <div className="eco-muted" style={{ marginBottom: 14, textAlign: 'center' }}>
+            {mode === 'setup' ? tr('lock.setup.sub') : tr('lock.sub')}
+          </div>
 
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <PinDots value={pin} onChange={setPin} autoFocus placeholder={mode === 'setup' ? tr('lock.setup.pin') : tr('lock.pin')} onEnter={submit}/>
-          {mode === 'setup' && (
-            <PinDots value={confirm} onChange={setConfirm} placeholder={tr('lock.setup.confirm')} onEnter={submit}/>
+          <div className="eco-vstack" style={{ width: '100%', gap: 8 }}>
+            <PinField value={pin} onChange={setPin} autoFocus placeholder={mode === 'setup' ? tr('lock.setup.pin') : tr('lock.pin')} onEnter={submit}/>
+            {mode === 'setup' && (
+              <PinField value={confirm} onChange={setConfirm} placeholder={tr('lock.setup.confirm')} onEnter={submit}/>
+            )}
+          </div>
+
+          {err && (
+            <div className="eco-banner eco-banner--err" style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}>{err}</div>
           )}
-        </div>
 
-        {err && (
-          <div style={{
-            marginTop: 16, fontSize: 12, color: t.err, padding: '8px 12px', width: '100%', textAlign: 'center',
-            background: `color-mix(in oklch, ${t.err} 8%, transparent)`,
-            border: `1px solid color-mix(in oklch, ${t.err} 30%, transparent)`, borderRadius: 8,
-          }}>{err}</div>
-        )}
+          <Btn kind="primary" size="lg" onClick={submit} disabled={busy} className="eco-btn--block" style={{ marginTop: 8 }}>
+            {mode === 'setup'
+              ? (busy ? tr('lock.setup.creating') : tr('lock.setup.create'))
+              : (busy ? tr('lock.unlock_loading') : tr('lock.unlock'))}
+          </Btn>
 
-        <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center', marginTop: 16 }}>
-          {mode === 'setup'
-            ? (busy ? tr('lock.setup.creating') : tr('lock.setup.create'))
-            : (busy ? tr('lock.unlock_loading') : tr('lock.unlock'))}
-        </Btn>
-
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 16 }}>
-          {mode === 'setup' && <button onClick={onSkip} style={linkBtn(t)}>{tr('lock.setup.skip')}</button>}
-          <button onClick={onSignOut} style={linkBtn(t)}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconArrowL size={12}/> {tr('lock.signout')}</span>
-          </button>
+          <div className="eco-hstack eco-hstack--wrap" style={{ justifyContent: 'center', gap: 4, marginTop: 8 }}>
+            {mode === 'setup' && <Btn kind="ghost" size="sm" onClick={onSkip}>{tr('lock.setup.skip')}</Btn>}
+            <Btn kind="ghost" size="sm" icon={IconArrowL} onClick={onSignOut}>{tr('lock.signout')}</Btn>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// PIN estilo "dots": muestra un punto por dígito tipeado, centrado, con un input
-// password oculto que captura los keystrokes. Igual que el lock viejo.
-function PinDots({ value, onChange, placeholder, autoFocus, onEnter }: {
+// Campo de PIN: solo dígitos (máx. 8), centrado y con los puntos espaciados.
+function PinField({ value, onChange, placeholder, autoFocus, onEnter }: {
   value: string; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean; onEnter?: () => void;
 }) {
-  const t = useTokens();
-  const [focused, setFocused] = useState(false);
   return (
-    <div style={{
-      position: 'relative', borderRadius: 16, background: t.bg2,
-      border: `1px solid ${focused ? t.accent : t.glassBorder}`,
-      transition: 'border-color 140ms', overflow: 'hidden',
-    }}>
-      <div style={{
-        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
-        justifyContent: 'center', gap: 10, pointerEvents: 'none',
-      }}>
-        {value.length === 0
-          ? <span style={{ color: t.text3, fontSize: 13, fontWeight: 400 }}>{placeholder}</span>
-          : Array.from({ length: value.length }, (_, i) => (
-            <span key={i} style={{ width: 11, height: 11, borderRadius: '50%', background: t.accent }}/>
-          ))}
-      </div>
-      <input
-        type="password" inputMode="numeric" autoComplete="off" value={value} autoFocus={autoFocus} maxLength={8}
-        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-        onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 8))}
-        onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } }}
-        style={{
-          width: '100%', boxSizing: 'border-box', height: 56, padding: 0,
-          border: 0, outline: 'none', background: 'transparent',
-          color: 'transparent', caretColor: 'transparent', textAlign: 'center',
-          // 16px y no 1px: iOS hace auto-zoom al enfocar cualquier input por
-          // debajo de 16, y de ese zoom no vuelve solo. Acá no se ve nada
-          // igual (color y caret transparentes, los puntos se dibujan aparte),
-          // así que el tamaño es puramente para el navegador.
-          fontSize: 16, cursor: 'text',
-        }}
-      />
-    </div>
+    <input
+      className="eco-field eco-field--on-sheet"
+      type="password" inputMode="numeric" autoComplete="off" value={value} autoFocus={autoFocus} maxLength={8}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 8))}
+      onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } }}
+      // El espaciado solo con dígitos: aplicado al placeholder lo deja ilegible.
+      style={{ height: 48, textAlign: 'center', ...(value ? { fontSize: 18, letterSpacing: '.4em' } : {}) }}
+    />
   );
-}
-
-function linkBtn(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return { background: 'transparent', border: 0, padding: 0, cursor: 'pointer', color: t.text2, fontFamily: t.fontSans, fontSize: 12 };
 }

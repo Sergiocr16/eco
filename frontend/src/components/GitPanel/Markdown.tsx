@@ -233,8 +233,8 @@ function renderInline(text: string, t: ReturnType<typeof useTokens>, keyBase = '
       out.push(
         <code key={`${keyBase}c${n++}`} style={{
           fontFamily: t.fontMono, fontSize: '0.92em',
-          padding: '1px 6px', borderRadius: 4,
-          background: t.bg3, color: t.text0,
+          padding: '1px 6px', borderRadius: 6,
+          background: t.card, color: t.text0,
         }}>{m[2]}</code>,
       );
     } else if (m[3] !== undefined) {
@@ -254,16 +254,14 @@ function renderInline(text: string, t: ReturnType<typeof useTokens>, keyBase = '
       // link [text](url)
       out.push(
         <a key={`${keyBase}a${n++}`} href={m[6]} target="_blank" rel="noopener noreferrer"
-          style={{ color: t.accent, textDecoration: 'none' }}
-          onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}>{m[5]}</a>,
+          style={{ color: t.accent, textDecoration: 'underline', textUnderlineOffset: 2 }}>{m[5]}</a>,
       );
     } else if (m[7]) {
       // autolink http(s)://...
       const url = m[7];
       out.push(
         <a key={`${keyBase}al${n++}`} href={url} target="_blank" rel="noopener noreferrer"
-          style={{ color: t.accent, textDecoration: 'none', wordBreak: 'break-all' }}>{url}</a>,
+          style={{ color: t.accent, textDecoration: 'underline', textUnderlineOffset: 2, wordBreak: 'break-all' }}>{url}</a>,
       );
     } else if (m[8] || m[9]) {
       // bold **text** o __text__
@@ -304,21 +302,21 @@ export function Markdown({ source }: { source: string }) {
   const blocks = parseBlocks(htmlToMd(source));
   return (
     <div style={{
-      fontFamily: t.fontSans, fontSize: 13, color: t.text1,
+      fontFamily: t.fontSans, fontSize: 13.5, color: t.text0,
       lineHeight: 1.6, wordBreak: 'break-word',
     }}>
       {blocks.map((b, i) => {
         switch (b.type) {
           case 'heading': {
-            const sizes = { 1: 18, 2: 16, 3: 14, 4: 13 } as Record<number, number>;
+            const sizes = { 1: 17, 2: 16, 3: 14, 4: 13.5 } as Record<number, number>;
             const Tag = `h${Math.min(b.level, 4)}` as 'h1' | 'h2' | 'h3' | 'h4';
             return (
               <Tag key={i} style={{
                 margin: '16px 0 6px',
                 fontSize: sizes[b.level] ?? 13, fontWeight: 600,
                 color: t.text0, lineHeight: 1.3,
-                borderBottom: b.level <= 2 ? `1px solid ${t.glassBorder}` : 'none',
-                paddingBottom: b.level <= 2 ? 4 : 0,
+                borderBottom: b.level <= 2 ? `1px solid ${t.line}` : 'none',
+                paddingBottom: b.level <= 2 ? 8 : 0,
               }}>{renderInline(b.text, t, `h${i}-`)}</Tag>
             );
           }
@@ -326,14 +324,13 @@ export function Markdown({ source }: { source: string }) {
             return (
               <div key={i} style={{
                 margin: '8px 0',
-                background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                borderRadius: 8, overflow: 'hidden',
+                background: t.card, borderRadius: 10, overflow: 'hidden',
               }}>
                 {b.lang && (
                   <div style={{
-                    padding: '4px 10px', borderBottom: `1px solid ${t.glassBorder}`,
+                    padding: '4px 10px', borderBottom: `1px solid ${t.line}`,
                     fontSize: 11, fontFamily: t.fontMono, color: t.text3,
-                    textTransform: 'lowercase', letterSpacing: 0.3,
+                    textTransform: 'lowercase',
                   }}>{b.lang}</div>
                 )}
                 <pre style={{
@@ -348,7 +345,7 @@ export function Markdown({ source }: { source: string }) {
             return (
               <blockquote key={i} style={{
                 margin: '8px 0', padding: '4px 0 4px 12px',
-                borderLeft: `3px solid ${t.glassBorder}`,
+                borderLeft: `3px solid ${t.line2}`,
                 color: t.text2, fontStyle: 'italic',
               }}>{renderInline(b.text, t, `q${i}-`)}</blockquote>
             );
@@ -370,7 +367,7 @@ export function Markdown({ source }: { source: string }) {
             return (
               <div key={i} style={{
                 margin: '8px 0', overflowX: 'auto',
-                border: `1px solid ${t.glassBorder}`, borderRadius: 8,
+                border: `1px solid ${t.line}`, borderRadius: 10,
               }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
                   <thead>
@@ -379,10 +376,10 @@ export function Markdown({ source }: { source: string }) {
                         <th key={k} style={{
                           textAlign: b.align[k] ?? 'left',
                           padding: '6px 12px',
-                          background: t.bg2, color: t.text0,
+                          background: t.card, color: t.text0,
                           fontWeight: 600, whiteSpace: 'nowrap',
-                          borderBottom: `1px solid ${t.glassBorder}`,
-                          borderRight: k < b.header.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
+                          borderBottom: `1px solid ${t.line}`,
+                          borderRight: k < b.header.length - 1 ? `1px solid ${t.line}` : 'none',
                         }}>{renderInline(h, t, `th${i}-${k}-`)}</th>
                       ))}
                     </tr>
@@ -394,8 +391,8 @@ export function Markdown({ source }: { source: string }) {
                           <td key={k} style={{
                             textAlign: b.align[k] ?? 'left',
                             padding: '6px 12px', verticalAlign: 'top',
-                            borderBottom: r < b.rows.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
-                            borderRight: k < b.header.length - 1 ? `1px solid ${t.glassBorder}` : 'none',
+                            borderBottom: r < b.rows.length - 1 ? `1px solid ${t.line}` : 'none',
+                            borderRight: k < b.header.length - 1 ? `1px solid ${t.line}` : 'none',
                           }}>{renderInline(row[k] ?? '', t, `td${i}-${r}-${k}-`)}</td>
                         ))}
                       </tr>
@@ -405,7 +402,7 @@ export function Markdown({ source }: { source: string }) {
               </div>
             );
           case 'hr':
-            return <hr key={i} style={{ border: 0, borderTop: `1px solid ${t.glassBorder}`, margin: '12px 0' }}/>;
+            return <hr key={i} style={{ border: 0, borderTop: `1px solid ${t.line}`, margin: '12px 0' }}/>;
           case 'para':
             return (
               <p key={i} style={{ margin: '6px 0', whiteSpace: 'pre-wrap' }}>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTokens } from '@/design/theme';
+import { Btn } from '@/design/primitives';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useGitOpStatus } from '@/hooks/useGitOpStatus';
@@ -51,78 +52,45 @@ export function OpInProgressBanner({ workspace, bubbleId, onGoChanges }: Props) 
     }
   }
 
+  const conflictList = status.conflictedFiles.slice(0, 3).join(', ') + (conflictCount > 3 ? '…' : '');
   return (
-    <div style={{
-      padding: '10px 20px',
-      background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-      borderBottom: `1px solid ${t.err}`,
-      display: 'flex', flexDirection: 'column', gap: 6,
-      flexShrink: 0,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: '50%',
-          background: t.err,
-          flexShrink: 0,
-        }}/>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, color: t.text0, fontWeight: 500 }}>
+    <div style={{ padding: '0 16px 8px', flexShrink: 0 }}>
+      <div className="eco-banner eco-banner--err">
+        <span className="eco-dot eco-dot--lg eco-dot--err"/>
+        <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+          <div className="eco-label">
             {tr('git.op.in_progress', { op: opLabel })}
           </div>
           {conflictCount > 0 && (
-            <div style={{ fontSize: 11, color: t.text2, marginTop: 2 }}>
-              {status.conflictedFiles.length === 1
-                ? tr('git.op.conflict_files_one', { n: 1, list: status.conflictedFiles.slice(0, 3).join(', ') + (status.conflictedFiles.length > 3 ? '…' : '') })
-                : tr('git.op.conflict_files_many', { n: status.conflictedFiles.length, list: status.conflictedFiles.slice(0, 3).join(', ') + (status.conflictedFiles.length > 3 ? '…' : '') })}
+            <div className="eco-sub" style={{ marginTop: 2 }}>
+              {conflictCount === 1
+                ? tr('git.op.conflict_files_one', { n: 1, list: conflictList })
+                : tr('git.op.conflict_files_many', { n: conflictCount, list: conflictList })}
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={onGoChanges}
-            style={{
-              height: 28, padding: '0 10px', borderRadius: 6,
-              background: 'transparent', border: `1px solid ${t.glassBorder}`,
-              color: t.text1, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-            }}>
+        <div className="eco-hstack eco-hstack--wrap" style={{ gap: 6 }}>
+          <Btn kind="raised" size="sm" onClick={onGoChanges}>
             {tr('git.op.resolve_in_changes')}
-          </button>
-          <button
-            type="button"
+          </Btn>
+          <Btn kind="primary" size="sm" disabled={!!busy}
             onClick={() => void callOp('continue')}
-            disabled={!!busy}
-            style={{
-              height: 28, padding: '0 10px', borderRadius: 6,
-              background: t.accent, border: 0, color: t.accentOn,
-              fontSize: 12, fontWeight: 500,
-              cursor: busy ? 'wait' : 'pointer',
-              opacity: busy ? 0.6 : 1,
-            }}>
+            style={busy ? { cursor: 'wait' } : undefined}>
             {busy === 'continue' ? '…' : tr('git.op.continue')}
-          </button>
-          <button
-            type="button"
+          </Btn>
+          <Btn kind="danger-solid" size="sm" disabled={!!busy}
             onClick={() => void callOp('abort')}
-            disabled={!!busy}
-            style={{
-              height: 28, padding: '0 10px', borderRadius: 6,
-              background: t.err, border: 0, color: '#fff',
-              fontSize: 12, fontWeight: 500,
-              cursor: busy ? 'wait' : 'pointer',
-              opacity: busy ? 0.6 : 1,
-            }}>
+            style={busy ? { cursor: 'wait' } : undefined}>
             {busy === 'abort' ? '…' : tr('git.op.abort')}
-          </button>
+          </Btn>
         </div>
+        {err && (
+          <div className="eco-mono" style={{
+            flexBasis: '100%', fontSize: 11.5, color: t.err,
+            padding: '4px 8px', borderRadius: 8, background: t.raised,
+          }}>{err}</div>
+        )}
       </div>
-      {err && (
-        <div style={{
-          fontSize: 11, color: t.err, fontFamily: t.fontMono,
-          padding: '4px 6px', borderRadius: 4,
-          background: t.bg2,
-        }}>{err}</div>
-      )}
     </div>
   );
 }

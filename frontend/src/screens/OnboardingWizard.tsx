@@ -1,9 +1,10 @@
 import { vh } from '@/lib/ui-zoom';
-import { T_UI } from '@/design/motion';
 import { useEffect, useMemo, useState } from 'react';
 import { useTokens, useTheme } from '@/design/theme';
-import { ACCENT_HUES } from '@/design/tokens';
-import { scrimStyle, dialogSurface } from '@/design/primitives';
+import { ACCENT_HUES, THEME_VARIANTS } from '@/design/tokens';
+import { Btn, Card, Chip, IconTile } from '@/design/primitives';
+import { useIsPhone } from '@/hooks/useMediaQuery';
+import { SAFE_TOP, SAFE_BOTTOM } from '@/lib/platform';
 import { useI18n, useT } from '@/hooks/useI18n';
 import { useApiKey } from '@/hooks/useApiKey';
 import { useGithubCredentials } from '@/hooks/useGithubCredentials';
@@ -13,7 +14,7 @@ import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useDefaultWorkspace } from '@/hooks/useDefaultWorkspace';
 import { useObsidian, pickVaultFolder } from '@/hooks/useObsidian';
 import { apiFetch } from '@/lib/api';
-import { EcoMark } from '@/design/EcoMark';
+import { EcoGlyph } from '@/design/EcoMark';
 import type { JSX } from 'react';
 import {
   IconBolt, IconCheck, IconFolder, IconGithub, IconGlobe, IconKey, IconLayers,
@@ -40,8 +41,8 @@ type ClaudeAuth = {
 type StepId = 'welcome' | 'language' | 'appearance' | 'claude' | 'github' | 'folder' | 'obsidian' | 'done';
 
 export function OnboardingWizard({ username, onClose }: { username: string | null; onClose: () => void }) {
-  const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const [step, setStep] = useState<StepId>('welcome');
 
   const order: StepId[] = ['welcome', 'language', 'appearance', 'claude', 'github', 'folder', 'obsidian', 'done'];
@@ -62,38 +63,35 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
   }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      ...scrimStyle(t),
+    <div className="eco-app" style={{
+      position: 'fixed', inset: 0, zIndex: 9999, background: 'var(--bg)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 24,
+      padding: isPhone ? `calc(12px + ${SAFE_TOP}) 12px calc(12px + ${SAFE_BOTTOM})` : 24,
     }}>
-      <div style={{
+      <div className="eco-pane" style={{
         width: '100%', maxWidth: 640,
-        maxHeight: `calc(${vh(100)} - 48px)`,
-        ...dialogSurface(t),
-        borderRadius: 20,
-        display: 'flex', flexDirection: 'column',
-        overflow: 'hidden',
+        maxHeight: isPhone ? '100%' : `calc(${vh(100)} - 48px)`,
+        background: 'var(--sheet)', borderRadius: isPhone ? 24 : 28,
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
-        {/* Progress dots */}
-        <div style={{
-          display: 'flex', gap: 6, padding: '16px 24px 0',
-        }}>
+        <div className="eco-hstack" style={{ padding: isPhone ? '18px 18px 0' : '22px 28px 0' }}>
+          <EcoGlyph size={26}/>
+          <span className="eco-grow" style={{ fontSize: 16, fontWeight: 600 }}>eco</span>
+          <span className="eco-num">{idx + 1} / {order.length}</span>
+        </div>
+
+        {/* Progreso por pasos */}
+        <div style={{ display: 'flex', gap: 6, padding: isPhone ? '14px 18px 0' : '14px 28px 0' }}>
           {order.map((s, i) => (
             <span key={s} style={{
-              height: 3, flex: 1, borderRadius: 4,
-              background: i <= idx ? t.accent : t.bg3,
-              transition: 'background 200ms ease',
+              height: 4, flex: 1, borderRadius: 2,
+              background: i <= idx ? 'var(--ac)' : 'var(--card)',
+              transition: 'background-color 200ms ease',
             }}/>
           ))}
         </div>
 
-        {/* Body */}
-        <div style={{
-          flex: 1, overflow: 'auto',
-          padding: '24px 32px',
-        }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isPhone ? '20px 18px' : '26px 28px' }}>
           {step === 'welcome'    && <StepWelcome username={username}/>}
           {step === 'language'   && <StepLanguage/>}
           {step === 'appearance' && <StepAppearance/>}
@@ -104,32 +102,22 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
           {step === 'done'       && <StepDone/>}
         </div>
 
-        {/* Footer */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '16px 24px',
-          borderTop: `1px solid ${t.glassBorder}`,
-          background: t.bg2,
+        <div className="eco-hstack eco-hstack--wrap" style={{
+          padding: isPhone ? '12px 18px 14px' : '14px 28px 18px', borderTop: '1px solid var(--line)',
         }}>
           {idx > 0 && step !== 'done' && (
-            <button type="button" onClick={back} style={btnGhost(t)}>
-              {tr('onboarding.back')}
-            </button>
+            <Btn kind="ghost" onClick={back}>{tr('onboarding.back')}</Btn>
           )}
-          <div style={{ flex: 1 }}/>
+          <div className="eco-spacer"/>
           {step !== 'done' && step !== 'welcome' && (
-            <button type="button" onClick={finish} style={btnGhost(t)}>
-              {tr('onboarding.skip')}
-            </button>
+            <Btn kind="ghost" onClick={finish}>{tr('onboarding.skip')}</Btn>
           )}
           {step !== 'done' ? (
-            <button type="button" onClick={next} style={btnPrimary(t)}>
+            <Btn kind="primary" onClick={next}>
               {step === 'welcome' ? tr('onboarding.start') : tr('onboarding.next')}
-            </button>
+            </Btn>
           ) : (
-            <button type="button" onClick={finish} style={btnPrimary(t)}>
-              {tr('onboarding.finish')}
-            </button>
+            <Btn kind="primary" onClick={finish}>{tr('onboarding.finish')}</Btn>
           )}
         </div>
       </div>
@@ -138,53 +126,47 @@ export function OnboardingWizard({ username, onClose }: { username: string | nul
 }
 
 function StepWelcome({ username }: { username: string | null }) {
-  const t = useTokens();
   const tr = useT();
   return (
-    <div style={{ textAlign: 'center', padding: '8px 8px 6px' }}>
-      <div style={{ display: 'inline-flex', marginBottom: 16 }}>
-        <EcoMark size={72}/>
+    <div style={{ textAlign: 'center', padding: '12px 4px 6px' }}>
+      <div style={{ display: 'inline-flex', marginBottom: 18 }}>
+        <EcoGlyph size={64}/>
       </div>
-      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.5 }}>
+      <h2 className="eco-title eco-title--md">
         {username
           ? tr('onboarding.welcome.title_named').replace('{name}', username)
           : tr('onboarding.welcome.title')}
       </h2>
-      <p style={{
-        margin: '10px auto 0', maxWidth: 420,
-        fontSize: 14, color: t.text2, lineHeight: 1.6,
-      }}>
+      <p className="eco-muted" style={{ margin: '12px auto 0', maxWidth: 420, lineHeight: 1.6 }}>
         {tr('onboarding.welcome.body')}
       </p>
-      <div style={{
-        display: 'flex', justifyContent: 'center', gap: 10,
-        marginTop: 24, flexWrap: 'wrap',
-      }}>
+      <div className="eco-hstack eco-hstack--wrap" style={{ justifyContent: 'center', marginTop: 24 }}>
         {[
           { icon: IconBolt,   label: tr('onboarding.welcome.tag.fast') },
           { icon: IconShield, label: tr('onboarding.welcome.tag.private') },
         ].map((tag, i) => (
-          <span key={i} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 12px', borderRadius: 999,
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            color: t.text1, fontSize: 12,
-          }}>
-            <tag.icon size={12}/> {tag.label}
-          </span>
+          <Chip key={i}><tag.icon size={12}/> {tag.label}</Chip>
         ))}
       </div>
     </div>
   );
 }
 
+// Tarjeta seleccionable (idioma, tema): el anillo de acento marca la elegida.
+function choiceStyle(selected: boolean): React.CSSProperties {
+  return {
+    border: 0, background: 'var(--card)', color: 'var(--tx)', font: 'inherit',
+    cursor: 'pointer', textAlign: 'left', borderRadius: 16,
+    boxShadow: selected ? '0 0 0 2px var(--ac)' : 'none',
+  };
+}
+
 function StepLanguage() {
-  const t = useTokens();
   const tr = useT();
   const { lang, setLang } = useI18n();
-  const options: { id: 'es' | 'en'; label: string; flag: string }[] = [
-    { id: 'es', label: 'Español', flag: '🇪🇸' },
-    { id: 'en', label: 'English', flag: '🇺🇸' },
+  const options: { id: 'es' | 'en'; label: string }[] = [
+    { id: 'es', label: 'Español' },
+    { id: 'en', label: 'English' },
   ];
   return (
     <StepShell
@@ -192,28 +174,15 @@ function StepLanguage() {
       title={tr('onboarding.language.title')}
       sub={tr('onboarding.language.sub')}
     >
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12,
-      }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 12 }}>
         {options.map((o) => {
           const selected = lang === o.id;
           return (
-            <button key={o.id} type="button" onClick={() => setLang(o.id)}
-              style={{
-                padding: '20px 16px', borderRadius: 12,
-                background: selected ? t.accentFaint : t.bg2,
-                border: `1px solid ${selected ? t.accent : t.glassBorder}`,
-                color: t.text0, cursor: 'pointer',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                transition: T_UI,
-              }}>
-              <span style={{ fontSize: 24 }}>{o.flag}</span>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>{o.label}</span>
-              {selected && (
-                <span style={{ color: t.accent, display: 'inline-flex' }}>
-                  <IconCheck size={14}/>
-                </span>
-              )}
+            <button key={o.id} type="button" onClick={() => setLang(o.id)} aria-pressed={selected}
+              className="eco-hstack" style={{ ...choiceStyle(selected), padding: '14px 16px' }}>
+              <IconTile icon={IconGlobe}/>
+              <span className="eco-label eco-grow">{o.label}</span>
+              {selected && <IconCheck size={14} strokeWidth={2.4}/>}
             </button>
           );
         })}
@@ -226,10 +195,14 @@ function StepAppearance() {
   const t = useTokens();
   const tr = useT();
   const { mode, setMode, accentHue, setAccentHue } = useTheme();
-  const modes: { id: 'dark' | 'light' | 'system'; label: string }[] = [
-    { id: 'dark',   label: tr('onboarding.appearance.dark') },
-    { id: 'light',  label: tr('onboarding.appearance.light') },
-    { id: 'system', label: tr('onboarding.appearance.system') },
+  const byId = new Map(THEME_VARIANTS.map((v) => [v.id, v.preview]));
+  const light = byId.get('light')!;
+  const dark = byId.get('dark')!;
+  // Mismas tres opciones y vista previa que Settings → Apariencia.
+  const modes = [
+    { id: 'light' as const,  label: tr('onboarding.appearance.light'),  bg: light.bg, ink: light.ink, mute: light.mute },
+    { id: 'dark' as const,   label: tr('onboarding.appearance.dark'),   bg: dark.bg,  ink: dark.ink,  mute: dark.mute },
+    { id: 'system' as const, label: tr('onboarding.appearance.system'), bg: `linear-gradient(105deg, ${light.bg} 50%, ${dark.bg} 50%)`, ink: light.ink, mute: dark.mute },
   ];
   return (
     <StepShell
@@ -237,50 +210,43 @@ function StepAppearance() {
       title={tr('onboarding.appearance.title')}
       sub={tr('onboarding.appearance.sub')}
     >
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10,
-        marginBottom: 24,
-      }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 12, marginBottom: 24 }}>
         {modes.map((m) => {
           const selected = mode === m.id;
           return (
-            <button key={m.id} type="button" onClick={() => setMode(m.id)}
-              style={{
-                padding: '12px 10px', borderRadius: 10,
-                background: selected ? t.accentFaint : t.bg2,
-                border: `1px solid ${selected ? t.accent : t.glassBorder}`,
-                color: t.text0, cursor: 'pointer',
-                fontSize: 13, fontWeight: 500,
+            <button key={m.id} type="button" onClick={() => setMode(m.id)} aria-pressed={selected}
+              style={{ ...choiceStyle(selected), display: 'flex', flexDirection: 'column', gap: 10, padding: 10 }}>
+              <div style={{
+                height: 64, borderRadius: 11, background: m.bg, border: `1px solid ${t.line2}`,
+                display: 'flex', alignItems: 'flex-end', gap: 5, padding: 10,
               }}>
-              {m.label}
+                <span style={{ width: '38%', height: 6, borderRadius: 3, background: m.ink }}/>
+                <span style={{ width: '22%', height: 6, borderRadius: 3, background: m.mute }}/>
+              </div>
+              <div className="eco-hstack" style={{ gap: 8, padding: '0 4px 2px' }}>
+                <span className="eco-label eco-grow">{m.label}</span>
+                {selected && <IconCheck size={14} strokeWidth={2.4}/>}
+              </div>
             </button>
           );
         })}
       </div>
-      <div style={{
-        fontSize: 11, color: t.text2,
-        fontWeight: 500, marginBottom: 10,
-      }}>{tr('onboarding.appearance.accent')}</div>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 8,
-      }}>
-        {ACCENT_HUES.slice(0, 16).map((a) => {
+      <div className="eco-eyebrow" style={{ marginBottom: 10 }}>{tr('onboarding.appearance.accent')}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(44px, 1fr))', gap: 6 }}>
+        {ACCENT_HUES.map((a) => {
           const selected = accentHue === a.hue;
           return (
             <button key={a.hue} type="button" onClick={() => setAccentHue(a.hue)}
-              title={a.name}
+              title={a.name} aria-label={a.name} aria-pressed={selected}
               style={{
-                padding: 6, borderRadius: 8, background: 'transparent',
-                border: `1px solid ${selected ? t.accent : 'transparent'}`,
-                cursor: 'pointer',
+                height: 44, padding: 0, border: 0, borderRadius: 14, cursor: 'pointer',
+                background: selected ? 'var(--card)' : 'transparent',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
               <span style={{
                 width: 26, height: 26, borderRadius: '50%',
-                background: `oklch(70% 0.13 ${a.hue})`,
-                boxShadow: selected
-                  ? `0 0 0 2px ${t.bg1}, 0 0 0 4px oklch(74% 0.13 ${a.hue})`
-                  : '0 1px 3px rgba(0,0,0,0.2)',
+                background: `oklch(0.72 0.13 ${a.hue})`,
+                boxShadow: selected ? `0 0 0 2px ${t.card}, 0 0 0 4px ${t.text0}` : 'none',
               }}/>
             </button>
           );
@@ -291,7 +257,6 @@ function StepAppearance() {
 }
 
 function StepClaude() {
-  const t = useTokens();
   const tr = useT();
   const apiKey = useApiKey();
   const [status, setStatus] = useState<ClaudeAuth>(null);
@@ -327,92 +292,53 @@ function StepClaude() {
       sub={tr('onboarding.claude.sub')}
     >
       {/* CLI status */}
-      <div style={{
-        padding: 16, borderRadius: 12,
-        background: cliOk ? t.accentFaint : t.bg2,
-        border: `1px solid ${cliOk ? t.accent : t.glassBorder}`,
-        marginBottom: 12,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{
-            width: 28, height: 28, borderRadius: 8,
-            background: cliOk ? t.accent : t.bg3,
-            color: cliOk ? t.accentOn : t.text3,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconCheck size={14}/>
-          </span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: t.text0 }}>
-              {cliOk ? tr('onboarding.claude.cli.ok') : tr('onboarding.claude.cli.no')}
-            </div>
-            <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>
-              {cliOk
-                ? tr('onboarding.claude.cli.ok_body')
-                : status?.cliInstalled
-                  ? tr('onboarding.claude.cli.installed_no_login')
-                  : tr('onboarding.claude.cli.missing')}
-            </div>
+      <div className="eco-card eco-card--sm eco-hstack" style={{ gap: 12, marginBottom: 12 }}>
+        <IconTile icon={IconCheck} accent={!!cliOk} style={cliOk ? undefined : { color: 'var(--tx3)' }}/>
+        <div className="eco-grow">
+          <div className="eco-label">
+            {cliOk ? tr('onboarding.claude.cli.ok') : tr('onboarding.claude.cli.no')}
+          </div>
+          <div className="eco-sub">
+            {cliOk
+              ? tr('onboarding.claude.cli.ok_body')
+              : status?.cliInstalled
+                ? tr('onboarding.claude.cli.installed_no_login')
+                : tr('onboarding.claude.cli.missing')}
           </div>
         </div>
       </div>
 
       {/* API key fallback */}
       {!cliOk && (
-        <div style={{
-          padding: 16, borderRadius: 12,
-          background: t.bg2,
-          border: `1px solid ${hasKey ? t.accent : t.glassBorder}`,
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 4 }}>
-            {tr('onboarding.claude.apikey.title')}
-          </div>
-          <div style={{ fontSize: 12, color: t.text2, marginBottom: 10, lineHeight: 1.5 }}>
-            {tr('onboarding.claude.apikey.sub')}
-          </div>
+        <div className="eco-card eco-card--sm eco-card--stack" style={{ gap: 8 }}>
+          <div className="eco-label">{tr('onboarding.claude.apikey.title')}</div>
+          <div className="eco-sub">{tr('onboarding.claude.apikey.sub')}</div>
           {hasKey ? (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 12px', borderRadius: 8,
-              background: t.accentFaint,
-            }}>
-              <span style={{ color: t.accent, display: 'inline-flex' }}><IconCheck size={14}/></span>
-              <span style={{ fontFamily: t.fontMono, fontSize: 12, color: t.text1, flex: 1 }}>
+            <div className="eco-inset eco-hstack">
+              <span className="eco-tile--accent" style={{ display: 'inline-flex' }}><IconCheck size={14}/></span>
+              <span className="eco-mono eco-muted eco-grow eco-truncate" style={{ fontSize: 12.5 }}>
                 {apiKey.masked || '****'}
               </span>
-              <button type="button" onClick={() => void apiKey.remove()}
-                style={{ ...btnGhost(t), padding: '4px 10px', fontSize: 11 }}>
+              <Btn kind="ghost" size="sm" onClick={() => void apiKey.remove()}>
                 {tr('onboarding.claude.apikey.replace')}
-              </button>
+              </Btn>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
               <input
+                className="eco-field eco-field--sm eco-field--mono"
                 type="password"
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
                 placeholder="sk-ant-..."
-                style={{
-                  flex: 1, padding: '8px 12px', borderRadius: 8,
-                  border: `1px solid ${t.glassBorder}`, background: t.bg1,
-                  color: t.text0, fontFamily: t.fontMono, fontSize: 12,
-                  outline: 'none',
-                }}
+                style={{ flex: '1 1 200px', width: 'auto' }}
               />
-              <button type="button" onClick={() => void saveKey()}
-                disabled={saving || !keyInput.trim()}
-                style={{
-                  ...btnPrimary(t),
-                  opacity: saving || !keyInput.trim() ? 0.5 : 1,
-                  cursor: saving || !keyInput.trim() ? 'default' : 'pointer',
-                }}>
+              <Btn kind="solid" onClick={() => void saveKey()} disabled={saving || !keyInput.trim()}>
                 {saving ? '…' : tr('onboarding.claude.apikey.save')}
-              </button>
+              </Btn>
             </div>
           )}
-          {err && (
-            <div style={{ marginTop: 8, fontSize: 11, color: t.err }}>{err}</div>
-          )}
+          {err && <div className="eco-banner eco-banner--err">{err}</div>}
         </div>
       )}
     </StepShell>
@@ -420,7 +346,6 @@ function StepClaude() {
 }
 
 function StepGithub({ onContinue }: { onContinue: () => void }) {
-  const t = useTokens();
   const tr = useT();
   const gh = useGithubCredentials();
   const [pat, setPat] = useState('');
@@ -453,26 +378,23 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
       title={tr('onboarding.github.title')}
       sub={tr('onboarding.github.sub')}
     >
-      <p style={{ marginTop: 0, color: t.text2, fontSize: 14, lineHeight: 1.6, maxWidth: 560 }}>
+      <p className="eco-muted" style={{ margin: 0, lineHeight: 1.6, maxWidth: 560 }}>
         {tr('onboarding.github.body')}
       </p>
 
       {gh.hasCredentials ? (
-        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{
-            padding: 16, borderRadius: 10,
-            background: `color-mix(in oklch, ${t.ok} 8%, transparent)`,
-            border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
-            color: t.text0, fontSize: 14, fontFamily: t.fontSans,
-          }}>
+        <div className="eco-vstack" style={{ marginTop: 16, gap: 8 }}>
+          <div className="eco-banner eco-banner--ok">
+            <IconCheck size={14}/>
             {tr('settings.github.connected_as', { username: gh.username ?? '' })}
           </div>
           <GhStatusBanner/>
         </div>
       ) : (
-        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 540 }}>
-          <div style={{ display: 'flex', gap: 6 }}>
+        <div className="eco-vstack" style={{ marginTop: 16, gap: 10, maxWidth: 540 }}>
+          <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
             <input
+              className="eco-field eco-field--on-sheet eco-field--mono"
               type={showPat ? 'text' : 'password'}
               value={pat}
               onChange={(e) => setPat(e.target.value)}
@@ -480,47 +402,30 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="off"
-              style={{
-                flex: 1, padding: '8px 12px', borderRadius: 8,
-                background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
-                fontFamily: t.fontMono, fontSize: 13, outline: 'none',
-              }}
+              style={{ flex: '1 1 200px', width: 'auto' }}
             />
-            <button
-              type="button"
-              onClick={() => setShowPat((v) => !v)}
-              style={{
-                padding: '0 12px', borderRadius: 8, border: `1px solid ${t.glassBorder}`,
-                background: 'transparent', color: t.text1,
-                fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-              }}
-            >{showPat ? tr('settings.github.pat_hide') : tr('settings.github.pat_show')}</button>
+            <Btn kind="soft" size="lg" onClick={() => setShowPat((v) => !v)}>
+              {showPat ? tr('settings.github.pat_hide') : tr('settings.github.pat_show')}
+            </Btn>
           </div>
 
-          <div style={{ fontSize: 12, color: t.text3, lineHeight: 1.5 }}>
-            {tr('settings.github.recommended_scopes')}
-          </div>
+          <div className="eco-sub">{tr('settings.github.recommended_scopes')}</div>
           <GithubTokenHelp/>
           <GhStatusBanner/>
 
           {needEmail && (
             <>
               <input
+                className="eco-field eco-field--on-sheet eco-field--mono"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={tr('settings.github.email_placeholder')}
-                style={{
-                  width: '100%', boxSizing: 'border-box',
-                  padding: '8px 12px', borderRadius: 8,
-                  background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
-                  fontFamily: t.fontMono, fontSize: 13, outline: 'none',
-                }}
               />
-              <div style={{ fontSize: 12, color: t.warn }}>
+              <div className="eco-banner eco-banner--warn">
                 {tr('settings.github.email_required_note')}
                 {loginHint && (
-                  <span style={{ marginLeft: 6, color: t.text2 }}>
+                  <span className="eco-muted">
                     ({tr('settings.github.connected_as', { username: loginHint })})
                   </span>
                 )}
@@ -528,36 +433,13 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
             </>
           )}
 
-          {error && (
-            <div style={{
-              padding: '8px 10px', borderRadius: 6,
-              background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-              color: t.err, fontSize: 13, fontFamily: t.fontSans,
-            }}>{error}</div>
-          )}
+          {error && <div className="eco-banner eco-banner--err">{error}</div>}
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-            <button
-              type="button"
-              onClick={() => void onSave()}
-              disabled={saving || !pat.trim()}
-              style={{
-                padding: '10px 20px', borderRadius: 10, border: 0,
-                background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 14, fontWeight: 500,
-                cursor: saving || !pat.trim() ? 'not-allowed' : 'pointer',
-                opacity: saving || !pat.trim() ? 0.6 : 1,
-              }}
-            >{saving ? tr('settings.github.validating') : tr('onboarding.github.continue')}</button>
-            <button
-              type="button"
-              onClick={onContinue}
-              style={{
-                padding: '10px 16px', borderRadius: 10, border: `1px solid ${t.glassBorder}`,
-                background: 'transparent', color: t.text1,
-                fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
-              }}
-            >{tr('onboarding.github.skip')}</button>
+          <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8, marginTop: 4 }}>
+            <Btn kind="solid" onClick={() => void onSave()} disabled={saving || !pat.trim()}>
+              {saving ? tr('settings.github.validating') : tr('onboarding.github.continue')}
+            </Btn>
+            <Btn kind="soft" onClick={onContinue}>{tr('onboarding.github.skip')}</Btn>
           </div>
         </div>
       )}
@@ -566,7 +448,6 @@ function StepGithub({ onContinue }: { onContinue: () => void }) {
 }
 
 function StepFolder() {
-  const t = useTokens();
   const tr = useT();
   const ws = useWorkspaces();
   const def = useDefaultWorkspace();
@@ -598,58 +479,31 @@ function StepFolder() {
     >
       {ws.list.workspaces.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <div style={{
-            fontSize: 11, color: t.text2,
-            fontWeight: 500, marginBottom: 8,
-          }}>{tr('onboarding.folder.current')}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="eco-eyebrow" style={{ marginBottom: 8 }}>{tr('onboarding.folder.current')}</div>
+          <Card variant="list">
             {ws.list.workspaces.map((w) => (
-              <div key={w} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 12px', borderRadius: 8,
-                background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              }}>
-                <IconFolder size={13}/>
-                <code style={{
-                  flex: 1, minWidth: 0, fontFamily: t.fontMono, fontSize: 12, color: t.text1,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>{w}</code>
-                {def.value === w && (
-                  <span style={{
-                    fontSize: 11, color: t.accent, fontWeight: 500,
-                  }}>{tr('onboarding.folder.default')}</span>
-                )}
+              <div key={w} className="eco-row eco-row--tight" style={{ flexWrap: 'nowrap' }}>
+                <IconFolder size={15}/>
+                <code className="eco-mono eco-muted eco-truncate eco-grow" style={{ fontSize: 12.5 }}>{w}</code>
+                {def.value === w && <Chip tone="accent">{tr('onboarding.folder.default')}</Chip>}
               </div>
             ))}
-          </div>
+          </Card>
         </div>
       )}
       {hasPicker ? (
-        <button type="button" onClick={() => void pick()} disabled={busy}
-          style={{
-            ...btnPrimary(t), width: '100%', padding: '12px',
-            opacity: busy ? 0.6 : 1,
-          }}>
+        <Btn kind="solid" size="lg" icon={IconFolder} className="eco-btn--block" onClick={() => void pick()} disabled={busy}>
           {busy ? '…' : tr('onboarding.folder.pick')}
-        </button>
+        </Btn>
       ) : (
-        <div style={{
-          padding: 12, borderRadius: 10,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          fontSize: 12, color: t.text2,
-        }}>
-          {tr('onboarding.folder.web_note')}
-        </div>
+        <div className="eco-banner">{tr('onboarding.folder.web_note')}</div>
       )}
-      {err && (
-        <div style={{ marginTop: 8, fontSize: 11, color: t.err }}>{err}</div>
-      )}
+      {err && <div className="eco-banner eco-banner--err" style={{ marginTop: 8 }}>{err}</div>}
     </StepShell>
   );
 }
 
 function StepObsidian() {
-  const t = useTokens();
   const tr = useT();
   const { status, vaults, save, refresh } = useObsidian();
   const [busy, setBusy] = useState(false);
@@ -686,45 +540,20 @@ function StepObsidian() {
       sub={tr('onboarding.obsidian.sub')}
     >
       {isLinked ? (
-        <div style={{
-          padding: 16, borderRadius: 12,
-          background: t.accentFaint,
-          border: `1px solid ${t.accent}`,
-          marginBottom: 12,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{
-              width: 28, height: 28, borderRadius: 8,
-              background: t.accent, color: t.accentOn,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <IconCheck size={14}/>
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 500, color: t.text0 }}>
-                {tr('onboarding.obsidian.connected')}
-              </div>
-              <code style={{
-                display: 'block', fontFamily: t.fontMono, fontSize: 12, color: t.text2,
-                marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>{status.vaultPath}</code>
+        <div className="eco-card eco-card--sm eco-card--stack" style={{ gap: 10, marginBottom: 12 }}>
+          <div className="eco-hstack eco-hstack--wrap" style={{ gap: 12 }}>
+            <IconTile icon={IconCheck} accent/>
+            <div className="eco-grow" style={{ flexBasis: 180 }}>
+              <div className="eco-label">{tr('onboarding.obsidian.connected')}</div>
+              <code className="eco-mono eco-sub eco-truncate" style={{ display: 'block' }}>{status.vaultPath}</code>
             </div>
-            <button type="button" onClick={() => void disconnect()} disabled={busy}
-              style={{
-                padding: '6px 12px', borderRadius: 8,
-                border: `1px solid ${t.glassBorder}`,
-                background: 'transparent', color: t.text1,
-                fontSize: 12, fontWeight: 500, cursor: 'pointer',
-              }}>
+            <Btn kind="raised" size="sm" onClick={() => void disconnect()} disabled={busy}>
               {tr('onboarding.obsidian.disconnect')}
-            </button>
+            </Btn>
           </div>
           {status.hasParaStructure && (
-            <div style={{
-              marginTop: 10, fontSize: 11, color: t.text2,
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-              <IconCheck size={11}/>
+            <div className="eco-sub eco-hstack" style={{ gap: 6 }}>
+              <IconCheck size={12}/>
               {tr('onboarding.obsidian.para_detected').replace('{n}', String(status.noteCount))}
             </div>
           )}
@@ -733,121 +562,73 @@ function StepObsidian() {
         <>
           {vaults.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{
-                fontSize: 11, color: t.text2,
-                fontWeight: 500, marginBottom: 8,
-              }}>{tr('onboarding.obsidian.detected')}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div className="eco-eyebrow" style={{ marginBottom: 8 }}>{tr('onboarding.obsidian.detected')}</div>
+              <Card variant="list">
                 {vaults.map((v) => (
                   <button key={v.id} type="button"
                     onClick={() => void connectVault(v.path)}
                     disabled={busy}
+                    className="eco-row eco-row--tight"
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '10px 12px', borderRadius: 8,
-                      background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                      color: t.text0, cursor: busy ? 'default' : 'pointer',
-                      textAlign: 'left', width: '100%',
-                      opacity: busy ? 0.6 : 1,
+                      width: '100%', flexWrap: 'nowrap', background: 'transparent', color: 'inherit', font: 'inherit',
+                      borderLeft: 0, borderRight: 0, borderBottom: 0, textAlign: 'left',
+                      cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
                     }}>
-                    <IconLayers size={14}/>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>
-                        {v.name}
-                        {v.open && (
-                          <span style={{
-                            marginLeft: 8, fontSize: 11, color: t.accent,
-                            fontWeight: 500,
-                          }}>{tr('onboarding.obsidian.open')}</span>
-                        )}
+                    <IconTile icon={IconLayers}/>
+                    <div className="eco-grow">
+                      <div className="eco-hstack" style={{ gap: 8 }}>
+                        <span className="eco-label eco-truncate">{v.name}</span>
+                        {v.open && <Chip tone="accent">{tr('onboarding.obsidian.open')}</Chip>}
                       </div>
-                      <code style={{
-                        display: 'block', fontFamily: t.fontMono, fontSize: 11,
-                        color: t.text3, marginTop: 2,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>{v.path}</code>
+                      <code className="eco-mono eco-sub eco-truncate" style={{ display: 'block' }}>{v.path}</code>
                     </div>
                   </button>
                 ))}
-              </div>
+              </Card>
             </div>
           )}
           {hasPicker ? (
-            <button type="button" onClick={() => void pickCustom()} disabled={busy}
-              style={{
-                ...btnGhost(t), width: '100%', padding: '12px',
-                opacity: busy ? 0.6 : 1,
-              }}>
+            <Btn kind="soft" size="lg" className="eco-btn--block" onClick={() => void pickCustom()} disabled={busy}>
               {vaults.length > 0 ? tr('onboarding.obsidian.pick_other') : tr('onboarding.obsidian.pick')}
-            </button>
+            </Btn>
           ) : vaults.length === 0 && (
-            <div style={{
-              padding: 12, borderRadius: 10,
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              fontSize: 12, color: t.text2,
-            }}>
-              {tr('onboarding.obsidian.none')}
-            </div>
+            <div className="eco-banner">{tr('onboarding.obsidian.none')}</div>
           )}
         </>
       )}
-      {err && (
-        <div style={{ marginTop: 8, fontSize: 11, color: t.err }}>{err}</div>
-      )}
-      <div style={{
-        marginTop: 16, fontSize: 11, color: t.text3, lineHeight: 1.5,
-      }}>
-        {tr('onboarding.obsidian.note')}
-      </div>
+      {err && <div className="eco-banner eco-banner--err" style={{ marginTop: 8 }}>{err}</div>}
+      <div className="eco-sub" style={{ marginTop: 16 }}>{tr('onboarding.obsidian.note')}</div>
     </StepShell>
   );
 }
 
 function StepDone() {
-  const t = useTokens();
   const tr = useT();
   const tips = useMemo(() => [
     tr('onboarding.done.tip.dashboard'),
     tr('onboarding.done.tip.support'),
   ], [tr]);
   return (
-    <div style={{ textAlign: 'center', padding: '12px 8px' }}>
+    <div style={{ textAlign: 'center', padding: '12px 4px' }}>
       <div style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 72, height: 72, borderRadius: '50%',
-        background: t.accentFaint, color: t.accent, marginBottom: 20,
+        width: 64, height: 64, borderRadius: '50%',
+        background: 'var(--ac-soft)', color: 'var(--ac)', marginBottom: 18,
       }}>
-        <IconCheck size={32}/>
+        <IconCheck size={28}/>
       </div>
-      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.4 }}>
-        {tr('onboarding.done.title')}
-      </h2>
-      <p style={{
-        margin: '8px auto 24px', maxWidth: 400,
-        fontSize: 13, color: t.text2, lineHeight: 1.6,
-      }}>
+      <h2 className="eco-title eco-title--md">{tr('onboarding.done.title')}</h2>
+      <p className="eco-muted" style={{ margin: '10px auto 22px', maxWidth: 400, lineHeight: 1.6 }}>
         {tr('onboarding.done.body')}
       </p>
-      <div style={{
-        display: 'flex', flexDirection: 'column', gap: 8,
-        maxWidth: 360, margin: '0 auto', textAlign: 'left',
-      }}>
+      <Card variant="list" style={{ maxWidth: 420, margin: '0 auto', textAlign: 'left' }}>
         {tips.map((tip, i) => (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'flex-start', gap: 10,
-            padding: '10px 16px', borderRadius: 10,
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          }}>
-            <span style={{
-              width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-              background: t.accent, color: t.accentOn,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 11, fontWeight: 500,
-            }}>{i + 1}</span>
-            <span style={{ flex: 1, fontSize: 13, color: t.text1, lineHeight: 1.5 }}>{tip}</span>
+          <div key={i} className="eco-row eco-row--tight" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+            <IconTile size="sm">{i + 1}</IconTile>
+            <span className="eco-muted eco-grow" style={{ lineHeight: 1.5, paddingTop: 5 }}>{tip}</span>
           </div>
         ))}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -860,44 +641,16 @@ function StepShell({
   sub: string;
   children: React.ReactNode;
 }) {
-  const t = useTokens();
   return (
     <div>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
-      }}>
-        <span style={{
-          width: 36, height: 36, borderRadius: 10,
-          background: t.accentFaint, color: t.accent,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Icon size={18}/>
-        </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h3 style={{ margin: 0, fontSize: 20, fontWeight: 500, color: t.text0, }}>{title}</h3>
-          <div style={{ fontSize: 12, color: t.text2, marginTop: 2, lineHeight: 1.5 }}>{sub}</div>
+      <div className="eco-hstack" style={{ gap: 12, marginBottom: 18 }}>
+        <IconTile icon={Icon} accent style={{ background: 'var(--card)' }}/>
+        <div className="eco-grow">
+          <h3 className="eco-h2">{title}</h3>
+          <div className="eco-sub">{sub}</div>
         </div>
       </div>
       {children}
     </div>
   );
-}
-
-function btnPrimary(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return {
-    padding: '8px 20px', borderRadius: 8, border: 0,
-    background: t.accent, color: t.accentOn,
-    fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-    cursor: 'pointer',
-  };
-}
-
-function btnGhost(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return {
-    padding: '8px 16px', borderRadius: 8,
-    border: `1px solid ${t.glassBorder}`,
-    background: 'transparent', color: t.text1,
-    fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-    cursor: 'pointer',
-  };
 }

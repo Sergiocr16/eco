@@ -2,8 +2,8 @@ import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTokens } from '@/design/theme';
-import { scrimStyle, dialogSurface } from '@/design/primitives';
-import { IconBranch, IconMore, IconResume, IconGlobe, IconEdit, IconTrash, IconCheck, IconSearch, IconAgent } from '@/design/icons';
+import { IconBtn, Segmented } from '@/design/primitives';
+import { IconBranch, IconMore, IconResume, IconGlobe, IconEdit, IconTrash, IconCheck, IconSearch, IconAgent, IconChevD, IconRotateCw, IconX } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useBranches, type BranchInfo } from '@/hooks/useBranches';
@@ -27,7 +27,6 @@ type Props = {
 //    (fetch + pull + push).
 //  - Menú "⋯" (der): Renombrar rama, Borrar rama, Merge into current, abrir PRs.
 export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Props) {
-  const t = useTokens();
   const tr = useT();
   const isPhone = useIsPhone();
   const { data, refresh: refreshBranches } = useBranches(workspace, bubbleId);
@@ -145,9 +144,7 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8,
-      padding: isPhone ? '8px 10px' : '10px 16px',
-      borderBottom: `1px solid ${t.glassBorder}`,
-      background: t.bg1,
+      padding: isPhone ? '8px 10px' : '12px 16px 8px',
       flexShrink: 0,
       position: 'relative',
     }}>
@@ -174,13 +171,10 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
 
       {/* Mensaje transitorio */}
       {msg && (
-        <div style={{
-          padding: '4px 10px', borderRadius: 6,
-          background: `color-mix(in oklch, ${msg.kind === 'ok' ? t.ok : t.err} 14%, transparent)`,
-          color: msg.kind === 'ok' ? t.ok : t.err,
-          fontFamily: t.fontMono, fontSize: 11,
-          maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }} title={msg.text}>{msg.text}</div>
+        <span className={`eco-chip eco-mono ${msg.kind === 'ok' ? 'eco-chip--ok' : 'eco-chip--err'}`}
+          style={{ fontSize: 11.5, maxWidth: 360, flexShrink: 1, minWidth: 0 }} title={msg.text}>
+          <span className="eco-truncate">{msg.text}</span>
+        </span>
       )}
 
       {/* Botón dedicado: renombrar agente con el nombre de la rama actual.
@@ -188,20 +182,10 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
           solo tiene lugar para chip de rama + sync + menú. */}
       {!isPhone && onRenameAgent && branchName && !detached && (
         <button type="button"
+          className="eco-btn eco-btn--sm eco-btn--raised"
           onClick={() => onRenameAgent(branchName)}
-          title={tr('git.topbar.rename_agent_tooltip', { name: branchName })}
-          style={{
-            height: 28, padding: '0 10px', borderRadius: 8,
-            border: `1px solid ${t.glassBorder}`,
-            background: t.bg2, color: t.text1,
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.glassBorder; e.currentTarget.style.color = t.text1; }}>
-          <IconAgent size={12}/>
+          title={tr('git.topbar.rename_agent_tooltip', { name: branchName })}>
+          <IconAgent size={14}/>
           <span>{tr('git.topbar.rename_agent_btn')}</span>
         </button>
       )}
@@ -209,19 +193,12 @@ export function GitTopBar({ workspace, bubbleId, onOpenPRs, onRenameAgent }: Pro
       {/* Menú "⋯" */}
       <div style={{ position: 'relative' }}>
         <button type="button"
-          onClick={() => setMoreMenuOpen((v) => !v)}
-          style={{
-            height: 28, width: 28, padding: 0, borderRadius: 8,
-            border: `1px solid ${t.glassBorder}`,
-            background: t.bg2, color: t.text1,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer',
-          }}>
-          <IconMore size={14}/>
+          className={`eco-iconbtn eco-iconbtn--raised${moreMenuOpen ? ' is-on' : ''}`}
+          onClick={() => setMoreMenuOpen((v) => !v)}>
+          <IconMore size={16}/>
         </button>
         {moreMenuOpen && (
           <MoreMenu
-            t={t}
             onClose={() => setMoreMenuOpen(false)}
             onRename={() => { setMoreMenuOpen(false); setRenameOpen(true); }}
             onMerge={() => { setMoreMenuOpen(false); setMergeOpen(true); }}
@@ -311,82 +288,49 @@ function SyncButton({
     : '⇅';
 
   const actionable = action !== 'fetch';
-  const [hover, setHover] = useState(false);
-
-  // Estilo alineado al resto de la barra (BranchChip / rename): height 28,
-  // radius 7, plano. Acción real = accent plano (tipo Btn primary, sin
-  // gradiente/sombra/shimmer); fetch = quiet (bg2 + hover accent).
-  const bg = actionable
-    ? (hover && !disabled ? t.accent : t.accentDim)
-    : t.bg2;
-  const fg = actionable ? t.accentOn : (hover && !disabled ? t.accent : t.text1);
-  const border = actionable
-    ? `1px solid ${t.accent}`
-    : `1px solid ${hover && !disabled ? t.accent : t.glassBorder}`;
-  const badgeBg = actionable ? 'rgba(0,0,0,0.18)' : t.bg3;
 
   return (
     <button type="button"
+      className={`eco-btn eco-btn--sm ${actionable ? 'eco-btn--primary' : 'eco-btn--raised'}`}
       onClick={onClick}
       disabled={busy || disabled}
       title={disabled ? tr('git.topbar.sync.detached_disabled') : tr('git.topbar.sync.action_tooltip', { label })}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        marginLeft: 2,
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        height: 28, padding: '0 12px',
-        borderRadius: 8,
-        border,
-        background: bg,
-        color: fg,
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-        cursor: busy ? 'wait' : (disabled ? 'not-allowed' : 'pointer'),
-        opacity: disabled ? 0.45 : 1,
-        whiteSpace: 'nowrap',
-        transition: 'background 120ms, border-color 120ms, color 120ms',
-      }}>
+      style={busy ? { cursor: 'wait' } : undefined}>
       {busy ? (
-        <span style={{
-          width: 12, height: 12, borderRadius: '50%',
-          border: `2px solid color-mix(in oklch, ${actionable ? t.accentOn : t.text2} 40%, transparent)`,
-          borderTopColor: actionable ? t.accentOn : t.text1,
-          animation: 'eco-spin 0.7s linear infinite',
-          display: 'inline-block',
-        }}/>
+        <span className="eco-spinner" style={{ borderColor: 'currentColor', borderTopColor: 'transparent' }}/>
+      ) : action === 'fetch' ? (
+        <IconRotateCw size={15}/>
       ) : (
-        <span style={{ fontSize: 13, lineHeight: 1 }}>{icon}</span>
+        <span style={{ fontSize: 14, lineHeight: 1 }}>{icon}</span>
       )}
       <span>{label}</span>
       {/* Badges ahead/behind cuando hay algo */}
       {(behind > 0 || ahead > 0) && (
-        <span style={{
+        <span className="eco-mono" style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
-          marginLeft: 2, paddingLeft: 8,
-          borderLeft: `1px solid ${actionable ? 'rgba(255,255,255,0.25)' : t.glassBorder}`,
+          marginLeft: 2, paddingLeft: 8, fontSize: 11.5,
+          borderLeft: '1px solid color-mix(in oklab, currentColor 25%, transparent)',
         }}>
           {behind > 0 && (
             <span title={behind === 1 ? tr('git.topbar.sync.behind_one', { n: behind }) : tr('git.topbar.sync.behind_many', { n: behind })}
-              style={{
-                fontFamily: t.fontMono, fontSize: 11, fontWeight: 600,
-                padding: '0 6px', borderRadius: 4,
-                background: badgeBg,
-                color: actionable ? t.accentOn : t.warn,
-              }}>↓{behind}</span>
+              style={badge(actionable ? undefined : t.warn)}>↓{behind}</span>
           )}
           {ahead > 0 && (
             <span title={ahead === 1 ? tr('git.topbar.sync.ahead_one', { n: ahead }) : tr('git.topbar.sync.ahead_many', { n: ahead })}
-              style={{
-                fontFamily: t.fontMono, fontSize: 11, fontWeight: 600,
-                padding: '0 6px', borderRadius: 4,
-                background: badgeBg,
-                color: actionable ? t.accentOn : t.ok,
-              }}>↑{ahead}</span>
+              style={badge(actionable ? undefined : t.ok)}>↑{ahead}</span>
           )}
         </span>
       )}
     </button>
   );
+}
+
+// Contador dentro del botón de sync: tinte del color del texto que lo rodea.
+function badge(color?: string): React.CSSProperties {
+  return {
+    padding: '0 6px', borderRadius: 7, color,
+    background: 'color-mix(in oklab, currentColor 14%, transparent)',
+  };
 }
 
 function BranchChip({ branchName, detached, isOpen, onToggle }: {
@@ -395,35 +339,24 @@ function BranchChip({ branchName, detached, isOpen, onToggle }: {
   isOpen: boolean;
   onToggle: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   return (
     <button type="button"
+      className="eco-btn eco-btn--sm eco-btn--raised"
       onClick={onToggle}
+      aria-expanded={isOpen}
       title={detached ? tr('git.topbar.branch.detached_tooltip', { name: branchName }) : tr('git.topbar.branch.current_tooltip', { name: branchName })}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        height: 28, padding: '0 10px',
-        borderRadius: 8,
-        background: isOpen ? t.accentFaint : t.bg2,
-        border: `1px solid ${isOpen ? t.accent : t.glassBorder}`,
-        color: t.text0,
-        cursor: 'pointer',
-        maxWidth: 260,
-      }}>
-      <IconBranch size={12}/>
-      <code style={{
-        fontFamily: t.fontMono, fontSize: 12,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        flex: 1, minWidth: 0, textAlign: 'left',
-      }}>{detached ? `${tr('git.topbar.branch.detached_prefix')} ${branchName}` : branchName}</code>
-      <span style={{ color: t.text2, fontSize: 11 }}>▾</span>
+      style={{ maxWidth: 260, flexShrink: 1, minWidth: 0, ...(isOpen ? { background: 'var(--hover)' } : null) }}>
+      <IconBranch size={14}/>
+      <code className="eco-mono eco-truncate" style={{ fontSize: 13, flex: 1, textAlign: 'left', fontWeight: 400 }}>
+        {detached ? `${tr('git.topbar.branch.detached_prefix')} ${branchName}` : branchName}
+      </code>
+      <IconChevD size={13} style={{ color: 'var(--tx3)', flexShrink: 0 }}/>
     </button>
   );
 }
 
-function MoreMenu({ t, onClose, onRename, onMerge, onPRs, onRenameAgent }: {
-  t: ReturnType<typeof useTokens>;
+function MoreMenu({ onClose, onRename, onMerge, onPRs, onRenameAgent }: {
   onClose: () => void;
   onRename: () => void;
   onMerge: () => void;
@@ -449,26 +382,13 @@ function MoreMenu({ t, onClose, onRename, onMerge, onPRs, onRenameAgent }: {
   ];
 
   return (
-    <div ref={ref} style={{
-      position: 'absolute', top: '100%', right: 0, marginTop: 4,
-      minWidth: 240, padding: 4, borderRadius: 8,
-      background: t.bg1, border: `1px solid ${t.glassBorder}`,
-      boxShadow: `0 8px 24px ${t.glassBorder}`,
-      zIndex: 20,
+    <div ref={ref} className="eco-menu" style={{
+      position: 'absolute', top: '100%', right: 0, marginTop: 6,
+      minWidth: 240, zIndex: 20,
     }}>
       {items.map((it, i) => (
-        <button key={i} type="button"
-          onClick={it.onClick}
-          style={{
-            width: '100%', padding: '8px 10px', textAlign: 'left',
-            border: 0, background: 'transparent', borderRadius: 6,
-            color: t.text1,
-            fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-          <it.icon size={12}/>
+        <button key={i} type="button" className="eco-menu__item" onClick={it.onClick}>
+          <it.icon size={15}/>
           {it.label}
         </button>
       ))}
@@ -535,99 +455,68 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
   }
 
   return createPortal(
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 80,
-      background: 'rgba(0,0,0,0.25)',
-    }} onClick={onClose}>
-      <div ref={ref} onClick={(e) => e.stopPropagation()} style={{
+    <div style={{ position: 'fixed', inset: 0, zIndex: 80 }} onClick={onClose}>
+      <div ref={ref} className="eco-menu" onClick={(e) => e.stopPropagation()} style={{
         position: 'absolute', top: 100, left: '50%', transform: 'translateX(-50%)',
-        width: 460, maxWidth: vw(92), maxHeight: vh(70),
-        ...dialogSurface(t),
-        borderRadius: 12,
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        width: 460, maxWidth: vw(92), maxHeight: vh(70), padding: 8,
+        display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden', animation: 'none',
       }}>
         {/* Buscador */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '10px 12px',
-          borderBottom: `1px solid ${t.glassBorder}`,
-        }}>
-          <IconSearch size={12}/>
+        <div className="eco-inputbar eco-inputbar--sm" style={{ flex: 'none' }}>
+          <IconSearch size={14}/>
           <input
+            className="eco-input-bare eco-mono"
             value={query}
             autoFocus
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={tr('git.topbar.dropdown.search')}
-            style={{
-              flex: 1, background: 'transparent', border: 0,
-              fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-              outline: 'none',
-            }}/>
+            placeholder={tr('git.topbar.dropdown.search')}/>
         </div>
 
         {/* Tabs local/remote */}
-        <div style={{
-          display: 'flex', gap: 4, padding: '6px 10px',
-          borderBottom: `1px solid ${t.glassBorder}`,
-        }}>
-          {(['local', 'remote'] as const).map((k) => (
-            <button key={k} type="button"
-              onClick={() => setTab(k)}
-              style={{
-                padding: '4px 12px', borderRadius: 6, border: 0,
-                background: tab === k ? t.accentDim : 'transparent',
-                color: tab === k ? t.accentOn : t.text2,
-                fontFamily: t.fontSans, fontSize: 12, fontWeight: tab === k ? 500 : 500,
-                cursor: 'pointer',
-              }}>
-              {k === 'local' ? tr('git.topbar.dropdown.local') : tr('git.topbar.dropdown.remote')}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          size="sm"
+          value={tab}
+          onChange={setTab}
+          style={{ alignSelf: 'flex-start' }}
+          options={[
+            { id: 'local', label: tr('git.topbar.dropdown.local') },
+            { id: 'remote', label: tr('git.topbar.dropdown.remote') },
+          ]}
+        />
 
         {/* Lista */}
         <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
           {filtered.length === 0 ? (
-            <div style={{ padding: 20, color: t.text3, fontSize: 12, textAlign: 'center' }}>
+            <div className="eco-empty" style={{ padding: 20 }}>
               {query ? tr('git.topbar.dropdown.no_match') : tr('git.topbar.dropdown.no_branches')}
             </div>
           ) : (
             filtered.map((b) => (
               <button key={b.name} type="button"
+                className={`eco-menu__item${b.isCurrent ? ' is-on' : ''}`}
                 onClick={() => void checkout(b.name)}
                 disabled={!!busy || b.isCurrent}
                 style={{
-                  width: '100%', padding: '8px 12px', textAlign: 'left',
-                  border: 0, background: 'transparent',
-                  borderBottom: `1px solid ${t.glassBorder}`,
+                  opacity: b.isCurrent ? 1 : undefined,
                   cursor: b.isCurrent ? 'default' : (busy ? 'wait' : 'pointer'),
-                  display: 'flex', alignItems: 'center', gap: 8,
-                }}
-                onMouseEnter={(e) => { if (!b.isCurrent) e.currentTarget.style.background = t.bg2; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+                }}>
                 {b.isCurrent ? (
-                  <IconCheck size={12}/>
+                  <IconCheck size={14}/>
                 ) : (
-                  <span style={{ width: 12 }}/>
+                  <span style={{ width: 14, flexShrink: 0 }}/>
                 )}
-                <code style={{
-                  flex: 1, fontFamily: t.fontMono, fontSize: 12,
-                  color: b.isCurrent ? t.accent : t.text0,
+                <code className="eco-mono eco-truncate" style={{
+                  flex: 1, fontSize: 12.5,
                   fontWeight: b.isCurrent ? 500 : 400,
-                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>{b.name}</code>
                 {(b.ahead !== undefined && b.ahead > 0) && (
-                  <span style={{ fontSize: 11, color: t.ok, fontFamily: t.fontMono }}>↑{b.ahead}</span>
+                  <span className="eco-mono" style={{ fontSize: 11.5, color: t.ok }}>↑{b.ahead}</span>
                 )}
                 {(b.behind !== undefined && b.behind > 0) && (
-                  <span style={{ fontSize: 11, color: t.warn, fontFamily: t.fontMono }}>↓{b.behind}</span>
+                  <span className="eco-mono" style={{ fontSize: 11.5, color: t.warn }}>↓{b.behind}</span>
                 )}
                 {b.lastCommit && (
-                  <span style={{
-                    fontSize: 11, color: t.text3,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    maxWidth: 140,
-                  }}>{b.lastCommit.relTime}</span>
+                  <span className="eco-sub eco-truncate" style={{ maxWidth: 140 }}>{b.lastCommit.relTime}</span>
                 )}
               </button>
             ))
@@ -635,17 +524,10 @@ function BranchDropdown({ branches, workspace, bubbleId, onClose, onCheckoutDone
         </div>
 
         {err && (
-          <div style={{
-            padding: '8px 12px', borderTop: `1px solid ${t.err}`,
-            background: `color-mix(in oklch, ${t.err} 10%, transparent)`,
-            color: t.err, fontSize: 12,
-          }}>{err}</div>
+          <div className="eco-banner eco-banner--err" style={{ flex: 'none' }}>{err}</div>
         )}
 
-        <div style={{
-          padding: '6px 12px', borderTop: `1px solid ${t.glassBorder}`,
-          fontSize: 11, color: t.text3,
-        }}>
+        <div className="eco-sub" style={{ padding: '0 8px 4px', flex: 'none' }}>
           {tr('git.topbar.dropdown.tip')}
         </div>
       </div>
@@ -661,7 +543,6 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
   workspace: string;
   bubbleId: string;
 }) {
-  const t = useTokens();
   const tr = useT();
   const [name, setName] = useState(current);
   const [busy, setBusy] = useState(false);
@@ -687,43 +568,35 @@ function RenameBranchModal({ current, onCancel, onDone, workspace, bubbleId }: {
   }
 
   return createPortal(
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      ...scrimStyle(t),
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onCancel}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: 420, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        ...dialogSurface(t),
-        display: 'flex', flexDirection: 'column', gap: 12,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>{tr('git.topbar.rename.title')}</div>
-        <div style={{ fontSize: 12, color: t.text2 }}>
-          {tr('git.topbar.rename.body')} <code style={{ fontFamily: t.fontMono }}>{current}</code>:
+    <div className="eco-scrim" onClick={onCancel}>
+      <div className="eco-dialog eco-dialog--sm" onClick={(e) => e.stopPropagation()}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile"><IconEdit size={20}/></span>
+          <h2 className="eco-dialog__title">{tr('git.topbar.rename.title')}</h2>
+          <IconBtn icon={IconX} size={32} onClick={onCancel} title={tr('common.close')}/>
         </div>
-        <input
-          value={name}
-          autoFocus
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
-          style={{
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            borderRadius: 6, padding: '8px 10px',
-            fontFamily: t.fontMono, fontSize: 13, color: t.text0, outline: 'none',
-          }}/>
+        <div className="eco-dialog__section">
+          <div className="eco-field-label">
+            {tr('git.topbar.rename.body')} <code className="eco-mono">{current}</code>:
+          </div>
+          <input
+            className="eco-field eco-field--mono"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}/>
+        </div>
         {err && (
-          <div style={{
-            fontSize: 12, color: t.err, fontFamily: t.fontMono,
-            padding: '4px 6px', borderRadius: 4, background: t.bg2,
-          }}>{err}</div>
+          <div className="eco-banner eco-banner--err eco-mono">{err}</div>
         )}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} style={ghostBtn(t)}>{tr('common.cancel')}</button>
-          <button type="button" onClick={() => void submit()}
-            disabled={!name.trim() || name === current || busy}
-            style={primaryBtn(t, !name.trim() || name === current || busy)}>
-            {busy ? '…' : tr('git.topbar.rename.do')}
-          </button>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>{tr('common.cancel')}</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--primary" onClick={() => void submit()}
+              disabled={!name.trim() || name === current || busy}>
+              {busy ? '…' : tr('git.topbar.rename.do')}
+            </button>
+          </div>
         </div>
       </div>
     </div>,
@@ -739,7 +612,6 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
   workspace: string;
   bubbleId: string;
 }) {
-  const t = useTokens();
   const tr = useT();
   const [source, setSource] = useState('');
   const [query, setQuery] = useState('');
@@ -781,116 +653,82 @@ function MergeModal({ branches, currentBranch, onCancel, onDone, workspace, bubb
   }
 
   return createPortal(
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      ...scrimStyle(t),
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onCancel}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        ...dialogSurface(t),
-        display: 'flex', flexDirection: 'column', gap: 12,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>{tr('git.topbar.merge.title')}</div>
-        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
+    <div className="eco-scrim" onClick={onCancel}>
+      <div className="eco-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile"><IconBranch size={20}/></span>
+          <h2 className="eco-dialog__title">{tr('git.topbar.merge.title')}</h2>
+          <IconBtn icon={IconX} size={32} onClick={onCancel} title={tr('common.close')}/>
+        </div>
+        <div className="eco-dialog__body">
           {tr('git.topbar.merge.body', { branch: currentBranch })}
         </div>
         {/* Buscador + lista filtrable de ramas locales (reemplaza el <select>
             nativo, que no permitía buscar). */}
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={tr('branch.search_placeholder')}
-          disabled={busy}
-          autoFocus
-          style={{
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            borderRadius: 6, padding: '8px 10px',
-            fontFamily: t.fontMono, fontSize: 13, color: t.text0, outline: 'none',
-          }}
-        />
-        <div style={{
-          maxHeight: 220, overflow: 'auto',
-          border: `1px solid ${t.glassBorder}`, borderRadius: 6,
-          background: t.bg2,
-          display: 'flex', flexDirection: 'column',
-        }}>
-          {filtered.length === 0 ? (
-            <div style={{ padding: '10px 12px', fontSize: 12, color: t.text3 }}>
-              {tr('git.topbar.dropdown.no_branches')}
-            </div>
-          ) : filtered.map((b) => {
-            const sel = b === source;
-            return (
-              <button
-                key={b} type="button"
-                onClick={() => setSource(b)}
-                disabled={busy}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  width: '100%', textAlign: 'left',
-                  padding: '8px 12px', border: 0,
-                  background: sel ? t.accentFaint : 'transparent',
-                  color: sel ? t.accent : t.text1,
-                  fontFamily: t.fontMono, fontSize: 13,
-                  cursor: busy ? 'default' : 'pointer',
-                }}
-                onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = t.bg3; }}
-                onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = 'transparent'; }}>
-                <IconCheck size={12} style={{ opacity: sel ? 1 : 0, flexShrink: 0 }}/>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b}</span>
-              </button>
-            );
-          })}
+        <div className="eco-optlist">
+          <div className="eco-optlist__search">
+            <IconSearch size={15}/>
+            <input
+              type="text"
+              className="eco-input-bare eco-mono"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={tr('branch.search_placeholder')}
+              disabled={busy}
+              autoFocus
+            />
+          </div>
+          <div className="eco-optlist__scroll" style={{ maxHeight: 220 }}>
+            {filtered.length === 0 ? (
+              <div className="eco-sub" style={{ padding: '10px 12px' }}>
+                {tr('git.topbar.dropdown.no_branches')}
+              </div>
+            ) : filtered.map((b) => {
+              const sel = b === source;
+              return (
+                <button
+                  key={b} type="button"
+                  className={`eco-option${sel ? ' is-on' : ''}`}
+                  onClick={() => setSource(b)}
+                  disabled={busy}>
+                  <span className="eco-option__text">
+                    <span className="eco-option__title eco-mono" style={{ fontSize: 13 }}>{b}</span>
+                  </span>
+                  {sel && <span className="eco-option__check" style={{ display: 'flex' }}><IconCheck size={15}/></span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: t.text2, cursor: 'pointer' }}>
-            <input type="checkbox" checked={noFf} onChange={(e) => setNoFf(e.target.checked)} disabled={squash || busy} style={{ margin: 0 }}/>
+        <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
+          <button type="button" aria-pressed={noFf}
+            className={`eco-choice eco-choice--mono${noFf ? ' is-on' : ''}`}
+            onClick={() => setNoFf(!noFf)} disabled={squash || busy}
+            style={squash || busy ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>
             --no-ff
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: t.text2, cursor: 'pointer' }}>
-            <input type="checkbox" checked={squash} onChange={(e) => setSquash(e.target.checked)} disabled={busy} style={{ margin: 0 }}/>
+          </button>
+          <button type="button" aria-pressed={squash}
+            className={`eco-choice eco-choice--mono${squash ? ' is-on' : ''}`}
+            onClick={() => setSquash(!squash)} disabled={busy}
+            style={busy ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>
             --squash
-          </label>
+          </button>
         </div>
         {msg && (
-          <div style={{
-            padding: '6px 10px', borderRadius: 6,
-            background: `color-mix(in oklch, ${msg.kind === 'ok' ? t.ok : t.err} 12%, transparent)`,
-            color: msg.kind === 'ok' ? t.ok : t.err,
-            fontFamily: t.fontMono, fontSize: 11,
-          }}>{msg.text}</div>
+          <div className={`eco-banner eco-mono ${msg.kind === 'ok' ? 'eco-banner--ok' : 'eco-banner--err'}`}>{msg.text}</div>
         )}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} style={ghostBtn(t)}>{tr('common.cancel')}</button>
-          <button type="button" onClick={() => void submit()} disabled={!source || busy}
-            style={primaryBtn(t, !source || busy)}>
-            {busy ? '…' : tr('git.topbar.merge.do')}
-          </button>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>{tr('common.cancel')}</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--primary" onClick={() => void submit()} disabled={!source || busy}>
+              {busy ? '…' : tr('git.topbar.merge.do')}
+            </button>
+          </div>
         </div>
       </div>
     </div>,
     document.body,
   );
-}
-
-function ghostBtn(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return {
-    height: 28, padding: '0 16px', borderRadius: 8,
-    background: 'transparent', color: t.text2,
-    border: `1px solid ${t.glassBorder}`,
-    fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-  };
-}
-function primaryBtn(t: ReturnType<typeof useTokens>, disabled: boolean): React.CSSProperties {
-  return {
-    height: 28, padding: '0 16px', borderRadius: 8, border: 0,
-    background: disabled ? t.bg3 : t.accent,
-    color: disabled ? t.text3 : t.accentOn,
-    fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-  };
 }
 
 void IconTrash;

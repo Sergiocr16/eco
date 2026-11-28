@@ -1,18 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
-import { T_UI } from '@/design/motion';
 import { lockOnStartEnabled, setLockOnStart } from '@/lib/lock-pin';
 import { useTheme, useTokens } from '@/design/theme';
 import { terminalBg, terminalFg } from '@/lib/terminal-theme';
-import { CLAUDE_THEME_SYNC_EVENT, CLAUDE_THEME_SYNC_KEY } from '@/hooks/useClaudeThemeSync';
-import { ClaudeThemePickerButton } from '@/components/ClaudeThemePicker';
-import { ACCENT_HUES, THEME_VARIANTS, defaultHueForTheme, isLightTheme } from '@/design/tokens';
+import { ACCENT_HUES, THEME_VARIANTS, isLightTheme } from '@/design/tokens';
+import { Btn, IconBtn, StatusDot, Toggle, Card, PageHeader, Segmented, IconTile, cx } from '@/design/primitives';
 import {
-  Glass, Btn, StatusDot, SectionLabel, Toggle, fieldStyle, scrimStyle, dialogSurface,
-} from '@/design/primitives';
-import {
-  IconSettings, IconKey, IconFolder, IconShield, IconLayers,
+  IconSettings, IconKey, IconFolder, IconFolderOpen, IconShield, IconLayers,
   IconInfo, IconCheck, IconCpu, IconTerminal, IconGlobe, IconAlert,
-  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconBranch, IconGithub, IconSearch, IconFile, IconExt, IconEdit, IconChevR, type IconProps,
+  IconCommand, IconBolt, IconLock, IconTrash, IconPlus, IconMinus, IconX, IconBranch, IconGithub, IconSearch, IconFile, IconExt, IconEdit, IconChevR, type IconProps,
 } from '@/design/icons';
 import { EcoMark } from '@/design/EcoMark';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
@@ -43,136 +38,95 @@ import {
   setTermFontFamily, setTermFontSize, termFontStack, useTermPrefs,
 } from '@/lib/terminal-prefs';
 
+// Nombre visible del tema de Claude Code que acompaña a cada apariencia.
+const CLAUDE_THEME_NAMES = { light: 'GitHub Light', dark: 'Graphite' } as const;
+
+// Campo de dato monoespaciado (comando, variable, ruta): esquina de 12 en vez
+// de píldora, para que un valor largo no parezca un botón.
+const BOX_FIELD: CSSProperties = { borderRadius: 12 };
+// Ancho de los selects al final de una fila; en el teléfono ocupan la línea.
+function selectWidth(desktop: number): CSSProperties {
+  return { width: isPhoneNow() ? '100%' : desktop };
+}
+
 type Section = 'general' | 'agents' | 'github' | 'security' | 'appearance' | 'integrations' | 'about';
 
 export function Settings({ role: _role = null }: { role?: 'admin' | 'member' | null }) {
-  const t = useTokens();
   const tr = useT();
-  const isPhone = useIsPhone();
   const [sec, setSec] = useState<Section>('general');
   // Modelo local: cada usuario corre su propio Eco, así que todas las secciones
-  // (Agentes & API, Folders/proyectos, Integraciones) son locales de su máquina y
-  // visibles para todos. El backup se removió (el estado vive en Firestore).
-  const sections: { id: Section; label: string; icon: (p: IconProps) => JSX.Element }[] = [
-    { id: 'general', label: tr('settings.section.general'), icon: IconSettings },
-    // Los CLIs de agente corren local en cada máquina → visible para cada usuario.
-    { id: 'agents', label: tr('settings.section.agents'), icon: IconKey },
-    { id: 'github', label: tr('settings.section.github'), icon: IconGithub },
-    { id: 'security', label: tr('settings.section.security'), icon: IconShield },
-    { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers },
-    // Integraciones (MCP server + Obsidian) son locales de cada máquina.
-    { id: 'integrations', label: tr('settings.section.integrations'), icon: IconBolt },
-    { id: 'about', label: tr('settings.section.about'), icon: IconInfo },
+  // (Agentes & API, Integraciones) son locales de su máquina y visibles para
+  // todos. El backup se removió (el estado vive en Firestore).
+  const sections: { id: Section; label: string; icon: (p: IconProps) => JSX.Element; title: string; sub?: string }[] = [
+    { id: 'general', label: tr('settings.section.general'), icon: IconSettings,
+      title: tr('settings.general.title'), sub: tr('settings.general.sub') },
+    { id: 'agents', label: tr('settings.section.agents'), icon: IconKey,
+      title: tr('settings.agents.title'), sub: tr('settings.agents.sub') },
+    { id: 'github', label: tr('settings.section.github'), icon: IconGithub,
+      title: tr('settings.github.title'), sub: tr('settings.github.sub') },
+    { id: 'security', label: tr('settings.section.security'), icon: IconShield,
+      title: tr('settings.security.title'), sub: tr('settings.security.sub') },
+    { id: 'appearance', label: tr('settings.section.appearance'), icon: IconLayers,
+      title: tr('settings.appearance.title'), sub: tr('settings.appearance.sub') },
+    { id: 'integrations', label: tr('settings.section.integrations'), icon: IconBolt,
+      title: tr('settings.integrations.title'), sub: tr('settings.integrations.sub') },
+    { id: 'about', label: tr('settings.section.about'), icon: IconInfo,
+      title: tr('settings.section.about') },
   ];
-  // En móvil el rail de 220px dejaría ~170px de contenido: se acuesta como una
-  // tira de chips scrolleable arriba, con el mismo estado y los mismos ítems.
+  const active = sections.find((s) => s.id === sec) ?? sections[0]!;
   return (
-    <div style={{
-      display: 'flex', height: '100%',
-      flexDirection: isPhone ? 'column' : 'row',
-    }}>
-      <div
-        className={isPhone ? 'eco-dock-scroll' : undefined}
-        style={isPhone ? {
-          flexShrink: 0,
-          display: 'flex', flexDirection: 'row', gap: 6,
-          padding: '10px 12px',
-          borderBottom: `1px solid ${t.glassBorder}`,
-          overflowX: 'auto',
-        } : {
-          width: 220, flexShrink: 0, padding: '20px 12px',
-          borderRight: `1px solid ${t.glassBorder}`,
-          display: 'flex', flexDirection: 'column', gap: 2,
-        }}>
-        {!isPhone && (
-          <div style={{
-            padding: '8px 12px 12px', fontSize: 16, fontWeight: 500,
-            color: t.text0,
-          }}>{tr('settings.title')}</div>
-        )}
-        {sections.map((s) => (
-          <button
-            key={s.id} type="button"
-            onClick={() => setSec(s.id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 10,
-              padding: isPhone ? '8px 16px' : '8px 12px',
-              borderRadius: isPhone ? 999 : 8,
-              border: isPhone
-                ? `1px solid ${sec === s.id ? t.accentDim : t.glassBorder}`
-                : 0,
-              background: sec === s.id ? (isPhone ? t.accentFaint : t.bg3) : 'transparent',
-              color: sec === s.id ? (isPhone ? t.accent : t.text0) : t.text1,
-              fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-              cursor: 'pointer', textAlign: 'left',
-              ...(isPhone ? { flexShrink: 0, whiteSpace: 'nowrap' as const } : {}),
-            }}>
-            <s.icon size={14}/>
-            {s.label}
-          </button>
-        ))}
-      </div>
-
-      <div style={{
-        flex: 1, minHeight: 0, overflow: 'auto',
-        padding: isPhone ? '16px 12px 24px' : '24px 32px',
-      }}>
-        {sec === 'general' && <SectionGeneral/>}
-        {sec === 'agents' && <SectionAgents/>}
-        {sec === 'github' && <SectionGithub/>}
-        {sec === 'security' && <SectionSecurity/>}
-        {sec === 'appearance' && <SectionAppearance/>}
-        {sec === 'integrations' && <SectionIntegrations/>}
-        {sec === 'about' && <SectionAbout/>}
+    <div className="eco-page eco-page--scroll">
+      <PageHeader eyebrow={tr('settings.title')} title={active.title} sub={active.sub}/>
+      <div className="eco-split">
+        <Card as="nav" variant="nav" className="eco-split__nav">
+          {sections.map((s) => (
+            <button key={s.id} type="button" onClick={() => setSec(s.id)}
+              aria-current={sec === s.id ? 'page' : undefined}
+              className={cx('eco-nav-item', sec === s.id && 'is-on')}>
+              <s.icon size={15}/>
+              <span className="eco-truncate">{s.label}</span>
+            </button>
+          ))}
+        </Card>
+        <div key={sec} className="eco-split__body eco-pane">
+          {sec === 'general' && <SectionGeneral/>}
+          {sec === 'agents' && <SectionAgents/>}
+          {sec === 'github' && <SectionGithub/>}
+          {sec === 'security' && <SectionSecurity/>}
+          {sec === 'appearance' && <SectionAppearance/>}
+          {sec === 'integrations' && <SectionIntegrations/>}
+          {sec === 'about' && <SectionAbout/>}
+        </div>
       </div>
     </div>
   );
 }
 
-function Header({ title, sub }: { title: string; sub: string }) {
-  const t = useTokens();
-  return (
-    <div style={{ marginBottom: 24 }}>
-      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.4 }}>{title}</h2>
-      <p style={{ margin: '4px 0 0', fontSize: 13, color: t.text2 }}>{sub}</p>
-    </div>
-  );
-}
-
-function Row({ icon: Icon, title, desc, control, danger }: {
-  icon?: (p: IconProps) => JSX.Element; title: string; desc?: string; control?: ReactNode; danger?: boolean;
+// Fila de ajuste: mosaico + título/descripción + control. `wide` manda el
+// control a su propia línea en el teléfono (selects e inputs no caben al lado
+// del texto en 350px); toggles y botones quedan en la misma fila.
+function Row({ icon: Icon, title, desc, control, danger, first, wide }: {
+  icon?: (p: IconProps) => JSX.Element; title: string; desc?: string; control?: ReactNode;
+  danger?: boolean; first?: boolean; wide?: boolean;
 }) {
-  const t = useTokens();
-  // En móvil el control baja a su propia línea: un select o un input al lado
-  // de un título y su descripción deja las dos cosas ilegibles en 350px.
-  // `flexWrap` + `flex-basis: 100%` en el control lo empuja abajo sin cambiar
-  // el orden del JSX ni el layout de escritorio.
-  const mob = isPhoneNow();
+  const errStyle = danger ? { color: 'var(--err)' } : undefined;
   return (
-    <div style={{
-      display: 'flex', alignItems: mob ? 'flex-start' : 'center', gap: mob ? 10 : 16,
-      padding: '16px 0', borderBottom: `1px solid ${t.glassBorder}`,
-      ...(mob ? { flexWrap: 'wrap' as const } : {}),
-    }}>
-      {Icon && (
-        <div style={{
-          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: t.bg3, color: danger ? t.err : t.text1,
-          border: `1px solid ${t.glassBorder}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}><Icon size={15}/></div>
-      )}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, color: danger ? t.err : t.text0, fontWeight: 500 }}>{title}</div>
-        {desc && <div style={{ fontSize: 12, color: t.text2, marginTop: 4, lineHeight: 1.5 }}>{desc}</div>}
+    <div className={cx('eco-row', first && 'eco-row--first')}>
+      {Icon && <IconTile icon={Icon} style={errStyle}/>}
+      <div className="eco-row__main">
+        <div className="eco-row__title" style={errStyle}>{title}</div>
+        {desc && <div className="eco-row__desc">{desc}</div>}
       </div>
-      <div style={mob ? { flexBasis: '100%', minWidth: 0 } : undefined}>{control}</div>
+      {control && (
+        <div className="eco-row__end" style={wide && isPhoneNow() ? { flexBasis: '100%' } : undefined}>
+          {control}
+        </div>
+      )}
     </div>
   );
 }
 
 function SectionGeneral() {
-  const t = useTokens();
   const tr = useT();
   const def = useDefaultWorkspace();
   const ws = useWorkspaces();
@@ -180,45 +134,36 @@ function SectionGeneral() {
   // El member ve las prefs por-usuario (review, notify, dock, etc.).
   const isAdmin = useIsAdmin();
   return (
-    <div style={{ width: '100%' }}>
-      <Header title={tr('settings.general.title')} sub={tr('settings.general.sub')}/>
-      <GeneralToggleRow
-        icon={IconShield}
-        title={tr('settings.general.review_mode')}
-        desc={tr('settings.general.review_mode_desc')}
-        storageKey="eco.agent.review_mode"
-      />
-      {isAdmin && <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>}
-      <NoSleepRow/>
-      <GeneralToggleRow
-        icon={IconCommand}
-        title={tr('settings.general.dock')}
-        desc={tr('settings.general.dock_desc')}
-        storageKey="eco.dock.enabled"
-        broadcastEvent="eco:dock-pref-change"
-        defaultOn
-      />
-      <Row
-        icon={IconFolder}
-        title={tr('settings.general.default_folder')}
-        desc={tr('settings.general.default_folder_desc')}
-        control={
-          <select value={def.value} onChange={(e) => def.set(e.target.value)}
-            style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 220 }}>
-            <option value="">{tr('settings.general.ask_each_time')}</option>
-            {ws.list.workspaces.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-        }/>
-      <LanguageRow/>
-      <ExternalIdeRow/>
-      {isAdmin && <WorktreesCleanRow/>}
-
-      <div style={{ marginTop: 24 }}>
-        <SuggestionsEditor/>
-      </div>
-    </div>
+    <>
+      <Card variant="list">
+        <GeneralToggleRow
+          icon={IconShield}
+          title={tr('settings.general.review_mode')}
+          desc={tr('settings.general.review_mode_desc')}
+          storageKey="eco.agent.review_mode"
+        />
+        {isAdmin && <GeneralToggleRow icon={IconLayers} title={tr('settings.general.menubar')} storageKey="eco.menubar" defaultOn/>}
+        <NoSleepRow/>
+        <Row
+          icon={IconFolder}
+          title={tr('settings.general.default_folder')}
+          desc={tr('settings.general.default_folder_desc')}
+          wide
+          control={
+            <select value={def.value} onChange={(e) => def.set(e.target.value)}
+              className="eco-field eco-field--sm" style={selectWidth(220)}>
+              <option value="">{tr('settings.general.ask_each_time')}</option>
+              {ws.list.workspaces.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          }/>
+        <LanguageRow/>
+        <ExternalIdeRow/>
+        {isAdmin && <WorktreesCleanRow/>}
+      </Card>
+      <SuggestionsEditor/>
+    </>
   );
 }
 
@@ -245,7 +190,6 @@ function NoSleepRow() {
 }
 
 function WorktreesCleanRow() {
-  const t = useTokens();
   const tr = useT();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ removed: number; kept: number } | null>(null);
@@ -283,23 +227,14 @@ function WorktreesCleanRow() {
           ? err
           : tr('settings.general.worktrees_clean_desc')}
       control={
-        <button type="button" onClick={() => void prune()} disabled={busy}
-          style={{
-            padding: '6px 16px', borderRadius: 8,
-            border: `1px solid ${t.glassBorder}`,
-            background: t.bg2, color: t.text0,
-            fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-            cursor: busy ? 'wait' : 'pointer',
-            opacity: busy ? 0.6 : 1,
-          }}>
+        <Btn kind="raised" onClick={() => void prune()} disabled={busy}>
           {busy ? tr('settings.general.worktrees_cleaning') : tr('settings.general.worktrees_run')}
-        </button>
+        </Btn>
       }/>
   );
 }
 
 function ExternalIdeRow() {
-  const t = useTokens();
   const tr = useT();
   const [ide, setIde] = useState<ExternalIde>(getExternalIde());
   function onChange(next: ExternalIde) {
@@ -312,9 +247,10 @@ function ExternalIdeRow() {
       icon={IconCommand}
       title={tr('settings.general.external_ide')}
       desc={tr('settings.general.external_ide_desc')}
+      wide
       control={
         <select value={ide} onChange={(e) => onChange(e.target.value as ExternalIde)}
-          style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 220 }}>
+          className="eco-field eco-field--sm" style={selectWidth(220)}>
           {options.map((o) => (
             <option key={o} value={o}>{ideDisplayLabel(o)}</option>
           ))}
@@ -324,14 +260,13 @@ function ExternalIdeRow() {
 }
 
 function LanguageRow() {
-  const t = useTokens();
   const { lang, setLang } = useI18n();
   const tr = useT();
   return (
-    <Row icon={IconGlobe} title={tr('settings.general.app_language')}
+    <Row icon={IconGlobe} title={tr('settings.general.app_language')} wide
       control={
         <select value={lang} onChange={(e) => setLang(e.target.value as 'es' | 'en')}
-          style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 180 }}>
+          className="eco-field eco-field--sm" style={selectWidth(180)}>
           <option value="es">Español</option>
           <option value="en">English</option>
         </select>
@@ -340,7 +275,6 @@ function LanguageRow() {
 }
 
 function SuggestionsEditor() {
-  const t = useTokens();
   const tr = useT();
   const s = useQuickSuggestions();
   const [draft, setDraft] = useState('');
@@ -353,73 +287,43 @@ function SuggestionsEditor() {
   }
 
   return (
-    <div>
-      <SectionLabel
-        count={s.suggestions.length}
-        action={
-          <button
-            type="button"
-            onClick={s.reset}
-            style={{
-              fontSize: 11, color: t.text2, background: 'transparent',
-              border: 0, cursor: 'pointer', fontFamily: t.fontSans,
-            }}>{tr('settings.suggestions.reset')}</button>
-        }>
-        {tr('settings.suggestions.title')}
-      </SectionLabel>
-      <p style={{ fontSize: 12, color: t.text2, marginTop: -4, marginBottom: 12, lineHeight: 1.5 }}>
-        {tr('settings.suggestions.sub')}
-      </p>
+    <Card variant="stack">
+      <div className="eco-hstack" style={{ alignItems: 'baseline' }}>
+        <span className="eco-h3">{tr('settings.suggestions.title')}</span>
+        <span className="eco-num eco-grow">{s.suggestions.length}</span>
+        <button type="button" className="eco-btn eco-btn--ghost eco-btn--xs" onClick={s.reset}>
+          {tr('settings.suggestions.reset')}
+        </button>
+      </div>
+      <div className="eco-sub">{tr('settings.suggestions.sub')}</div>
 
-      <Glass radius={12} style={{ padding: 6, marginBottom: 12, display: 'flex', gap: 6 }}>
+      <div className="eco-inputbar eco-inputbar--action">
         <input
+          className="eco-input-bare"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
           placeholder={tr('settings.suggestions.add_placeholder')}
-          style={{
-            flex: 1, background: 'transparent', border: 0, outline: 'none',
-            fontFamily: t.fontSans, fontSize: 14, color: t.text0, padding: '8px 10px',
-          }}
         />
-        <Btn kind="primary" size="sm" onClick={handleAdd} disabled={!draft.trim()}>
+        <Btn kind="primary" className="eco-btn--sm" onClick={handleAdd} disabled={!draft.trim()}>
           {tr('settings.folders.add_btn')}
         </Btn>
-      </Glass>
+      </div>
 
       {s.suggestions.length === 0 ? (
-        <div style={{ fontSize: 13, color: t.text2, padding: '12px 4px' }}>
-          {tr('settings.suggestions.empty')}
-        </div>
+        <div className="eco-empty">{tr('settings.suggestions.empty')}</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div>
           {s.suggestions.map((sug, i) => (
-            <div key={`${sug}-${i}`} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 10px', borderRadius: 10,
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            }}>
-              <span style={{
-                flex: 1, fontFamily: t.fontSans, fontSize: 13, color: t.text0,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{sug}</span>
-              <button
-                type="button"
-                onClick={() => s.remove(i)}
-                style={{
-                  width: 28, height: 28, borderRadius: 8, border: 0,
-                  background: 'transparent', color: t.text2, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-                title={tr('common.delete')}
-              >
-                <IconTrash size={12}/>
-              </button>
+            <div key={`${sug}-${i}`} className="eco-row eco-row--tight" style={{ flexWrap: 'nowrap' }}>
+              <span className="eco-grow eco-truncate">{sug}</span>
+              <IconBtn icon={IconTrash} size={28} className="eco-iconbtn--danger"
+                title={tr('common.delete')} onClick={() => s.remove(i)}/>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -451,7 +355,6 @@ const AGENT_PROVIDERS = {
 const PROVIDER_STORAGE_KEY = 'eco.settings.agent_provider';
 
 function SectionAgents() {
-  const t = useTokens();
   const tr = useT();
   const [provider, setProvider] = useState<CliProvider>(() => {
     try { return localStorage.getItem(PROVIDER_STORAGE_KEY) === 'codex' ? 'codex' : 'claude'; }
@@ -465,39 +368,24 @@ function SectionAgents() {
   const cfg = AGENT_PROVIDERS[provider];
 
   return (
-    <div style={{ width: '100%' }}>
-      <Header title={tr('settings.agents.title')} sub={tr('settings.agents.sub')}/>
-
-      <div style={{
-        display: 'inline-flex', gap: 2, padding: 4, marginBottom: 16,
-        borderRadius: 8, background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      }}>
-        {(['claude', 'codex'] as const).map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => setProvider(p)}
-            style={{
-              padding: '6px 16px', borderRadius: 8, border: 0, cursor: 'pointer',
-              background: provider === p ? t.bg0 : 'transparent',
-              color: provider === p ? t.accent : t.text2,
-              fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-              transition: 'background 140ms, color 140ms',
-            }}
-          >{tr(`settings.agents.provider.${p}`)}</button>
-        ))}
+    <>
+      <div className="eco-hstack">
+        <Segmented<CliProvider>
+          size="md" value={provider} onChange={setProvider}
+          options={(['claude', 'codex'] as const).map((p) => ({ id: p, label: tr(`settings.agents.provider.${p}`) }))}/>
       </div>
 
       <CliAuthStatusCard key={provider} provider={provider} cfg={cfg}/>
-      <ApiKeyEditor key={`key-${provider}`} provider={provider} cfg={cfg}/>
-      {/* ECO_MODEL gobierna el SDK del tab Chat, que es Claude-only. */}
-      {provider === 'claude' && <ModelInfoRow/>}
-    </div>
+      <Card variant="list">
+        <ApiKeyEditor key={`key-${provider}`} provider={provider} cfg={cfg}/>
+        {/* ECO_MODEL gobierna el SDK del tab Chat, que es Claude-only. */}
+        {provider === 'claude' && <ModelInfoRow/>}
+      </Card>
+    </>
   );
 }
 
 function ModelInfoRow() {
-  const t = useTokens();
   const tr = useT();
   const [model, setModel] = useState<string>('claude-sonnet-4-5');
   useEffect(() => {
@@ -510,39 +398,17 @@ function ModelInfoRow() {
     return () => { cancel = true; };
   }, []);
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 16,
-      padding: '16px 0', borderBottom: `1px solid ${t.glassBorder}`,
-    }}>
-      <div style={{
-        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-        background: t.bg3, color: t.accent,
-        border: `1px solid ${t.glassBorder}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <IconCpu size={15}/>
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 14, color: t.text0, fontWeight: 500, marginBottom: 4 }}>
-          {tr('settings.claude.model_info.title')}
-        </div>
-        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
-          {tr('settings.claude.model_info.desc')}
-        </div>
-      </div>
-      <code style={{
-        fontFamily: t.fontMono, fontSize: 12, color: t.text0,
-        padding: '6px 10px', borderRadius: 6,
-        background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      }}>{model}</code>
-    </div>
+    <Row
+      icon={IconCpu}
+      title={tr('settings.claude.model_info.title')}
+      desc={tr('settings.claude.model_info.desc')}
+      control={<code className="eco-chip eco-chip--on-card eco-mono">{model}</code>}/>
   );
 }
 
 type ProviderCfg = typeof AGENT_PROVIDERS[CliProvider];
 
 function CliAuthStatusCard({ provider, cfg }: { provider: CliProvider; cfg: ProviderCfg }) {
-  const t = useTokens();
   const tr = useT();
   const { status, refresh } = useCliAuth(provider);
 
@@ -568,61 +434,34 @@ function CliAuthStatusCard({ provider, cfg }: { provider: CliProvider; cfg: Prov
   if (!status) return null;
 
   const method = status.effectiveMethod;
-  const headerColor = method === 'none' ? t.warn : t.ok;
   const headerText =
     method === 'cli' ? tr(`${cfg.i18n}.auth.using_cli`)
     : method === 'apikey' ? tr(`${cfg.i18n}.auth.using_apikey`)
     : tr(`${cfg.i18n}.auth.using_none`);
+  const activeChip = <span className="eco-chip eco-chip--ok">{tr(`${cfg.i18n}.auth.active`)}</span>;
+  const okStyle = { color: 'var(--ok)' };
 
   return (
-    <Glass radius={12} style={{ padding: 16, marginBottom: 16 }}>
-      {/* Header: cuál método está activo AHORA */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
-        paddingBottom: 12, borderBottom: `1px solid ${t.glassBorder}`,
-      }}>
-        <span style={{
-          width: 10, height: 10, borderRadius: '50%',
-          background: headerColor,
-        }}/>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
-            {headerText}
-          </div>
-          <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>
-            {tr(`${cfg.i18n}.auth.priority_hint`)}
-          </div>
+    <Card variant="list">
+      {/* Cuál método está activo ahora */}
+      <div className="eco-row eco-row--tight" style={{ flexWrap: 'nowrap' }}>
+        <span className={cx('eco-dot eco-dot--lg', method === 'none' ? 'eco-dot--warn' : 'eco-dot--ok')}/>
+        <div className="eco-row__main">
+          <div className="eco-row__title">{headerText}</div>
+          <div className="eco-row__desc">{tr(`${cfg.i18n}.auth.priority_hint`)}</div>
         </div>
       </div>
 
       {/* Opción A: CLI */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: status.cliLoggedIn ? t.accentFaint : t.bg2,
-          color: status.cliLoggedIn ? t.accent : t.text3,
-          border: `1px solid ${status.cliLoggedIn ? t.accent : t.glassBorder}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <IconTerminal size={15}/>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
-              {tr(`${cfg.i18n}.auth.cli_title`)}
-            </span>
-            {method === 'cli' && (
-              <span style={{
-                padding: '1px 8px', borderRadius: 999,
-                background: t.accentFaint, color: t.accent,
-                fontSize: 11, fontWeight: 500,
-              }}>{tr(`${cfg.i18n}.auth.active`)}</span>
-            )}
+      <div className="eco-row" style={{ alignItems: 'flex-start' }}>
+        <IconTile icon={IconTerminal} style={status.cliLoggedIn ? okStyle : undefined}/>
+        <div className="eco-row__main">
+          <div className="eco-hstack eco-hstack--wrap eco-row__title" style={{ gap: 8 }}>
+            {tr(`${cfg.i18n}.auth.cli_title`)}
+            {method === 'cli' && activeChip}
           </div>
-          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 4 }}>
-            {tr(`${cfg.i18n}.auth.cli_desc`)}
-          </div>
-          <div style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>
+          <div className="eco-row__desc">{tr(`${cfg.i18n}.auth.cli_desc`)}</div>
+          <div className="eco-num" style={{ marginTop: 4 }}>
             {status.cliInstalled
               ? `${tr(`${cfg.i18n}.auth.cli_installed`)} ${status.cliVersion ?? ''}`
               : tr(`${cfg.i18n}.auth.cli_not_installed`)}
@@ -635,66 +474,37 @@ function CliAuthStatusCard({ provider, cfg }: { provider: CliProvider; cfg: Prov
         </div>
       </div>
 
-      {/* Separador "o" */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        marginBottom: 16, fontSize: 11, color: t.text3,
-        fontWeight: 500,
-      }}>
-        <div style={{ flex: 1, height: 1, background: t.glassBorder }}/>
+      <div className="eco-hstack eco-sub" style={{ gap: 12 }}>
+        <hr className="eco-divider eco-grow"/>
         {tr(`${cfg.i18n}.auth.or`)}
-        <div style={{ flex: 1, height: 1, background: t.glassBorder }}/>
+        <hr className="eco-divider eco-grow"/>
       </div>
 
       {/* Opción B: API key */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: status.apiKeyConfigured ? t.accentFaint : t.bg2,
-          color: status.apiKeyConfigured ? t.accent : t.text3,
-          border: `1px solid ${status.apiKeyConfigured ? t.accent : t.glassBorder}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <IconKey size={15}/>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
-              {tr(`${cfg.i18n}.auth.apikey_title`)}
-            </span>
-            {method === 'apikey' && (
-              <span style={{
-                padding: '1px 8px', borderRadius: 999,
-                background: t.accentFaint, color: t.accent,
-                fontSize: 11, fontWeight: 500,
-              }}>{tr(`${cfg.i18n}.auth.active`)}</span>
-            )}
+      <div className="eco-row eco-row--first" style={{ alignItems: 'flex-start' }}>
+        <IconTile icon={IconKey} style={status.apiKeyConfigured ? okStyle : undefined}/>
+        <div className="eco-row__main">
+          <div className="eco-hstack eco-hstack--wrap eco-row__title" style={{ gap: 8 }}>
+            {tr(`${cfg.i18n}.auth.apikey_title`)}
+            {method === 'apikey' && activeChip}
           </div>
-          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
-            {tr(`${cfg.i18n}.auth.apikey_desc`)}
-          </div>
+          <div className="eco-row__desc">{tr(`${cfg.i18n}.auth.apikey_desc`)}</div>
         </div>
       </div>
-    </Glass>
+    </Card>
   );
 }
 
 function CommandHint({ cmd }: { cmd: string | null }) {
-  const t = useTokens();
   if (!cmd) return null;
   return (
-    <div style={{
-      marginTop: 8, padding: '6px 10px', borderRadius: 6,
-      background: t.bg2, fontSize: 11, color: t.text1,
-      fontFamily: t.fontMono,
-    }}>
-      <span style={{ color: t.text3 }}>$ </span>{cmd}
+    <div className="eco-inset eco-mono" style={{ marginTop: 8, padding: '6px 12px', fontSize: 12, ...BOX_FIELD }}>
+      <span className="eco-faint">$ </span>{cmd}
     </div>
   );
 }
 
 function ApiKeyEditor({ provider, cfg }: { provider: CliProvider; cfg: ProviderCfg }) {
-  const t = useTokens();
   const tr = useT();
   const apiKey = useApiKey(cfg.keyProvider);
   // Guardar/borrar la key cambia `effectiveMethod` de la tarjeta de arriba.
@@ -730,74 +540,45 @@ function ApiKeyEditor({ provider, cfg }: { provider: CliProvider; cfg: ProviderC
   }
 
   return (
-    <div style={{
-      padding: '16px 0', borderBottom: `1px solid ${t.glassBorder}`,
-      display: 'flex', flexDirection: 'column', gap: 10,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8,
-          background: t.bg3, color: t.accent,
-          border: `1px solid ${t.glassBorder}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <IconKey size={15}/>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, color: t.text0, fontWeight: 500 }}>
-            {tr(`${cfg.i18n}.apikey.title`)}
-          </div>
-          <div style={{ fontSize: 12, color: t.text2, marginTop: 4, lineHeight: 1.5 }}>
-            {tr(`${cfg.i18n}.apikey.desc`)}
-          </div>
-        </div>
-        {apiKey.hasKey && (
-          <span style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '4px 10px', borderRadius: 999,
-            background: `color-mix(in oklch, ${t.ok} 14%, transparent)`,
-            color: t.ok, fontSize: 11, fontWeight: 500,
-            border: `1px solid color-mix(in oklch, ${t.ok} 30%, transparent)`,
-          }}>
-            <IconCheck size={11}/> {tr(`${cfg.i18n}.apikey.saved`)} · {apiKey.masked}
+    <>
+      <Row
+        icon={IconKey}
+        first
+        title={tr(`${cfg.i18n}.apikey.title`)}
+        desc={tr(`${cfg.i18n}.apikey.desc`)}
+        control={apiKey.hasKey ? (
+          <span className="eco-chip eco-chip--ok">
+            <IconCheck size={12}/> {tr(`${cfg.i18n}.apikey.saved`)} · {apiKey.masked}
           </span>
-        )}
-      </div>
+        ) : undefined}/>
 
-      <Glass radius={12} style={{ padding: 8, display: 'flex', gap: 8 }}>
-        <input
-          type="password"
-          value={draft}
-          onChange={(e) => { setDraft(e.target.value); setError(null); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
-          placeholder={cfg.keyPlaceholder}
-          style={{
-            flex: 1, background: 'transparent', border: 0, outline: 'none',
-            fontFamily: t.fontMono, fontSize: 13, color: t.text0, padding: '6px 10px',
-          }}
-        />
-        <Btn kind="primary" size="sm" onClick={handleSave} disabled={busy || !draft.trim()} icon={IconCheck}>
-          {busy ? tr(`${cfg.i18n}.apikey.validating`) : apiKey.hasKey ? tr(`${cfg.i18n}.apikey.replace_btn`) : tr(`${cfg.i18n}.apikey.save_btn`)}
-        </Btn>
-        {apiKey.hasKey && (
-          <Btn kind="danger" size="sm" onClick={handleDelete} disabled={busy} icon={IconTrash}>{tr(`${cfg.i18n}.apikey.remove_btn`)}</Btn>
-        )}
-      </Glass>
-
-      {error && (
-        <div style={{ fontSize: 12, color: t.err, paddingLeft: 4 }}>{error}</div>
-      )}
-      {success && (
-        <div style={{ fontSize: 12, color: t.ok, paddingLeft: 4 }}>
-          {tr(`${cfg.i18n}.apikey.success`)}
+      <div className="eco-vstack" style={{ gap: 8, paddingBottom: 16 }}>
+        <div className="eco-hstack eco-hstack--wrap">
+          <div className="eco-inputbar eco-inputbar--action eco-grow" style={{ flexBasis: 240 }}>
+            <input
+              type="password"
+              className="eco-input-bare eco-mono"
+              value={draft}
+              onChange={(e) => { setDraft(e.target.value); setError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+              placeholder={cfg.keyPlaceholder}
+            />
+            <Btn kind="primary" className="eco-btn--sm" onClick={handleSave} disabled={busy || !draft.trim()} icon={IconCheck}>
+              {busy ? tr(`${cfg.i18n}.apikey.validating`) : apiKey.hasKey ? tr(`${cfg.i18n}.apikey.replace_btn`) : tr(`${cfg.i18n}.apikey.save_btn`)}
+            </Btn>
+          </div>
+          {apiKey.hasKey && (
+            <Btn kind="danger" onClick={handleDelete} disabled={busy} icon={IconTrash}>{tr(`${cfg.i18n}.apikey.remove_btn`)}</Btn>
+          )}
         </div>
-      )}
-    </div>
+        {error && <div className="eco-banner eco-banner--err">{error}</div>}
+        {success && <div className="eco-banner eco-banner--ok">{tr(`${cfg.i18n}.apikey.success`)}</div>}
+      </div>
+    </>
   );
 }
 
 function SectionGithub() {
-  const t = useTokens();
   const tr = useT();
   const gh = useGithubCredentials();
   const [pat, setPat] = useState('');
@@ -829,94 +610,68 @@ function SectionGithub() {
   }
 
   return (
-    <div>
-      <Header title={tr('settings.github.title')} sub={tr('settings.github.sub')}/>
-      <p style={{ marginTop: 0, color: t.text2, fontSize: 13, lineHeight: 1.6, maxWidth: 640 }}>
+    <>
+      <div className="eco-muted" style={{ maxWidth: 640, textWrap: 'pretty' }}>
         {tr('settings.github.explain')}
-      </p>
+      </div>
 
       {!gh.loading && gh.hasCredentials && !editing ? (
-        <div style={{
-          marginTop: 16, padding: 16, borderRadius: 12,
-          background: `color-mix(in oklch, ${t.ok} 8%, transparent)`,
-          border: `1px solid color-mix(in oklch, ${t.ok} 30%, ${t.glassBorder})`,
-          display: 'flex', flexDirection: 'column', gap: 6,
-        }}>
-          <div style={{ fontSize: 14, color: t.text0, fontWeight: 500 }}>
-            {tr('settings.github.connected_as', { username: gh.username ?? '' })}
-          </div>
-          <div style={{ fontSize: 13, color: t.text1 }}>
-            {tr('settings.github.commit_email', { email: gh.email ?? '' })}
-          </div>
-          {gh.maskedPat && (
-            <div style={{ fontSize: 12, color: t.text2, fontFamily: t.fontMono }}>
-              {tr('settings.github.token_label', { masked: gh.maskedPat })}
+        <Card variant="stack">
+          <div className="eco-hstack eco-hstack--wrap" style={{ alignItems: 'flex-start', gap: '10px 16px' }}>
+            <IconTile icon={IconGithub} style={{ color: 'var(--ok)' }}/>
+            <div className="eco-row__main">
+              <div className="eco-label">{tr('settings.github.connected_as', { username: gh.username ?? '' })}</div>
+              <div className="eco-muted">{tr('settings.github.commit_email', { email: gh.email ?? '' })}</div>
+              {gh.maskedPat && (
+                <div className="eco-num" style={{ marginTop: 4 }}>
+                  {tr('settings.github.token_label', { masked: gh.maskedPat })}
+                </div>
+              )}
+              {gh.validatedAt && (
+                <div className="eco-sub">
+                  {tr('settings.github.validated_at', { date: new Date(gh.validatedAt).toLocaleString() })}
+                </div>
+              )}
             </div>
-          )}
-          {gh.validatedAt && (
-            <div style={{ fontSize: 12, color: t.text3 }}>
-              {tr('settings.github.validated_at', { date: new Date(gh.validatedAt).toLocaleString() })}
+            <div className="eco-row__end">
+              <Btn kind="raised"
+                onClick={() => { setEditing(true); setPat(''); setEmail(''); setError(null); setNeedEmail(false); }}>
+                {tr('settings.github.change')}
+              </Btn>
+              <Btn kind="danger" onClick={() => setRemoveConfirm(true)}>
+                {tr('settings.github.remove')}
+              </Btn>
             </div>
-          )}
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button
-              type="button"
-              onClick={() => { setEditing(true); setPat(''); setEmail(''); setError(null); setNeedEmail(false); }}
-              style={{
-                padding: '6px 12px', borderRadius: 6, border: `1px solid ${t.glassBorder}`,
-                background: 'transparent', color: t.text1,
-                fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-              }}
-            >{tr('settings.github.change')}</button>
-            <button
-              type="button"
-              onClick={() => setRemoveConfirm(true)}
-              style={{
-                padding: '6px 12px', borderRadius: 6, border: `1px solid ${t.err}`,
-                background: 'transparent', color: t.err,
-                fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-              }}
-            >{tr('settings.github.remove')}</button>
           </div>
           <GhStatusBanner/>
-        </div>
+        </Card>
       ) : null}
 
       {showForm && (
-        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+        <Card variant="stack">
           <div>
-            <label style={{ display: 'block', fontSize: 13, color: t.text1, marginBottom: 6, fontFamily: t.fontSans }}>
+            <label className="eco-field-label" style={{ display: 'block', marginBottom: 6 }}>
               {tr('settings.github.pat_label')}
             </label>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div className="eco-hstack" style={{ gap: 8 }}>
               <input
                 type={showPat ? 'text' : 'password'}
+                className="eco-field eco-field--mono eco-grow"
                 value={pat}
                 onChange={(e) => setPat(e.target.value)}
                 placeholder={tr('settings.github.pat_placeholder')}
                 spellCheck={false}
                 autoCorrect="off"
                 autoCapitalize="off"
-                style={{
-                  flex: 1, padding: '8px 10px', borderRadius: 6,
-                  background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
-                  fontFamily: t.fontMono, fontSize: 12, outline: 'none',
-                }}
               />
-              <button
-                type="button"
-                onClick={() => setShowPat((v) => !v)}
-                style={{
-                  padding: '0 10px', borderRadius: 6, border: `1px solid ${t.glassBorder}`,
-                  background: 'transparent', color: t.text1,
-                  fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-                }}
-              >{showPat ? tr('settings.github.pat_hide') : tr('settings.github.pat_show')}</button>
+              <Btn kind="raised" size="lg" onClick={() => setShowPat((v) => !v)}>
+                {showPat ? tr('settings.github.pat_hide') : tr('settings.github.pat_show')}
+              </Btn>
             </div>
-            <div style={{ fontSize: 12, color: t.text3, marginTop: 6, lineHeight: 1.5 }}>
+            <div className="eco-sub" style={{ marginTop: 8 }}>
               {tr('settings.github.recommended_scopes')}
             </div>
-            <div style={{ marginTop: 6 }}>
+            <div style={{ marginTop: 8 }}>
               <GithubTokenHelp/>
             </div>
             <GhStatusBanner/>
@@ -924,26 +679,21 @@ function SectionGithub() {
 
           {(needEmail || email) && (
             <div>
-              <label style={{ display: 'block', fontSize: 13, color: t.text1, marginBottom: 6, fontFamily: t.fontSans }}>
+              <label className="eco-field-label" style={{ display: 'block', marginBottom: 6 }}>
                 {tr('settings.github.email_label')}
               </label>
               <input
                 type="email"
+                className="eco-field eco-field--mono"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={tr('settings.github.email_placeholder')}
-                style={{
-                  width: '100%', boxSizing: 'border-box',
-                  padding: '8px 10px', borderRadius: 6,
-                  background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
-                  fontFamily: t.fontMono, fontSize: 12, outline: 'none',
-                }}
               />
               {needEmail && (
-                <div style={{ fontSize: 12, color: t.warn, marginTop: 6 }}>
+                <div className="eco-sub" style={{ marginTop: 6, color: 'var(--warn)' }}>
                   {tr('settings.github.email_required_note')}
                   {loginHint && (
-                    <span style={{ marginLeft: 6, color: t.text2 }}>
+                    <span className="eco-muted" style={{ marginLeft: 6 }}>
                       ({tr('settings.github.connected_as', { username: loginHint })})
                     </span>
                   )}
@@ -952,95 +702,56 @@ function SectionGithub() {
             </div>
           )}
 
-          {error && (
-            <div style={{
-              padding: '8px 10px', borderRadius: 6,
-              background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-              color: t.err, fontSize: 12, fontFamily: t.fontSans,
-            }}>{error}</div>
-          )}
+          {error && <div className="eco-banner eco-banner--err">{error}</div>}
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => void onSave()}
-              disabled={saving || !pat.trim()}
-              style={{
-                padding: '8px 16px', borderRadius: 8, border: 0,
-                background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-                cursor: saving || !pat.trim() ? 'not-allowed' : 'pointer',
-                opacity: saving || !pat.trim() ? 0.6 : 1,
-              }}
-            >{saving ? tr('settings.github.validating') : tr('settings.github.validate_save')}</button>
+          <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
+            <Btn kind="primary" onClick={() => void onSave()} disabled={saving || !pat.trim()}>
+              {saving ? tr('settings.github.validating') : tr('settings.github.validate_save')}
+            </Btn>
             {editing && (
-              <button
-                type="button"
-                onClick={() => { setEditing(false); setPat(''); setEmail(''); setError(null); setNeedEmail(false); }}
-                style={{
-                  padding: '8px 16px', borderRadius: 8, border: `1px solid ${t.glassBorder}`,
-                  background: 'transparent', color: t.text1,
-                  fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
-                }}
-              >{tr('common.cancel')}</button>
+              <Btn kind="ghost"
+                onClick={() => { setEditing(false); setPat(''); setEmail(''); setError(null); setNeedEmail(false); }}>
+                {tr('common.cancel')}
+              </Btn>
             )}
           </div>
-        </div>
+        </Card>
       )}
 
       {removeConfirm && (
         <div
           role="dialog"
           aria-modal="true"
+          className="eco-scrim"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setRemoveConfirm(false); }}
-          style={{
-            position: 'fixed', inset: 0, ...scrimStyle(t),
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
-          }}
         >
-          <div style={{
-            maxWidth: 400, width: '90%', padding: 20,
-            ...dialogSurface(t),
-            borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
-          }}>
-            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-              {tr('settings.github.remove_confirm_title')}
+          <div className="eco-dialog eco-dialog--sm eco-dialog--danger">
+            <div className="eco-dialog__head">
+              <span className="eco-dialog__tile eco-dialog__tile--danger"><IconTrash size={18}/></span>
+              <h2 className="eco-dialog__title">{tr('settings.github.remove_confirm_title')}</h2>
+              <IconBtn icon={IconX} title={tr('common.close')} onClick={() => setRemoveConfirm(false)}/>
             </div>
-            <div style={{ fontSize: 13, color: t.text1, marginBottom: 16 }}>
-              {tr('settings.github.remove_confirm_body')}
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => setRemoveConfirm(false)}
-                style={{
-                  padding: '6px 12px', borderRadius: t.r2,
-                  background: 'transparent', color: t.text1,
-                  border: `1px solid ${t.glassBorder}`,
-                  cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
-                }}
-              >{tr('common.cancel')}</button>
-              <button
-                type="button"
-                onClick={async () => { await gh.remove(); setRemoveConfirm(false); setEditing(false); }}
-                style={{
-                  padding: '6px 12px', borderRadius: t.r2,
-                  background: t.err, color: '#fff', border: 0,
-                  cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
-                }}
-              >{tr('settings.github.remove')}</button>
+            <p className="eco-dialog__body">{tr('settings.github.remove_confirm_body')}</p>
+            <div className="eco-dialog__foot">
+              <div className="eco-dialog__actions">
+                <button type="button" className="eco-btn eco-btn--lg eco-btn--outline"
+                  onClick={() => setRemoveConfirm(false)}>{tr('common.cancel')}</button>
+                <button
+                  type="button"
+                  className="eco-btn eco-btn--lg eco-btn--danger-solid"
+                  onClick={async () => { await gh.remove(); setRemoveConfirm(false); setEditing(false); }}
+                >{tr('settings.github.remove')}</button>
+              </div>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 export function FoldersManager() {
-  const t = useTokens();
   const tr = useT();
-  const isPhone = useIsPhone();
   const ws = useWorkspaces();
   const [draft, setDraft] = useState('');
   const [adding, setAdding] = useState(false);
@@ -1095,119 +806,90 @@ export function FoldersManager() {
   }
 
   const hasNativePicker = typeof window !== 'undefined' && !!window.electronAPI?.pickFolder;
+  const showSearch = ws.list.workspaces.length > 4;
 
   return (
-    <div style={{
-      height: '100%', overflowY: 'auto', boxSizing: 'border-box',
-      padding: isPhone ? '16px 12px 32px' : '28px 32px 80px',
-    }}>
-      <Header title={tr('settings.folders.title')} sub={tr('settings.folders.sub')}/>
-
-      <Glass radius={14} style={{ padding: 12, marginBottom: 20 }}>
-        {/* Botón principal: elegir con Finder. Más prominente. */}
-        {hasNativePicker && (
-          <Btn
-            kind="primary"
-            size="md"
-            icon={IconFolder}
-            onClick={() => void pickFolder()}
-            disabled={adding}
-            style={{ width: '100%', justifyContent: 'center', marginBottom: 10 }}>
+    <div className="eco-page eco-page--scroll">
+      <PageHeader
+        eyebrow={tr('settings.section.folders')}
+        title={tr('settings.folders.title')}
+        sub={tr('settings.folders.sub')}
+        actions={hasNativePicker ? (
+          <Btn kind="primary" size="lg" icon={IconFolderOpen} onClick={() => void pickFolder()} disabled={adding}>
             {adding ? tr('settings.folders.adding') : tr('settings.folders.pick_native')}
           </Btn>
-        )}
-        {/* Input manual + botón "Agregar" debajo, para casos avanzados */}
-        {/* Icono + input + "Agregar" en una fila dejan el input en nada al
-            escribir un path largo en el teléfono: ahí el botón baja. */}
-        <div style={{
-          display: 'flex', gap: 8, alignItems: 'center',
-          ...(isPhone ? { flexWrap: 'wrap' as const } : {}),
-        }}>
-          <div style={{ color: t.text2 }}><IconFolder size={16}/></div>
-          <input
-            data-folder-input
-            value={draft}
-            onChange={(e) => { setDraft(e.target.value); setAddError(null); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd(); }}
-            placeholder={tr('settings.folders.add_placeholder')}
-            style={{
-              flex: 1, minWidth: 0,
-              background: 'transparent', border: 0, outline: 'none',
-              fontFamily: t.fontMono, color: t.text0, padding: '8px 4px',
-              // 16px evita el auto-zoom de iOS al enfocar.
-              fontSize: isPhone ? 16 : 13,
-            }}
-          />
-          <Btn kind={hasNativePicker ? 'ghost' : 'primary'} size="sm" icon={IconPlus} onClick={() => void handleAdd()} disabled={adding || !draft.trim()}
-            style={isPhone ? { flexBasis: '100%', justifyContent: 'center' } : undefined}>
+        ) : undefined}/>
+
+      {/* Ruta manual: en el teléfono el botón baja a su propia línea. */}
+      <Card variant="stack" style={{ gap: 10 }}>
+        <div className="eco-hstack eco-hstack--wrap">
+          <div className="eco-inputbar eco-grow" style={{ flexBasis: 240 }}>
+            <IconFolder size={15}/>
+            <input
+              data-folder-input
+              className="eco-input-bare eco-mono"
+              value={draft}
+              onChange={(e) => { setDraft(e.target.value); setAddError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd(); }}
+              placeholder={tr('settings.folders.add_placeholder')}
+            />
+          </div>
+          <Btn kind={hasNativePicker ? 'solid' : 'primary'} size="lg" icon={IconPlus}
+            onClick={() => void handleAdd()} disabled={adding || !draft.trim()}
+            style={isPhoneNow() ? { flexBasis: '100%' } : undefined}>
             {adding ? tr('settings.folders.adding') : tr('settings.folders.add_btn')}
           </Btn>
         </div>
         {addError && (
-          <div style={{
-            marginTop: 8, padding: '6px 10px', borderRadius: 6,
-            background: t.bg2, fontSize: 12, color: t.err,
-            fontFamily: t.fontMono, lineHeight: 1.4,
-            wordBreak: 'break-word',
-          }}>{addError}</div>
+          <div className="eco-banner eco-banner--err eco-mono" style={{ wordBreak: 'break-word' }}>{addError}</div>
         )}
-        <div style={{ marginTop: 8, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
-          {tr('settings.folders.hint')}
-        </div>
-      </Glass>
+        <div className="eco-sub">{tr('settings.folders.hint')}</div>
+      </Card>
 
-      {/* Búsqueda de carpetas */}
-      {ws.list.workspaces.length > 4 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
-          padding: '8px 12px', borderRadius: 10, background: t.bg2, border: `1px solid ${t.glassBorder}` }}>
-          <IconSearch size={15} style={{ color: t.text2 }}/>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={tr('settings.folders.search')}
-            style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none',
-              fontFamily: t.fontSans, fontSize: isPhone ? 16 : 13, color: t.text0 }}
-          />
-        </div>
-      )}
-
-      {ws.loading ? (
-        <div style={{ fontSize: 13, color: t.text2 }}>{tr('common.loading')}</div>
-      ) : ws.list.workspaces.length === 0 ? (
-        <div style={{ fontSize: 13, color: t.text2, padding: 24, textAlign: 'center' }}>
-          {tr('settings.folders.empty')}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div style={{ fontSize: 13, color: t.text2, padding: 24, textAlign: 'center' }}>
-          {tr('settings.folders.no_match')}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {filtered.map((p) => (
-            <FolderCard key={p} workspace={p} open={openSet.has(p)} onToggle={() => toggleFolder(p)} onRemove={() => ws.remove(p)}/>
-          ))}
-        </div>
-      )}
-      {ws.error && (
-        <div style={{ marginTop: 16, fontSize: 12, color: t.err }}>{ws.error}</div>
-      )}
+      <Card variant="list">
+        {showSearch && (
+          <div className="eco-hstack eco-faint" style={{ height: 48 }}>
+            <IconSearch size={15}/>
+            <input
+              className="eco-input-bare"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={tr('settings.folders.search')}
+            />
+          </div>
+        )}
+        {ws.loading ? (
+          <div className="eco-empty">{tr('common.loading')}</div>
+        ) : ws.list.workspaces.length === 0 ? (
+          <div className="eco-empty">{tr('settings.folders.empty')}</div>
+        ) : filtered.length === 0 ? (
+          <div className="eco-empty">{tr('settings.folders.no_match')}</div>
+        ) : (
+          filtered.map((p, i) => (
+            <FolderCard key={p} workspace={p} open={openSet.has(p)} divided={showSearch || i > 0}
+              onToggle={() => toggleFolder(p)} onRemove={() => ws.remove(p)}/>
+          ))
+        )}
+      </Card>
+      {ws.error && <div className="eco-banner eco-banner--err">{ws.error}</div>}
     </div>
   );
 }
 
 // Cada workspace arranca colapsado: su cuerpo trae un editor completo
-// (toggle single/dual, comandos, variables de entorno, ramas) y con tres o
-// cuatro carpetas la pantalla era un muro. Lo abierto se recuerda mientras
-// dure la sesión (cache de módulo) para que cambiar de sección no lo cierre.
+// (comandos, variables de entorno, ramas) y con tres o cuatro carpetas la
+// pantalla era un muro. Lo abierto se recuerda mientras dure la sesión (cache
+// de módulo) para que cambiar de sección no lo cierre.
 let folderOpenCache = new Set<string>();
 
-function FolderCard({ workspace, open, onToggle, onRemove }: {
+function FolderCard({ workspace, open, divided, onToggle, onRemove }: {
   workspace: string;
   open: boolean;
+  /** Línea de separación con el elemento de arriba. */
+  divided: boolean;
   onToggle: () => void;
   onRemove: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   const isPhone = useIsPhone();
   const cfg = useWorkspaceConfig(workspace);
@@ -1215,7 +897,7 @@ function FolderCard({ workspace, open, onToggle, onRemove }: {
     ? tr('settings.folders.summary_dual')
     : (cfg.server.main.trim() || tr('settings.folders.summary_no_server'));
   return (
-    <Glass radius={12} style={{ padding: isPhone ? 10 : 16 }}>
+    <div style={divided ? { borderTop: '1px solid var(--line)' } : undefined}>
       <div
         role="button"
         tabIndex={0}
@@ -1223,56 +905,39 @@ function FolderCard({ workspace, open, onToggle, onRemove }: {
         onClick={onToggle}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
         title={open ? tr('settings.folders.collapse') : tr('settings.folders.expand')}
-        style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 8 : 12, cursor: 'pointer', outline: 'none' }}>
-        <div style={{
-          color: t.text2, flexShrink: 0, display: 'flex',
+        className="eco-row eco-row--first eco-row--tight eco-row--click"
+        style={{ flexWrap: 'nowrap', gap: isPhone ? 10 : 14 }}>
+        <span className="eco-faint" style={{
+          flex: 'none', display: 'flex',
           transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 140ms',
-        }}><IconChevR size={14}/></div>
-        <div style={{ color: t.accent, flexShrink: 0 }}><IconFolder size={18}/></div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontFamily: t.fontMono, fontSize: isPhone ? 12 : 13, color: t.text0,
-            // En el teléfono un path largo con ellipsis deja ver solo el
-            // principio, que es la parte que menos identifica la carpeta.
-            // Cortado por el final se lee el nombre real.
-            ...(isPhone
-              ? { direction: 'rtl' as const, textAlign: 'left' as const, overflow: 'hidden', whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' }
-              : { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }),
-          }} title={workspace}>{workspace}</div>
-          {!open && (
-            <div style={{
-              marginTop: 2, fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>{summary}</div>
-          )}
+        }}><IconChevR size={14}/></span>
+        <IconTile icon={IconFolder} accent/>
+        <div className="eco-grow">
+          {/* En el teléfono un path largo con ellipsis deja ver solo el
+              principio, que es la parte que menos identifica la carpeta.
+              Cortado por el final (rtl) se lee el nombre real. */}
+          <div className="eco-mono eco-truncate" title={workspace}
+            style={{ fontSize: 13, ...(isPhone ? { direction: 'rtl', textAlign: 'left' } : null) }}>
+            {workspace}
+          </div>
+          {!open && <div className="eco-sub eco-truncate">{summary}</div>}
         </div>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        <IconBtn icon={IconTrash} className="eco-iconbtn--danger"
           title={tr('settings.claude.apikey.remove_btn')}
-          style={{
-            width: 30, height: 30, borderRadius: 8, border: 0,
-            background: 'transparent', color: t.text2, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-          <IconTrash size={14}/>
-        </button>
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}/>
       </div>
       {open && (
-        <>
+        <div className="eco-pane" style={{ margin: isPhone ? '0 0 16px' : '0 0 16px 28px' }}>
           <WorkspaceServerConfigField workspace={workspace}/>
-          <WorktreeFavoritesField workspace={workspace}/>
-        </>
+        </div>
       )}
-    </Glass>
+    </div>
   );
 }
 
 // Branches base favoritos de un workspace (CSV). Server-authoritative: lo
-// define el admin (esta sección es admin-only) y lo lee el diálogo de nuevo
-// agente para TODOS. Antes era localStorage por dispositivo.
+// define el admin y lo lee el diálogo de nuevo agente para TODOS.
 function WorktreeFavoritesField({ workspace }: { workspace: string }) {
-  const t = useTokens();
   const tr = useT();
   const config = useWorkspaceConfig(workspace);
   const [draft, setDraft] = useState(config.baseBranches);
@@ -1286,19 +951,15 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
   }
 
   return (
-    <div style={{
-      marginTop: 10, paddingTop: 10,
-      borderTop: `1px dashed ${t.glassBorder}`,
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        fontSize: 11, color: t.text2, marginBottom: 6,
-      }}>
-        <IconBranch size={11}/>
+    <div className="eco-vstack eco-pane">
+      <div className="eco-hstack eco-field-label" style={{ gap: 8 }}>
+        <IconBranch size={13}/>
         <span>{tr('settings.bases.label')}</span>
-        {savedFlash && <span style={{ color: t.ok, fontSize: 11 }}>{tr('settings.bases.saved')}</span>}
+        {savedFlash && <span style={{ color: 'var(--ok)' }}>{tr('settings.bases.saved')}</span>}
       </div>
       <input
+        className="eco-field eco-field--sm eco-field--mono"
+        style={BOX_FIELD}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => void commit()}
@@ -1306,20 +967,8 @@ function WorktreeFavoritesField({ workspace }: { workspace: string }) {
         placeholder={tr('settings.bases.placeholder')}
         spellCheck={false}
         autoCorrect="off"
-        style={{
-          width: '100%', boxSizing: 'border-box',
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          borderRadius: 8, padding: isPhoneNow() ? '10px' : '8px 10px',
-          fontFamily: t.fontMono,
-          // 16px evita el auto-zoom de iOS al enfocar.
-          fontSize: isPhoneNow() ? 16 : 12,
-          color: t.text0,
-          outline: 'none',
-        }}
       />
-      <div style={{ marginTop: 4, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
-        {tr('settings.bases.hint')}
-      </div>
+      <div className="eco-sub">{tr('settings.bases.hint')}</div>
     </div>
   );
 }
@@ -1404,11 +1053,13 @@ function rowsToEnv(rows: EnvRow[]): Record<string, string> {
   return out;
 }
 
+type WorkspaceTab = 'server' | 'env' | 'branches';
+
 function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
-  const t = useTokens();
   const tr = useT();
   const config = useWorkspaceConfig(workspace);
   const srv = config.server;
+  const [tab, setTab] = useState<WorkspaceTab>('server');
   const [dual, setDual] = useState(srv.dual);
   const [main, setMain] = useState(srv.main);
   const [front, setFront] = useState(srv.frontend);
@@ -1488,173 +1139,150 @@ function WorkspaceServerConfigField({ workspace }: { workspace: string }) {
     }
   }
 
-  const inputStyle = {
-    width: '100%', boxSizing: 'border-box' as const,
-    background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    borderRadius: 8, padding: isPhoneNow() ? '10px 10px' : '8px 10px',
-    fontFamily: t.fontMono,
-    // 16px evita el auto-zoom de iOS al enfocar cualquiera de estos campos.
-    fontSize: isPhoneNow() ? 16 : 12,
-    color: t.text0, outline: 'none',
-  };
+  const cmdClass = 'eco-field eco-field--sm eco-field--mono';
+  const envCount = envRows.filter((r) => r.k.trim()).length;
+  const branchCount = config.baseBranches.split(',').filter((b) => b.trim()).length;
+  const phone = isPhoneNow();
 
   return (
-    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${t.glassBorder}` }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        fontSize: 11, color: t.text2, marginBottom: 8,
-      }}>
-        <IconCpu size={11}/>
-        <span>{tr('settings.srv.label')}</span>
-        {savedFlash && <span style={{ color: t.ok, fontSize: 11 }}>{tr('settings.bases.saved')}</span>}
-      </div>
-
-      <label style={{
-        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
-        fontSize: 12, color: t.text1, cursor: 'pointer',
-      }}>
-        <Toggle on={dual} onChange={setDual}/>
-        <span>{tr('settings.srv.dual')}</span>
-      </label>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {!dual ? (
-          <input value={main} onChange={(e) => setMain(e.target.value)}
-            placeholder="npm run dev -- --port $PORT"
-            spellCheck={false} autoCorrect="off" style={inputStyle}/>
-        ) : (
-          <>
-            <input value={front} onChange={(e) => setFront(e.target.value)}
-              placeholder="frontend: npm run dev -- --port $PORT"
-              spellCheck={false} autoCorrect="off" style={inputStyle}/>
-            <input value={back} onChange={(e) => setBack(e.target.value)}
-              placeholder="backend: PORT=$PORT node server.js"
-              spellCheck={false} autoCorrect="off" style={inputStyle}/>
-          </>
-        )}
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div style={{ fontSize: 11, color: t.text2, marginBottom: 6 }}>
-          {tr('settings.srv.env.label')}
-        </div>
-        {envRows.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
-            {envRows.map((row, i) => {
-              const badKey = row.k.trim() !== '' && !ENV_KEY_RE.test(row.k.trim());
-              return (
-                <div key={i} style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  // KEY + VALOR + borrar en una fila piden ~400px. En el
-                  // teléfono la clave toma la fila entera y el valor baja.
-                  ...(isPhoneNow() ? { flexWrap: 'wrap' as const } : {}),
-                }}>
-                  <input value={row.k} onChange={(e) => setRow(i, { k: e.target.value })}
-                    placeholder={tr('settings.srv.env.key_ph')}
-                    spellCheck={false} autoCorrect="off" autoCapitalize="off"
-                    style={{
-                      ...inputStyle,
-                      ...(isPhoneNow()
-                        ? { flexBasis: '100%', minWidth: 0 }
-                        : { width: 180, flexShrink: 0 }),
-                      border: `1px solid ${badKey ? t.err : t.glassBorder}`,
-                    }}/>
-                  <input value={row.v} onChange={(e) => setRow(i, { v: e.target.value })}
-                    placeholder={tr('settings.srv.env.value_ph')}
-                    spellCheck={false} autoCorrect="off" autoCapitalize="off"
-                    style={{ ...inputStyle, flex: 1, minWidth: 0 }}/>
-                  <button
-                    type="button"
-                    onClick={() => removeRow(i)}
-                    title={tr('settings.srv.env.remove')}
-                    style={{
-                      width: 28, height: 28, borderRadius: 8, border: 0, flexShrink: 0,
-                      background: 'transparent', color: t.text2, cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                    <IconTrash size={13}/>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {/* Agregar / Importar / Exportar: tres botones con rótulo en una fila
-            piden ~330px. En el teléfono envuelven. */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          ...(isPhoneNow() ? { flexWrap: 'wrap' as const } : {}),
-        }}>
-          <Btn kind="ghost" size="sm" icon={IconPlus}
-            onClick={() => setEnvRows((rows) => [...rows, { k: '', v: '' }])}>
-            {tr('settings.srv.env.add')}
-          </Btn>
-          <Btn kind="ghost" size="sm" icon={IconFile}
-            title={tr('settings.srv.env.import_tip')}
-            onClick={() => fileRef.current?.click()}>
-            {tr('settings.srv.env.import')}
-          </Btn>
-          <Btn kind="ghost" size="sm" icon={IconExt}
-            title={tr('settings.srv.env.export_tip')}
-            disabled={!envRows.some((r) => r.k.trim())}
-            onClick={() => void exportEnvFile()}>
-            {tr('settings.srv.env.export')}
-          </Btn>
-          <input ref={fileRef} type="file" style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void importEnvFile(f);
-              e.target.value = '';
-            }}/>
-        </div>
-        {importMsg && (
-          <div style={{ marginTop: 4, fontSize: 11, color: importMsg.ok > 0 ? t.ok : t.warn }}>
-            {importMsg.ok > 0
-              ? tr('settings.srv.env.import_ok', { n: importMsg.ok })
-              : tr('settings.srv.env.import_empty')}
-            {importMsg.skipped > 0 && ` ${tr('settings.srv.env.import_skipped', { n: importMsg.skipped })}`}
-          </div>
-        )}
-        {envInvalid && (
-          <div style={{ marginTop: 4, fontSize: 11, color: t.err }}>
-            {tr('settings.srv.env.invalid')}
-          </div>
-        )}
-        {envTooLong && (
-          <div style={{ marginTop: 4, fontSize: 11, color: t.err }}>
-            {tr('settings.srv.env.too_long')}
-          </div>
-        )}
-        <div style={{ marginTop: 4, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
-          {tr('settings.srv.env.hint')}
-        </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: t.text3 }}>
-          {tr('settings.srv.env.format_label')}
-        </div>
-        <div style={{
-          marginTop: 4, padding: '8px 10px', borderRadius: 8,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          fontFamily: t.fontMono, fontSize: 11, color: t.text2,
-          whiteSpace: 'pre', overflowX: 'auto', lineHeight: 1.7,
-        }}>
-          {tr('settings.srv.env.format_example')}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-        <Btn kind="secondary" size="sm" onClick={() => void commit()} disabled={!dirty || envInvalid || envTooLong}>
+    <div className="eco-vstack" style={{ gap: 14 }}>
+      <div className="eco-hstack eco-hstack--wrap">
+        <Segmented<WorkspaceTab>
+          onCard size="md" value={tab} onChange={setTab}
+          style={{ maxWidth: '100%', overflowX: 'auto' }}
+          options={[
+            { id: 'server', label: tr('settings.srv.tab.server'), icon: IconCpu },
+            { id: 'env', label: tr('settings.srv.tab.env'), icon: IconFile, count: envCount || undefined },
+            { id: 'branches', label: tr('settings.srv.tab.branches'), icon: IconBranch, count: branchCount || undefined },
+          ]}/>
+        {savedFlash && <span className="eco-sub" style={{ color: 'var(--ok)' }}>{tr('settings.bases.saved')}</span>}
+        <div className="eco-spacer"/>
+        <Btn kind="primary" onClick={() => void commit()} disabled={!dirty || envInvalid || envTooLong}>
           {tr('common.save')}
         </Btn>
-        <span style={{ fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
-          {tr('settings.srv.hint')}
-        </span>
       </div>
+
+      {tab === 'server' && (
+        <div className="eco-vstack eco-pane">
+          <label className="eco-hstack" style={{ gap: 12, cursor: 'pointer' }}>
+            <Toggle on={dual} onChange={setDual}/>
+            <span>{tr('settings.srv.dual')}</span>
+          </label>
+          {!dual ? (
+            <input value={main} onChange={(e) => setMain(e.target.value)}
+              placeholder="npm run dev -- --port $PORT"
+              spellCheck={false} autoCorrect="off" className={cmdClass} style={BOX_FIELD}/>
+          ) : (
+            <div className="eco-hstack eco-hstack--wrap" style={{ gap: 12, alignItems: 'flex-start' }}>
+              <label className="eco-vstack eco-grow" style={{ gap: 6, flexBasis: 280 }}>
+                <span className="eco-field-label">{tr('settings.srv.frontend')}</span>
+                <input value={front} onChange={(e) => setFront(e.target.value)}
+                  placeholder="frontend: npm run dev -- --port $PORT"
+                  spellCheck={false} autoCorrect="off" className={cmdClass} style={BOX_FIELD}/>
+              </label>
+              <label className="eco-vstack eco-grow" style={{ gap: 6, flexBasis: 280 }}>
+                <span className="eco-field-label">{tr('settings.srv.backend')}</span>
+                <input value={back} onChange={(e) => setBack(e.target.value)}
+                  placeholder="backend: PORT=$PORT node server.js"
+                  spellCheck={false} autoCorrect="off" className={cmdClass} style={BOX_FIELD}/>
+              </label>
+            </div>
+          )}
+          <div className="eco-sub">{tr('settings.srv.hint')}</div>
+        </div>
+      )}
+
+      {tab === 'env' && (
+        <div className="eco-vstack eco-pane">
+          {/* Agregar / Importar / Exportar: en el teléfono envuelven. */}
+          <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
+            <Btn kind="raised" size="sm" icon={IconPlus}
+              onClick={() => setEnvRows((rows) => [...rows, { k: '', v: '' }])}>
+              {tr('settings.srv.env.add')}
+            </Btn>
+            <Btn kind="raised" size="sm" icon={IconFile}
+              title={tr('settings.srv.env.import_tip')}
+              onClick={() => fileRef.current?.click()}>
+              {tr('settings.srv.env.import')}
+            </Btn>
+            <Btn kind="raised" size="sm" icon={IconExt}
+              title={tr('settings.srv.env.export_tip')}
+              disabled={!envRows.some((r) => r.k.trim())}
+              onClick={() => void exportEnvFile()}>
+              {tr('settings.srv.env.export')}
+            </Btn>
+            <input ref={fileRef} type="file" style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void importEnvFile(f);
+                e.target.value = '';
+              }}/>
+          </div>
+          {envRows.length > 0 && (
+            <div style={{
+              display: 'grid', gap: 8,
+              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))',
+            }}>
+              {envRows.map((row, i) => {
+                const badKey = row.k.trim() !== '' && !ENV_KEY_RE.test(row.k.trim());
+                return (
+                  // Clave + valor + borrar piden ~340px. En el teléfono la
+                  // clave toma la línea entera y el valor baja.
+                  <div key={i} className="eco-hstack eco-raised eco-mono" style={{
+                    gap: phone ? '4px 8px' : 8, minHeight: 44, padding: phone ? '8px 6px 8px 14px' : '0 6px 0 14px',
+                    fontSize: 12.5, minWidth: 0, ...BOX_FIELD,
+                    border: `1px solid ${badKey ? 'var(--err)' : 'transparent'}`,
+                    ...(phone ? { flexWrap: 'wrap' } : null),
+                  }}>
+                    <input value={row.k} onChange={(e) => setRow(i, { k: e.target.value })}
+                      placeholder={tr('settings.srv.env.key_ph')}
+                      spellCheck={false} autoCorrect="off" autoCapitalize="off"
+                      className="eco-input-bare"
+                      style={{ flex: phone ? '1 1 100%' : '1 1 45%', fontWeight: 500 }}/>
+                    <input value={row.v} onChange={(e) => setRow(i, { v: e.target.value })}
+                      placeholder={tr('settings.srv.env.value_ph')}
+                      spellCheck={false} autoCorrect="off" autoCapitalize="off"
+                      className="eco-input-bare eco-muted"
+                      style={{ flex: '1 1 55%' }}/>
+                    <IconBtn icon={IconTrash} size={28} className="eco-iconbtn--danger"
+                      title={tr('settings.srv.env.remove')} onClick={() => removeRow(i)}/>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {importMsg && (
+            <div className="eco-sub" style={{ color: importMsg.ok > 0 ? 'var(--ok)' : 'var(--warn)' }}>
+              {importMsg.ok > 0
+                ? tr('settings.srv.env.import_ok', { n: importMsg.ok })
+                : tr('settings.srv.env.import_empty')}
+              {importMsg.skipped > 0 && ` ${tr('settings.srv.env.import_skipped', { n: importMsg.skipped })}`}
+            </div>
+          )}
+          {envInvalid && (
+            <div className="eco-sub" style={{ color: 'var(--err)' }}>{tr('settings.srv.env.invalid')}</div>
+          )}
+          {envTooLong && (
+            <div className="eco-sub" style={{ color: 'var(--err)' }}>{tr('settings.srv.env.too_long')}</div>
+          )}
+          <div className="eco-sub">{tr('settings.srv.env.hint')}</div>
+          <div>
+            <div className="eco-sub" style={{ marginBottom: 6 }}>{tr('settings.srv.env.format_label')}</div>
+            <div className="eco-inset eco-mono eco-muted" style={{
+              fontSize: 12, whiteSpace: 'pre', overflowX: 'auto', lineHeight: 1.7, ...BOX_FIELD,
+            }}>
+              {tr('settings.srv.env.format_example')}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'branches' && <WorktreeFavoritesField workspace={workspace}/>}
     </div>
   );
 }
 
 function SectionSecurity() {
-  const t = useTokens();
   const tr = useT();
   const [lockMinutes, setLockMinutes] = useState<string>(() => {
     try { return window.localStorage.getItem('eco.security.lockAfterMin') ?? '15'; } catch { return '15'; }
@@ -1680,9 +1308,7 @@ function SectionSecurity() {
   }
 
   return (
-    <div style={{ width: '100%' }}>
-      <Header title={tr('settings.security.title')} sub={tr('settings.security.sub')}/>
-
+    <Card variant="list">
       <Row icon={IconLock} title={tr('settings.security.lock_on_start')}
         desc={tr('settings.security.lock_on_start_desc')}
         control={<Toggle on={lockOnStart} onChange={saveLockOnStart}/>}/>
@@ -1691,9 +1317,10 @@ function SectionSecurity() {
           preferencia y dispara `auth.lock` cuando se cumple el tiempo. */}
       <Row icon={IconLock} title={tr('settings.security.lock_inactivity')}
         desc={tr('settings.security.lock_inactivity_desc')}
+        wide
         control={
           <select value={lockMinutes} onChange={(e) => saveLock(e.target.value)}
-            style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 160 }}>
+            className="eco-field eco-field--sm" style={selectWidth(160)}>
             <option value="never">{tr('settings.security.never')}</option>
             <option value="5">{tr('settings.security.minutes', { n: 5 })}</option>
             <option value="15">{tr('settings.security.minutes', { n: 15 })}</option>
@@ -1706,187 +1333,115 @@ function SectionSecurity() {
       <Row icon={IconShield} title={tr('settings.security.lock_now')}
         desc={tr('settings.security.lock_now_desc')}
         control={
-          <Btn kind="secondary" size="sm" icon={IconLock} onClick={lockNow}>
+          <Btn kind="raised" icon={IconLock} onClick={lockNow}>
             {tr('settings.security.lock_now_btn')}
           </Btn>
         }/>
-    </div>
+    </Card>
   );
 }
 
 function SectionAppearance() {
   const t = useTokens();
   const tr = useT();
-  const { mode, effectiveMode, setMode, accentHue, setAccentHue } = useTheme();
+  const { mode, setMode, accentHue, setAccentHue } = useTheme();
 
-  // Grupo 1: modos generales (dark/light/system) — comportamiento adaptable.
-  const basicModes = [
-    { id: 'system' as const, label: tr('settings.appearance.theme.system'), preview: 'linear-gradient(135deg, #0a0a0c 50%, #fbfbfd 50%)' },
-    { id: 'dark' as const,   label: tr('settings.appearance.theme.dark'),   preview: '#0a0a0c' },
-    { id: 'light' as const,  label: tr('settings.appearance.theme.light'),  preview: '#fbfbfd' },
+  const byId = new Map(THEME_VARIANTS.map((v) => [v.id, v.preview]));
+  const light = byId.get('light')!;
+  const dark = byId.get('dark')!;
+  const themes = [
+    { id: 'light' as const,  label: tr('settings.appearance.theme.light'),  bg: light.bg, ink: light.ink, mute: light.mute, claude: CLAUDE_THEME_NAMES.light },
+    { id: 'dark' as const,   label: tr('settings.appearance.theme.dark'),   bg: dark.bg,  ink: dark.ink,  mute: dark.mute,  claude: CLAUDE_THEME_NAMES.dark },
+    // Vista previa partida: mitad claro, mitad oscuro (muestra de color, no decoración).
+    { id: 'system' as const, label: tr('settings.appearance.theme.system'), bg: `linear-gradient(105deg, ${light.bg} 50%, ${dark.bg} 50%)`, ink: light.ink, mute: dark.mute, claude: '' },
   ];
 
-  // Grupo 2: temas con color characteristic — paletas curadas.
-  const curatedThemes = THEME_VARIANTS.filter((v) => v.id !== 'dark' && v.id !== 'light');
-
   return (
-    <div style={{ width: '100%' }}>
-      <Header title={tr('settings.appearance.title')} sub={tr('settings.appearance.sub')}/>
+    <>
+      <Card variant="stack">
+        <div className="eco-eyebrow">{tr('settings.appearance.theme')}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 12 }}>
+          {themes.map((m) => {
+            const on = mode === m.id;
+            return (
+              <button key={m.id} type="button" onClick={() => setMode(m.id)} aria-pressed={on}
+                style={{
+                  display: 'flex', flexDirection: 'column', gap: 10, padding: 10,
+                  borderRadius: 16, border: 0, background: t.raised, cursor: 'pointer',
+                  textAlign: 'left', font: 'inherit', color: t.text0,
+                  outline: on ? `2px solid ${t.accent}` : 'none',
+                }}>
+                <div style={{
+                  height: 72, borderRadius: 11, background: m.bg, border: `1px solid ${t.line2}`,
+                  display: 'flex', alignItems: 'flex-end', gap: 5, padding: 10,
+                }}>
+                  <span style={{ width: '38%', height: 6, borderRadius: 3, background: m.ink }}/>
+                  <span style={{ width: '22%', height: 6, borderRadius: 3, background: m.mute }}/>
+                </div>
+                <div className="eco-hstack" style={{ gap: 8, padding: '0 4px 2px' }}>
+                  <span className="eco-label eco-grow">{m.label}</span>
+                  {m.claude && <span className="eco-num">{m.claude}</span>}
+                  {on && <IconCheck size={14} strokeWidth={2.4}/>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
 
-      <SectionLabel>{tr('settings.appearance.theme')}</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
-        {basicModes.map((m) => (
-          <div key={m.id} style={{
-            padding: 16, border: `1px solid ${mode === m.id ? t.accentDim : t.glassBorder}`,
-            borderRadius: 16, background: mode === m.id ? t.accentFaint : t.bg2,
-          }}>
-            <button type="button" onClick={() => setMode(m.id)} style={{
-              display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent',
-              cursor: 'pointer', textAlign: 'left', fontFamily: t.fontSans,
-            }}>
-              <div style={{
-                height: 56, borderRadius: 8, marginBottom: 10,
-                background: m.preview, border: `1px solid ${t.glassBorder}`,
-              }}/>
-              <div style={{
-                fontSize: 13, color: mode === m.id ? t.accent : t.text0, fontWeight: 500,
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}>{mode === m.id && <IconCheck size={12} strokeWidth={3}/>}{m.label}</div>
-            </button>
-            {m.id !== 'system' && <ClaudeThemePickerButton mode={m.id}/>}
-          </div>
-        ))}
-      </div>
-
-      <SectionLabel>{tr('settings.appearance.theme.curated')}</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
-        {curatedThemes.map((v) => {
-          const selected = mode === v.id;
-          // Color de firma del tema — el dot muestra de qué color "se ve" el
-          // tema antes de seleccionarlo (cada tema trae su acento coordinado).
-          const sig = `oklch(76% ${v.defaultChroma ?? 0.13} ${v.defaultHue})`;
-          return (
-            <div key={v.id} style={{
-              padding: 8, border: `1px solid ${selected ? t.accentDim : t.glassBorder}`,
-              borderRadius: 12, background: selected ? t.accentFaint : t.bg2,
-              transition: T_UI,
-            }}>
-            <button type="button" onClick={() => setMode(v.id)} style={{
-              display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent',
-              cursor: 'pointer', textAlign: 'left', fontFamily: t.fontSans,
-            }}>
-              <div style={{
-                height: 44, borderRadius: 6, marginBottom: 6,
-                background: v.preview, border: `1px solid ${t.glassBorder}`,
-                position: 'relative',
-              }}>
-                {/* Dot con el acento de firma del tema (no el global) */}
+      <Card variant="stack">
+        <div className="eco-hstack" style={{ alignItems: 'baseline' }}>
+          <span className="eco-eyebrow eco-grow">{tr('settings.appearance.accent.override')}</span>
+          <button type="button" className="eco-btn eco-btn--ghost eco-btn--xs" onClick={() => setAccentHue(null)}>
+            {tr('settings.appearance.accent.reset')}
+          </button>
+        </div>
+        <div className="eco-sub">{tr('settings.appearance.accent.override_desc')}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 6 }}>
+          {ACCENT_HUES.map((a) => {
+            const selected = accentHue === a.hue;
+            return (
+              <button key={a.hue} type="button" onClick={() => setAccentHue(a.hue)} title={a.name} aria-pressed={selected}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
+                  padding: '10px 4px 8px', borderRadius: 14, border: 0, cursor: 'pointer', font: 'inherit',
+                  background: selected ? t.raised : 'transparent', color: selected ? t.text0 : t.text1,
+                }}>
                 <span style={{
-                  position: 'absolute', bottom: 5, right: 5,
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: sig,
+                  width: 30, height: 30, borderRadius: '50%', background: `oklch(0.72 0.13 ${a.hue})`,
+                  outline: selected ? `2px solid ${t.text0}` : 'none', outlineOffset: 2,
                 }}/>
-              </div>
-              <div style={{
-                fontSize: 12, color: selected ? t.accent : t.text1, fontWeight: 500,
-                display: 'flex', alignItems: 'center', gap: 4,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>
-                {selected && <IconCheck size={10} strokeWidth={3}/>}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {tr(`settings.appearance.theme.name.${v.id}`)}
-                </span>
-              </div>
-            </button>
-            <ClaudeThemePickerButton mode={v.id}/>
-            </div>
-          );
-        })}
-      </div>
+                <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{a.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <SectionLabel>{tr('settings.appearance.accent.override')}</SectionLabel>
-        <button type="button"
-          onClick={() => setAccentHue(defaultHueForTheme(effectiveMode))}
-          style={{
-            border: 0, background: 'transparent', color: t.text3,
-            fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans, padding: '2px 6px',
-          }}>
-          {tr('settings.appearance.accent.reset')}
-        </button>
-      </div>
-      <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
-        {tr('settings.appearance.accent.override_desc')}
-      </div>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10,
-        marginBottom: 24,
-      }}>
-        {ACCENT_HUES.map((a) => {
-          const selected = accentHue === a.hue;
-          return (
-            <button key={a.hue} type="button" onClick={() => setAccentHue(a.hue)}
-              title={a.name}
-              style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                padding: '8px 4px', borderRadius: 10,
-                background: selected ? t.accentFaint : 'transparent',
-                border: `1px solid ${selected ? t.accentDim : 'transparent'}`,
-                cursor: 'pointer',
-                transition: 'background 140ms, border-color 140ms',
-              }}>
-              <span style={{
-                width: 32, height: 32, borderRadius: '50%',
-                background: `oklch(70% 0.13 ${a.hue})`,
-                border: `2px solid ${selected ? `oklch(78% 0.14 ${a.hue})` : 'transparent'}`,
-                boxShadow: selected
-                  ? `0 0 0 2px ${t.bg1}, 0 0 0 4px oklch(74% 0.13 ${a.hue})`
-                  : `0 1px 3px rgba(0,0,0,0.2)`,
-              }}/>
-              <span style={{
-                fontSize: 11, color: selected ? t.accent : t.text2,
-                fontFamily: t.fontSans, fontWeight: 500,
-                textAlign: 'center', whiteSpace: 'nowrap',
-              }}>{a.name.replace(' (Eco)', '')}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <SectionLabel>{tr('settings.appearance.zoom')}</SectionLabel>
-      <div style={{ marginBottom: 24 }}>
+      <Card variant="list" style={{ paddingTop: 14 }}>
+        <div className="eco-eyebrow">{tr('settings.appearance.zoom')}</div>
         <UiZoomRow/>
-      </div>
+      </Card>
 
-      <SectionLabel>{tr('settings.appearance.terminal')}</SectionLabel>
-      <GeneralToggleRow
-        icon={IconTerminal}
-        title={tr('settings.appearance.terminal.claude_sync')}
-        desc={tr('settings.appearance.terminal.claude_sync_desc')}
-        storageKey={CLAUDE_THEME_SYNC_KEY}
-        defaultOn
-        broadcastEvent={CLAUDE_THEME_SYNC_EVENT}
-      />
-      <div style={{ marginBottom: 24 }}>
+      <Card variant="list" style={{ paddingTop: 14, paddingBottom: 18 }}>
+        <div className="eco-eyebrow">{tr('settings.appearance.terminal')}</div>
         <TerminalFontRows/>
-      </div>
+      </Card>
 
-      <SectionLabel>{tr('settings.categories.label')}</SectionLabel>
-      <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 10 }}>
-        {tr('settings.categories.desc')}
-      </div>
-      <CategoryManager/>
-    </div>
+      <Card variant="stack">
+        <div className="eco-eyebrow">{tr('settings.categories.label')}</div>
+        <div className="eco-sub">{tr('settings.categories.desc')}</div>
+        <CategoryManager/>
+      </Card>
+    </>
   );
 }
 
-// Editor de categorías: alta arriba y tarjetas en grilla (una por categoría)
-// con barra lateral del color, nombre editable, paleta y borrar. Persiste vía
-// useCategories (sincronizado a Firestore).
+// Editor de categorías: alta arriba y una celda por categoría con su color,
+// nombre editable y borrar. Persiste vía useCategories (sincronizado a
+// Firestore).
 function CategoryManager() {
-  const t = useTokens();
   const tr = useT();
-  const isPhone = useIsPhone();
   const { categories, add, update, remove } = useCategories();
   const [draftName, setDraftName] = useState('');
   const nextColor = CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length]!;
@@ -1897,44 +1452,27 @@ function CategoryManager() {
   };
 
   return (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
-        padding: '8px 10px 8px 16px', borderRadius: 12,
-        background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      }}>
-        <span style={{
-          width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-          background: nextColor,
-        }}/>
+    <>
+      <div className="eco-inputbar eco-inputbar--action">
+        <span className="eco-dot eco-dot--lg" style={{ background: nextColor }}/>
         <input
+          className="eco-input-bare"
           value={draftName}
           onChange={(e) => setDraftName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           placeholder={tr('settings.categories.new_placeholder')}
-          style={{
-            flex: 1, minWidth: 0, boxSizing: 'border-box',
-            background: 'transparent', border: 0, outline: 'none',
-            fontFamily: t.fontSans, fontSize: isMobileNow() ? 16 : 13, color: t.text0,
-          }}
         />
-        <Btn kind="primary" size="sm" disabled={!draftName.trim()} onClick={submit}>
+        <Btn kind="primary" className="eco-btn--sm" disabled={!draftName.trim()} onClick={submit}>
           {tr('common.add')}
         </Btn>
       </div>
 
       {categories.length === 0 ? (
-        <div style={{
-          padding: '16px 12px', borderRadius: 12, textAlign: 'center',
-          background: t.bg2, border: `1px dashed ${t.glassBorder}`,
-          fontSize: 12, color: t.text2, lineHeight: 1.5,
-        }}>
-          {tr('settings.categories.empty')}
-        </div>
+        <div className="eco-empty">{tr('settings.categories.empty')}</div>
       ) : (
         <div style={{
-          display: 'grid', gap: 10,
-          gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+          display: 'grid', gap: 6,
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 230px), 1fr))',
         }}>
           {categories.map((c) => (
             <CategoryCard key={c.id} name={c.name} color={c.color}
@@ -1944,18 +1482,17 @@ function CategoryManager() {
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-// Tarjeta de una categoría: el chip (igual al de la cabecera de la burbuja)
-// es el selector de color — clic → popover con la paleta y un color
-// personalizado (color picker nativo). El nombre se edita al lado.
+// Celda de una categoría: el punto de color es el selector — clic → popover
+// con la paleta y un color personalizado (color picker nativo). El nombre se
+// edita al lado.
 function CategoryCard({ name, color, onName, onColor, onRemove }: {
   name: string; color: string;
   onName: (name: string) => void; onColor: (color: string) => void; onRemove: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -1972,65 +1509,30 @@ function CategoryCard({ name, color, onName, onColor, onRemove }: {
   }, [open]);
 
   return (
-    <div ref={rootRef} style={{
-      position: 'relative', borderRadius: 12,
-      background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      padding: '10px 10px 10px 12px',
-      display: 'flex', alignItems: 'center', gap: 10,
+    <div ref={rootRef} className="eco-hstack eco-raised" style={{
+      position: 'relative', gap: 4, minHeight: 40, padding: '0 6px 0 6px', minWidth: 0, ...BOX_FIELD,
     }}>
       <button
         type="button"
+        className={cx('eco-iconbtn eco-iconbtn--xs', open && 'is-on')}
         onClick={() => setOpen((o) => !o)}
         title={tr('settings.categories.pick_color')}
-        aria-label={tr('settings.categories.pick_color')}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          borderRadius: 999, padding: '4px 10px',
-          background: `color-mix(in oklch, ${color} 16%, transparent)`,
-          border: `1px solid color-mix(in oklch, ${color} 45%, transparent)`,
-          color, fontSize: 12, fontWeight: 500, fontFamily: t.fontSans,
-          cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, maxWidth: 160,
-        }}>
-        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }}/>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {name.trim() || tr('settings.categories.name_placeholder')}
-        </span>
+        aria-label={tr('settings.categories.pick_color')}>
+        <span className="eco-dot eco-dot--lg" style={{ background: color, width: 10, height: 10 }}/>
       </button>
       <input
+        className="eco-input-bare"
         value={name}
         onChange={(e) => onName(e.target.value)}
         placeholder={tr('settings.categories.name_placeholder')}
-        style={{
-          flex: 1, minWidth: 0, boxSizing: 'border-box',
-          background: 'transparent', border: 0, outline: 'none',
-          borderBottom: '1px solid transparent',
-          fontFamily: t.fontSans, fontSize: isMobileNow() ? 16 : 13, color: t.text0,
-          padding: '2px 0',
-        }}
-        onFocus={(e) => { e.currentTarget.style.borderBottomColor = t.accentDim; }}
-        onBlur={(e) => { e.currentTarget.style.borderBottomColor = 'transparent'; }}
       />
-      <button
-        type="button"
-        onClick={onRemove}
-        title={tr('settings.categories.delete_tooltip')}
-        aria-label={tr('settings.categories.delete_tooltip')}
-        style={{
-          width: 28, height: 28, borderRadius: 8, border: 0,
-          background: 'transparent', color: t.text3, cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = t.err; e.currentTarget.style.background = t.bg3; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = t.text3; e.currentTarget.style.background = 'transparent'; }}>
-        <IconTrash size={13}/>
-      </button>
+      <IconBtn icon={IconTrash} size={28} className="eco-iconbtn--danger"
+        title={tr('settings.categories.delete_tooltip')} onClick={onRemove}/>
 
       {open && (
-        <div role="dialog" aria-label={tr('settings.categories.pick_color')} style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: 10, zIndex: 50,
-          padding: 10, borderRadius: 12, width: 196,
-          ...dialogSurface(t), boxShadow: t.shadowLg,
+        <div role="dialog" aria-label={tr('settings.categories.pick_color')} className="eco-menu" style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50,
+          padding: 12, width: 208, minWidth: 0,
         }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
             {CATEGORY_PALETTE.map((col) => {
@@ -2044,27 +1546,23 @@ function CategoryCard({ name, color, onName, onColor, onRemove }: {
                   aria-label={col}
                   style={{
                     width: 18, height: 18, borderRadius: '50%', padding: 0, cursor: 'pointer',
-                    background: col,
-                    border: `2px solid ${on ? t.text0 : 'transparent'}`,
-                    boxShadow: on ? `0 0 0 1.5px ${col}` : 'none',
+                    background: col, border: 0,
+                    outline: on ? '2px solid var(--tx)' : 'none', outlineOffset: 1,
                   }}
                 />
               );
             })}
           </div>
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, paddingTop: 10,
-            borderTop: `1px solid ${t.glassBorder}`,
-            fontSize: 12, color: t.text1, fontFamily: t.fontSans, cursor: 'pointer',
-          }}>
+          <div className="eco-menu__sep" style={{ margin: '10px 0' }}/>
+          <label className="eco-hstack eco-sub" style={{ gap: 8, cursor: 'pointer' }}>
             <input
               type="color"
               value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#888888'}
               onChange={(e) => onColor(e.target.value)}
               style={{ width: 22, height: 22, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
             />
-            {tr('settings.categories.custom_color')}
-            <span style={{ marginLeft: 'auto', fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>{color}</span>
+            <span className="eco-grow">{tr('settings.categories.custom_color')}</span>
+            <span className="eco-num">{color}</span>
           </label>
         </div>
       )}
@@ -2072,8 +1570,7 @@ function CategoryCard({ name, color, onName, onColor, onRemove }: {
   );
 }
 
-// Stepper −/valor/+ con reset opcional. En táctil los botones crecen a 40px,
-// como IconBtn.
+// Stepper −/valor/+ con reset opcional.
 function Stepper({ value, onDec, onInc, decDisabled, incDisabled, decTitle, incTitle, onReset, resetLabel }: {
   value: string;
   onDec: () => void;
@@ -2085,31 +1582,17 @@ function Stepper({ value, onDec, onInc, decDisabled, incDisabled, decTitle, incT
   onReset?: () => void;
   resetLabel?: string;
 }) {
-  const t = useTokens();
-  const box = isMobileNow() ? 40 : 30;
-  const btn = (label: string, onClick: () => void, disabled: boolean, title?: string) => (
-    <button type="button" onClick={onClick} disabled={disabled} title={title} style={{
-      width: box, height: box, borderRadius: 8, flexShrink: 0,
-      border: `1px solid ${t.glassBorder}`, background: t.bg3,
-      color: disabled ? t.text3 : t.text0, cursor: disabled ? 'default' : 'pointer',
-      opacity: disabled ? 0.5 : 1,
-      fontFamily: t.fontMono, fontSize: 16, lineHeight: 1,
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    }}>{label}</button>
-  );
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isPhoneNow() ? { justifyContent: 'flex-end' } : null) }}>
-      {btn('−', onDec, !!decDisabled, decTitle)}
-      <span style={{
-        minWidth: 56, textAlign: 'center', fontFamily: t.fontMono, fontSize: 13,
-        color: t.text0, fontVariantNumeric: 'tabular-nums',
-      }}>{value}</span>
-      {btn('+', onInc, !!incDisabled, incTitle)}
+    <div className="eco-hstack">
+      <div className="eco-stepper">
+        <IconBtn icon={IconMinus} size={28} onClick={onDec} disabled={!!decDisabled} title={decTitle}/>
+        <span className="eco-mono" style={{ minWidth: 54, textAlign: 'center', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+          {value}
+        </span>
+        <IconBtn icon={IconPlus} size={28} onClick={onInc} disabled={!!incDisabled} title={incTitle}/>
+      </div>
       {onReset && resetLabel && (
-        <button type="button" onClick={onReset} style={{
-          border: 0, background: 'transparent', color: t.text3,
-          fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans, padding: '2px 6px',
-        }}>{resetLabel}</button>
+        <button type="button" className="eco-btn eco-btn--ghost eco-btn--xs" onClick={onReset}>{resetLabel}</button>
       )}
     </div>
   );
@@ -2119,7 +1602,7 @@ function UiZoomRow() {
   const tr = useT();
   const zoom = useUiZoom();
   return (
-    <Row icon={IconSearch}
+    <Row icon={IconSearch} first
       title={tr('settings.appearance.zoom.title')}
       desc={hasNativeZoom() ? tr('settings.appearance.zoom.desc_shortcut') : tr('settings.appearance.zoom.desc')}
       control={
@@ -2169,9 +1652,10 @@ function TerminalFontRows() {
       <Row icon={IconEdit}
         title={tr('settings.appearance.terminal.font_family')}
         desc={tr('settings.appearance.terminal.font_family_desc')}
+        wide
         control={
           <select value={prefs.fontFamilyId} onChange={(e) => setTermFontFamily(e.target.value)}
-            style={{ ...fieldStyle(t), width: isPhoneNow() ? '100%' : 220 }}>
+            className="eco-field eco-field--sm" style={selectWidth(220)}>
             {TERM_FONT_FAMILIES.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.family ?? tr('settings.appearance.terminal.font.system')}
@@ -2183,7 +1667,7 @@ function TerminalFontRows() {
       {/* Muestra con los colores reales del terminal: fuente y tamaño se ven
           acá antes de abrir una burbuja. */}
       <div style={{
-        marginTop: 12, padding: '10px 16px', borderRadius: 10,
+        padding: '14px 18px', borderRadius: 14,
         background: terminalBg(t, isLight), color: terminalFg(t, isLight),
         fontFamily: termFontStack(prefs.fontFamilyId), fontSize: prefs.fontSize, lineHeight: 1.25,
         whiteSpace: 'pre', overflowX: 'auto',
@@ -2227,247 +1711,191 @@ function SectionIntegrations() {
   const hasElectron = typeof window !== 'undefined' && !!window.electronAPI?.pickFolder;
 
   return (
-    <div style={{ width: '100%' }}>
-      <Header title={tr('settings.integrations.title')} sub={tr('settings.integrations.sub')}/>
-
-      <SectionLabel>{tr('settings.obsidian.label')}</SectionLabel>
-      <Glass radius={14} style={{ padding: 20, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-            background: t.accentFaint, color: t.accent,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconLayers size={20}/>
+    <>
+      <section className="eco-vstack">
+        <div className="eco-eyebrow">{tr('settings.obsidian.label')}</div>
+        <Card variant="stack">
+          <div className="eco-hstack" style={{ alignItems: 'flex-start', gap: 14 }}>
+            <IconTile icon={IconLayers} size="lg" accent/>
+            <div className="eco-grow">
+              <div className="eco-h3">{tr('settings.integrations.obsidian.title')}</div>
+              <div className="eco-sub">{tr('settings.integrations.obsidian.desc')}</div>
+            </div>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: t.text0, marginBottom: 4 }}>
-              {tr('settings.integrations.obsidian.title')}
-            </div>
-            <div style={{ fontSize: 13, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
-              {tr('settings.integrations.obsidian.desc')}
-            </div>
 
-            <div style={{
-              padding: 10, marginBottom: 12, borderRadius: 10,
-              background: t.bg2, fontSize: 12, color: t.text2,
-              display: 'flex', flexDirection: 'column', gap: 6,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <StatusDot color={validVault ? t.ok : (obs.vaultPath ? t.warn : t.text3)}/>
-                <span style={{ flex: 1 }}>
-                  {!obs.vaultPath ? 'Sin configurar — elegí un vault abajo.'
-                    : !obs.vaultExists ? 'El path configurado no existe en disco.'
-                    : !obs.hasParaStructure ? `Vault detectado · ${obs.noteCount} notas · estructura PARA se creará al guardar.`
-                    : `Vault listo · ${obs.noteCount} notas · estructura PARA detectada.`}
-                </span>
-              </div>
-              {obs.vaultPath && (
-                <div style={{
-                  fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-                  paddingLeft: 16, wordBreak: 'break-all',
-                }}>
-                  {obs.enabled && validVault ? '✓ activo: ' : ''}{obs.vaultPath}
-                </div>
-              )}
+          <div className="eco-inset eco-vstack" style={{ gap: 6 }}>
+            <div className="eco-hstack eco-muted" style={{ gap: 8 }}>
+              <StatusDot color={validVault ? t.ok : (obs.vaultPath ? t.warn : t.text3)}/>
+              <span className="eco-grow">
+                {!obs.vaultPath ? 'Sin configurar — elegí un vault abajo.'
+                  : !obs.vaultExists ? 'El path configurado no existe en disco.'
+                  : !obs.hasParaStructure ? `Vault detectado · ${obs.noteCount} notas · estructura PARA se creará al guardar.`
+                  : `Vault listo · ${obs.noteCount} notas · estructura PARA detectada.`}
+              </span>
             </div>
-
-            {/* Vaults detectados en Obsidian. Si la lista vino vacía,
-                mostramos un placeholder + botón Refrescar — útil cuando el
-                user instaló Obsidian o configuró un vault después de abrir
-                Eco, o si el detector falló en la primera carga (race con
-                session/backend warmup). */}
-            {vaults.length === 0 && (
-              <div style={{
-                marginBottom: 12, padding: 10, borderRadius: 10,
-                background: t.bg2, border: `1px dashed ${t.glassBorder}`,
-                fontSize: 11, color: t.text2, lineHeight: 1.5,
-                display: 'flex', alignItems: 'center', gap: 10,
-              }}>
-                <div style={{ flex: 1 }}>
-                  No se detectaron vaults de Obsidian instalados. Asegurate de tener Obsidian abierto al menos una vez,
-                  o pegá el path manualmente abajo.
-                </div>
-                <Btn kind="ghost" size="sm" onClick={() => void refresh()}>
-                  Refrescar
-                </Btn>
+            {obs.vaultPath && (
+              <div className="eco-num" style={{ paddingLeft: 16, wordBreak: 'break-all' }}>
+                {obs.enabled && validVault ? '✓ activo: ' : ''}{obs.vaultPath}
               </div>
             )}
-            {vaults.length > 0 && (
-              <>
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  marginBottom: 4,
-                }}>
-                  <label style={{ fontSize: 11, color: t.text2 }}>
-                    {tr('settings.integrations.obsidian.detected_label')}
-                  </label>
-                  <button type="button" onClick={() => void refresh()}
-                    style={{
-                      border: 0, background: 'transparent', cursor: 'pointer',
-                      color: t.text3, fontSize: 11, padding: '2px 6px',
-                    }}
-                    title={tr('settings.obsidian.refresh_tooltip')}>
-                    {tr('settings.obsidian.refresh_btn')}
-                  </button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
-                  {vaults.map((v) => {
-                    const selected = v.path === vaultDraft;
-                    return (
-                      <button
-                        key={v.id}
-                        type="button"
-                        onClick={() => setVaultDraft(v.path)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '8px 10px', borderRadius: 8,
-                          border: `1px solid ${selected ? t.accent : t.glassBorder}`,
-                          background: selected ? t.accentFaint : t.bg2,
-                          color: t.text0,
-                          cursor: 'pointer', textAlign: 'left',
-                          transition: T_UI,
-                        }}>
-                        <div style={{
-                          width: 28, height: 28, borderRadius: 6, flexShrink: 0,
-                          background: selected ? t.accent : t.bg3,
-                          color: selected ? t.accentOn : t.text1,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-                        }}>{v.name.charAt(0).toUpperCase()}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
-                            {v.name}
-                            {v.open && (
-                              <span style={{ marginLeft: 8, fontSize: 11, color: t.ok, fontWeight: 500 }}>
-                                · {tr('settings.integrations.obsidian.vault_open')}
-                              </span>
-                            )}
-                          </div>
-                          <div style={{
-                            fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>{v.path}</div>
-                        </div>
-                        {selected && <IconCheck size={14} style={{ color: t.accent }}/>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+          </div>
 
-            <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 4 }}>
+          {/* Vaults detectados en Obsidian. Si la lista vino vacía,
+              mostramos un placeholder + botón Refrescar — útil cuando el
+              user instaló Obsidian o configuró un vault después de abrir
+              Eco, o si el detector falló en la primera carga (race con
+              session/backend warmup). */}
+          {vaults.length === 0 && (
+            <div className="eco-inset eco-hstack eco-hstack--wrap eco-sub">
+              <div className="eco-grow" style={{ flexBasis: 220 }}>
+                No se detectaron vaults de Obsidian instalados. Asegurate de tener Obsidian abierto al menos una vez,
+                o pegá el path manualmente abajo.
+              </div>
+              <Btn kind="soft" size="sm" onClick={() => void refresh()}>
+                Refrescar
+              </Btn>
+            </div>
+          )}
+          {vaults.length > 0 && (
+            <div className="eco-vstack" style={{ gap: 6 }}>
+              <div className="eco-hstack">
+                <label className="eco-field-label eco-grow">
+                  {tr('settings.integrations.obsidian.detected_label')}
+                </label>
+                <button type="button" className="eco-btn eco-btn--ghost eco-btn--xs" onClick={() => void refresh()}
+                  title={tr('settings.obsidian.refresh_tooltip')}>
+                  {tr('settings.obsidian.refresh_btn')}
+                </button>
+              </div>
+              <div className="eco-optlist" style={{ background: 'transparent', padding: 0 }}>
+                {vaults.map((v) => {
+                  const selected = v.path === vaultDraft;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setVaultDraft(v.path)}
+                      className={cx('eco-option', selected && 'is-on')}>
+                      <span className="eco-option__tile">{v.name.charAt(0).toLocaleUpperCase()}</span>
+                      <span className="eco-option__text">
+                        <span className="eco-option__title">
+                          {v.name}
+                          {v.open && (
+                            <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--ok)' }}>
+                              · {tr('settings.integrations.obsidian.vault_open')}
+                            </span>
+                          )}
+                        </span>
+                        <span className="eco-option__sub">{v.path}</span>
+                      </span>
+                      {selected && <IconCheck size={15} className="eco-option__check"/>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="eco-vstack" style={{ gap: 6 }}>
+            <label className="eco-field-label">
               {tr('settings.integrations.obsidian.vault_label')}
             </label>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
               <input
+                className="eco-field eco-field--sm eco-field--mono eco-grow"
+                style={{ flexBasis: 220, ...BOX_FIELD }}
                 value={vaultDraft}
                 onChange={(e) => setVaultDraft(e.target.value)}
                 placeholder="/Users/.../Documents/Obsidian/Aditum-KB"
                 spellCheck={false}
                 autoCorrect="off"
-                style={{ ...fieldStyle(t), flex: 1 }}
               />
               {hasElectron && (
-                <Btn kind="ghost" size="sm" onClick={() => void pickFolder()}>
+                <Btn kind="raised" onClick={() => void pickFolder()}>
                   {tr('settings.integrations.obsidian.pick_folder')}
                 </Btn>
               )}
             </div>
-
-            {/* Modo de guardado: built-in vs custom command. */}
-            <div style={{
-              marginTop: 16, padding: 10, borderRadius: 10,
-              border: `1px solid ${t.glassBorder}`, background: t.bg2,
-            }}>
-              <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 8 }}>
-                {tr('settings.obsidian.mode_label')}
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <ModeRow
-                  active={mode === 'builtin'}
-                  title={tr('settings.obsidian.mode_builtin_title')}
-                  desc={tr('settings.obsidian.mode_builtin_desc')}
-                  onClick={() => setMode('builtin')}
-                  t={t}
-                />
-                <ModeRow
-                  active={mode === 'custom'}
-                  title={tr('settings.obsidian.mode_custom_title')}
-                  desc={tr('settings.obsidian.mode_custom_desc')}
-                  onClick={() => setMode('custom')}
-                  t={t}
-                />
-              </div>
-              {mode === 'custom' && (
-                <div style={{ marginTop: 10 }}>
-                  <label style={{ display: 'block', fontSize: 11, color: t.text2, marginBottom: 4 }}>
-                    Comando
-                  </label>
-                  <input
-                    value={commandDraft}
-                    onChange={(e) => setCommandDraft(e.target.value)}
-                    placeholder='claude -p "/kb"'
-                    spellCheck={false}
-                    autoCorrect="off"
-                    style={{ ...fieldStyle(t), width: '100%', fontFamily: t.fontMono, fontSize: 12 }}
-                  />
-                  <div style={{ fontSize: 11, color: t.text3, marginTop: 4, lineHeight: 1.5 }}>
-                    Se ejecuta con shell habilitado, cwd = workspace de la burbuja, y el markdown de la sesión se pipea por stdin.
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Toggle
-                  on={obs.enabled && (mode === 'custom' ? !!commandDraft.trim() : validVault)}
-                  onChange={(v) => { if (mode === 'custom' ? !!commandDraft.trim() : (validVault || !v)) void persist(v, obs.vaultPath); }}
-                  disabled={mode === 'custom' ? !commandDraft.trim() : !validVault}
-                />
-                <span style={{ fontSize: 13, color: t.text1 }}>
-                  {tr('settings.integrations.obsidian.enabled_label')}
-                </span>
-              </div>
-              <div style={{ flex: 1 }}/>
-              <Btn
-                kind="primary" size="sm"
-                onClick={() => void persist(obs.enabled, vaultDraft, mode, commandDraft)}
-                disabled={busy || (vaultDraft === obs.vaultPath && mode === obs.mode && commandDraft === obs.customCommand)}>
-                {busy ? '...' : tr('common.save')}
-              </Btn>
-            </div>
-
-            {msg && (
-              <div style={{
-                marginTop: 10, fontSize: 12,
-                color: msg.ok ? t.ok : t.err,
-              }}>{msg.text}</div>
-            )}
-
-            <div style={{ marginTop: 16, padding: 10, borderRadius: 8, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
-              <strong style={{ color: t.text2 }}>{tr('settings.integrations.obsidian.howto')}</strong>{' '}
-              {tr('settings.integrations.obsidian.howto_desc')}
-            </div>
           </div>
-        </div>
-      </Glass>
 
-      {/* SectionLabel solo trae padding INFERIOR, así que dos secciones
-          seguidas quedan pegadas: la tarjeta de una termina contra el rótulo
-          de la siguiente. El aire va acá, en el separador entre secciones. */}
-      <div style={{ marginTop: 24 }}>
-        <SectionLabel>{tr('settings.tailnet.label')}</SectionLabel>
-      </div>
-      <TailnetCard/>
+          {/* Modo de guardado: built-in vs custom command. */}
+          <div className="eco-vstack" style={{ gap: 6 }}>
+            <label className="eco-field-label">{tr('settings.obsidian.mode_label')}</label>
+            <div className="eco-optlist" style={{ background: 'transparent', padding: 0 }}>
+              <ModeRow
+                active={mode === 'builtin'}
+                title={tr('settings.obsidian.mode_builtin_title')}
+                desc={tr('settings.obsidian.mode_builtin_desc')}
+                onClick={() => setMode('builtin')}
+              />
+              <ModeRow
+                active={mode === 'custom'}
+                title={tr('settings.obsidian.mode_custom_title')}
+                desc={tr('settings.obsidian.mode_custom_desc')}
+                onClick={() => setMode('custom')}
+              />
+            </div>
+            {mode === 'custom' && (
+              <div className="eco-vstack" style={{ gap: 6, marginTop: 6 }}>
+                <label className="eco-field-label">
+                  Comando
+                </label>
+                <input
+                  className="eco-field eco-field--sm eco-field--mono"
+                  style={BOX_FIELD}
+                  value={commandDraft}
+                  onChange={(e) => setCommandDraft(e.target.value)}
+                  placeholder='claude -p "/kb"'
+                  spellCheck={false}
+                  autoCorrect="off"
+                />
+                <div className="eco-sub">
+                  Se ejecuta con shell habilitado, cwd = workspace de la burbuja, y el markdown de la sesión se pipea por stdin.
+                </div>
+              </div>
+            )}
+          </div>
 
-      <div style={{ marginTop: 24 }}>
-        <SectionLabel>{tr('settings.mcp.label')}</SectionLabel>
-      </div>
-      <McpCard/>
-    </div>
+          <div className="eco-hstack eco-hstack--wrap">
+            <div className="eco-hstack eco-grow" style={{ gap: 10, flexBasis: 200 }}>
+              <Toggle
+                on={obs.enabled && (mode === 'custom' ? !!commandDraft.trim() : validVault)}
+                onChange={(v) => { if (mode === 'custom' ? !!commandDraft.trim() : (validVault || !v)) void persist(v, obs.vaultPath); }}
+                disabled={mode === 'custom' ? !commandDraft.trim() : !validVault}
+              />
+              <span className="eco-muted">
+                {tr('settings.integrations.obsidian.enabled_label')}
+              </span>
+            </div>
+            <Btn
+              kind="primary"
+              onClick={() => void persist(obs.enabled, vaultDraft, mode, commandDraft)}
+              disabled={busy || (vaultDraft === obs.vaultPath && mode === obs.mode && commandDraft === obs.customCommand)}>
+              {busy ? '...' : tr('common.save')}
+            </Btn>
+          </div>
+
+          {msg && (
+            <div className={cx('eco-banner', msg.ok ? 'eco-banner--ok' : 'eco-banner--err')}>{msg.text}</div>
+          )}
+
+          <div className="eco-sub">
+            <strong className="eco-muted">{tr('settings.integrations.obsidian.howto')}</strong>{' '}
+            {tr('settings.integrations.obsidian.howto_desc')}
+          </div>
+        </Card>
+      </section>
+
+      <section className="eco-vstack">
+        <div className="eco-eyebrow">{tr('settings.tailnet.label')}</div>
+        <TailnetCard/>
+      </section>
+
+      <section className="eco-vstack">
+        <div className="eco-eyebrow">{tr('settings.mcp.label')}</div>
+        <McpCard/>
+      </section>
+    </>
   );
 }
 
@@ -2475,7 +1903,6 @@ function SectionIntegrations() {
 // toggle queda activado, cada vez que abrís Eco el backend se vuelve a
 // publicar solo en https://<maquina>.ts.net.
 function TailnetCard() {
-  const t = useTokens();
   const tr = useT();
   const { status, saving, setEnabled } = useTailnet();
   const [copied, setCopied] = useState(false);
@@ -2490,52 +1917,34 @@ function TailnetCard() {
   }
 
   return (
-    <Glass radius={14} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 500, color: t.text0 }}>
-            {tr('settings.tailnet.title')}
-          </div>
-          <div style={{ fontSize: 12, color: t.text2, marginTop: 4, lineHeight: 1.5 }}>
-            {tr('settings.tailnet.desc')}
-          </div>
+    <Card variant="stack">
+      <div className="eco-hstack" style={{ alignItems: 'flex-start', gap: 14 }}>
+        <IconTile icon={IconGlobe} size="lg" accent/>
+        <div className="eco-grow">
+          <div className="eco-h3">{tr('settings.tailnet.title')}</div>
+          <div className="eco-sub">{tr('settings.tailnet.desc')}</div>
         </div>
         <Toggle on={status.enabled} disabled={saving} onChange={(v) => { void setEnabled(v); }}/>
       </div>
 
       {status.enabled && status.active && status.url && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '10px 12px', borderRadius: 10,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: t.ok, flexShrink: 0 }}/>
-          <code style={{
-            flex: 1, minWidth: 0, fontFamily: t.fontMono, fontSize: 12, color: t.text0,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{status.url}</code>
-          <Btn size="sm" kind="secondary" onClick={() => { void copyUrl(); }}>
+        <div className="eco-inset eco-hstack" style={{ gap: 10 }}>
+          <span className="eco-dot eco-dot--lg eco-dot--ok"/>
+          <code className="eco-mono eco-grow eco-truncate" style={{ fontSize: 12.5 }}>{status.url}</code>
+          <Btn size="sm" kind="soft" onClick={() => { void copyUrl(); }}>
             {copied ? tr('common.copied') : tr('common.copy')}
           </Btn>
         </div>
       )}
 
       {status.enabled && !status.active && (
-        <div style={{
-          padding: '10px 12px', borderRadius: 10,
-          background: `color-mix(in oklch, ${t.warn} 12%, transparent)`,
-          border: `1px solid color-mix(in oklch, ${t.warn} 30%, transparent)`,
-          fontSize: 12, color: t.warn, lineHeight: 1.5,
-        }}>
+        <div className="eco-banner eco-banner--warn" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
           {tr('settings.tailnet.unavailable')}
           {/* El motivo crudo del backend: "Tailscale en estado X", "timeout
               ejecutando <bin>", etc. Sin esto cualquier fallo se ve igual y
               no hay por dónde empezar a mirar. */}
           {status.error && (
-            <div style={{
-              marginTop: 6, fontFamily: t.fontMono, fontSize: 11,
-              color: t.text2, wordBreak: 'break-word',
-            }}>{status.error}</div>
+            <div className="eco-mono eco-muted" style={{ fontSize: 12, wordBreak: 'break-word' }}>{status.error}</div>
           )}
         </div>
       )}
@@ -2543,19 +1952,9 @@ function TailnetCard() {
       {/* Requisitos. Van siempre visibles: son cosas que se configuran FUERA
           de Eco (en la app de Tailscale y en la consola de la tailnet), así
           que si falta alguna no hay nada acá que lo delate. */}
-      <div style={{
-        padding: '10px 12px', borderRadius: 10,
-        background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      }}>
-        <div style={{
-          fontSize: 11, color: t.text2,
-          fontWeight: 500, marginBottom: 8,
-        }}>{tr('settings.tailnet.reqs.title')}</div>
-        <ul style={{
-          margin: 0, paddingLeft: 16,
-          display: 'flex', flexDirection: 'column', gap: 6,
-          fontSize: 12, color: t.text2, lineHeight: 1.5,
-        }}>
+      <div className="eco-inset">
+        <div className="eco-label" style={{ marginBottom: 8 }}>{tr('settings.tailnet.reqs.title')}</div>
+        <ul className="eco-vstack eco-sub" style={{ margin: 0, paddingLeft: 18, gap: 6 }}>
           <li>{tr('settings.tailnet.reqs.app')}</li>
           <li>{tr('settings.tailnet.reqs.magicdns')}</li>
           <li>{tr('settings.tailnet.reqs.serve')}</li>
@@ -2564,10 +1963,8 @@ function TailnetCard() {
         </ul>
       </div>
 
-      <div style={{ fontSize: 12, color: t.text3, lineHeight: 1.5 }}>
-        {tr('settings.tailnet.hint')}
-      </div>
-    </Glass>
+      <div className="eco-sub">{tr('settings.tailnet.hint')}</div>
+    </Card>
   );
 }
 
@@ -2626,117 +2023,78 @@ function McpCard() {
     : tr('settings.mcp.status.not_installed');
 
   return (
-    <Glass radius={14} style={{ padding: 20, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-          background: t.accentFaint, color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <IconTerminal size={20}/>
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 500, color: t.text0, marginBottom: 4 }}>
-            {tr('settings.mcp.title')}
-          </div>
-          <div style={{ fontSize: 13, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
-            {tr('settings.mcp.desc')}
-          </div>
-
-          <div style={{
-            padding: 10, marginBottom: 12, borderRadius: 10,
-            background: t.bg2, fontSize: 12, color: t.text2,
-            display: 'flex', flexDirection: 'column', gap: 6,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <StatusDot color={statusColor}/>
-              <span style={{ flex: 1 }}>{mcp.loading ? tr('common.loading') : statusText}</span>
-            </div>
-            {mcp.binaryPath && (
-              <div style={{
-                fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-                paddingLeft: 16, wordBreak: 'break-all',
-              }}>
-                {mcp.binaryPath}
-              </div>
-            )}
-          </div>
-
-          {mcp.error && (
-            <div style={{ marginBottom: 12, fontSize: 12, color: t.err }}>
-              {mcp.error}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {mcp.installed ? (
-              <Btn kind="ghost" onClick={() => void handleUninstall()} disabled={busy || mcp.loading}>
-                {tr('settings.mcp.btn.uninstall')}
-              </Btn>
-            ) : (
-              <Btn
-                kind="primary"
-                onClick={() => void handleInstall()}
-                disabled={busy || mcp.loading || !mcp.binaryAvailable || !mcp.claudeAvailable}>
-                {tr('settings.mcp.btn.install')}
-              </Btn>
-            )}
-            <Btn kind="ghost" onClick={() => void mcp.refresh()} disabled={busy || mcp.loading}>
-              {tr('settings.mcp.btn.refresh')}
-            </Btn>
-            {installCommand && (
-              <Btn kind="ghost" onClick={() => void handleCopy()}>
-                {copied ? tr('settings.mcp.btn.copied') : tr('settings.mcp.btn.copy_cmd')}
-              </Btn>
-            )}
-          </div>
-
-          {msg && (
-            <div style={{ marginTop: 10, fontSize: 12, color: msg.ok ? t.ok : t.err }}>
-              {msg.text}
-            </div>
-          )}
-
-          <div style={{ marginTop: 16, padding: 10, borderRadius: 8, background: t.bg2, fontSize: 11, color: t.text3, lineHeight: 1.5 }}>
-            <strong style={{ color: t.text2 }}>{tr('settings.mcp.howto')}</strong>{' '}
-            {tr('settings.mcp.howto_desc')}
-          </div>
+    <Card variant="stack">
+      <div className="eco-hstack" style={{ alignItems: 'flex-start', gap: 14 }}>
+        <IconTile icon={IconTerminal} size="lg" accent/>
+        <div className="eco-grow">
+          <div className="eco-h3">{tr('settings.mcp.title')}</div>
+          <div className="eco-sub">{tr('settings.mcp.desc')}</div>
         </div>
       </div>
-    </Glass>
+
+      <div className="eco-inset eco-vstack" style={{ gap: 6 }}>
+        <div className="eco-hstack eco-muted" style={{ gap: 8 }}>
+          <StatusDot color={statusColor}/>
+          <span className="eco-grow">{mcp.loading ? tr('common.loading') : statusText}</span>
+        </div>
+        {mcp.binaryPath && (
+          <div className="eco-num" style={{ paddingLeft: 16, wordBreak: 'break-all' }}>
+            {mcp.binaryPath}
+          </div>
+        )}
+      </div>
+
+      {mcp.error && <div className="eco-banner eco-banner--err">{mcp.error}</div>}
+
+      <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
+        {mcp.installed ? (
+          <Btn kind="raised" onClick={() => void handleUninstall()} disabled={busy || mcp.loading}>
+            {tr('settings.mcp.btn.uninstall')}
+          </Btn>
+        ) : (
+          <Btn
+            kind="primary"
+            onClick={() => void handleInstall()}
+            disabled={busy || mcp.loading || !mcp.binaryAvailable || !mcp.claudeAvailable}>
+            {tr('settings.mcp.btn.install')}
+          </Btn>
+        )}
+        <Btn kind="raised" onClick={() => void mcp.refresh()} disabled={busy || mcp.loading}>
+          {tr('settings.mcp.btn.refresh')}
+        </Btn>
+        {installCommand && (
+          <Btn kind="raised" onClick={() => void handleCopy()}>
+            {copied ? tr('settings.mcp.btn.copied') : tr('settings.mcp.btn.copy_cmd')}
+          </Btn>
+        )}
+      </div>
+
+      {msg && (
+        <div className={cx('eco-banner', msg.ok ? 'eco-banner--ok' : 'eco-banner--err')}>{msg.text}</div>
+      )}
+
+      <div className="eco-sub">
+        <strong className="eco-muted">{tr('settings.mcp.howto')}</strong>{' '}
+        {tr('settings.mcp.howto_desc')}
+      </div>
+    </Card>
   );
 }
 
-function ModeRow({ active, title, desc, onClick, t }: {
+function ModeRow({ active, title, desc, onClick }: {
   active: boolean;
   title: string;
   desc: string;
   onClick: () => void;
-  t: ReturnType<typeof useTokens>;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '8px 10px', borderRadius: 8,
-        border: `1px solid ${active ? t.accent : t.glassBorder}`,
-        background: active ? t.accentFaint : t.bg3,
-        color: t.text0, cursor: 'pointer', textAlign: 'left',
-        transition: T_UI,
-      }}>
-      <span style={{
-        flexShrink: 0, marginTop: 2,
-        width: 14, height: 14, borderRadius: '50%',
-        border: `2px solid ${active ? t.accent : t.text3}`,
-        background: active ? t.accent : 'transparent',
-        boxShadow: active ? `inset 0 0 0 2px ${t.bg3}` : 'none',
-      }}/>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{title}</div>
-        <div style={{ fontSize: 11, color: t.text2, marginTop: 2, lineHeight: 1.4 }}>{desc}</div>
-      </div>
+    <button type="button" onClick={onClick} aria-pressed={active}
+      className={cx('eco-option', active && 'is-on')}>
+      <span className="eco-option__text">
+        <span className="eco-option__title">{title}</span>
+        <span className="eco-sub">{desc}</span>
+      </span>
+      {active && <IconCheck size={15} className="eco-option__check"/>}
     </button>
   );
 }
@@ -2751,7 +2109,6 @@ type AboutSectionDef = {
 };
 
 function UpdatesRow() {
-  const t = useTokens();
   const tr = useT();
   const [supported, setSupported] = useState<boolean>(false);
   const [checking, setChecking] = useState(false);
@@ -2810,14 +2167,6 @@ function UpdatesRow() {
               ? `${tr('settings.about.updates.error')}: ${errMsg}`
               : tr('settings.about.updates.desc');
 
-  const btnStyle: CSSProperties = {
-    padding: '6px 16px', borderRadius: 8,
-    border: `1px solid ${t.glassBorder}`,
-    background: t.bg2, color: t.text0,
-    fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-    cursor: checking ? 'wait' : 'pointer', opacity: !supported ? 0.5 : 1,
-  };
-
   return (
     <Row
       icon={IconBolt}
@@ -2825,13 +2174,13 @@ function UpdatesRow() {
       desc={desc}
       control={
         status === 'ready' ? (
-          <button type="button" onClick={() => void install()} style={{ ...btnStyle, borderColor: t.ok, color: t.ok }}>
+          <Btn kind="solid" onClick={() => void install()}>
             {tr('settings.about.updates.install_restart')}
-          </button>
+          </Btn>
         ) : (
-          <button type="button" onClick={() => void check()} disabled={!supported || checking} style={btnStyle}>
+          <Btn kind="raised" onClick={() => void check()} disabled={!supported || checking}>
             {tr('settings.about.updates.check')}
-          </button>
+          </Btn>
         )
       }/>
   );
@@ -2841,7 +2190,6 @@ function UpdatesRow() {
 // web view más chico que la pantalla (bug de WebKit 301994) y desde una
 // captura no se distingue qué franja pinta Eco y cuál el sistema.
 function ViewportDiagnostics() {
-  const t = useTokens();
   const tr = useT();
   const [lines, setLines] = useState<string[]>([]);
   useEffect(() => {
@@ -2869,20 +2217,17 @@ function ViewportDiagnostics() {
   }, []);
   if (!isMobileNow()) return null;
   return (
-    <div style={{ padding: '10px 12px', borderRadius: 10, background: t.bg2, border: `1px solid ${t.glassBorder}` }}>
-      <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{tr('settings.about.viewport.title')}</div>
-      <div style={{ fontSize: 12, color: t.text2, margin: '4px 0 8px', lineHeight: 1.5 }}>
-        {tr('settings.about.viewport.desc')}
-      </div>
-      <pre style={{ margin: 0, fontFamily: t.fontMono, fontSize: 12, color: t.text1, whiteSpace: 'pre-wrap' }}>
+    <Card variant="stack" style={{ gap: 6 }}>
+      <div className="eco-label">{tr('settings.about.viewport.title')}</div>
+      <div className="eco-sub">{tr('settings.about.viewport.desc')}</div>
+      <pre className="eco-mono eco-muted" style={{ margin: 0, fontSize: 12, whiteSpace: 'pre-wrap' }}>
         {lines.join('\n')}
       </pre>
-    </div>
+    </Card>
   );
 }
 
 function SectionAbout() {
-  const t = useTokens();
   const tr = useT();
   const [version, setVersion] = useState<string>('1.0.0');
   const [platform, setPlatform] = useState<string>('');
@@ -2910,7 +2255,7 @@ function SectionAbout() {
   const sections: AboutSectionDef[] = [
     { id: 'what',       group: 'start',     icon: IconInfo,     title: tr('settings.about.what.title'),
       keywords: 'overview qué hace eco descripción introducción',
-      render: () => <p style={{ margin: 0, lineHeight: 1.7, fontSize: 14, color: t.text1 }}>{tr('settings.about.what.body')}</p> },
+      render: () => <p className="eco-muted" style={{ margin: 0, lineHeight: 1.7, fontSize: 14 }}>{tr('settings.about.what.body')}</p> },
     { id: 'quickstart', group: 'start',     icon: IconBolt,     title: tr('settings.about.quickstart.title'),
       keywords: 'inicio rápido empezar primer paso instalar setup claude cli api key wake word listener',
       render: () => <QuickStartList/> },
@@ -2974,201 +2319,116 @@ function SectionAbout() {
     { id: 'help',      label: tr('settings.about.group.help') },
     { id: 'tech',      label: tr('settings.about.group.tech') },
   ];
+  const phone = isPhoneNow();
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <>
       <ViewportDiagnostics/>
-      {/* Hero */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 20,
-        padding: '6px 4px 20px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-      }}>
-        <EcoMark size={56}/>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.5 }}>Eco</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>
-            {tr('settings.about.tagline')}
-          </p>
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-            <Chip mono>v{version}</Chip>
-            <Chip mono>{platform || 'web'}</Chip>
-            <Chip color={isPackaged ? t.ok : t.warn}>
-              {isPackaged ? tr('settings.about.packaged') : tr('settings.about.dev')}
-            </Chip>
+      <Card variant="list">
+        <div className="eco-row" style={{ gap: '14px 18px' }}>
+          <EcoMark size={46}/>
+          <div className="eco-row__main">
+            <div style={{ fontSize: 22, letterSpacing: '-.02em' }}>Eco</div>
+            <div className="eco-muted" style={{ textWrap: 'pretty' }}>{tr('settings.about.tagline')}</div>
+            <div className="eco-hstack eco-hstack--wrap" style={{ gap: 6, marginTop: 8 }}>
+              <Chip mono>v{version}</Chip>
+              <Chip mono>{platform || 'web'}</Chip>
+              <Chip tone={isPackaged ? 'ok' : 'warn'}>
+                {isPackaged ? tr('settings.about.packaged') : tr('settings.about.dev')}
+              </Chip>
+            </div>
+            <div className="eco-muted" style={{ marginTop: 8, fontSize: 12.5 }}>
+              <span style={{ color: 'var(--tx)' }}>Sergio Castro</span> · {tr('settings.about.credits.role')}
+            </div>
+          </div>
+          <div className="eco-inputbar eco-inputbar--sm"
+            style={phone ? { flexBasis: '100%' } : { flex: '0 1 280px', minWidth: 180 }}>
+            <IconSearch size={14}/>
+            <input
+              type="text"
+              className="eco-input-bare"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={tr('settings.about.search.placeholder')}
+            />
+            {q && (
+              <IconBtn icon={IconX} size={24} title={tr('settings.security.clear.btn')} onClick={() => setQ('')}/>
+            )}
           </div>
         </div>
-        {/* Search */}
-        <div style={{
-          position: 'relative',
-          ...(isPhoneNow() ? { width: '100%' } : { width: 280, flexShrink: 0 }),
-        }}>
-          <span style={{
-            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-            color: t.text3, display: 'inline-flex',
-          }}>
-            <IconCommand size={14}/>
-          </span>
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={tr('settings.about.search.placeholder')}
-            style={{
-              width: '100%', boxSizing: 'border-box',
-              padding: '8px 12px 8px 34px',
-              borderRadius: 8, border: `1px solid ${t.glassBorder}`,
-              background: t.bg2, color: t.text0,
-              fontFamily: t.fontSans, fontSize: 13,
-              outline: 'none',
-            }}
-          />
-          {q && (
-            <button
-              type="button"
-              onClick={() => setQ('')}
-              aria-label="Clear"
-              style={{
-                position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
-                width: 22, height: 22, borderRadius: 6, border: 0,
-                background: 'transparent', color: t.text3,
-                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >×</button>
-          )}
-        </div>
-      </div>
+        <UpdatesRow/>
+      </Card>
 
-      <UpdatesRow/>
-
-      {/* Body */}
-      <div style={{
-        display: 'flex', gap: 20, alignItems: 'flex-start',
-        // El índice interno de "Acerca de" es otro rail de 240px: en el
-        // teléfono se apila arriba del contenido en vez de robarle el ancho.
-        ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 12 } : {}),
-      }}>
-        {/* Inner sidebar */}
-        <aside style={{
-          ...(isPhoneNow()
-            ? { width: '100%' }
-            : { width: 240, flexShrink: 0, position: 'sticky' as const, top: 0 }),
-          display: 'flex', flexDirection: 'column', gap: 2,
-        }}>
+      <div className="eco-split">
+        {/* Índice: en el teléfono la clase lo acuesta como tira horizontal,
+            así que rótulos e ítems van como hijos directos. */}
+        <Card as="aside" variant="nav" className="eco-split__nav"
+          style={phone ? undefined : { position: 'sticky', top: 0 }}>
           {isSearching && (
-            <div style={{
-              padding: '6px 12px 10px',
-              fontSize: 11, color: t.text2,
-              fontFamily: t.fontMono,
-            }}>
+            <div className="eco-num" style={{ flex: 'none', padding: '8px 12px' }}>
               {filtered.length === 0
                 ? tr('settings.about.search.empty')
                 : `${filtered.length} ${filtered.length === 1 ? tr('settings.about.search.one') : tr('settings.about.search.many')}`}
             </div>
           )}
-          {groups.map((g) => {
+          {groups.flatMap((g) => {
             const items = filtered.filter((s) => s.group === g.id);
-            if (items.length === 0) return null;
-            return (
-              <div key={g.id} style={{ marginBottom: 8 }}>
-                <div style={{
-                  fontSize: 11, color: t.text3,
-                  fontWeight: 500,
-                  padding: '6px 12px',
-                }}>{g.label}</div>
-                {items.map((s) => {
-                  const isActive = activeSection && s.id === activeSection.id;
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setActiveId(s.id)}
-                      style={{
-                        width: '100%',
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '8px 12px', borderRadius: 8, border: 0,
-                        background: isActive ? t.bg3 : 'transparent',
-                        color: isActive ? t.text0 : t.text1,
-                        fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-                        cursor: 'pointer', textAlign: 'left',
-                        transition: 'background 120ms ease',
-                      }}
-                      onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = t.bg2; }}
-                      onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-                    >
-                      <s.icon size={14}/>
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {s.title}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            );
+            if (items.length === 0) return [];
+            return [
+              <div key={`g-${g.id}`} className="eco-eyebrow"
+                style={{ flex: 'none', alignSelf: phone ? 'center' : undefined, padding: phone ? '0 8px' : '10px 12px 4px', whiteSpace: 'nowrap' }}>
+                {g.label}
+              </div>,
+              ...items.map((s) => {
+                const isActive = !!activeSection && s.id === activeSection.id;
+                return (
+                  <button key={s.id} type="button" onClick={() => setActiveId(s.id)}
+                    className={cx('eco-nav-item eco-nav-item--sm', isActive && 'is-on')}>
+                    <s.icon size={14}/>
+                    <span className="eco-truncate">{s.title}</span>
+                  </button>
+                );
+              }),
+            ];
           })}
-        </aside>
+        </Card>
 
-        {/* Content */}
-        <main style={{
-          flex: 1, minWidth: 0,
-          background: t.bg2,
-          border: `1px solid ${t.glassBorder}`,
-          borderRadius: 16,
-          padding: '24px 24px',
-        }}>
+        <Card as="section" className="eco-split__body" style={{ gap: 14 }}>
           {activeSection ? (
             <>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                marginBottom: 16, paddingBottom: 12,
-                borderBottom: `1px solid ${t.glassBorder}`,
-              }}>
-                <span style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: t.accentFaint, color: t.accent,
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <activeSection.icon size={16}/>
-                </span>
-                <h3 style={{
-                  margin: 0, fontSize: 16, fontWeight: 500, color: t.text0,
-                  
-                }}>{activeSection.title}</h3>
+              <div className="eco-hstack" style={{ gap: 12 }}>
+                <IconTile icon={activeSection.icon} accent/>
+                <h3 className="eco-h2">{activeSection.title}</h3>
               </div>
-              <div style={{ color: t.text1, fontSize: 13, lineHeight: 1.55 }}>
-                {activeSection.render()}
-              </div>
+              <div>{activeSection.render()}</div>
             </>
           ) : (
-            <div style={{
-              padding: 40, textAlign: 'center',
-              color: t.text2, fontSize: 13,
-            }}>
-              {tr('settings.about.search.empty')}
-            </div>
+            <div className="eco-empty">{tr('settings.about.search.empty')}</div>
           )}
-        </main>
+        </Card>
       </div>
+    </>
+  );
+}
+
+function Chip({ children, mono, tone }: { children: ReactNode; mono?: boolean; tone?: 'ok' | 'warn' }) {
+  return (
+    <span className={cx('eco-chip', tone ? `eco-chip--${tone}` : 'eco-chip--on-card', mono && 'eco-mono')}
+      style={{ fontSize: 12 }}>{children}</span>
+  );
+}
+
+// Bloque pregunta/respuesta de la ayuda: título + texto, separado por línea.
+function HelpItem({ title, children }: { title: ReactNode; children: ReactNode }) {
+  return (
+    <div className="eco-row eco-row--tight" style={{ display: 'block' }}>
+      <div className="eco-label">{title}</div>
+      <div className="eco-muted" style={{ marginTop: 2, textWrap: 'pretty' }}>{children}</div>
     </div>
   );
 }
 
-function Chip({ children, mono, color }: { children: ReactNode; mono?: boolean; color?: string }) {
-  const t = useTokens();
-  return (
-    <span style={{
-      padding: '4px 8px', borderRadius: 999,
-      background: color ? `color-mix(in oklch, ${color} 14%, transparent)` : t.bg3,
-      color: color ?? t.text1,
-      border: `1px solid ${color ? `color-mix(in oklch, ${color} 32%, transparent)` : t.glassBorder}`,
-      fontFamily: mono ? t.fontMono : t.fontSans,
-      fontSize: 11, fontWeight: 500,
-    }}>{children}</span>
-  );
-}
-
 function FeatureGrid() {
-  const t = useTokens();
   const tr = useT();
   const features = [
     { icon: IconCommand,  title: tr('settings.about.feat.agents.title'),  body: tr('settings.about.feat.agents.body') },
@@ -3184,24 +2444,14 @@ function FeatureGrid() {
     { icon: IconTrash,    title: tr('settings.about.feat.cleanup.title'),  body: tr('settings.about.feat.cleanup.body') },
   ];
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-      gap: 10, marginTop: 6,
-    }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))', gap: 10 }}>
       {features.map((f, i) => (
-        <div key={i} style={{
-          padding: 12, borderRadius: 10,
-          background: t.bg1, border: `1px solid ${t.glassBorder}`,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{
-              width: 26, height: 26, borderRadius: 8,
-              background: t.accentFaint, color: t.accent,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}><f.icon size={13}/></span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{f.title}</span>
+        <div key={i} className="eco-inset">
+          <div className="eco-hstack" style={{ gap: 8, marginBottom: 6 }}>
+            <IconTile icon={f.icon} size="sm" accent onRaised/>
+            <span className="eco-label">{f.title}</span>
           </div>
-          <p style={{ margin: 0, fontSize: 12, color: t.text2, lineHeight: 1.5 }}>{f.body}</p>
+          <p className="eco-sub" style={{ margin: 0 }}>{f.body}</p>
         </div>
       ))}
     </div>
@@ -3238,7 +2488,7 @@ function TutorialsList() {
     },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
+    <div>
       {tutorials.map((t, i) => (
         <Tutorial key={i} title={t.title} steps={t.steps}/>
       ))}
@@ -3247,23 +2497,16 @@ function TutorialsList() {
 }
 
 function Tutorial({ title, steps }: { title: string; steps: string[] }) {
-  const t = useTokens();
   return (
-    <div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 6 }}>{title}</div>
-      <ol style={{
-        margin: 0, paddingLeft: 24,
-        display: 'flex', flexDirection: 'column', gap: 4,
-        fontSize: 12, color: t.text1, lineHeight: 1.55,
-      }}>
+    <HelpItem title={title}>
+      <ol className="eco-vstack" style={{ margin: '4px 0 0', paddingLeft: 22, gap: 4 }}>
         {steps.map((s, i) => <li key={i}>{s}</li>)}
       </ol>
-    </div>
+    </HelpItem>
   );
 }
 
 function ShortcutsList() {
-  const t = useTokens();
   const tr = useT();
   const rows = [
     { keys: ['⌘', 'R'],   action: tr('settings.about.sc.reload') },
@@ -3272,20 +2515,13 @@ function ShortcutsList() {
     { keys: ['Esc'],      action: tr('settings.about.sc.close_modal') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+    <div>
       {rows.map((r, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {r.keys.map((k) => (
-              <span key={k} style={{
-                minWidth: 26, height: 24, padding: '0 6px', borderRadius: 6,
-                background: t.bg3, border: `1px solid ${t.glassBorder}`,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: t.fontMono, fontSize: 11, color: t.text1,
-              }}>{k}</span>
-            ))}
+        <div key={i} className="eco-row eco-row--tight" style={{ flexWrap: 'nowrap' }}>
+          <div className="eco-hstack" style={{ gap: 4, minWidth: 84 }}>
+            {r.keys.map((k) => <span key={k} className="eco-kbd">{k}</span>)}
           </div>
-          <span style={{ fontSize: 12, color: t.text2 }}>{r.action}</span>
+          <span className="eco-muted eco-grow">{r.action}</span>
         </div>
       ))}
     </div>
@@ -3293,7 +2529,6 @@ function ShortcutsList() {
 }
 
 function PrivacyList() {
-  const t = useTokens();
   const tr = useT();
   const rows = [
     { label: tr('settings.about.priv.auth.label'),     desc: tr('settings.about.priv.auth.desc'),     local: true },
@@ -3302,18 +2537,15 @@ function PrivacyList() {
     { label: tr('settings.about.priv.claude.label'),   desc: tr('settings.about.priv.claude.desc'),   local: false },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+    <div>
       {rows.map((r, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <span style={{
-            width: 10, height: 10, borderRadius: '50%', marginTop: 4, flexShrink: 0,
-            background: r.local ? t.ok : t.warn,
-          }}/>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: t.text0 }}>{r.label}</div>
-            <div style={{ fontSize: 12, color: t.text2, marginTop: 2 }}>{r.desc}</div>
+        <div key={i} className="eco-row eco-row--tight">
+          <span className={cx('eco-dot eco-dot--lg', r.local ? 'eco-dot--ok' : 'eco-dot--warn')}/>
+          <div className="eco-row__main">
+            <div className="eco-row__title">{r.label}</div>
+            <div className="eco-row__desc">{r.desc}</div>
           </div>
-          <Chip color={r.local ? t.ok : t.warn} mono>
+          <Chip tone={r.local ? 'ok' : 'warn'} mono>
             {r.local ? tr('settings.about.priv.local') : tr('settings.about.priv.cloud')}
           </Chip>
         </div>
@@ -3322,8 +2554,23 @@ function PrivacyList() {
   );
 }
 
+// Par etiqueta + dato monoespaciado de las listas de referencia. En el
+// teléfono la etiqueta fija no entra al lado del texto: se apilan.
+function RefRow({ label, children, labelWidth, mono }: {
+  label: ReactNode; children: ReactNode; labelWidth: number; mono?: 'label' | 'value';
+}) {
+  const phone = isPhoneNow();
+  return (
+    <div className="eco-row eco-row--tight" style={{ flexWrap: 'nowrap', alignItems: 'baseline', ...(phone ? { flexDirection: 'column', gap: 2 } : null) }}>
+      <span className={mono === 'label' ? 'eco-mono eco-truncate' : 'eco-muted'}
+        style={{ flex: 'none', fontSize: 12.5, ...(phone ? { maxWidth: '100%' } : { width: labelWidth }) }}>{label}</span>
+      <span className={mono === 'value' ? 'eco-mono eco-grow' : 'eco-sub eco-grow'}
+        style={mono === 'value' ? { fontSize: 12 } : undefined}>{children}</span>
+    </div>
+  );
+}
+
 function StackList() {
-  const t = useTokens();
   const rows = [
     { layer: 'Empaquetado', tech: 'Electron 33 + electron-builder 25' },
     { layer: 'Frontend',    tech: 'Vite 6 · React 18 · TS 5 · Tailwind v4 · Motion 11' },
@@ -3334,22 +2581,15 @@ function StackList() {
     { layer: 'Auth local',  tech: 'PIN argon2id + frase BIP39 (~/.eco/user.json)' },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+    <div>
       {rows.map((r) => (
-        <div key={r.layer} style={{
-          display: 'flex', gap: 16, padding: '6px 0',
-          borderBottom: `1px solid ${t.glassBorder}`,
-        }}>
-          <span style={{ width: 110, fontSize: 12, color: t.text2, fontWeight: 500, flexShrink: 0 }}>{r.layer}</span>
-          <span style={{ flex: 1, fontFamily: t.fontMono, fontSize: 11, color: t.text1 }}>{r.tech}</span>
-        </div>
+        <RefRow key={r.layer} label={r.layer} labelWidth={110} mono="value">{r.tech}</RefRow>
       ))}
     </div>
   );
 }
 
 function QuickStartList() {
-  const t = useTokens();
   const tr = useT();
   const steps = [
     { num: 1, title: tr('settings.about.qs.s1.t'), body: tr('settings.about.qs.s1.b') },
@@ -3357,18 +2597,13 @@ function QuickStartList() {
     { num: 3, title: tr('settings.about.qs.s3.t'), body: tr('settings.about.qs.s3.b') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+    <div>
       {steps.map((s) => (
-        <div key={s.num} style={{ display: 'flex', gap: 10 }}>
-          <span style={{
-            width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-            background: t.accent, color: t.accentOn,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-          }}>{s.num}</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>{s.title}</div>
-            <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55, marginTop: 2 }}>{s.body}</div>
+        <div key={s.num} className="eco-row eco-row--tight" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+          <IconTile size="sm" accent>{s.num}</IconTile>
+          <div className="eco-grow">
+            <div className="eco-label">{s.title}</div>
+            <div className="eco-muted" style={{ marginTop: 2, textWrap: 'pretty' }}>{s.body}</div>
           </div>
         </div>
       ))}
@@ -3377,7 +2612,6 @@ function QuickStartList() {
 }
 
 function SlashCommandsList() {
-  const t = useTokens();
   const tr = useT();
   const cmds = [
     { cmd: '/dev-up up | down | restart', desc: tr('settings.about.slash.devup') },
@@ -3386,18 +2620,12 @@ function SlashCommandsList() {
     { cmd: '/<kb>', desc: tr('settings.about.slash.kb') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
-      <div style={{ fontSize: 12, color: t.text2, marginBottom: 6 }}>
-        {tr('settings.about.slash.intro')}
-      </div>
+    <div>
+      <div className="eco-muted" style={{ marginBottom: 6 }}>{tr('settings.about.slash.intro')}</div>
       {cmds.map((it) => (
-        <div key={it.cmd} style={{ display: 'flex', gap: 10 }}>
-          <code style={{
-            flexShrink: 0, fontFamily: t.fontMono, fontSize: 11, color: t.accent,
-            padding: '2px 8px', borderRadius: 6, background: t.bg3,
-            alignSelf: 'flex-start', whiteSpace: 'nowrap',
-          }}>{it.cmd}</code>
-          <span style={{ flex: 1, fontSize: 12, color: t.text2, lineHeight: 1.5 }}>{it.desc}</span>
+        <div key={it.cmd} className="eco-row eco-row--tight" style={{ alignItems: 'baseline' }}>
+          <code className="eco-chip eco-chip--on-card eco-mono" style={{ fontSize: 12 }}>{it.cmd}</code>
+          <span className="eco-sub eco-grow" style={{ flexBasis: 220 }}>{it.desc}</span>
         </div>
       ))}
     </div>
@@ -3405,7 +2633,6 @@ function SlashCommandsList() {
 }
 
 function FaqList() {
-  const t = useTokens();
   const tr = useT();
   const items = [
     { q: tr('settings.about.faq.cost.q'),    a: tr('settings.about.faq.cost.a') },
@@ -3417,19 +2644,13 @@ function FaqList() {
     { q: tr('settings.about.faq.data.q'),    a: tr('settings.about.faq.data.a') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
-      {items.map((it, i) => (
-        <div key={i}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 4 }}>{it.q}</div>
-          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>{it.a}</div>
-        </div>
-      ))}
+    <div>
+      {items.map((it, i) => <HelpItem key={i} title={it.q}>{it.a}</HelpItem>)}
     </div>
   );
 }
 
 function TroubleshootingList() {
-  const t = useTokens();
   const tr = useT();
   const items = [
     { p: tr('settings.about.tr.term.p'),    s: tr('settings.about.tr.term.s') },
@@ -3440,24 +2661,13 @@ function TroubleshootingList() {
     { p: tr('settings.about.tr.port.p'),    s: tr('settings.about.tr.port.s') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
-      {items.map((it, i) => (
-        <div key={i} style={{
-          padding: 10, borderRadius: 8,
-          background: t.bg1, border: `1px solid ${t.glassBorder}`,
-        }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: t.warn, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <IconAlert size={11}/> {it.p}
-          </div>
-          <div style={{ fontSize: 12, color: t.text1, lineHeight: 1.5 }}>{it.s}</div>
-        </div>
-      ))}
+    <div>
+      {items.map((it, i) => <HelpItem key={i} title={it.p}>{it.s}</HelpItem>)}
     </div>
   );
 }
 
 function NetworkList() {
-  const t = useTokens();
   const tr = useT();
   const rows = [
     { src: 'Eco',         dst: 'api.anthropic.com', kind: 'cloud', desc: tr('settings.about.net.anthropic') },
@@ -3468,23 +2678,16 @@ function NetworkList() {
     { src: 'Tailscale',   dst: '<maquina>.ts.net:443', kind: 'local', desc: tr('settings.about.net.tailnet') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+    <div>
       {rows.map((r, i) => (
-        <div key={i} style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 10px', borderRadius: 6,
-          background: t.bg1, border: `1px solid ${t.glassBorder}`,
-        }}>
-          <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text1, width: 90, flexShrink: 0 }}>{r.src}</span>
-          <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>→</span>
-          <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.dst}</span>
-          <span style={{
-            fontSize: 11, padding: '2px 8px', borderRadius: 999,
-            background: r.kind === 'local' ? `color-mix(in oklch, ${t.ok} 14%, transparent)` : `color-mix(in oklch, ${t.warn} 14%, transparent)`,
-            color: r.kind === 'local' ? t.ok : t.warn,
-            fontFamily: t.fontMono, fontWeight: 500,
-          }}>{r.kind}</span>
-          <span style={{ fontSize: 11, color: t.text2, flex: 2, minWidth: 0 }}>{r.desc}</span>
+        <div key={i} className="eco-row eco-row--tight" style={{ gap: '4px 10px' }}>
+          <div className="eco-hstack eco-mono" style={{ gap: 8, fontSize: 12, flex: '1 1 260px', minWidth: 0 }}>
+            <span style={{ flex: 'none' }}>{r.src}</span>
+            <span className="eco-faint">→</span>
+            <span className="eco-muted eco-truncate">{r.dst}</span>
+            <Chip tone={r.kind === 'local' ? 'ok' : 'warn'} mono>{r.kind}</Chip>
+          </div>
+          <span className="eco-sub" style={{ flex: '1 1 220px', minWidth: 0 }}>{r.desc}</span>
         </div>
       ))}
     </div>
@@ -3494,7 +2697,6 @@ function NetworkList() {
 // Cómo usar Eco desde el celular o una tablet. Es la parte que más preguntas
 // genera porque depende de cosas que se configuran fuera de la app.
 function MobileList() {
-  const t = useTokens();
   const tr = useT();
   const steps = [
     { k: '1', d: tr('settings.about.mobile.step.toggle') },
@@ -3508,30 +2710,18 @@ function MobileList() {
     tr('settings.about.mobile.note.tablet'),
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 6 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="eco-vstack" style={{ gap: 16 }}>
+      <div>
         {steps.map((s) => (
-          <div key={s.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <span style={{
-              width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-              background: t.accentFaint, color: t.accent,
-              fontSize: 11, fontWeight: 600,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            }}>{s.k}</span>
-            <span style={{ flex: 1, fontSize: 13, color: t.text1, lineHeight: 1.6 }}>{s.d}</span>
+          <div key={s.k} className="eco-row eco-row--tight" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+            <IconTile size="sm" accent>{s.k}</IconTile>
+            <span className="eco-muted eco-grow" style={{ lineHeight: 1.6 }}>{s.d}</span>
           </div>
         ))}
       </div>
       <div>
-        <div style={{
-          fontSize: 11, color: t.text2,
-          fontWeight: 500, marginBottom: 6,
-        }}>{tr('settings.about.mobile.notes.title')}</div>
-        <ul style={{
-          margin: 0, paddingLeft: 16,
-          display: 'flex', flexDirection: 'column', gap: 6,
-          fontSize: 12, color: t.text2, lineHeight: 1.55,
-        }}>
+        <div className="eco-label" style={{ marginBottom: 6 }}>{tr('settings.about.mobile.notes.title')}</div>
+        <ul className="eco-vstack eco-sub" style={{ margin: 0, paddingLeft: 18, gap: 6 }}>
           {notes.map((n, i) => <li key={i}>{n}</li>)}
         </ul>
       </div>
@@ -3540,7 +2730,6 @@ function MobileList() {
 }
 
 function FilesList() {
-  const t = useTokens();
   const tr = useT();
   const rows = [
     { path: '~/.eco/user.json',   desc: tr('settings.about.files.user') },
@@ -3553,28 +2742,15 @@ function FilesList() {
     { path: 'localStorage (browser)', desc: tr('settings.about.files.localstorage') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+    <div>
       {rows.map((r, i) => (
-        <div key={i} style={{
-          display: 'flex', gap: 12, padding: '8px 10px', borderRadius: 6,
-          background: t.bg1, border: `1px solid ${t.glassBorder}`,
-          // Path fijo de 200px + descripción no entran: en móvil se apilan.
-          ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 4 } : {}),
-        }}>
-          <code style={{
-            fontFamily: t.fontMono, fontSize: 11, color: t.text1,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            ...(isPhoneNow() ? { width: '100%' } : { width: 200, flexShrink: 0 }),
-          }}>{r.path}</code>
-          <span style={{ flex: 1, fontSize: 12, color: t.text2, lineHeight: 1.5 }}>{r.desc}</span>
-        </div>
+        <RefRow key={i} label={r.path} labelWidth={210} mono="label">{r.desc}</RefRow>
       ))}
     </div>
   );
 }
 
 function DevList() {
-  const t = useTokens();
   const tr = useT();
   const envs = [
     { k: 'ECO_HOST',       d: tr('settings.about.dev.env.host') },
@@ -3595,112 +2771,58 @@ function DevList() {
     { k: 'npm run serve:web',  d: tr('settings.about.dev.scripts.serveweb') },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 6 }}>
+    <div className="eco-vstack" style={{ gap: 16 }}>
       <div>
-        <div style={{ fontSize: 11, color: t.text2, fontWeight: 500, marginBottom: 6 }}>{tr('settings.about.dev.env.title')}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {envs.map((e) => (
-            <div key={e.k} style={{ display: 'flex', gap: 10, padding: '4px 0', ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 2 } : {}) }}>
-              <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, ...(isPhoneNow() ? { width: '100%' } : { width: 170, flexShrink: 0 }) }}>{e.k}</code>
-              <span style={{ flex: 1, fontSize: 12, color: t.text2 }}>{e.d}</span>
-            </div>
-          ))}
-        </div>
+        <div className="eco-label" style={{ marginBottom: 2 }}>{tr('settings.about.dev.env.title')}</div>
+        {envs.map((e) => <RefRow key={e.k} label={e.k} labelWidth={200} mono="label">{e.d}</RefRow>)}
       </div>
       <div>
-        <div style={{ fontSize: 11, color: t.text2, fontWeight: 500, marginBottom: 6 }}>{tr('settings.about.dev.scripts.title')}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {scripts.map((s) => (
-            <div key={s.k} style={{ display: 'flex', gap: 10, padding: '4px 0', ...(isPhoneNow() ? { flexDirection: 'column' as const, gap: 2 } : {}) }}>
-              <code style={{ fontFamily: t.fontMono, fontSize: 11, color: t.accent, ...(isPhoneNow() ? { width: '100%' } : { width: 170, flexShrink: 0 }) }}>{s.k}</code>
-              <span style={{ flex: 1, fontSize: 12, color: t.text2 }}>{s.d}</span>
-            </div>
-          ))}
-        </div>
+        <div className="eco-label" style={{ marginBottom: 2 }}>{tr('settings.about.dev.scripts.title')}</div>
+        {scripts.map((s) => <RefRow key={s.k} label={s.k} labelWidth={200} mono="label">{s.d}</RefRow>)}
       </div>
     </div>
   );
 }
 
 function SupportList() {
-  const t = useTokens();
   const tr = useT();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
-      <p style={{ margin: 0, fontSize: 12, color: t.text2, lineHeight: 1.6 }}>{tr('settings.about.support.intro')}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.bug.t')}</div>
-          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>{tr('settings.about.support.bug.b')}</div>
-        </div>
-        <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.logs.t')}</div>
-          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>
-            {tr('settings.about.support.logs.b')}{' '}
-            <code style={{ fontFamily: t.fontMono, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: t.bg3 }}>
-              /Applications/Eco.app/Contents/MacOS/Eco
-            </code>
-          </div>
-        </div>
-        <div style={{ padding: 10, borderRadius: 8, background: t.bg1, border: `1px solid ${t.glassBorder}` }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: t.text0, marginBottom: 4 }}>{tr('settings.about.support.reset.t')}</div>
-          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>{tr('settings.about.support.reset.b')}</div>
-        </div>
-      </div>
+    <div>
+      <p className="eco-muted" style={{ margin: '0 0 6px', lineHeight: 1.6 }}>{tr('settings.about.support.intro')}</p>
+      <HelpItem title={tr('settings.about.support.bug.t')}>{tr('settings.about.support.bug.b')}</HelpItem>
+      <HelpItem title={tr('settings.about.support.logs.t')}>
+        {tr('settings.about.support.logs.b')}{' '}
+        <code className="eco-chip eco-chip--on-card eco-mono" style={{ fontSize: 12 }}>
+          /Applications/Eco.app/Contents/MacOS/Eco
+        </code>
+      </HelpItem>
+      <HelpItem title={tr('settings.about.support.reset.t')}>{tr('settings.about.support.reset.b')}</HelpItem>
     </div>
   );
 }
 
 function CreditsBody() {
-  const t = useTokens();
   const tr = useT();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 4 }}>
-      {/* Card principal — autor */}
-      <div style={{
-        display: 'flex', gap: 16, alignItems: 'center',
-        padding: 16, borderRadius: 16,
-        background: t.bg1, border: `1px solid ${t.glassBorder}`,
-      }}>
-        <div style={{
-          width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
-          background: t.accentFaint, color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 24, fontWeight: 500, fontFamily: t.fontSans,
-          border: `1px solid ${t.accent}`,
-        }}>S</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 500, color: t.text0, }}>
-            Sergio Castro
-          </div>
-          <div style={{ fontSize: 12, color: t.text2, marginTop: 2, lineHeight: 1.45 }}>
-            {tr('settings.about.credits.role')}
-          </div>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap',
-          }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '4px 8px', borderRadius: 999,
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              fontFamily: t.fontMono, fontSize: 11, color: t.text1,
-            }}>
-              <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.ok }}/>
+    <div className="eco-vstack" style={{ gap: 18 }}>
+      {/* Autor */}
+      <div className="eco-inset eco-hstack" style={{ gap: 14, padding: 16 }}>
+        <IconTile size="lg" accent onRaised>S</IconTile>
+        <div className="eco-grow">
+          <div className="eco-h3">Sergio Castro</div>
+          <div className="eco-sub">{tr('settings.about.credits.role')}</div>
+          <div className="eco-hstack eco-hstack--wrap" style={{ gap: 6, marginTop: 8 }}>
+            <span className="eco-chip eco-mono" style={{ fontSize: 12 }}>
+              <span className="eco-dot eco-dot--ok"/>
               Aditum
             </span>
-            <span style={{
-              padding: '4px 8px', borderRadius: 999,
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              fontFamily: t.fontMono, fontSize: 11, color: t.text2,
-            }}>Florida, USA</span>
+            <span className="eco-chip eco-mono" style={{ fontSize: 12 }}>Florida, USA</span>
           </div>
         </div>
       </div>
 
       {/* Meta del proyecto */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10,
-      }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
         <MetaCell label={tr('settings.about.credits.year')} value="2026"/>
         <MetaCell label={tr('settings.about.credits.license')} value="Privado"/>
         <MetaCell label={tr('settings.about.credits.platform')} value="macOS · arm64"/>
@@ -3709,61 +2831,40 @@ function CreditsBody() {
 
       {/* Agradecimientos */}
       <div>
-        <div style={{
-          fontSize: 11, color: t.text2,
-          fontWeight: 500, marginBottom: 8,
-        }}>{tr('settings.about.credits.thanks_to')}</div>
-        <p style={{
-          margin: 0, fontSize: 12, color: t.text2, lineHeight: 1.6,
-        }}>
+        <div className="eco-label" style={{ marginBottom: 6 }}>{tr('settings.about.credits.thanks_to')}</div>
+        <p className="eco-muted" style={{ margin: 0, lineHeight: 1.6 }}>
           {tr('settings.about.credits.thanks_body')}
         </p>
       </div>
 
-      {/* Línea final */}
-      <div style={{
-        paddingTop: 12, borderTop: `1px solid ${t.glassBorder}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 12, flexWrap: 'wrap',
-      }}>
-        <span style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>
-          © 2026 Sergio Castro · Eco
-        </span>
-        <span style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>
-          {tr('settings.about.credits.made_with')}
-        </span>
+      <hr className="eco-divider"/>
+      <div className="eco-hstack eco-hstack--wrap eco-num" style={{ justifyContent: 'space-between' }}>
+        <span>© 2026 Sergio Castro · Eco</span>
+        <span>{tr('settings.about.credits.made_with')}</span>
       </div>
     </div>
   );
 }
 
 function MetaCell({ label, value }: { label: string; value: string }) {
-  const t = useTokens();
   return (
-    <div style={{
-      padding: '10px 12px', borderRadius: 10,
-      background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    }}>
-      <div style={{
-        fontSize: 11, color: t.text3,
-        fontWeight: 500, marginBottom: 4,
-      }}>{label}</div>
-      <div style={{
-        fontFamily: t.fontMono, fontSize: 12, color: t.text0, fontWeight: 500,
-      }}>{value}</div>
+    <div className="eco-inset">
+      <div className="eco-eyebrow eco-eyebrow--sm" style={{ marginBottom: 4 }}>{label}</div>
+      <div className="eco-mono" style={{ fontSize: 12.5, fontWeight: 500 }}>{value}</div>
     </div>
   );
 }
 
 // ──────────── helpers
 
-function GeneralToggleRow({ icon, title, desc, storageKey, defaultOn, broadcastEvent }: {
+function GeneralToggleRow({ icon, title, desc, storageKey, defaultOn, broadcastEvent, first }: {
   icon: (p: IconProps) => JSX.Element; title: string; desc?: string;
   storageKey: string; defaultOn?: boolean;
   // Si se provee, dispara un CustomEvent con ese nombre tras guardar — útil
   // para que componentes en la misma pestaña reaccionen (el evento 'storage'
   // del navegador no se dispara en la pestaña que escribió).
   broadcastEvent?: string;
+  first?: boolean;
 }) {
   const [on, setOn] = useState(() => {
     if (typeof window === 'undefined') return defaultOn ?? false;
@@ -3772,7 +2873,7 @@ function GeneralToggleRow({ icon, title, desc, storageKey, defaultOn, broadcastE
     return v === '1';
   });
   return (
-    <Row icon={icon} title={title} desc={desc} control={
+    <Row icon={icon} title={title} desc={desc} first={first} control={
       <Toggle on={on} onChange={(v) => {
         setOn(v);
         try {
@@ -3783,7 +2884,3 @@ function GeneralToggleRow({ icon, title, desc, storageKey, defaultOn, broadcastE
     }/>
   );
 }
-
-// Use StatusDot to keep imports clean even if section doesn't yet render it
-void StatusDot; void Glass;
-

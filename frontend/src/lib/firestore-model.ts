@@ -79,6 +79,7 @@ export type ReviewDoc = {
 export type PrefsDoc = {
   themeMode?: string;
   accentHue?: number;
+  accentOverride?: number | null;
   lang?: string;
   // Apariencia de Eco → tema de Claude Code elegido (sobrescribe el recomendado).
   claudeThemes?: Record<string, string>;

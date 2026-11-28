@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
-import { IconArchive, IconResume, IconTrash, IconX } from '@/design/icons';
-import { AgentGlyph, bubbleLetter, scrimStyle, dialogSurface } from '@/design/primitives';
+import { IconArchive, IconRotateCcw, IconSearch, IconTrash, IconX } from '@/design/icons';
+import { Btn, Card, IconBtn, IconTile, PageHeader, bubbleLetter } from '@/design/primitives';
 import type { Bubble } from '@/lib/types';
 
 type Props = {
@@ -13,7 +12,6 @@ type Props = {
 };
 
 export function ArchivedScreen({ bubbles, onUnarchive, onDelete, onOpen }: Props) {
-  const t = useTokens();
   const tr = useT();
   const [query, setQuery] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<Bubble | null>(null);
@@ -31,44 +29,37 @@ export function ArchivedScreen({ bubbles, onUnarchive, onDelete, onOpen }: Props
   }, [bubbles, query]);
 
   return (
-    <div style={{ padding: '28px 32px', overflow: 'auto', height: '100%' }}>
-      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 500, color: t.text0, letterSpacing: -0.4 }}>
-        {tr('archived.title')}
-      </h2>
-      <p style={{ margin: '4px 0 20px', fontSize: 13, color: t.text2 }}>
-        {tr('archived.sub')}
-      </p>
-
-      {bubbles.some((b) => b.archived) && (
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={tr('archived.search_placeholder')}
-          style={{
-            width: '100%', maxWidth: 460, marginBottom: 16,
-            padding: '8px 12px', borderRadius: 8,
-            background: t.bg1, color: t.text0,
-            border: `1px solid ${t.glassBorder}`,
-            fontFamily: t.fontSans, fontSize: 13, outline: 'none',
-          }}
-        />
-      )}
-
-      {list.length === 0 ? (
-        <EmptyState query={query.trim().length > 0}/>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {list.map((b) => (
-            <ArchivedRow
-              key={b.id}
-              bubble={b}
-              onUnarchive={() => onUnarchive(b.id)}
-              onOpen={() => onOpen(b.id)}
-              onDelete={() => setConfirmDelete(b)}
+    <div className="eco-page eco-page--scroll">
+      <PageHeader
+        eyebrow={tr('nav.archived')}
+        title={tr('archived.title')}
+        sub={tr('archived.sub')}
+        actions={bubbles.some((b) => b.archived) ? (
+          <label className="eco-inputbar eco-inputbar--on-sheet" style={{ flex: '1 1 240px', maxWidth: 320 }}>
+            <IconSearch size={15}/>
+            <input
+              className="eco-input-bare"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={tr('archived.search_placeholder')}
             />
-          ))}
-        </div>
-      )}
+          </label>
+        ) : undefined}
+      />
+
+      <Card variant="list">
+        {list.length === 0 ? (
+          <EmptyState/>
+        ) : list.map((b) => (
+          <ArchivedRow
+            key={b.id}
+            bubble={b}
+            onUnarchive={() => onUnarchive(b.id)}
+            onOpen={() => onOpen(b.id)}
+            onDelete={() => setConfirmDelete(b)}
+          />
+        ))}
+      </Card>
 
       {confirmDelete && (
         <ConfirmDeleteDialog
@@ -81,28 +72,13 @@ export function ArchivedScreen({ bubbles, onUnarchive, onDelete, onOpen }: Props
   );
 }
 
-function EmptyState({ query }: { query: boolean }) {
-  const t = useTokens();
+function EmptyState() {
   const tr = useT();
   return (
-    <div style={{
-      padding: '40px 24px', textAlign: 'center', color: t.text2,
-      fontFamily: t.fontSans, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', gap: 12,
-    }}>
-      <div style={{
-        width: 56, height: 56, borderRadius: 16,
-        background: t.bg2, color: t.text3,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <IconArchive size={24}/>
-      </div>
-      <div style={{ fontSize: 14, color: t.text1, fontWeight: 500 }}>
-        {query ? tr('archived.empty_title') : tr('archived.empty_title')}
-      </div>
-      <div style={{ fontSize: 12, color: t.text3, maxWidth: 360, lineHeight: 1.5 }}>
-        {tr('archived.empty_desc')}
-      </div>
+    <div className="eco-empty eco-vstack" style={{ alignItems: 'center' }}>
+      <IconTile icon={IconArchive} size="lg"/>
+      <div className="eco-label">{tr('archived.empty_title')}</div>
+      <div className="eco-sub" style={{ maxWidth: 360 }}>{tr('archived.empty_desc')}</div>
     </div>
   );
 }
@@ -113,71 +89,36 @@ function ArchivedRow({ bubble, onUnarchive, onOpen, onDelete }: {
   onOpen: () => void;
   onDelete: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   const stamp = formatArchivedStamp(bubble.archivedAt ?? 0, tr);
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 16,
-      padding: '12px 16px',
-      background: t.bg2, border: `1px solid ${t.glassBorder}`,
-      borderRadius: 12, fontFamily: t.fontSans,
-    }}>
+    <div className="eco-row">
       <button
         type="button"
         onClick={onOpen}
+        className="eco-hstack eco-row__main"
         style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          background: 'transparent', border: 0, padding: 0,
-          textAlign: 'left', cursor: 'pointer', flex: 1, minWidth: 0,
-          color: t.text0, fontFamily: t.fontSans,
+          gap: 14, padding: 0, border: 0, background: 'transparent',
+          color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer',
         }}
       >
-        <AgentGlyph size={36} state="idle" letter={bubbleLetter(bubble.title)} accent={bubble.accent}/>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 500, color: t.text0,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {bubble.title}
-          </div>
-          <div style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {bubble.workspace || '—'}
-          </div>
-          <div style={{ fontSize: 11, color: t.text3, marginTop: 2 }}>
-            {stamp}
+        <IconTile>{bubbleLetter(bubble.title)}</IconTile>
+        <div className="eco-grow">
+          <div className="eco-row__title eco-truncate">{bubble.title}</div>
+          <div className="eco-hstack eco-hstack--wrap eco-row__desc" style={{ gap: '2px 10px' }}>
+            <span className="eco-mono eco-truncate" style={{ fontSize: 12 }}>{bubble.workspace || '—'}</span>
+            {stamp && <span>{stamp}</span>}
           </div>
         </div>
       </button>
-      <button
-        type="button"
-        onClick={onUnarchive}
-        title={tr('archived.unarchive_tooltip')}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '6px 12px', borderRadius: 6,
-          background: 'transparent', color: t.ok,
-          border: `1px solid ${t.ok}`,
-          fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-        }}
-      >
-        <IconResume size={11}/>
-        {tr('archived.unarchive')}
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        title={tr('archived.delete_permanent_tooltip')}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '6px 12px', borderRadius: 6,
-          background: 'transparent', color: t.err,
-          border: `1px solid ${t.err}`,
-          fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-        }}
-      >
-        <IconTrash size={11}/>
-        {tr('archived.delete_permanent')}
-      </button>
+      <div className="eco-row__end">
+        <Btn kind="raised" size="sm" icon={IconRotateCcw} onClick={onUnarchive} title={tr('archived.unarchive_tooltip')}>
+          {tr('archived.unarchive')}
+        </Btn>
+        <Btn kind="danger" size="sm" icon={IconTrash} onClick={onDelete} title={tr('archived.delete_permanent_tooltip')}>
+          {tr('archived.delete_permanent')}
+        </Btn>
+      </div>
     </div>
   );
 }
@@ -187,74 +128,34 @@ function ConfirmDeleteDialog({ bubble, onCancel, onConfirm }: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   return (
     <div
       role="dialog"
       aria-modal="true"
+      className="eco-scrim"
+      style={{ zIndex: 230 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 230,
-        ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
     >
-      <div style={{
-        maxWidth: 440, width: '90%', padding: 24,
-        ...dialogSurface(t),
-        borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
-        }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 10,
-            background: `color-mix(in oklch, ${t.err} 15%, transparent)`,
-            color: t.err, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconTrash size={16}/>
+      <div className="eco-dialog eco-dialog--sm eco-dialog--danger" aria-label={tr('archived.delete_confirm_title')}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile eco-dialog__tile--danger"><IconTrash size={20}/></span>
+          <h2 className="eco-dialog__title">{tr('archived.delete_confirm_title')}</h2>
+          <IconBtn icon={IconX} size={32} title={tr('common.cancel')} onClick={onCancel}/>
+        </div>
+        <div className="eco-dialog__section">
+          <div className="eco-label">«{bubble.title}»</div>
+          <p className="eco-dialog__body">{tr('archived.delete_confirm_body')}</p>
+        </div>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>
+              {tr('common.cancel')}
+            </button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--danger-solid" onClick={onConfirm}>
+              {tr('archived.delete_permanent')}
+            </button>
           </div>
-          <div style={{ fontSize: 16, fontWeight: 500 }}>
-            {tr('archived.delete_confirm_title')}
-          </div>
-          <span style={{ flex: 1 }}/>
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="cancel"
-            style={{
-              background: 'transparent', border: 0, color: t.text3,
-              cursor: 'pointer', padding: 4,
-            }}
-          ><IconX size={14}/></button>
-        </div>
-        <div style={{ fontSize: 13, color: t.text1, marginBottom: 6 }}>
-          «{bubble.title}»
-        </div>
-        <div style={{ fontSize: 13, color: t.text2, marginBottom: 20, lineHeight: 1.55 }}>
-          {tr('archived.delete_confirm_body')}
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: 'transparent', color: t.text1,
-              border: `1px solid ${t.glassBorder}`,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
-            }}
-          >{tr('common.cancel')}</button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: t.err, color: '#fff', border: 0,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
-            }}
-          >{tr('archived.delete_permanent')}</button>
         </div>
       </div>
     </div>

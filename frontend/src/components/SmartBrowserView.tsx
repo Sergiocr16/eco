@@ -369,26 +369,22 @@ export const SmartBrowserView = forwardRef<SmartBrowserHandle, SmartBrowserProps
             ...style,
             display: visible ? (style?.display ?? 'flex') : 'none',
             flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 16, padding: 24, textAlign: 'center',
-            background: '#0c0e14', color: '#e5e7eb',
-            fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+            gap: 12, padding: 24, textAlign: 'center',
+            background: 'var(--raised)', color: 'var(--tx)',
+            fontFamily: 'var(--font-sans)', fontSize: 13.5,
           }}
         >
-          <div style={{ fontSize: 14, lineHeight: 1.55, maxWidth: 380, color: '#9aa3b2' }}>
+          <div className="eco-muted" style={{ lineHeight: 1.55, maxWidth: 380 }}>
             {tr('browser.mixed.msg')}
           </div>
           <button
             type="button"
             onClick={() => { try { window.open(src, '_blank', 'noopener'); } catch { /* noop */ } }}
-            style={{
-              padding: '8px 20px', borderRadius: 10, border: '1px solid #2b3140',
-              background: '#1a1d28', color: '#e5e7eb', fontSize: 13, fontWeight: 500,
-              cursor: 'pointer',
-            }}
+            className="eco-btn eco-btn--solid"
           >
             {tr('browser.mixed.btn')}
           </button>
-          <div style={{ fontSize: 12, color: '#6b7280', fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all', maxWidth: 380 }}>
+          <div className="eco-num" style={{ wordBreak: 'break-all', maxWidth: 380 }}>
             {src}
           </div>
         </div>

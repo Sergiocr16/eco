@@ -1,8 +1,6 @@
-import { vh } from '@/lib/ui-zoom';
-import { T_UI } from '@/design/motion';
 import { useEffect, useState } from 'react';
-import { useTokens } from '@/design/theme';
-import { Btn, Glass, scrimStyle, dialogSurface } from '@/design/primitives';
+import { Btn, IconBtn } from '@/design/primitives';
+import { workspaceName } from '@/lib/workspace-name';
 import { IconFolder, IconFolderOpen, IconX, IconCheck } from '@/design/icons';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useT } from '@/hooks/useI18n';
@@ -19,7 +17,6 @@ type Props = {
 };
 
 export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, canAddFolders = true }: Props) {
-  const t = useTokens();
   const tr = useT();
   const ws = useWorkspaces();
   const [adding, setAdding] = useState(false);
@@ -78,195 +75,95 @@ export function WorkspacePicker({ open, bubbleTitle, onPick, onSkip, onClose, ca
   const hasNativePicker = typeof window !== 'undefined' && !!window.electronAPI?.pickFolder;
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 170,
-        ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(540px, 100%)', maxHeight: vh(80),
-          ...dialogSurface(t),
-          borderRadius: 20,
-          display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '16px 20px', borderBottom: `1px solid ${t.glassBorder}`,
-        }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: t.accentFaint, color: t.accent,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconFolderOpen size={18}/>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: t.text0, }}>
-              {tr('wsp.title')}
-            </div>
-            <div style={{ fontSize: 12, color: t.text2, marginTop: 1 }}>
-              «{bubbleTitle}» — {tr('wsp.sub')}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              width: 28, height: 28, borderRadius: 8, border: 0,
-              background: 'transparent', color: t.text2, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-            <IconX size={14}/>
-          </button>
+    <div className="eco-scrim" style={{ zIndex: 170 }} onClick={onClose}>
+      <div className="eco-dialog" role="dialog" aria-modal="true" aria-label={tr('wsp.title')}
+        style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile"><IconFolderOpen size={20}/></span>
+          <h2 className="eco-dialog__title">{tr('wsp.title')}</h2>
+          <IconBtn icon={IconX} size={32} title={tr('common.close')} onClick={onClose}/>
         </div>
+        <p className="eco-dialog__body">«{bubbleTitle}» — {tr('wsp.sub')}</p>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
+        <div className="eco-dialog__section">
           {ws.loading ? (
-            <div style={{ fontSize: 13, color: t.text2, padding: '20px 4px' }}>{tr('common.loading')}</div>
+            <div className="eco-empty">{tr('common.loading')}</div>
           ) : ws.list.workspaces.length === 0 && !adding ? (
-            <div style={{
-              padding: '20px 4px', fontSize: 13, color: t.text2, textAlign: 'center',
-            }}>
+            <div className="eco-empty">
               {tr('wsp.no_workspaces')}
-              {!canAddFolders && (
-                <div style={{ marginTop: 6, fontSize: 12, color: t.text3 }}>
-                  {tr('wsp.ask_admin')}
-                </div>
-              )}
+              {!canAddFolders && <div className="eco-sub" style={{ marginTop: 6 }}>{tr('wsp.ask_admin')}</div>}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
-              {ws.list.workspaces.map((path) => (
-                <button
-                  key={path}
-                  type="button"
-                  onClick={() => onPick(path)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 12px', borderRadius: 10, border: `1px solid ${t.glassBorder}`,
-                    background: t.bg2, cursor: 'pointer', textAlign: 'left',
-                    transition: T_UI,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = t.bg3;
-                    e.currentTarget.style.borderColor = t.accentDim;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = t.bg2;
-                    e.currentTarget.style.borderColor = t.glassBorder;
-                  }}
-                >
-                  <div style={{ color: t.accent }}>
-                    <IconFolder size={16}/>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}>{path}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {!canAddFolders ? null : adding ? (
-            <Glass radius={12} style={{ padding: 10, marginTop: 8 }}>
-              <div style={{ fontSize: 12, color: t.text2, marginBottom: 8 }}>
-                {tr('wsp.add_hint')}
+            <div className="eco-optlist">
+              {/* La lista scrollea sola para no empujar las acciones fuera de la ventana. */}
+              <div className="eco-optlist__scroll" style={{ maxHeight: 260 }}>
+                {ws.list.workspaces.map((path) => (
+                  <button key={path} type="button" title={path} onClick={() => onPick(path)} className="eco-option">
+                    <span className="eco-option__tile"><IconFolder size={16}/></span>
+                    <span className="eco-option__text">
+                      <span className="eco-option__title">{workspaceName(path)}</span>
+                      <span className="eco-option__sub">{path}</span>
+                    </span>
+                  </button>
+                ))}
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  autoFocus
-                  value={draftPath}
-                  onChange={(e) => { setDraftPath(e.target.value); setAddError(null); }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void handleAdd();
-                    if (e.key === 'Escape') { setAdding(false); setDraftPath(''); }
-                  }}
-                  placeholder="/Users/sergio/projects/aditum-jh"
-                  style={{
-                    flex: 1, background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                    borderRadius: 8, padding: '8px 10px', outline: 'none',
-                    fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-                  }}
-                />
-                <Btn kind="primary" size="sm" onClick={() => void handleAdd()} disabled={busy || !draftPath.trim()} icon={IconCheck}>
-                  {busy ? tr('wsp.add_loading') : tr('wsp.add_btn')}
-                </Btn>
-              </div>
-              {addError && (
-                <div style={{ marginTop: 8, fontSize: 12, color: t.err }}>{addError}</div>
-              )}
-            </Glass>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-              {/* Botón primario: Elegir carpeta con Finder/Explorer nativo (Electron) */}
-              <button
-                type="button"
-                onClick={() => void pickWithDialog()}
-                disabled={busy}
-                style={{
-                  width: '100%',
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '12px 16px', borderRadius: 12,
-                  background: 'transparent', border: `1px dashed ${t.glassBorderHi}`,
-                  color: t.text1, cursor: busy ? 'wait' : 'pointer', textAlign: 'left',
-                  transition: T_UI,
-                }}
-                onMouseEnter={(e) => {
-                  if (busy) return;
-                  e.currentTarget.style.borderColor = t.accentDim;
-                  e.currentTarget.style.background = t.accentFaint;
-                  e.currentTarget.style.color = t.accent;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = t.glassBorderHi;
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = t.text1;
-                }}>
-                <IconFolderOpen size={14}/>
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
-                  {busy ? tr('wsp.add_loading') : (hasNativePicker ? tr('wsp.pick_folder') : tr('wsp.add_other'))}
-                </span>
-                {hasNativePicker && (
-                  <span style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>Finder</span>
-                )}
-              </button>
-
-              {/* Link discreto: opción de escribir el path manual (avanzado) */}
-              {hasNativePicker && (
-                <button
-                  type="button"
-                  onClick={() => setAdding(true)}
-                  style={{
-                    background: 'transparent', border: 0, color: t.text3,
-                    cursor: 'pointer', fontSize: 11, padding: '4px 0',
-                    fontFamily: t.fontSans, textAlign: 'left',
-                    textDecoration: 'underline', textUnderlineOffset: 2,
-                  }}>
-                  {tr('wsp.type_path_instead')}
-                </button>
-              )}
             </div>
           )}
         </div>
 
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', gap: 8,
-          padding: '12px 20px', borderTop: `1px solid ${t.glassBorder}`,
-        }}>
-          <Btn kind="ghost" size="sm" onClick={onSkip}>
-            {tr('wsp.skip')}
-          </Btn>
-          <span style={{ fontSize: 11, color: t.text3 }}>
-            {tr('wsp.change_later')}
-          </span>
+        {!canAddFolders ? null : adding ? (
+          <div className="eco-dialog__section">
+            <label className="eco-field-label" htmlFor="eco-wsp-path">{tr('wsp.add_hint')}</label>
+            <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8 }}>
+              <input
+                id="eco-wsp-path"
+                autoFocus
+                className="eco-field eco-field--mono"
+                value={draftPath}
+                onChange={(e) => { setDraftPath(e.target.value); setAddError(null); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleAdd();
+                  if (e.key === 'Escape') { setAdding(false); setDraftPath(''); }
+                }}
+                placeholder="/Users/sergio/projects/aditum-jh"
+                style={{ flex: '1 1 200px', width: 'auto' }}
+              />
+              <Btn kind="primary" size="lg" onClick={() => void handleAdd()} disabled={busy || !draftPath.trim()} icon={IconCheck}>
+                {busy ? tr('wsp.add_loading') : tr('wsp.add_btn')}
+              </Btn>
+            </div>
+            {addError && <div className="eco-banner eco-banner--err">{addError}</div>}
+          </div>
+        ) : (
+          <div className="eco-dialog__section" style={{ alignItems: 'flex-start' }}>
+            {/* Elegir carpeta con Finder/Explorer nativo (Electron) */}
+            <button
+              type="button"
+              onClick={() => void pickWithDialog()}
+              disabled={busy}
+              className="eco-btn eco-btn--dashed eco-btn--lg eco-btn--block"
+              style={{ justifyContent: 'flex-start' }}>
+              <IconFolderOpen size={15}/>
+              <span className="eco-grow eco-truncate" style={{ textAlign: 'left' }}>
+                {busy ? tr('wsp.add_loading') : (hasNativePicker ? tr('wsp.pick_folder') : tr('wsp.add_other'))}
+              </span>
+              {hasNativePicker && <span className="eco-num">Finder</span>}
+            </button>
+
+            {/* Opción de escribir el path manual (avanzado) */}
+            {hasNativePicker && (
+              <Btn kind="ghost" size="sm" onClick={() => setAdding(true)}>{tr('wsp.type_path_instead')}</Btn>
+            )}
+          </div>
+        )}
+
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__hint">{tr('wsp.change_later')}</div>
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onSkip}>
+              {tr('wsp.skip')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

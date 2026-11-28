@@ -1,9 +1,15 @@
 import { useState, type CSSProperties, type ReactNode, type MouseEvent } from 'react';
-import { T_UI } from './motion';
 import { useTokens } from './theme';
 import type { Tokens } from './tokens';
 import { AGENT_TYPES, type AgentType, type AgentState, stateColor } from './tokens';
 import { isMobileNow } from '@/hooks/useMediaQuery';
+
+// Las primitivas son envoltorios finos de las clases de eco.css (catálogo en
+// DESIGN.md). El estilo inline queda para valores dinámicos.
+
+export function cx(...parts: Array<string | false | null | undefined>): string {
+  return parts.filter(Boolean).join(' ');
+}
 
 type GlassProps = {
   children?: ReactNode;
@@ -14,6 +20,8 @@ type GlassProps = {
   className?: string;
 };
 
+// Superficie de tarjeta. El nombre viene del diseño anterior (vidrio); hoy es
+// plana. Dentro del grafo (tokens `legacy`) conserva el vidrio original.
 export function Glass({ children, style = {}, radius, hover = false, onClick, className }: GlassProps) {
   const t = useTokens();
   const [h, setH] = useState(false);
@@ -26,8 +34,8 @@ export function Glass({ children, style = {}, radius, hover = false, onClick, cl
       style={{
         position: 'relative',
         ...glassEffect(t, { hovered: h }),
-        borderRadius: radius ?? t.r3,
-        transition: 'border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease',
+        borderRadius: radius ?? (t.legacy ? t.r3 : t.r5),
+        transition: 'border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease, background-color 140ms ease',
         ...style,
       }}
     >
@@ -36,19 +44,13 @@ export function Glass({ children, style = {}, radius, hover = false, onClick, cl
   );
 }
 
-// Liquid Glass — efecto estilo Apple. Para usar como spread en cualquier
-// elemento que quiera lucir como tarjeta de cristal:
-//   style={{ ...glassEffect(t), padding: 12 }}
-//
-// Composición:
-//   - backdrop-filter blur + saturate → desenfoca lo que hay detrás
-//   - background semi-transparente con tinte del tema
-//   - border + 1px inset highlight arriba (simula el filo refractado de Apple)
-//   - shadow sutil debajo
 export function glassEffect(
   t: Tokens,
   opts: { hovered?: boolean; intensity?: 'subtle' | 'normal' | 'strong' } = {},
 ): CSSProperties {
+  if (!t.legacy) {
+    return { background: opts.hovered ? t.hover : t.card, border: '1px solid transparent' };
+  }
   const intensity = opts.intensity ?? 'normal';
   const blur =
     intensity === 'strong' ? 32 : intensity === 'subtle' ? 18 : 26;
@@ -58,8 +60,6 @@ export function glassEffect(
     backdropFilter: `blur(${blur}px) saturate(${sat}%)`,
     WebkitBackdropFilter: `blur(${blur}px) saturate(${sat}%)`,
     border: `1px solid ${opts.hovered ? t.glassBorderHi : t.glassBorder}`,
-    // El doble shadow: inset top de 1px que simula el highlight del cristal
-    // (catch-light apple-style), y el drop shadow para flotación.
     boxShadow: [
       'inset 0 1px 0 rgba(255,255,255,0.06)',
       'inset 0 0 0 0.5px rgba(255,255,255,0.02)',
@@ -68,35 +68,36 @@ export function glassEffect(
   };
 }
 
-// Velo detrás de un diálogo modal. El blur es lo que hace que el panel se lea
-// como material y no como una lámina de color: sin él, el texto de la pantalla
-// de fondo atraviesa nítido cualquier fondo translúcido.
+// Velo detrás de un diálogo modal.
 export function scrimStyle(t: Tokens): CSSProperties {
   return {
     background: t.scrimBg ?? 'rgba(0,0,0,0.45)',
-    backdropFilter: 'blur(14px) saturate(120%)',
-    WebkitBackdropFilter: 'blur(14px) saturate(120%)',
+    backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
   };
 }
 
-// Panel de un diálogo modal: cristal denso (dialogBg, más opaco que glassBg)
-// con blur fuerte y el filo iluminado arriba. Pasá `border` para los diálogos
-// que marcan intención con color (acento / err); el default es el filo neutro.
+// Panel de un diálogo modal. Pasá `border` para los que marcan intención con
+// color (acento / err).
 export function dialogSurface(t: Tokens, opts: { border?: string } = {}): CSSProperties {
   return {
-    background: t.dialogBg ?? t.bg1,
-    backdropFilter: 'blur(40px) saturate(180%)',
-    WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-    border: `1px solid ${opts.border ?? t.glassBorderHi}`,
-    boxShadow: [
-      'inset 0 1px 0 rgba(255,255,255,0.10)',
-      'inset 0 0 0 0.5px rgba(255,255,255,0.03)',
-      t.shadowLg,
-    ].join(', '),
+    background: t.sheet,
+    border: `1px solid ${opts.border ?? t.line}`,
+    borderRadius: 28,
+    boxShadow: t.shadowLg,
   };
 }
 
-export type BtnKind = 'primary' | 'secondary' | 'ghost' | 'danger';
+// Menú flotante / popover.
+export function menuSurface(t: Tokens): CSSProperties {
+  return {
+    background: t.bg,
+    border: `1px solid ${t.line2}`,
+    borderRadius: 18,
+    boxShadow: '0 14px 36px rgba(0,0,0,.22)',
+  };
+}
+
+export type BtnKind = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-solid' | 'solid' | 'soft' | 'raised' | 'outline';
 export type BtnSize = 'sm' | 'md' | 'lg';
 
 type BtnProps = {
@@ -109,64 +110,27 @@ type BtnProps = {
   disabled?: boolean;
   title?: string;
   type?: 'button' | 'submit';
+  className?: string;
 };
 
-export function Btn({ children, kind = 'ghost', size = 'md', icon: Icon, onClick, style = {}, disabled, title, type = 'button' }: BtnProps) {
-  const t = useTokens();
-  const [h, setH] = useState(false);
-  // Los tamaños de escritorio (26/32/40) quedan por debajo del mínimo táctil
-  // de 44pt de iOS. Subirlos acá arregla los cientos de call sites de un saque.
-  const sizes = (isMobileNow() ? {
-    sm: { h: 36, px: 12, fs: 13, gap: 6, ic: 14 },
-    md: { h: 44, px: 16, fs: 14, gap: 8, ic: 16 },
-    lg: { h: 48, px: 20, fs: 15, gap: 10, ic: 18 },
-  } : {
-    sm: { h: 26, px: 10, fs: 12, gap: 6, ic: 13 },
-    md: { h: 32, px: 14, fs: 13, gap: 8, ic: 14 },
-    lg: { h: 40, px: 18, fs: 14, gap: 10, ic: 16 },
-  })[size];
-  const styles: Record<BtnKind, CSSProperties> = {
-    primary: {
-      background: h ? t.accent : t.accentDim,
-      color: t.accentOn,
-      border: `1px solid ${t.accent}`,
-    },
-    secondary: {
-      background: h ? t.bg4 : t.bg3,
-      color: t.text0,
-      border: `1px solid ${t.glassBorder}`,
-    },
-    ghost: {
-      background: h ? t.bg3 : 'transparent',
-      color: t.text1,
-      border: '1px solid transparent',
-    },
-    danger: {
-      background: h ? 'oklch(72% 0.16 25 / 0.18)' : 'transparent',
-      color: t.err,
-      border: `1px solid oklch(72% 0.16 25 / 0.3)`,
-    },
-  };
+const BTN_SIZE: Record<BtnSize, { cls: string; ic: number }> = {
+  sm: { cls: 'eco-btn--xs', ic: 13 },
+  md: { cls: '', ic: 15 },
+  lg: { cls: 'eco-btn--lg', ic: 16 },
+};
+
+export function Btn({ children, kind = 'ghost', size = 'md', icon: Icon, onClick, style, disabled, title, type = 'button', className }: BtnProps) {
+  const s = BTN_SIZE[size];
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
       title={title}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: sizes.gap,
-        height: sizes.h, padding: `0 ${sizes.px}px`,
-        fontFamily: t.fontSans, fontSize: sizes.fs, fontWeight: 500,
-        borderRadius: 8, cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.4 : 1,
-        transition: T_UI,
-        whiteSpace: 'nowrap',
-        ...styles[kind], ...style,
-      }}
+      className={cx('eco-btn', s.cls, `eco-btn--${kind}`, className)}
+      style={style}
     >
-      {Icon && <Icon size={sizes.ic} />}
+      {Icon && <Icon size={s.ic} />}
       {children}
     </button>
   );
@@ -179,32 +143,23 @@ type IconBtnProps = {
   active?: boolean;
   size?: number;
   style?: CSSProperties;
+  disabled?: boolean;
+  className?: string;
 };
 
-export function IconBtn({ icon: Icon, onClick, title, active, size = 32, style = {} }: IconBtnProps) {
-  const t = useTokens();
-  const [h, setH] = useState(false);
+export function IconBtn({ icon: Icon, onClick, title, active, size = 32, style = {}, disabled, className }: IconBtnProps) {
   // En táctil crece el área de toque, no el glyph: muchas toolbars pasan
-  // size={26} y agrandar el icono las desbalancearía. El dibujo queda igual,
-  // lo que cambia es dónde se puede pegar el dedo.
+  // size={26} y agrandar el ícono las desbalancearía.
   const box = isMobileNow() ? Math.max(size, 40) : size;
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={{
-        width: box, height: box, flexShrink: 0,
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        background: active ? t.bg3 : (h ? t.bg3 : 'transparent'),
-        color: t.text0,
-        border: `1px solid ${active ? t.glassBorder : 'transparent'}`,
-        borderRadius: box >= 32 ? 10 : 8,
-        cursor: 'pointer', transition: T_UI,
-        ...style,
-      }}
+      aria-label={title}
+      disabled={disabled}
+      className={cx('eco-iconbtn', active && 'is-on', className)}
+      style={{ width: box, height: box, ...style }}
     >
       <Icon size={Math.round(size * 0.5)} />
     </button>
@@ -238,16 +193,12 @@ type PillProps = {
 
 export function Pill({ children, color, bg, icon: Icon, style = {} }: PillProps) {
   const t = useTokens();
-  const finalColor = color ?? t.text2;
+  const finalColor = color ?? t.text1;
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6,
-      height: 22, padding: '0 8px',
-      background: bg || `color-mix(in oklch, ${finalColor} 12%, transparent)`,
-      color: finalColor, borderRadius: 999,
-      fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-      whiteSpace: 'nowrap',
-      border: `1px solid color-mix(in oklch, ${finalColor} 25%, transparent)`,
+    <span className="eco-chip" style={{
+      fontSize: 12, padding: '2px 10px',
+      background: bg || (color ? `color-mix(in oklch, ${finalColor} 13%, transparent)` : t.raised),
+      color: finalColor,
       ...style,
     }}>
       {Icon && <Icon size={11} />}
@@ -257,16 +208,7 @@ export function Pill({ children, color, bg, icon: Icon, style = {} }: PillProps)
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  const t = useTokens();
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      minWidth: 18, height: 18, padding: '0 4px',
-      background: t.bg3, border: `1px solid ${t.glassBorder}`,
-      borderRadius: 4, color: t.text1,
-      fontFamily: t.fontMono, fontSize: 11, fontWeight: 500,
-    }}>{children}</span>
-  );
+  return <span className="eco-kbd">{children}</span>;
 }
 
 type AgentGlyphProps = {
@@ -287,17 +229,15 @@ export function AgentGlyph({ type = 'general', size = 36, state = 'running', let
   return (
     <div style={{
       width: size, height: size, position: 'relative',
-      borderRadius: '50%',
-      background: t.bg3,
-      border: `1px solid ${t.glassBorder}`,
+      borderRadius: Math.round(size * 0.3),
+      background: t.raised,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       flexShrink: 0,
     }}>
       <span style={{
         fontFamily: t.fontSans, fontSize: size * (display.length === 1 ? 0.44 : 0.36),
-        fontWeight: 500,
-        color: t.text1, letterSpacing: -0.3,
-        textTransform: 'uppercase',
+        fontWeight: 600,
+        color: t.text0, letterSpacing: -0.3,
       }}>{display}</span>
       {(state === 'running' || state === 'thinking') && (
         <span style={{
@@ -326,56 +266,26 @@ type SectionLabelProps = {
 };
 
 export function SectionLabel({ children, count, action }: SectionLabelProps) {
-  const t = useTokens();
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '0 4px 10px', color: t.text2,
-      fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-    }}>
-      <span>{children}</span>
-      {count != null && (
-        <span style={{
-          padding: '1px 8px', background: t.bg3, borderRadius: 999,
-          fontSize: 11, color: t.text1, letterSpacing: 0,
-        }}>{count}</span>
-      )}
-      <div style={{ flex: 1 }}/>
+    <div className="eco-hstack" style={{ gap: 8, padding: '0 4px 10px' }}>
+      <span className="eco-eyebrow">{children}</span>
+      {count != null && <span className="eco-count">{count}</span>}
+      <div className="eco-spacer"/>
       {action}
     </div>
   );
 }
 
 export function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  const t = useTokens();
-  // Medidas del switch nativo de iOS en móvil (51x31) — el de 38x22 es
-  // incómodo de acertar con el pulgar.
-  const mob = isMobileNow();
-  const w = mob ? 51 : 38;
-  const h = mob ? 31 : 22;
-  const knob = h - 6;
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={on}
       onClick={() => !disabled && onChange(!on)}
       disabled={disabled}
-      style={{
-        width: w, height: h, flexShrink: 0, borderRadius: 999,
-        background: on ? t.text1 : t.bg4,
-        border: `1px solid ${on ? t.text1 : t.glassBorder}`,
-        position: 'relative', cursor: disabled ? 'not-allowed' : 'pointer', padding: 0,
-        transition: T_UI,
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <span style={{
-        position: 'absolute', top: 2, left: 2,
-        transform: `translateX(${on ? w - knob - 6 : 0}px)`,
-        width: knob, height: knob, borderRadius: '50%',
-        background: on ? t.windowBg : t.text1,
-        transition: T_UI,
-      }}/>
-    </button>
+      className={cx('eco-toggle', on && 'is-on')}
+    ><i/></button>
   );
 }
 
@@ -386,9 +296,9 @@ export function fieldStyle(t: Tokens): CSSProperties {
   const mob = isMobileNow();
   return {
     width: '100%', boxSizing: 'border-box',
-    background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    borderRadius: 10, padding: mob ? '12px 16px' : '12px 16px',
-    fontFamily: t.fontSans, fontSize: mob ? 16 : 14, color: t.text0,
+    background: t.raised, border: `1px solid ${t.line}`,
+    borderRadius: 22, padding: '11px 16px',
+    fontFamily: t.fontSans, fontSize: mob ? 16 : 13.5, color: t.text0,
     outline: 'none',
   };
 }
@@ -399,7 +309,7 @@ export function FormField({ label, hint, children }: { label: string; hint?: Rea
     <label style={{ display: 'block' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
-        fontSize: 12, color: t.text2, fontWeight: 500,
+        fontSize: 12.5, color: t.text1,
       }}>
         <span>{label}</span>
         <div style={{ flex: 1 }}/>
@@ -407,5 +317,123 @@ export function FormField({ label, hint, children }: { label: string; hint?: Rea
       </div>
       {children}
     </label>
+  );
+}
+
+// ───────── Primitivas del rediseño v2 ─────────
+
+type CardProps = {
+  children?: ReactNode;
+  /** list: filas con separador · nav: lista de navegación · flush: sin padding · stack: columna con gap */
+  variant?: 'default' | 'list' | 'nav' | 'flush' | 'stack';
+  className?: string;
+  style?: CSSProperties;
+  onClick?: (e: MouseEvent<HTMLDivElement>) => void;
+  as?: 'div' | 'section' | 'nav' | 'aside';
+  title?: string;
+};
+
+export function Card({ children, variant = 'default', className, style, onClick, as: Tag = 'div', title }: CardProps) {
+  return (
+    <Tag
+      title={title}
+      onClick={onClick}
+      className={cx('eco-card', variant !== 'default' && `eco-card--${variant}`, onClick && 'eco-card--click', className)}
+      style={style}
+    >{children}</Tag>
+  );
+}
+
+/** Cabecera de página: rótulo + título grande + subtítulo + acciones a la derecha. */
+export function PageHeader({ eyebrow, title, sub, after, actions, style }: {
+  eyebrow?: ReactNode; title: ReactNode; sub?: ReactNode;
+  /** Chips u otros elementos en la misma línea que el título. */
+  after?: ReactNode; actions?: ReactNode; style?: CSSProperties;
+}) {
+  return (
+    <header className="eco-page-head" style={style}>
+      <div className="eco-page-head__main">
+        {eyebrow && <div className="eco-eyebrow">{eyebrow}</div>}
+        {after ? (
+          <div className="eco-hstack eco-hstack--wrap" style={{ gap: 12, marginTop: 6 }}>
+            <h1 className="eco-title" style={{ marginTop: 0 }}>{title}</h1>
+            {after}
+          </div>
+        ) : <h1 className="eco-title">{title}</h1>}
+        {sub && <div className="eco-page-head__sub">{sub}</div>}
+      </div>
+      {actions && <div className="eco-page-head__actions">{actions}</div>}
+    </header>
+  );
+}
+
+export type SegOption<T extends string> = {
+  id: T; label?: ReactNode; icon?: React.ComponentType<{ size?: number }>; title?: string; count?: ReactNode;
+};
+
+/** Control segmentado. `onCard` cuando vive dentro de una tarjeta. */
+export function Segmented<T extends string>({ options, value, onChange, size = 'md', onCard, iconsOnly, style }: {
+  options: SegOption<T>[]; value: T; onChange: (v: T) => void;
+  size?: 'sm' | 'md' | 'lg'; onCard?: boolean; iconsOnly?: boolean; style?: CSSProperties;
+}) {
+  return (
+    <div role="tablist" style={style}
+      className={cx('eco-seg', size !== 'lg' && `eco-seg--${size}`, onCard && 'eco-seg--on-card', iconsOnly && 'eco-seg--icons')}>
+      {options.map((o) => (
+        <button key={o.id} type="button" role="tab" aria-selected={o.id === value}
+          title={o.title ?? (iconsOnly && typeof o.label === 'string' ? o.label : undefined)}
+          onClick={() => onChange(o.id)}
+          className={cx('eco-seg__item', o.id === value && 'is-on')}>
+          {o.icon && <o.icon size={15}/>}
+          {!iconsOnly && o.label}
+          {o.count != null && o.count !== '' && <span className="eco-num">{o.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function IconTile({ icon: Icon, children, size, accent, onRaised, title, style }: {
+  icon?: React.ComponentType<{ size?: number }>; children?: ReactNode;
+  size?: 'sm' | 'md' | 'lg'; accent?: boolean; onRaised?: boolean; title?: string; style?: CSSProperties;
+}) {
+  return (
+    <div title={title} style={style}
+      className={cx('eco-tile', size && size !== 'md' && `eco-tile--${size}`, accent && 'eco-tile--accent', onRaised && 'eco-tile--on-raised')}>
+      {Icon ? <Icon size={size === 'sm' ? 14 : 16}/> : children}
+    </div>
+  );
+}
+
+/** Fila de una tarjeta-lista: mosaico + título/descripción + control al final. */
+export function Row({ icon, tile, title, desc, children, onClick, first, tight, style }: {
+  icon?: React.ComponentType<{ size?: number }>; tile?: ReactNode;
+  title?: ReactNode; desc?: ReactNode; children?: ReactNode;
+  onClick?: (e: MouseEvent<HTMLDivElement>) => void; first?: boolean; tight?: boolean; style?: CSSProperties;
+}) {
+  return (
+    <div onClick={onClick} style={style}
+      className={cx('eco-row', first && 'eco-row--first', tight && 'eco-row--tight', onClick && 'eco-row--click')}>
+      {tile ?? (icon && <IconTile icon={icon}/>)}
+      <div className="eco-row__main">
+        {title && <div className="eco-row__title">{title}</div>}
+        {desc && <div className="eco-row__desc">{desc}</div>}
+      </div>
+      {children && <div className="eco-row__end">{children}</div>}
+    </div>
+  );
+}
+
+export function Chip({ children, dot, tone, onCard, spin, style, title }: {
+  children?: ReactNode; dot?: string | true; tone?: 'accent' | 'ok' | 'warn' | 'err';
+  onCard?: boolean; spin?: boolean; style?: CSSProperties; title?: string;
+}) {
+  return (
+    <span title={title} style={style} className={cx('eco-chip', tone && `eco-chip--${tone}`, onCard && 'eco-chip--on-card')}>
+      {spin ? <span className="eco-spinner" style={{ width: 10, height: 10 }}/> : dot ? (
+        <span className="eco-dot" style={dot === true ? undefined : { background: dot }}/>
+      ) : null}
+      {children}
+    </span>
   );
 }

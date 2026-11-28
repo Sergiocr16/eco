@@ -5,7 +5,8 @@ import { markdown } from '@codemirror/lang-markdown';
 import { useTokens, useTheme } from '@/design/theme';
 import { isLightTheme } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
-import { IconX } from '@/design/icons';
+import { IconX, IconEdit, IconEye } from '@/design/icons';
+import { isMobileNow } from '@/hooks/useMediaQuery';
 import { baseExtensions } from '@/components/FilesPanel/cm-extensions';
 import { MarkdownPreview } from './MarkdownPreview';
 import type { Note } from './types';
@@ -96,38 +97,28 @@ export function NoteEditor({
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0,
-      background: t.bg0,
     }}>
       {/* Header: título input + toggle preview + delete */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '10px 16px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        background: t.bg1,
+      <div className="eco-hstack" style={{
+        gap: 8,
+        padding: isMobileNow() ? '8px 10px 8px 14px' : '14px 14px 12px 22px',
+        borderBottom: `1px solid ${t.line}`,
       }}>
         <input
           value={note.title}
           onChange={(e) => onTitleChange(e.target.value)}
           placeholder={tr('notes.title_placeholder')}
-          style={{
-            flex: 1, padding: '4px 6px',
-            background: 'transparent', color: t.text0,
-            border: 0, outline: 'none',
-            fontFamily: t.fontSans, fontSize: 16, fontWeight: 500,
-          }}
+          className="eco-input-bare"
+          style={{ fontSize: isMobileNow() ? 20 : 24, letterSpacing: '-.02em' }}
         />
         <button
           type="button"
           onClick={onTogglePreview}
           title={showPreview ? tr('notes.edit_mode') : tr('notes.preview')}
-          style={{
-            padding: '4px 10px', borderRadius: t.r2,
-            background: showPreview ? `color-mix(in oklch, ${t.accent} 18%, transparent)` : 'transparent',
-            color: showPreview ? t.accent : t.text2,
-            border: `1px solid ${showPreview ? t.accent : t.glassBorder}`,
-            cursor: 'pointer', fontSize: 12, fontFamily: t.fontSans, fontWeight: 500,
-          }}
+          aria-pressed={showPreview}
+          className="eco-btn eco-btn--raised"
         >
+          {showPreview ? <IconEdit size={15}/> : <IconEye size={15}/>}
           {showPreview ? tr('notes.edit_mode') : tr('notes.preview')}
         </button>
         <button
@@ -135,15 +126,9 @@ export function NoteEditor({
           onClick={onDelete}
           title={tr('notes.delete')}
           aria-label={tr('notes.delete')}
-          style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 28, height: 28, padding: 0, borderRadius: t.r2,
-            background: 'transparent', color: t.text2, border: 0, cursor: 'pointer',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.err; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}
+          className="eco-iconbtn eco-iconbtn--danger"
         >
-          <IconX size={12}/>
+          <IconX size={15}/>
         </button>
       </div>
       {/* Body: editor o preview (uno SIEMPRE montado, el otro oculto para

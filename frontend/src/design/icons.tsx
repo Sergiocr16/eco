@@ -218,9 +218,6 @@ export const IconMoon = (p: IconProps) => (
 export const IconCopy = (p: IconProps) => (
   <Base {...p}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></Base>
 );
-export const IconPin = (p: IconProps) => (
-  <Base {...p}><path d="M9 3h6l-1 6 3 4H7l3-4z"/><path d="M12 13v8"/></Base>
-);
 export const IconSwap = (p: IconProps) => (
   <Base {...p}><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></Base>
 );
@@ -230,3 +227,41 @@ export const IconSplitH = (p: IconProps) => (
 export const IconSplitV = (p: IconProps) => (
   <Base {...p}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/></Base>
 );
+
+// Íconos de lucide-react con la misma firma que los de arriba.
+import {
+  LayoutDashboard, FileDiff, Menu, Leaf, Pin, Smartphone, ChevronLeft, ChevronUp, PanelLeft, Ellipsis, Home, LayoutGrid, Kanban, Network,
+  Filter, RotateCw, RotateCcw, ArrowUpRight, Minus, Star, Eye, EyeOff, Bot, FileText, Rocket,
+  type LucideIcon,
+} from 'lucide-react';
+
+function lu(C: LucideIcon) {
+  return function LucideAdapter({ size = 16, strokeWidth = 1.75, className, style }: IconProps) {
+    return <C size={size} strokeWidth={strokeWidth} className={className} style={style}/>;
+  };
+}
+export const IconOverview = lu(LayoutDashboard);
+export const IconFileDiff = lu(FileDiff);
+export const IconSmartphone = lu(Smartphone);
+export const IconChevL = lu(ChevronLeft);
+export const IconChevU = lu(ChevronUp);
+export const IconPanelLeft = lu(PanelLeft);
+export const IconEllipsis = lu(Ellipsis);
+export const IconMenu = lu(Menu);
+export const IconPin = lu(Pin);
+export const IconLeaf = lu(Leaf);
+export const IconHome = lu(Home);
+export const IconLayoutGrid = lu(LayoutGrid);
+export const IconKanban = lu(Kanban);
+export const IconNetwork = lu(Network);
+export const IconFilter = lu(Filter);
+export const IconRotateCw = lu(RotateCw);
+export const IconRotateCcw = lu(RotateCcw);
+export const IconArrowUpRight = lu(ArrowUpRight);
+export const IconMinus = lu(Minus);
+export const IconStar = lu(Star);
+export const IconEye = lu(Eye);
+export const IconEyeOff = lu(EyeOff);
+export const IconBot = lu(Bot);
+export const IconFileText = lu(FileText);
+export const IconRocket = lu(Rocket);

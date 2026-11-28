@@ -5,7 +5,7 @@
 // En Windows eso se ve como "bordes blancos" en las esquinas del icono. Acá
 // recortamos: flood-fill desde las 4 esquinas sobre los píxeles claros y los
 // volvemos transparentes (con alpha proporcional en el borde anti-alias). Se
-// usa flood-fill — NO un umbral global — porque el anillo teal del logo también
+// usa flood-fill — NO un umbral global — porque el anillo del logo también
 // es claro, pero vive ADENTRO, separado de las esquinas por el cuerpo oscuro,
 // así que el fill nunca lo alcanza.
 //
@@ -34,8 +34,8 @@ const pngToIco = typeof pngToIcoMod === 'function' ? pngToIcoMod : (pngToIcoMod.
 if (!fs.existsSync(SRC)) { console.error('[make-win-icon] no se encontró', SRC); process.exit(1); }
 
 const FILL_THRESHOLD = 128;   // píxeles con luminancia > esto son "claros" (fondo)
-const DARK = { r: 21, g: 23, b: 29 };  // color del cuerpo del squircle (para el borde)
-const DARK_LUM = 21;
+const DARK = { r: 20, g: 19, b: 17 };  // color del cuerpo del squircle (para el borde)
+const DARK_LUM = 19;
 
 const png = PNG.sync.read(fs.readFileSync(SRC));
 const { width: w, height: h, data } = png;

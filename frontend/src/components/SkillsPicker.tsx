@@ -1,6 +1,7 @@
 import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
+import { cx } from '@/design/primitives';
 import { IconZap, IconCommand, IconExt } from '@/design/icons';
 import { useSkills, filterSkills, type SkillInfo } from '@/hooks/useSkills';
 import { useSkillFavorites, skillIdOf } from '@/hooks/useSkillFavorites';
@@ -56,54 +57,30 @@ export function SkillsPicker({ workspace, onRun }: Props) {
           : skills.length === 0
             ? 'Skills (sin detectar — ver dónde buscarlos)'
             : `${skills.length} skills disponibles`}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '0 10px', height: 30, alignSelf: 'center',
-          borderRadius: 8, border: `1px solid ${open ? t.accent : t.glassBorder}`,
-          background: open ? t.accentFaint : 'transparent',
-          color: open ? t.accent : t.text1,
-          fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-          cursor: 'pointer',
-          transition: 'background 140ms, color 140ms, border-color 140ms',
-        }}
-        onMouseEnter={(e) => { if (!open) e.currentTarget.style.background = t.bg2; }}
-        onMouseLeave={(e) => { if (!open) e.currentTarget.style.background = 'transparent'; }}>
+        aria-expanded={open}
+        className={cx('eco-btn eco-btn--sm', open ? 'eco-chip--accent' : 'eco-btn--raised')}
+        style={{ alignSelf: 'center' }}>
         <IconZap size={13}/>
         <span>Skills</span>
-        <span style={{
-          minWidth: 16, height: 16, padding: '0 6px',
-          borderRadius: 999,
-          background: open ? t.accent : t.bg3,
-          color: open ? t.accentOn : t.text2,
-          fontFamily: t.fontMono, fontSize: 11, fontWeight: 500,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        }}>{loading ? '…' : skills.length}</span>
+        <span className="eco-num" style={open ? { color: 'inherit' } : undefined}>{loading ? '…' : skills.length}</span>
       </button>
 
       {open && (
         <div
           id="eco-skills-popover"
+          className="eco-menu"
           style={{
             position: 'absolute', top: 44, right: 12, zIndex: 80,
             width: `min(380px, calc(${vw(100)} - 24px))`, maxHeight: `min(520px, ${vh(70)})`,
             display: 'flex', flexDirection: 'column',
-            background: t.glassBg,
-            backdropFilter: 'blur(40px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-            border: `1px solid ${t.glassBorderHi}`,
-            borderRadius: 16,
-            boxShadow: t.shadowLg,
-            overflow: 'hidden',
+            padding: 0, overflow: 'hidden',
           }}>
-          <div style={{
-            padding: '10px 12px 8px',
-            borderBottom: `1px solid ${t.glassBorder}`,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: t.text0 }}>
+          <div style={{ padding: '12px 12px 8px' }}>
+            <div className="eco-hstack" style={{ justifyContent: 'space-between', alignItems: 'baseline', margin: '0 4px 8px' }}>
+              <div className="eco-label">
                 Skills disponibles
               </div>
-              <div style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>
+              <div className="eco-num">
                 {skills.length} {skills.length === 1 ? 'skill' : 'skills'}
               </div>
             </div>
@@ -112,13 +89,7 @@ export function SkillsPicker({ workspace, onRun }: Props) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Buscar por nombre o descripción…"
-              style={{
-                width: '100%', boxSizing: 'border-box',
-                background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                borderRadius: 8, padding: '8px 10px',
-                fontFamily: t.fontSans, fontSize: 13, color: t.text0,
-                outline: 'none',
-              }}
+              className="eco-field eco-field--sm eco-field--on-sheet"
             />
           </div>
 
@@ -126,24 +97,24 @@ export function SkillsPicker({ workspace, onRun }: Props) {
             flex: 1, overflow: 'auto', padding: 6,
           }}>
             {loading ? (
-              <div style={{ padding: 20, color: t.text3, fontSize: 13, textAlign: 'center' }}>
+              <div className="eco-empty">
                 Cargando…
               </div>
             ) : filtered.length === 0 ? (
-              <div style={{ padding: '16px 16px', color: t.text2, fontSize: 12, lineHeight: 1.55 }}>
+              <div className="eco-sub" style={{ padding: '12px 14px 16px', color: t.text1, lineHeight: 1.55 }}>
                 {query ? (
                   'Ningún match para esa búsqueda.'
                 ) : (
                   <>
-                    <div style={{ color: t.text1, fontWeight: 500, marginBottom: 6 }}>Sin skills detectados</div>
+                    <div className="eco-label" style={{ marginBottom: 6 }}>Sin skills detectados</div>
                     Eco busca skills en:
-                    <ul style={{ margin: '6px 0 0', paddingLeft: 20, fontFamily: t.fontMono, fontSize: 11, color: t.text2 }}>
+                    <ul className="eco-mono" style={{ margin: '6px 0 0', paddingLeft: 20, fontSize: 11.5 }}>
                       <li><code>{workspace || '<workspace>'}/.claude/skills/</code></li>
                       <li><code>~/.claude/skills/</code> (globales)</li>
                       <li><code>~/.claude/commands/</code> (slash commands)</li>
                     </ul>
-                    <div style={{ marginTop: 8, fontSize: 11, color: t.text3 }}>
-                      Cada skill es una carpeta con <code style={{ fontFamily: t.fontMono }}>SKILL.md</code> dentro.
+                    <div style={{ marginTop: 8, color: t.text3 }}>
+                      Cada skill es una carpeta con <code className="eco-mono">SKILL.md</code> dentro.
                     </div>
                   </>
                 )}
@@ -157,11 +128,7 @@ export function SkillsPicker({ workspace, onRun }: Props) {
                 <>
                   {favs.length > 0 && (
                     <>
-                      <div style={{
-                        padding: '6px 10px 4px', fontSize: 11,
-                        color: t.text3,
-                        fontWeight: 500, fontFamily: t.fontMono,
-                      }}>★ Favoritos</div>
+                      <div className="eco-sub" style={{ padding: '6px 10px 4px', fontSize: 11.5 }}>★ Favoritos</div>
                       {favs.map((s) => (
                         <SkillRow
                           key={`fav-${skillIdOf(s)}`}
@@ -172,11 +139,7 @@ export function SkillsPicker({ workspace, onRun }: Props) {
                         />
                       ))}
                       {others.length > 0 && (
-                        <div style={{
-                          padding: '8px 10px 4px', fontSize: 11,
-                          color: t.text3,
-                          fontWeight: 500, fontFamily: t.fontMono,
-                        }}>Todos</div>
+                        <div className="eco-sub" style={{ padding: '8px 10px 4px', fontSize: 11.5 }}>Todos</div>
                       )}
                     </>
                   )}
@@ -207,21 +170,11 @@ function SkillRow({
   favored?: boolean;
   onToggleFav?: () => void;
 }) {
-  const t = useTokens();
-  const [h, setH] = useState(false);
   const KindIcon = skill.kind === 'command' ? IconCommand : skill.kind === 'agent' ? IconExt : IconZap;
   return (
     <div
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={{
-        position: 'relative',
-        width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '8px 10px', borderRadius: 8,
-        background: h ? t.bg3 : 'transparent',
-        transition: 'background 120ms',
-        marginBottom: 2,
-      }}>
+      className="eco-menu__item"
+      style={{ height: 'auto', alignItems: 'flex-start', padding: '8px 6px 8px 10px', marginBottom: 2, cursor: 'default' }}>
       <button
         type="button"
         onClick={onClick}
@@ -229,26 +182,19 @@ function SkillRow({
           flex: 1, display: 'flex', alignItems: 'flex-start', gap: 10,
           padding: 0, border: 0, background: 'transparent',
           cursor: 'pointer', textAlign: 'left',
-          fontFamily: t.fontSans, color: t.text1, minWidth: 0,
+          font: 'inherit', color: 'inherit', minWidth: 0,
         }}>
-        <div style={{
-          width: 26, height: 26, borderRadius: 8, flexShrink: 0,
-          background: t.bg2, color: skill.kind === 'agent' ? t.warn : t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          marginTop: 1,
-        }}>
-          <KindIcon size={13}/>
+        <div className={cx('eco-tile eco-tile--sm', skill.kind !== 'agent' && 'eco-tile--accent')} style={{ marginTop: 1 }}>
+          <KindIcon size={14}/>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-            <span style={{
-              fontFamily: t.fontMono, fontSize: 13, color: t.text0, fontWeight: 500,
-            }}>{skill.name}</span>
+          <div className="eco-hstack" style={{ gap: 6, marginBottom: 2 }}>
+            <span className="eco-mono eco-truncate" style={{ fontSize: 13, fontWeight: 500 }}>{skill.name}</span>
             <SourceChip source={skill.source} plugin={skill.plugin}/>
           </div>
           {skill.description && (
-            <div style={{
-              fontSize: 12, color: t.text2, lineHeight: 1.4,
+            <div className="eco-sub" style={{
+              lineHeight: 1.4,
               display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
               overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{skill.description}</div>
@@ -260,16 +206,10 @@ function SkillRow({
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleFav(); }}
           title={favored ? 'Quitar de favoritos' : 'Marcar como favorito'}
-          style={{
-            width: 22, height: 22, padding: 0, borderRadius: 6, border: 0,
-            background: 'transparent', cursor: 'pointer',
-            color: favored ? t.warn : t.text3,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-            opacity: favored || h ? 1 : 0,
-            transition: 'opacity 120ms, color 120ms',
-          }}>
-          <svg width="13" height="13" viewBox="0 0 24 24"
+          aria-pressed={!!favored}
+          className="eco-iconbtn eco-iconbtn--xs"
+          style={favored ? { color: 'var(--warn)' } : { color: 'var(--tx3)' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24"
             fill={favored ? 'currentColor' : 'none'}
             stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -282,16 +222,9 @@ function SkillRow({
 }
 
 function SourceChip({ source, plugin }: { source: SkillInfo['source']; plugin?: string }) {
-  const t = useTokens();
   const label = source === 'plugin' && plugin ? plugin : source;
-  const color = source === 'project' ? t.accent : source === 'user' ? t.text2 : t.text3;
   return (
-    <span style={{
-      padding: '1px 6px', borderRadius: 999,
-      background: `color-mix(in oklch, ${color} 14%, transparent)`,
-      border: `1px solid color-mix(in oklch, ${color} 30%, transparent)`,
-      color, fontFamily: t.fontMono, fontSize: 11, letterSpacing: 0.2,
-      whiteSpace: 'nowrap',
-    }}>{label}</span>
+    <span className={cx('eco-chip eco-mono', source === 'project' && 'eco-chip--accent')}
+      style={{ padding: '1px 8px', fontSize: 11 }}>{label}</span>
   );
 }

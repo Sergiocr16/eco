@@ -1,5 +1,4 @@
 import { cssZoom } from '@/lib/ui-zoom';
-import { T_UI } from '@/design/motion';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
 import { useIsPhone } from '@/hooks/useMediaQuery';
@@ -113,16 +112,15 @@ export function ResizableSplit({
   if (isPhone) {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-        <div style={{
-          display: 'flex', gap: 4, padding: '6px 10px', flexShrink: 0,
-          borderBottom: `1px solid ${t.glassBorder}`,
-        }}>
-          <PaneBtn active={pane === 'left'} onClick={() => setPane('left')}>
-            {mobileLeftLabel ?? tr('split.list')}
-          </PaneBtn>
-          <PaneBtn active={pane === 'right'} onClick={() => setPane('right')}>
-            {mobileRightLabel ?? tr('split.detail')}
-          </PaneBtn>
+        <div style={{ padding: '6px 12px 8px', flexShrink: 0 }}>
+          <div className="eco-seg eco-seg--md" style={{ display: 'flex' }}>
+            <PaneBtn active={pane === 'left'} onClick={() => setPane('left')}>
+              {mobileLeftLabel ?? tr('split.list')}
+            </PaneBtn>
+            <PaneBtn active={pane === 'right'} onClick={() => setPane('right')}>
+              {mobileRightLabel ?? tr('split.detail')}
+            </PaneBtn>
+          </div>
         </div>
         {/* Los dos quedan montados: desmontar el diff o el editor al cambiar
             de panel perdería scroll y estado, y el árbol de archivos tendría
@@ -160,20 +158,16 @@ export function ResizableSplit({
         onDoubleClick={() => { setLeftWidth(defaultLeft); persist(defaultLeft); }}
         title="Arrastrá para redimensionar · doble click = reset"
         style={{
-          width: 6, flexShrink: 0,
+          width: 7, flexShrink: 0,
           cursor: 'col-resize',
-          background: dragging
-            ? `color-mix(in oklch, ${t.accent} 40%, transparent)`
-            : 'transparent',
-          borderLeft: `1px solid ${t.glassBorder}`,
-          borderRight: `1px solid ${t.glassBorder}`,
-          transition: dragging ? 'none' : 'background 120ms',
+          display: 'flex', justifyContent: 'center',
+          background: dragging ? t.accentSoft : 'transparent',
           position: 'relative',
           zIndex: 5,
         }}
-        onMouseEnter={(e) => { if (!dragging) e.currentTarget.style.background = `color-mix(in oklch, ${t.accent} 20%, transparent)`; }}
-        onMouseLeave={(e) => { if (!dragging) e.currentTarget.style.background = 'transparent'; }}
-      />
+      >
+        <div style={{ width: 1, background: dragging ? t.accentLine : t.line }}/>
+      </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
         {right}
       </div>
@@ -182,19 +176,12 @@ export function ResizableSplit({
 }
 
 function PaneBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  const t = useTokens();
   return (
     <button
       type="button"
       onClick={onClick}
-      style={{
-        flex: 1, height: 36, borderRadius: 8,
-        border: `1px solid ${active ? t.accentDim : 'transparent'}`,
-        background: active ? t.accentFaint : t.bg2,
-        color: active ? t.accent : t.text2,
-        fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-        cursor: 'pointer', transition: T_UI,
-      }}>
+      className={`eco-seg__item${active ? ' is-on' : ''}`}
+      style={{ flex: 1 }}>
       {children}
     </button>
   );

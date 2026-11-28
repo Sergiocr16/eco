@@ -89,28 +89,21 @@ export function HistoryView({ workspace, bubbleId }: Props) {
       minLeft={260}
       mobileShow={selectedSha ? 'right' : 'left'}
       left={
-        <div style={{
-          display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
-          background: t.bg0,
-        }}>
-          <div style={{
-            padding: '8px 16px', display: 'flex', alignItems: 'center',
-            borderBottom: `1px solid ${t.glassBorder}`,
-            flexShrink: 0,
-          }}>
-            <label style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              fontSize: 12, color: t.text2, cursor: 'pointer',
-            }}
-            title={tr('git.history.all_branches_tooltip')}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <div style={{ padding: '12px 16px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <label className="eco-hstack eco-muted" style={{ gap: 9, cursor: 'pointer' }}
+              title={tr('git.history.all_branches_tooltip')}>
               <input type="checkbox"
                 checked={allBranches}
                 onChange={(e) => setAllBranches(e.target.checked)}
-                style={{ margin: 0 }}/>
+                style={{ margin: 0, width: 15, height: 15, accentColor: t.accent }}/>
               {tr('git.history.all_branches')}
             </label>
           </div>
-          <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <div ref={scrollRef} style={{
+            flex: 1, overflow: 'auto', minHeight: 0, padding: '0 8px 10px',
+            display: 'flex', flexDirection: 'column', gap: 2,
+          }}>
             {commits.map((c) => (
               <CommitRow
                 key={c.sha}
@@ -120,12 +113,12 @@ export function HistoryView({ workspace, bubbleId }: Props) {
               />
             ))}
             {loading && commits.length > 0 && (
-              <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
+              <div className="eco-sub" style={{ padding: 16, textAlign: 'center' }}>
                 {tr('git.history.loading_more')}
               </div>
             )}
             {!hasMore && commits.length > 50 && (
-              <div style={{ padding: 16, textAlign: 'center', color: t.text3, fontSize: 11 }}>
+              <div className="eco-sub" style={{ padding: 16, textAlign: 'center' }}>
                 {tr('git.history.end')}
               </div>
             )}
@@ -154,46 +147,26 @@ function CommitRow({ commit, active, onClick }: { commit: LogEntry; active: bool
   return (
     <button type="button"
       onClick={onClick}
+      className={`eco-nav-item${active ? ' is-on' : ''}`}
       style={{
-        width: '100%', padding: '10px 16px',
-        display: 'flex', flexDirection: 'column', gap: 4,
-        border: 0, background: active ? t.accentFaint : 'transparent',
-        textAlign: 'left', cursor: 'pointer',
-        borderLeft: active ? `3px solid ${t.accent}` : '3px solid transparent',
-        borderBottom: `1px solid ${t.glassBorder}`,
-      }}
-      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.bg1; }}
-      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        height: 'auto', flex: 'none', padding: '11px 12px', borderRadius: 14,
+        flexDirection: 'column', alignItems: 'stretch', gap: 4, fontWeight: 400,
+      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
         <ShaPill sha={commit.sha} abbrev={commit.abbrev}/>
-        <div style={{
-          flex: 1, minWidth: 0,
-          fontFamily: t.fontSans, fontSize: 13, fontWeight: 500, color: t.text0,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{commit.subject}</div>
+        <div className="eco-truncate" style={{ flex: 1, fontWeight: 500, color: t.text0 }}>{commit.subject}</div>
       </div>
-      <div style={{ fontSize: 11, color: t.text3, display: 'flex', gap: 6, alignItems: 'center' }}>
-        <span>{commit.author}</span>
-        <span>·</span>
-        <span>{formatRelTime(commit.date)}</span>
-        {commit.refs.length > 0 && (
-          <>
-            <span>·</span>
-            {commit.refs.slice(0, 2).map((r, i) => (
-              <span key={i} style={{
-                padding: '0 6px', borderRadius: 4,
-                background: t.bg3, color: t.text1, fontSize: 11, fontWeight: 500,
-              }}>{r.replace('HEAD -> ', '').replace('tag: ', '🏷 ')}</span>
-            ))}
-          </>
-        )}
+      <div className="eco-sub">
+        {commit.author} · {formatRelTime(commit.date)}
         {commit.parents.length > 1 && (
-          <>
-            <span>·</span>
-            <span style={{ color: t.accent, fontSize: 11, fontWeight: 500 }}>{tr('git.history.merge_tag')}</span>
-          </>
+          <> · <span style={{ color: t.accent }}>{tr('git.history.merge_tag')}</span></>
         )}
       </div>
+      {commit.refs.length > 0 && (
+        <div className="eco-mono eco-truncate" style={{ fontSize: 11.5, color: t.text1 }}>
+          {commit.refs.slice(0, 2).map((r) => r.replace('HEAD -> ', '')).join(' · ')}
+        </div>
+      )}
     </button>
   );
 }

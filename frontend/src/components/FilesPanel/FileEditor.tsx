@@ -5,7 +5,9 @@ import { EditorState, Compartment } from '@codemirror/state';
 import { useTokens, useTheme } from '@/design/theme';
 import { isLightTheme } from '@/design/tokens';
 import { useT } from '@/hooks/useI18n';
-import { IconX } from '@/design/icons';
+import { IconX, IconArrowUpRight, IconFileText } from '@/design/icons';
+import { cx } from '@/design/primitives';
+import { isMobileNow } from '@/hooks/useMediaQuery';
 import { apiFetch } from '@/lib/api';
 import { baseExtensions, type SelectionInfo } from './cm-extensions';
 import { FileTypeIcon } from './file-icon';
@@ -197,43 +199,35 @@ export function FileEditor({
       {/* Tabs de archivos abiertos — solo si hay alguno */}
       {hasOpenFiles && (
       <div style={{
-        display: 'flex', alignItems: 'center', borderBottom: `1px solid ${t.glassBorder}`,
-        overflow: 'auto', flexShrink: 0, minHeight: 36, background: t.bg1,
+        display: 'flex', alignItems: 'center', gap: 8, borderBottom: `1px solid ${t.line}`,
+        flexShrink: 0, padding: isMobileNow() ? '6px 8px' : '10px 12px 10px 14px',
       }}>
-        <div style={{ display: 'flex', overflow: 'auto', minWidth: 0, flex: 1 }}>
+        <div className="eco-noscrollbar" style={{ display: 'flex', gap: 4, overflow: 'auto', minWidth: 0, flex: 1 }}>
         {openFiles.map((f) => {
           const isActive = activeFile && f.path === activeFile.path;
           const isDirty = f.content !== f.originalContent;
           return (
             <div
               key={f.path}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 10px',
-                borderRight: `1px solid ${t.glassBorder}`,
-                background: isActive ? t.bg2 : 'transparent',
-                color: isActive ? t.text0 : t.text2,
-                fontFamily: t.fontSans, fontSize: 12,
-                cursor: 'pointer',
-                flexShrink: 0,
-              }}
+              role="tab"
+              aria-selected={!!isActive}
+              className={cx('eco-subtab', isActive && 'is-on')}
+              style={{ gap: 8, height: 32, padding: '0 6px 0 12px', borderRadius: 16 }}
               onClick={() => onActivate(f.path)}
               title={f.path}
             >
               <FileTypeIcon path={f.path} size={13}/>
-              <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span className="eco-truncate" style={{ maxWidth: 200 }}>
                 {f.path.split('/').pop()}
               </span>
               {isDirty && (
-                <span style={{ color: t.warn, fontSize: 14, lineHeight: 1 }} title={tr('files.editor.dirty')}>·</span>
+                <span className="eco-dot eco-dot--warn" title={tr('files.editor.dirty')}/>
               )}
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onClose(f.path); }}
-                style={{
-                  background: 'transparent', border: 0, padding: 0, marginLeft: 2,
-                  color: t.text2, cursor: 'pointer', display: 'flex', alignItems: 'center',
-                }}
+                className="eco-iconbtn"
+                style={{ width: 22, height: 22 }}
                 aria-label={tr('files.editor.close_tab')}
                 title={tr('files.editor.close_tab')}
               >
@@ -270,16 +264,8 @@ export function FileEditor({
                 }
               }}
               title={`Abrir en ${ideDisplayLabel(ide)} en la línea actual`}
-              style={{
-                margin: '0 8px',
-                padding: '4px 10px', borderRadius: 6,
-                background: 'transparent', color: t.text1,
-                border: `1px solid ${t.glassBorder}`,
-                fontSize: 11, fontWeight: 500,
-                fontFamily: t.fontSans, cursor: 'pointer',
-                whiteSpace: 'nowrap', flexShrink: 0,
-              }}>
-              ↗ {ideDisplayLabel(ide)}
+              className="eco-btn eco-btn--xs eco-btn--outline">
+              <IconArrowUpRight size={13}/>{ideDisplayLabel(ide)}
             </button>
           );
         })()}
@@ -292,11 +278,7 @@ export function FileEditor({
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
         {activeFile?.truncated && (
-          <div style={{
-            padding: '8px 12px', background: `color-mix(in oklch, ${t.warn} 12%, transparent)`,
-            color: t.warn, fontSize: 12, fontFamily: t.fontSans,
-            borderBottom: `1px solid ${t.warn}`,
-          }}>
+          <div className="eco-banner eco-banner--warn" style={{ margin: '8px 12px 0', flexShrink: 0 }}>
             {tr('files.editor.truncated_banner')}
           </div>
         )}
@@ -314,15 +296,16 @@ export function FileEditor({
           <ImagePreview bubbleId={bubbleId} workspace={workspace} path={activeFile.path}/>
         )}
         {activeFile && !isImage && activeFile.binary && (
-          <div style={{ padding: 24, color: t.text2, fontFamily: t.fontSans, fontSize: 13 }}>
+          <div className="eco-empty">
             {tr('files.editor.binary')}
           </div>
         )}
         {!hasOpenFiles && (
-          <div style={{
-            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: t.text2, fontFamily: t.fontSans, fontSize: 13, padding: 24, textAlign: 'center',
+          <div className="eco-empty" style={{
+            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 12, padding: 24,
           }}>
+            <div className="eco-tile eco-tile--lg"><IconFileText size={20}/></div>
             {tr('files.editor.no_file')}
           </div>
         )}
@@ -348,12 +331,11 @@ export function FileEditor({
 
         {/* Status bar */}
         {activeFile && !isImage && !activeFile.binary && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px',
-            borderTop: `1px solid ${t.glassBorder}`, background: t.glassBg,
-            fontFamily: t.fontSans, fontSize: 11, color: t.text2, flexShrink: 0,
+          <div className="eco-num" style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px',
+            borderTop: `1px solid ${t.line}`, flexShrink: 0,
           }}>
-            <span>{activeFile.path}</span>
+            <span className="eco-truncate">{activeFile.path}</span>
             <span style={{ flex: 1 }}/>
             {selection && !selection.empty && (
               <span>{tr('files.editor.send_to_claude')}: L{selection.startLine}–{selection.endLine}</span>
@@ -371,11 +353,11 @@ function Breadcrumb({ path, onRevealDir }: { path: string; onRevealDir?: (dir: s
   const t = useTokens();
   const segs = path.split('/').filter(Boolean);
   return (
-    <div style={{
+    <div className="eco-noscrollbar" style={{
       display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: 2,
-      padding: '4px 10px', minHeight: 24, overflow: 'auto', flexShrink: 0,
-      borderBottom: `1px solid ${t.glassBorder}`, background: t.bg1,
-      fontFamily: t.fontSans, fontSize: 11, color: t.text2,
+      padding: '7px 16px', overflow: 'auto', flexShrink: 0,
+      borderBottom: `1px solid ${t.line}`,
+      fontSize: 12.5, color: t.text3,
     }}>
       {segs.map((seg, i) => {
         const isLast = i === segs.length - 1;
@@ -385,18 +367,13 @@ function Breadcrumb({ path, onRevealDir }: { path: string; onRevealDir?: (dir: s
             {i > 0 && <span style={{ color: t.text3, padding: '0 1px' }}>›</span>}
             {isLast && <FileTypeIcon path={path} size={12}/>}
             {isLast ? (
-              <span style={{ color: t.text1, fontWeight: 500 }}>{seg}</span>
+              <span style={{ color: t.text0, fontWeight: 500, marginLeft: 3 }}>{seg}</span>
             ) : (
               <button
                 type="button"
                 onClick={() => onRevealDir?.(dirPath)}
-                style={{
-                  background: 'transparent', border: 0, padding: '1px 4px', borderRadius: 4,
-                  color: t.text2, cursor: onRevealDir ? 'pointer' : 'default',
-                  fontFamily: t.fontSans, fontSize: 11,
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = t.text0; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = t.text2; }}
+                className="eco-subtab"
+                style={{ padding: '1px 5px', borderRadius: 6, cursor: onRevealDir ? 'pointer' : 'default' }}
               >
                 {seg}
               </button>
@@ -424,16 +401,8 @@ function FloatingSendButton({ coords, hostRect, label, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      style={{
-        position: 'absolute',
-        left, top,
-        padding: '6px 10px', borderRadius: t.r2,
-        background: t.accent, color: t.accentOn,
-        border: 0, cursor: 'pointer',
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-        boxShadow: t.shadowMd,
-        zIndex: 20,
-      }}
+      className="eco-btn eco-btn--xs eco-btn--primary"
+      style={{ position: 'absolute', left, top, boxShadow: t.shadowMd, zIndex: 20 }}
     >
       {label}
     </button>
@@ -441,7 +410,6 @@ function FloatingSendButton({ coords, hostRect, label, onClick }: {
 }
 
 function ImagePreview({ bubbleId, workspace, path }: { bubbleId: string; workspace: string; path: string }) {
-  const t = useTokens();
   const tr = useT();
   // Para que el browser muestre la imagen sin reimplementar la auth, generamos
   // un blob URL desde un fetch autenticado.
@@ -469,16 +437,15 @@ function ImagePreview({ bubbleId, workspace, path }: { bubbleId: string; workspa
     };
   }, [bubbleId, workspace, path, tr]);
   if (err) {
-    return <div style={{ padding: 24, color: t.err, fontFamily: t.fontSans, fontSize: 13 }}>{err}</div>;
+    return <div className="eco-banner eco-banner--err" style={{ margin: 16 }}>{err}</div>;
   }
   if (!src) {
-    return <div style={{ padding: 24, color: t.text2, fontFamily: t.fontSans, fontSize: 13 }}>{tr('files.tree.loading')}</div>;
+    return <div className="eco-empty">{tr('files.tree.loading')}</div>;
   }
   return (
     <div style={{
       flex: 1, minHeight: 0, overflow: 'auto', padding: 16,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: t.bg1,
     }}>
       <img
         src={src}

@@ -3,10 +3,10 @@
   <title>Eco mark</title>
   <defs>
     <linearGradient id="ecoMarkGrad" x1="0" y1="0" x2="56" y2="56" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="oklch(82% 0.14 170)"></stop>
-      <stop offset="100%" stop-color="oklch(68% 0.13 158)"></stop>
+      <stop offset="0%" stop-color="#d98562"></stop>
+      <stop offset="100%" stop-color="#d98562"></stop>
     </linearGradient>
   </defs>
-  <path d="M 8.95 39 A 22 22 0 1 1 17 47.05" fill="none" stroke="url(#ecoMarkGrad)" stroke-width="5" stroke-linecap="round"></path>
-  <circle cx="15.5" cy="40.5" r="3.6" fill="url(#ecoMarkGrad)"></circle>
+  <path d="M 6.33 31.82 A 22 22 0 1 1 20.66 48.74" fill="none" stroke="url(#ecoMarkGrad)" stroke-width="6" stroke-linecap="round"></path>
+  <circle cx="15.6" cy="36.4" r="4" fill="url(#ecoMarkGrad)"></circle>
 </svg>

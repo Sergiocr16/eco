@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Monitor, Tablet, Smartphone, Check, RotateCcw, ChevronRight } from 'lucide-react';
+import { Monitor, Tablet, Smartphone, Check, RotateCcw, ChevronRight, ChevronDown } from 'lucide-react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
+import { useIsPhone } from '@/hooks/useMediaQuery';
+import { cx } from '@/design/primitives';
 import {
   DEVICE_COLORS, DEVICE_FAMILIES, DEVICE_MODELS, deviceColor, deviceFamily, deviceModel, deviceSpec,
   familyPreset, isAndroidFamily, isTabletFamily, usesButtons,
@@ -42,22 +44,16 @@ export function ViewportMenu({ selection, disabled, onChange }: Props) {
           disabled={disabled}
           title={tr('browser.viewport.label')}
           aria-label={tr('browser.viewport.label')}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            height: 26, padding: '0 8px', border: 0, borderRadius: 6,
-            background: viewport === 'desktop' ? t.bg2 : `color-mix(in oklch, ${t.accent} 18%, transparent)`,
-            color: viewport === 'desktop' ? t.text1 : t.accent,
-            cursor: disabled ? 'not-allowed' : 'pointer',
-            opacity: disabled ? 0.4 : 1,
-            fontFamily: t.fontMono, fontSize: 11, whiteSpace: 'nowrap',
-          }}
+          className={cx('eco-btn eco-btn--sm', viewport === 'desktop' ? 'eco-btn--raised' : 'eco-chip--accent')}
+          style={{ fontSize: 12.5, fontWeight: 400 }}
         >
-          <TriggerIcon size={12}/>
+          <TriggerIcon size={14}/>
           <span>{label}</span>
+          <ChevronDown size={12} color={t.text3}/>
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={6} style={{ ...contentStyle(t), minWidth: 200 }}>
+        <DropdownMenu.Content align="end" sideOffset={6} className="eco-menu" style={{ minWidth: 210, zIndex: 200, maxHeight: 'var(--radix-dropdown-menu-content-available-height)', overflowY: 'auto' }}>
           {!customMode ? (
             <>
               <PresetItem Icon={Monitor} label={tr('browser.viewport.desktop')}
@@ -67,25 +63,21 @@ export function ViewportMenu({ selection, disabled, onChange }: Props) {
               ))}
               <DropdownMenu.Item
                 onSelect={(e) => { e.preventDefault(); setCustomMode(true); }}
-                style={itemStyle(t)}
-                onMouseEnter={hoverIn(t)}
-                onMouseLeave={hoverOut(t)}
+                className="eco-menu__item" style={ITEM}
               >
                 <span style={{ width: 14, flexShrink: 0 }}/>
-                <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{tr('browser.viewport.custom')}</span>
+                <span className="eco-grow">{tr('browser.viewport.custom')}</span>
                 {viewport === 'custom' && <Check size={13} color={t.accent}/>}
               </DropdownMenu.Item>
               {spec && (
                 <>
-                  <DropdownMenu.Separator style={{ height: 1, background: t.glassBorder, margin: '4px 0' }}/>
+                  <DropdownMenu.Separator className="eco-menu__sep"/>
                   <DropdownMenu.Item
                     onSelect={(e) => { e.preventDefault(); onChange({ rotated: !selection.rotated }); setOpen(false); }}
-                    style={itemStyle(t)}
-                    onMouseEnter={hoverIn(t)}
-                    onMouseLeave={hoverOut(t)}
+                    className="eco-menu__item" style={ITEM}
                   >
                     <RotateCcw size={13} color={t.text2}/>
-                    <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{tr('browser.viewport.rotate')}</span>
+                    <span className="eco-grow">{tr('browser.viewport.rotate')}</span>
                   </DropdownMenu.Item>
                 </>
               )}
@@ -111,11 +103,7 @@ export function ViewportMenu({ selection, disabled, onChange }: Props) {
                   setOpen(false);
                   setCustomMode(false);
                 }}
-                style={{
-                  padding: '6px 10px', borderRadius: t.r2, border: 0,
-                  background: t.accent, color: t.accentOn,
-                  cursor: 'pointer', fontSize: 12, fontFamily: t.fontSans, fontWeight: 500,
-                }}
+                className="eco-btn eco-btn--sm eco-btn--primary eco-btn--block"
               >
                 {tr('browser.viewport.custom_apply')}
               </button>
@@ -154,22 +142,17 @@ function FamilyMenu({ family, label, selection, onChange }: {
     deviceModel: model.id,
     ...patch,
   });
-  return (
-    <DropdownMenu.Sub>
-      <DropdownMenu.SubTrigger style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
-        <FamilyIcon size={13} color={active ? t.accent : t.text2}/>
-        <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{label}</span>
-        {active && <Check size={13} color={t.accent}/>}
-        <ChevronRight size={13} color={t.text3}/>
-      </DropdownMenu.SubTrigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.SubContent sideOffset={6} style={{ ...contentStyle(t), minWidth: 210 }}>
+  // En el teléfono no hay ancho para un submenú lateral: se despliega en línea.
+  const isPhone = useIsPhone();
+  const [expanded, setExpanded] = useState(active);
+  const body = (
+    <>
           <GroupLabel>{tr('browser.device.model')}</GroupLabel>
           {DEVICE_MODELS[family].map((m) => (
             <DropdownMenu.Item key={m.id} onSelect={() => enter({ deviceModel: m.id })}
-              style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
-              <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{m.name}</span>
-              <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text3 }}>{m.width}×{m.height}</span>
+              className="eco-menu__item" style={ITEM}>
+              <span className="eco-grow">{m.name}</span>
+              <span className="eco-num">{m.width}×{m.height}</span>
               <span style={{ width: 13, display: 'inline-flex' }}>
                 {active && model.id === m.id && <Check size={13} color={t.accent}/>}
               </span>
@@ -177,13 +160,13 @@ function FamilyMenu({ family, label, selection, onChange }: {
           ))}
           {isAndroidFamily(family) && (
             <>
-              <DropdownMenu.Separator style={{ height: 1, background: t.glassBorder, margin: '4px 0' }}/>
+              <DropdownMenu.Separator className="eco-menu__sep"/>
               <GroupLabel>{tr('browser.device.nav')}</GroupLabel>
               {[false, true].map((withButtons) => (
                 <DropdownMenu.Item key={String(withButtons)}
                   onSelect={() => enter({ viewport: familyPreset(family, withButtons) })}
-                  style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
-                  <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>
+                  className="eco-menu__item" style={ITEM}>
+                  <span className="eco-grow">
                     {tr(withButtons ? 'browser.device.nav.buttons' : 'browser.device.nav.gestures')}
                   </span>
                   {active && buttons === withButtons && <Check size={13} color={t.accent}/>}
@@ -191,46 +174,58 @@ function FamilyMenu({ family, label, selection, onChange }: {
               ))}
             </>
           )}
-          <DropdownMenu.Separator style={{ height: 1, background: t.glassBorder, margin: '4px 0' }}/>
+          <DropdownMenu.Separator className="eco-menu__sep"/>
           <GroupLabel>{tr('browser.device.color')}</GroupLabel>
           {DEVICE_COLORS[family].map((c) => (
             <DropdownMenu.Item key={c.id}
               onSelect={(e) => { e.preventDefault(); enter({ frameColor: c.id }); }}
-              style={itemStyle(t)} onMouseEnter={hoverIn(t)} onMouseLeave={hoverOut(t)}>
+              className="eco-menu__item" style={ITEM}>
               <span style={{
-                width: 13, height: 13, borderRadius: '50%', flexShrink: 0,
-                background: c.hex, boxShadow: `0 0 0 1px ${t.glassBorderHi}`,
+                width: 16, height: 16, borderRadius: '50%', flexShrink: 0, boxSizing: 'border-box',
+                background: c.hex, border: `1px solid ${t.line2}`,
               }}/>
-              <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{tr(c.labelKey)}</span>
+              <span className="eco-grow">{tr(c.labelKey)}</span>
               {active && color.id === c.id && <Check size={13} color={t.accent}/>}
             </DropdownMenu.Item>
           ))}
+    </>
+  );
+  return (
+    isPhone ? (
+      <>
+        <DropdownMenu.Item onSelect={(e) => { e.preventDefault(); setExpanded((v) => !v); }}
+          className="eco-menu__item" style={ITEM}>
+          <FamilyIcon size={13} color={active ? t.accent : t.text2}/>
+          <span className="eco-grow">{label}</span>
+          {active && <Check size={13} color={t.accent}/>}
+          {expanded ? <ChevronDown size={13} color={t.text3}/> : <ChevronRight size={13} color={t.text3}/>}
+        </DropdownMenu.Item>
+        {expanded && <div className="eco-menu__sub" style={{ maxHeight: 'none' }}>{body}</div>}
+      </>
+    ) : (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger className="eco-menu__item" style={ITEM}>
+        <FamilyIcon size={13} color={active ? t.accent : t.text2}/>
+        <span className="eco-grow">{label}</span>
+        {active && <Check size={13} color={t.accent}/>}
+        <ChevronRight size={13} color={t.text3}/>
+      </DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent sideOffset={6} className="eco-menu" style={{ minWidth: 250, zIndex: 200 }}>
+          {body}
         </DropdownMenu.SubContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Sub>
+    )
   );
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
-  const t = useTokens();
-  return (
-    <div style={{
-      padding: '4px 10px 2px', fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-      color: t.text3,
-    }}>{children}</div>
-  );
+  return <div className="eco-sub" style={{ padding: '8px 10px 4px', fontSize: 11.5 }}>{children}</div>;
 }
 
-function contentStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return {
-    background: t.windowBg,
-    border: `1px solid ${t.glassBorder}`,
-    borderRadius: t.r2,
-    boxShadow: t.shadowLg,
-    padding: 4,
-    zIndex: 200,
-  };
-}
+// Radix marca el ítem resaltado con foco, no con :hover.
+const ITEM: React.CSSProperties = { outline: 'none' };
 
 function PresetItem({ Icon, label, active, onSelect }: {
   Icon: typeof Monitor;
@@ -242,12 +237,10 @@ function PresetItem({ Icon, label, active, onSelect }: {
   return (
     <DropdownMenu.Item
       onSelect={onSelect}
-      style={itemStyle(t)}
-      onMouseEnter={hoverIn(t)}
-      onMouseLeave={hoverOut(t)}
+      className="eco-menu__item" style={ITEM}
     >
       <Icon size={13} color={active ? t.accent : t.text2}/>
-      <span style={{ flex: 1, fontSize: 13, color: t.text0 }}>{label}</span>
+      <span className="eco-grow">{label}</span>
       {active && <Check size={13} color={t.accent}/>}
     </DropdownMenu.Item>
   );
@@ -257,9 +250,8 @@ function CustomField({ label, value, min, max, onChange }: {
   label: string; value: number; min: number; max: number;
   onChange: (n: number) => void;
 }) {
-  const t = useTokens();
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: t.text1, fontFamily: t.fontSans }}>
+    <label className="eco-hstack eco-field-label" style={{ gap: 8 }}>
       <span style={{ width: 56 }}>{label}</span>
       <input
         type="number"
@@ -270,33 +262,9 @@ function CustomField({ label, value, min, max, onChange }: {
           const n = parseInt(e.target.value, 10);
           if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
         }}
-        style={{
-          flex: 1, padding: '4px 8px', borderRadius: t.r2,
-          background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
-          fontFamily: t.fontMono, fontSize: 12, outline: 'none',
-        }}
+        className="eco-field eco-field--sm eco-field--mono"
+        style={{ flex: 1, width: 'auto', minWidth: 0 }}
       />
     </label>
   );
-}
-
-function itemStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '6px 10px', borderRadius: t.r2,
-    outline: 'none', cursor: 'pointer',
-    fontFamily: t.fontSans,
-  };
-}
-
-function hoverIn(t: ReturnType<typeof useTokens>) {
-  return (e: React.MouseEvent<HTMLElement>) => {
-    e.currentTarget.style.background = `color-mix(in oklch, ${t.accent} 14%, transparent)`;
-  };
-}
-
-function hoverOut(_t: ReturnType<typeof useTokens>) {
-  return (e: React.MouseEvent<HTMLElement>) => {
-    e.currentTarget.style.background = 'transparent';
-  };
 }

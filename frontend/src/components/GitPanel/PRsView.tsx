@@ -1,8 +1,8 @@
-import { vw } from '@/lib/ui-zoom';
 import { useCallback, useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn, scrimStyle, dialogSurface } from '@/design/primitives';
-import { IconBranch, IconExt, IconUser, IconCheck, IconX, IconResume } from '@/design/icons';
+import { Btn, IconBtn } from '@/design/primitives';
+import { useIsPhone } from '@/hooks/useMediaQuery';
+import { IconBranch, IconExt, IconCheck, IconX, IconResume, IconAlert } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit, on as ecoOn } from '@/lib/eco-bus';
 import { ResizableSplit } from './ResizableSplit';
@@ -49,7 +49,6 @@ const prDetailsCache = new Map<string, DetailsResult>();
 type Props = { workspace: string; bubbleId: string };
 
 export function PRsView({ workspace, bubbleId }: Props) {
-  const t = useTokens();
   const tr = useT();
   const { data: list, loading: listLoading, refresh } = usePullRequests(workspace, bubbleId);
   // Lee selección al montar. Dos fuentes:
@@ -113,28 +112,19 @@ export function PRsView({ workspace, bubbleId }: Props) {
       minLeft={260}
       mobileShow={selected !== null ? 'right' : 'left'}
       left={
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: t.bg0 }}>
-          <div style={{
-            padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8,
-            borderBottom: `1px solid ${t.glassBorder}`,
-            flexShrink: 0,
-          }}>
-            <div style={{ flex: 1, fontSize: 12, color: t.text2 }}>
-              <strong style={{ color: t.text0 }}>{prs.length}</strong> {prs.length === 1 ? tr('prs.list.open_one') : tr('prs.list.open_many')}
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: '2px 12px 12px' }}>
+          <div className="eco-hstack" style={{ gap: 8, padding: '8px 10px 10px', flexShrink: 0 }}>
+            <span style={{ fontWeight: 600 }}>{prs.length}</span>
+            <span className="eco-muted eco-grow">{prs.length === 1 ? tr('prs.list.open_one') : tr('prs.list.open_many')}</span>
             <button type="button"
               onClick={() => void refresh()}
               title={tr('prs.list.refresh_tooltip')}
-              style={{
-                width: 24, height: 24, padding: 0, borderRadius: 6,
-                background: 'transparent', border: `1px solid ${t.glassBorder}`,
-                color: t.text2, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-              <IconResume size={11}/>
+              aria-label={tr('prs.list.refresh_tooltip')}
+              className="eco-iconbtn eco-iconbtn--xs">
+              <IconResume size={14}/>
             </button>
           </div>
-          <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
             {prs.map((pr) => (
               <PrRow key={pr.number} pr={pr}
                 active={selected === pr.number}
@@ -167,63 +157,42 @@ function compactNum(n: number): string {
 function PrRow({ pr, active, onClick }: { pr: PullRequest; active: boolean; onClick: () => void }) {
   const t = useTokens();
   const tr = useT();
+  const isPhone = useIsPhone();
   const formatRelTime = useFormatRelTime();
   return (
     <button type="button"
       onClick={onClick}
+      className={`eco-nav-item${active ? ' is-on' : ''}`}
       style={{
-        width: '100%', padding: '10px 16px',
-        display: 'flex', flexDirection: 'column', gap: 4,
-        border: 0, background: active ? t.accentFaint : 'transparent',
-        borderLeft: active ? `3px solid ${t.accent}` : '3px solid transparent',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        textAlign: 'left', cursor: 'pointer',
-      }}
-      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.bg1; }}
-      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{
-          fontFamily: t.fontMono, fontSize: 11,
-          color: pr.isDraft ? t.text3 : t.accent, fontWeight: 600,
-          flexShrink: 0,
-        }}>#{pr.number}</span>
-        <div style={{
-          flex: 1, minWidth: 0,
-          fontSize: 13, fontWeight: 500, color: t.text0,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{pr.title}</div>
+        height: 'auto', flex: 'none', padding: '11px 12px', borderRadius: 14,
+        flexDirection: 'column', alignItems: 'stretch', gap: 4, fontWeight: 400,
+        color: t.text0,
+        // En teléfono el panel va sobre la hoja: `raised` casi no se distingue.
+        ...(active && isPhone ? { background: t.card } : {}),
+      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <span className="eco-mono" style={{ flex: 'none', fontSize: 12, color: t.text3 }}>#{pr.number}</span>
+        <span className="eco-truncate" style={{ flex: 1, fontWeight: 500 }}>{pr.title}</span>
       </div>
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 6, marginTop: 2,
-        fontSize: 11, color: t.text3, flexWrap: 'wrap',
+        display: 'flex', alignItems: 'center', gap: 8,
+        fontSize: 12.5, color: t.text3, flexWrap: 'wrap',
       }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <IconUser size={9}/>
-          <span>{pr.author || tr('common.empty_dash')}</span>
-        </span>
-        <span>·</span>
-        <span>{formatRelTime(pr.updatedAt || pr.createdAt)}</span>
+        <span>{pr.author || tr('common.empty_dash')} · {formatRelTime(pr.updatedAt || pr.createdAt)}</span>
         {pr.isDraft && (
-          <span style={{
-            padding: '0 6px', borderRadius: 4,
-            background: t.bg3, color: t.text2,
-            fontSize: 11, fontWeight: 500,
+          <span className="eco-mono" style={{
+            fontSize: 11.5, padding: '0 7px', borderRadius: 7,
+            background: t.sheet, color: t.text1,
           }}>{tr('prs.list.draft')}</span>
         )}
         {pr.isFork && (
-          <span style={{
-            padding: '0 6px', borderRadius: 4,
-            background: `color-mix(in oklch, ${t.warn} 18%, transparent)`,
-            color: t.warn,
-            fontSize: 11, fontWeight: 500,
+          <span className="eco-mono" style={{
+            fontSize: 11.5, padding: '0 7px', borderRadius: 7,
+            background: t.warnSoft, color: t.warn,
           }}>{tr('prs.list.fork')}</span>
         )}
-        {(pr.additions != null || pr.deletions != null) && (
-          <span style={{ display: 'inline-flex', gap: 4 }}>
-            {pr.additions != null && <span style={{ color: t.ok }}>+{compactNum(pr.additions)}</span>}
-            {pr.deletions != null && <span style={{ color: t.err }}>−{compactNum(pr.deletions)}</span>}
-          </span>
-        )}
+        {pr.additions != null && <span className="eco-mono" style={{ color: t.ok }}>+{compactNum(pr.additions)}</span>}
+        {pr.deletions != null && <span className="eco-mono" style={{ color: t.err }}>−{compactNum(pr.deletions)}</span>}
       </div>
     </button>
   );
@@ -253,6 +222,7 @@ function PrDetailPane({
   const [readyConfirm, setReadyConfirm] = useState(false);
   // La rama del PR está checked-out en otro worktree: preguntamos si traerla.
   const [takeover, setTakeover] = useState<BranchHolderInfo | null>(null);
+  const isPhone = useIsPhone();
 
   useEffect(() => {
     if (!msg) return;
@@ -424,36 +394,33 @@ function PrDetailPane({
   const body = pr?.body ?? '';
   const comments = pr?.comments ?? [];
   const commitsCount = pr?.commitsCount ?? 0;
+  const pad = !isPhone;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: t.bg0 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* Header con título + meta */}
       <div style={{
-        padding: '16px 20px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        background: t.bg1,
-        display: 'flex', flexDirection: 'column', gap: 8,
+        padding: pad ? '22px 24px 14px' : '14px 16px 12px',
+        display: 'flex', flexDirection: 'column', gap: 14,
         flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{
-            fontFamily: t.fontMono, fontSize: 12,
-            color: isDraft ? t.text3 : t.accent, fontWeight: 600,
-          }}>#{number}</span>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <span className="eco-mono" style={{ fontSize: 13, color: t.text3 }}>#{number}</span>
           <div style={{
-            flex: 1, minWidth: 0,
-            fontSize: 14, fontWeight: 500, color: t.text0,
+            flex: '1 1 300px', minWidth: 0,
+            fontSize: pad ? 22 : 18, fontWeight: 400, letterSpacing: '-.02em',
+            lineHeight: 1.25, color: t.text0, textWrap: 'pretty', overflowWrap: 'anywhere',
           }}>{title}</div>
           <StateBadge state={state} isDraft={isDraft}/>
         </div>
 
         {/* "wants to merge N commits into BASE from HEAD" estilo GitHub */}
         <div style={{
-          fontSize: 12, color: t.text2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
+          color: t.text1, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
         }}>
-          <strong style={{ color: t.text1 }}>{author || tr('common.empty_dash')}</strong>
+          <span style={{ fontWeight: 600, color: t.text0 }}>{author || tr('common.empty_dash')}</span>
           <span>{tr('prs.detail.wants_to_merge')}</span>
-          <strong style={{ color: t.text0 }}>{commitsCount}</strong>
+          <span style={{ fontWeight: 600, color: t.text0 }}>{commitsCount}</span>
           <span>{commitsCount === 1 ? tr('prs.detail.commit_one') : tr('prs.detail.commit_many')}</span>
           <BranchPill name={baseRef}/>
           <span>{tr('prs.detail.from')}</span>
@@ -461,49 +428,39 @@ function PrDetailPane({
         </div>
 
         {/* Acciones */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Btn kind="primary" size="sm" icon={IconBranch} onClick={() => void checkout()} disabled={!!busyAction}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Btn kind="primary" icon={IconBranch} onClick={() => void checkout()} disabled={!!busyAction}>
             {busyAction === 'checkout' ? '…' : tr('prs.detail.go_to_branch')}
           </Btn>
           {url && (
             <a href={url} target="_blank" rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '6px 10px', borderRadius: 8,
-                background: 'transparent', border: `1px solid ${t.glassBorder}`,
-                color: t.text2, fontSize: 12, textDecoration: 'none',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.glassBorder; e.currentTarget.style.color = t.text2; }}>
-              <IconExt size={11}/> {tr('prs.detail.view_github')}
+              className="eco-btn eco-btn--raised"
+              style={{ textDecoration: 'none' }}>
+              <IconExt size={15}/> {tr('prs.detail.view_github')}
             </a>
           )}
           <button type="button"
             onClick={() => void load(false)}
             disabled={!!busyAction}
             title={tr('prs.detail.refresh_comments')}
-            style={{
-              width: 28, height: 28, padding: 0, borderRadius: 8,
-              background: 'transparent', border: `1px solid ${t.glassBorder}`,
-              color: t.text2, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-            <IconResume size={12}/>
+            aria-label={tr('prs.detail.refresh_comments')}
+            className="eco-iconbtn eco-iconbtn--md eco-iconbtn--raised">
+            <IconResume size={15}/>
           </button>
         </div>
 
         {msg && (
-          <div style={{
-            padding: '6px 10px', borderRadius: 6,
-            background: `color-mix(in oklch, ${msg.kind === 'ok' ? t.ok : t.err} 14%, transparent)`,
-            color: msg.kind === 'ok' ? t.ok : t.err,
-            fontFamily: t.fontMono, fontSize: 11,
-          }}>{msg.text}</div>
+          <div className={`eco-banner eco-banner--${msg.kind} eco-mono`}
+            style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{msg.text}</div>
         )}
       </div>
 
       {/* Body + comentarios */}
-      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      <div style={{
+        flex: 1, overflow: 'auto', minHeight: 0,
+        padding: pad ? '0 24px 18px' : '0 16px 14px',
+        display: 'flex', flexDirection: 'column', gap: 14,
+      }}>
         {body && (
           <CommentBlock
             author={author}
@@ -513,7 +470,7 @@ function PrDetailPane({
           />
         )}
         {comments.length === 0 && !body ? (
-          <div style={{ padding: 32, textAlign: 'center', color: t.text3, fontSize: 12 }}>
+          <div className="eco-empty">
             {tr('prs.detail.no_comments')}
           </div>
         ) : (
@@ -536,56 +493,36 @@ function PrDetailPane({
       {state === 'OPEN' && (
         <div style={{
           flexShrink: 0,
-          padding: '10px 20px',
-          borderTop: `1px solid ${t.glassBorder}`,
-          background: t.bg1,
-          display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
+          margin: pad ? '0 24px' : '0 16px',
+          padding: '14px 0',
+          borderTop: `1px solid ${t.line}`,
+          display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
         }}>
-          <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: t.text3 }}>
+          <div style={{ flex: '1 1 240px', minWidth: 0, color: t.text3 }}>
             {isDraft
               ? tr('prs.detail.draft_hint')
               : tr('prs.detail.actions_on', { n: number })}
           </div>
           {isDraft && (
-            <button type="button"
+            <Btn kind="solid"
               onClick={() => setReadyConfirm(true)}
               disabled={!!busyAction}
-              title={tr('prs.detail.ready_tooltip')}
-              style={{
-                height: 32, padding: '0 16px', borderRadius: 8,
-                background: 'transparent', border: `1px solid ${t.accent}`,
-                color: t.accent,
-                fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-                cursor: busyAction ? 'wait' : 'pointer',
-              }}>
+              title={tr('prs.detail.ready_tooltip')}>
               {busyAction === 'ready' ? '…' : tr('prs.detail.ready_btn')}
-            </button>
+            </Btn>
           )}
-          <button type="button"
+          <Btn kind="danger"
             onClick={() => setCloseConfirm({ comment: '' })}
             disabled={!!busyAction}
-            style={{
-              height: 32, padding: '0 16px', borderRadius: 8,
-              background: 'transparent', border: `1px solid ${t.err}`,
-              color: t.err,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-              cursor: busyAction ? 'wait' : 'pointer',
-            }}>
+            style={{ borderColor: 'currentColor' }}>
             {busyAction === 'close' ? '…' : tr('prs.detail.close_btn')}
-          </button>
-          <button type="button"
+          </Btn>
+          <Btn kind={isDraft ? 'raised' : 'primary'}
             onClick={() => setMergeConfirm({ method: 'merge' })}
             disabled={!!busyAction || isDraft}
-            title={isDraft ? tr('prs.detail.draft_cant_merge') : tr('prs.detail.merge_tooltip')}
-            style={{
-              height: 32, padding: '0 16px', borderRadius: 8, border: 0,
-              background: isDraft ? t.bg3 : t.accent,
-              color: isDraft ? t.text3 : t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
-              cursor: busyAction || isDraft ? 'not-allowed' : 'pointer',
-            }}>
+            title={isDraft ? tr('prs.detail.draft_cant_merge') : tr('prs.detail.merge_tooltip')}>
             {busyAction === 'merge' ? '…' : tr('prs.detail.merge_btn')}
-          </button>
+          </Btn>
         </div>
       )}
 
@@ -630,6 +567,14 @@ function PrDetailPane({
   );
 }
 
+function codeChip(t: ReturnType<typeof useTokens>) {
+  return {
+    fontFamily: t.fontMono, fontSize: 12,
+    padding: '2px 9px', borderRadius: 8,
+    background: t.card, color: t.text0,
+  } as const;
+}
+
 function MergeConfirm({
   prNumber, headRef, baseRef, commitsCount, initialMethod, onCancel, onConfirm,
 }: {
@@ -650,66 +595,41 @@ function MergeConfirm({
     { id: 'rebase', label: tr('prs.merge_confirm.method.rebase.label'), desc: tr('prs.merge_confirm.method.rebase.desc') },
   ];
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      ...scrimStyle(t),
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onCancel}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: 520, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        ...dialogSurface(t, { border: t.accent }),
-        display: 'flex', flexDirection: 'column', gap: 12,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>
-          {tr('prs.merge_confirm.title', { n: prNumber })}
+    <div className="eco-scrim" onClick={onCancel}>
+      <div className="eco-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile"><IconBranch size={20}/></span>
+          <h2 className="eco-dialog__title">{tr('prs.merge_confirm.title', { n: prNumber })}</h2>
+          <IconBtn icon={IconX} size={32} onClick={onCancel} title={tr('common.close')}/>
         </div>
-        <div style={{ fontSize: 13, color: t.text1, lineHeight: 1.55 }}>
+        <div className="eco-dialog__body" style={{ lineHeight: 1.7 }}>
           {tr('prs.merge_confirm.body_pre')} <strong>{commitsCount}</strong> {commitsCount === 1 ? tr('prs.merge_confirm.commit_one') : tr('prs.merge_confirm.commit_many')}{' '}
-          <code style={{ fontFamily: t.fontMono, padding: '1px 6px', borderRadius: 4, background: t.bg3, color: t.text0 }}>{headRef}</code>{' '}
+          <code style={codeChip(t)}>{headRef}</code>{' '}
           {tr('prs.merge_confirm.into')}{' '}
-          <code style={{ fontFamily: t.fontMono, padding: '1px 6px', borderRadius: 4, background: t.bg3, color: t.text0 }}>{baseRef}</code>{' '}
+          <code style={codeChip(t)}>{baseRef}</code>{' '}
           {tr('prs.merge_confirm.into_remote')}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="eco-optlist" role="radiogroup">
           {methods.map((m) => (
-            <label key={m.id} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 8,
-              padding: '8px 10px', borderRadius: 8,
-              background: method === m.id ? t.accentFaint : t.bg2,
-              border: `1px solid ${method === m.id ? t.accent : t.glassBorder}`,
-              cursor: 'pointer',
-            }}>
-              <input type="radio" name="merge-method" value={m.id}
-                checked={method === m.id}
-                onChange={() => setMethod(m.id)}
-                style={{ margin: '4px 0 0' }}/>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: method === m.id ? t.accent : t.text0 }}>
-                  {m.label}
-                </div>
-                <div style={{ fontSize: 11, color: t.text2, marginTop: 2 }}>{m.desc}</div>
-              </div>
-            </label>
+            <button key={m.id} type="button" role="radio" aria-checked={method === m.id}
+              className={`eco-option${method === m.id ? ' is-on' : ''}`}
+              onClick={() => setMethod(m.id)}>
+              <span className="eco-option__text">
+                <span className="eco-option__title">{m.label}</span>
+                <span className="eco-sub">{m.desc}</span>
+              </span>
+              {method === m.id && <span className="eco-option__check" style={{ display: 'flex' }}><IconCheck size={15}/></span>}
+            </button>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: t.text3 }}>
+        <div className="eco-sub">
           {tr('prs.merge_confirm.gh_hint')}
         </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel}
-            style={{
-              height: 28, padding: '0 16px', borderRadius: 8,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-            }}>{tr('common.cancel')}</button>
-          <button type="button" onClick={() => onConfirm(method)}
-            style={{
-              height: 28, padding: '0 16px', borderRadius: 8, border: 0,
-              background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
-              cursor: 'pointer',
-            }}>{tr('prs.merge_confirm.confirm')}</button>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>{tr('common.cancel')}</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--primary" onClick={() => onConfirm(method)}>{tr('prs.merge_confirm.confirm')}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -724,43 +644,26 @@ function ReadyConfirm({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      ...scrimStyle(t),
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onCancel}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        ...dialogSurface(t, { border: t.accent }),
-        display: 'flex', flexDirection: 'column', gap: 12,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: t.text0 }}>
-          {tr('prs.ready_confirm.title', { n: prNumber })}
+    <div className="eco-scrim" onClick={onCancel}>
+      <div className="eco-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile"><IconCheck size={20}/></span>
+          <h2 className="eco-dialog__title">{tr('prs.ready_confirm.title', { n: prNumber })}</h2>
+          <IconBtn icon={IconX} size={32} onClick={onCancel} title={tr('common.close')}/>
         </div>
-        <div style={{ fontSize: 13, color: t.text1, lineHeight: 1.55 }}>
+        <div className="eco-dialog__body">
           <em>{title}</em>
         </div>
-        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
+        <div className="eco-dialog__body">
           {tr('prs.ready_confirm.body')}
         </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel}
-            style={{
-              height: 28, padding: '0 16px', borderRadius: 8,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-            }}>{tr('common.cancel')}</button>
-          <button type="button" onClick={onConfirm}
-            style={{
-              height: 28, padding: '0 16px', borderRadius: 8, border: 0,
-              background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
-              cursor: 'pointer',
-            }}>{tr('prs.ready_confirm.confirm')}</button>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>{tr('common.cancel')}</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--primary" onClick={onConfirm}>{tr('prs.ready_confirm.confirm')}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -776,55 +679,36 @@ function CloseConfirm({
   onCancel: () => void;
   onConfirm: (comment: string) => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   const [comment, setComment] = useState(initialComment);
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      ...scrimStyle(t),
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onCancel}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: 480, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        ...dialogSurface(t, { border: t.err }),
-        display: 'flex', flexDirection: 'column', gap: 12,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: t.err }}>
-          {tr('prs.close_confirm.title', { n: prNumber })}
+    <div className="eco-scrim" onClick={onCancel}>
+      <div className="eco-dialog eco-dialog--danger" onClick={(e) => e.stopPropagation()}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile eco-dialog__tile--danger"><IconAlert size={20}/></span>
+          <h2 className="eco-dialog__title">{tr('prs.close_confirm.title', { n: prNumber })}</h2>
+          <IconBtn icon={IconX} size={32} onClick={onCancel} title={tr('common.close')}/>
         </div>
-        <div style={{ fontSize: 13, color: t.text1, lineHeight: 1.55 }}>
+        <div className="eco-dialog__body">
           <em>{title}</em>
         </div>
-        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
+        <div className="eco-dialog__body">
           {tr('prs.close_confirm.body')}
         </div>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder={tr('prs.close_confirm.comment_placeholder')}
-          rows={3}
-          style={{
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            borderRadius: 6, padding: '8px 10px',
-            fontFamily: t.fontSans, fontSize: 12, color: t.text0,
-            outline: 'none', resize: 'vertical', minHeight: 60,
-          }}/>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel}
-            style={{
-              height: 28, padding: '0 16px', borderRadius: 8,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer',
-            }}>{tr('common.cancel')}</button>
-          <button type="button" onClick={() => onConfirm(comment)}
-            style={{
-              height: 28, padding: '0 16px', borderRadius: 8, border: 0,
-              background: t.err, color: '#fff',
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 600,
-              cursor: 'pointer',
-            }}>{tr('prs.detail.close_btn')}</button>
+        <div className="eco-dialog__section">
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder={tr('prs.close_confirm.comment_placeholder')}
+            rows={3}
+            className="eco-field"
+            style={{ minHeight: 72 }}/>
+        </div>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>{tr('common.cancel')}</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--danger-solid" onClick={() => onConfirm(comment)}>{tr('prs.detail.close_btn')}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -833,18 +717,18 @@ function CloseConfirm({
 
 function StateBadge({ state, isDraft }: { state: string; isDraft: boolean }) {
   const t = useTokens();
-  const color = isDraft ? t.text3
-    : state === 'MERGED' ? t.accent
+  const color = isDraft ? t.text1
+    : state === 'MERGED' ? t.info
     : state === 'CLOSED' ? t.err
     : t.ok;
   const label = isDraft ? 'DRAFT' : state;
   return (
     <span style={{
-      padding: '2px 8px', borderRadius: 6,
-      background: `color-mix(in oklch, ${color} 16%, transparent)`,
-      color, fontSize: 11, fontWeight: 600, letterSpacing: 0.4,
+      padding: '3px 10px', borderRadius: 10,
+      background: t.raised,
+      color, fontSize: 11.5, fontWeight: 500, textTransform: 'capitalize',
       flexShrink: 0,
-    }}>{label}</span>
+    }}>{label.toLowerCase()}</span>
   );
 }
 
@@ -853,9 +737,9 @@ function BranchPill({ name }: { name: string }) {
   const tr = useT();
   return (
     <code style={{
-      fontFamily: t.fontMono, fontSize: 11,
-      padding: '1px 6px', borderRadius: 6,
-      background: t.bg3, color: t.text0,
+      fontFamily: t.fontMono, fontSize: 12,
+      padding: '2px 9px', borderRadius: 8,
+      background: t.raised, color: t.text0, overflowWrap: 'anywhere',
     }}>{name || tr('common.empty_dash')}</code>
   );
 }
@@ -872,13 +756,13 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
   const tr = useT();
   const formatRelTime = useFormatRelTime();
   const stateIcon =
-    state === 'APPROVED' ? <IconCheck size={11}/>
-    : state === 'CHANGES_REQUESTED' ? <IconX size={11}/>
+    state === 'APPROVED' ? <IconCheck size={13}/>
+    : state === 'CHANGES_REQUESTED' ? <IconX size={13}/>
     : null;
   const stateColor =
     state === 'APPROVED' ? t.ok
     : state === 'CHANGES_REQUESTED' ? t.err
-    : t.text2;
+    : t.text1;
   const kindLabel =
     kind === 'body' ? tr('prs.detail.body_kind')
     : kind === 'review' ? (state ? state.replace('_', ' ').toLowerCase() : tr('prs.detail.review_kind'))
@@ -886,42 +770,39 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
     : tr('prs.detail.commented_kind');
 
   return (
-    <div style={{
-      padding: '16px 20px',
-      borderBottom: `1px solid ${t.glassBorder}`,
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        fontSize: 12, color: t.text2, marginBottom: 8,
-      }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 6, minWidth: 0 }}>
         <span style={{
-          width: 22, height: 22, borderRadius: '50%',
-          background: t.bg3, color: t.text1,
+          width: 28, height: 28, borderRadius: '50%',
+          background: t.raised, color: t.text0,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 11, fontWeight: 600,
           flexShrink: 0,
         }}>{(author || '?').slice(0, 1).toUpperCase()}</span>
-        <strong style={{ color: t.text0 }}>{author || tr('prs.detail.anon')}</strong>
-        <span style={{ color: kind === 'body' ? t.accent : stateColor, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontWeight: 600, flexShrink: 0 }}>{author || tr('prs.detail.anon')}</span>
+        <span style={{
+          flex: 1, minWidth: 0, overflowWrap: 'anywhere',
+          color: kind === 'body' ? t.accent : stateColor,
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+        }}>
           {stateIcon}
           {kindLabel}
         </span>
         {createdAt && (
-          <span style={{ marginLeft: 'auto', color: t.text3, fontSize: 11 }}>
+          <span style={{ color: t.text3, fontSize: 12.5, flexShrink: 0 }}>
             {formatRelTime(createdAt)}
           </span>
         )}
       </div>
       {body ? (
         <div style={{
-          padding: '10px 16px', borderRadius: 8,
-          background: kind === 'body' ? t.bg2 : t.bg1,
-          border: `1px solid ${t.glassBorder}`,
+          padding: '12px 20px', borderRadius: 16,
+          background: t.raised, minWidth: 0,
         }}>
           <Markdown source={body}/>
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: t.text3, fontStyle: 'italic' }}>
+        <div style={{ fontSize: 12.5, color: t.text3, fontStyle: 'italic' }}>
           {tr('prs.detail.no_text')}
         </div>
       )}
@@ -930,7 +811,6 @@ function CommentBlock({ author, kind, state, path, body, createdAt }: {
 }
 
 function ErrorBlock({ error, code }: { error: string; code?: string }) {
-  const t = useTokens();
   const tr = useT();
   const friendly =
     code === 'pr.gh_missing' ? tr('prs.err.gh_missing')
@@ -938,11 +818,6 @@ function ErrorBlock({ error, code }: { error: string; code?: string }) {
     : code === 'pr.no_github_remote' ? tr('prs.err.no_github_remote')
     : null;
   return (
-    <div style={{
-      padding: '12px 16px', borderRadius: 10,
-      background: `color-mix(in oklch, ${t.warn} 10%, transparent)`,
-      color: t.text1,
-      fontSize: 12, lineHeight: 1.5,
-    }}>{friendly ?? error}</div>
+    <div className="eco-banner eco-banner--warn" style={{ lineHeight: 1.5 }}>{friendly ?? error}</div>
   );
 }

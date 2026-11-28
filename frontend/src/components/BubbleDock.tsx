@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties,
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { useTokens } from '@/design/theme';
-import { IconCommand } from '@/design/icons';
+import { IconHome } from '@/design/icons';
 import { cssZoom } from '@/lib/ui-zoom';
 import { isMobileNow } from '@/hooks/useMediaQuery';
 
@@ -205,7 +205,7 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, railWidth = 6
   const divider = (
     <span style={{
       width: 1, height: iconSize + 4, alignSelf: 'center',
-      background: t.glassBorder, margin: `0 ${gap + 2}px`,
+      background: t.line, margin: `0 ${gap + 2}px`,
     }}/>
   );
 
@@ -234,18 +234,12 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, railWidth = 6
         flexDirection: 'row',
         alignItems: 'flex-end',
         gap,
-        backdropFilter: 'blur(28px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
         overflow: 'visible',
         padding: `${padV}px ${padH}px`,
         borderRadius: containerRadius,
-        background: t.glassBg,
-        border: `1px solid ${t.glassBorder}`,
-        boxShadow: [
-          'inset 0 1px 0 rgba(255,255,255,0.08)',
-          '0 8px 32px rgba(0,0,0,0.35)',
-          '0 2px 6px rgba(0,0,0,0.2)',
-        ].join(', '),
+        background: t.bg,
+        border: `1px solid ${t.line2}`,
+        boxShadow: '0 10px 30px rgba(0,0,0,.22)',
         maxWidth: `calc(${vw(100)} - 96px)`,
       }}>
         <ResizeHandle iconSize={iconSize} onChange={setIconSize}/>
@@ -279,9 +273,8 @@ export function BubbleDock({ bubbles, activeBubbleId, onOpenAgent, railWidth = 6
                 }}>
                   <span title={g.label} style={{
                     maxWidth: 'calc(100% - 4px)',
-                    fontFamily: t.fontSans, fontSize: 8.5, fontWeight: 700,
-                    letterSpacing: 0.4, textTransform: 'uppercase',
-                    color: t.text3,
+                    fontFamily: t.fontSans, fontSize: 10.5, fontWeight: 500,
+                    color: t.text1,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     pointerEvents: 'none', userSelect: 'none',
                   }}>{g.label}</span>
@@ -358,12 +351,11 @@ function HomeDockIcon({ iconSize, onClick }: { iconSize: number; onClick: () => 
         style={{
           width: iconSize, height: iconSize, padding: 0, border: 0, cursor: 'pointer',
           borderRadius: Math.round(iconSize * 0.28),
-          background: 'rgba(255,255,255,0.04)', color: t.text1,
+          background: t.raised, color: t.text1,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           transformOrigin: 'bottom center',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
         }}>
-        <IconCommand size={Math.round(iconSize * 0.5)}/>
+        <IconHome size={Math.round(iconSize * 0.45)}/>
       </motion.button>
     </div>
   );
@@ -482,7 +474,6 @@ function DockIcon({
   const sColor = busy ? t.ok : baseColor;
   const isActive = busy || state === 'thinking' || state === 'executing' || state === 'running';
   const initial = bubbleLetter(bubble.title);
-  const accentColor = bubble.accent || t.accent;
   // Categorías como anillo teñido en el borde del icono — mismo lenguaje
   // que el stroke del nodo en la vista de grafo. Una categoría = anillo
   // sólido; varias = arcos iguales (conic-gradient). Cap 4 como el nodo.
@@ -575,19 +566,17 @@ function DockIcon({
           width: iconSize, height: iconSize,
           padding: 0, border: 0, cursor: dragging ? 'grabbing' : 'pointer',
           borderRadius: Math.round(iconSize * 0.28),
-          background: active ? t.bg3 : (hover ? t.bg2 : 'rgba(255,255,255,0.04)'),
-          color: active ? t.accent : t.text2,
+          background: hover ? t.sheet : t.raised,
+          color: t.text0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           position: 'relative',
           transformOrigin: 'bottom center',
           transition: 'background 140ms',
-          boxShadow: active
-            ? `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px ${t.accent}33`
-            : 'inset 0 1px 0 rgba(255,255,255,0.05)',
+          boxShadow: active ? `0 0 0 2px ${t.accent}` : 'none',
         }}>
         <span style={{
           fontFamily: t.fontSans, fontSize: letterSize, fontWeight: 600, letterSpacing: -0.3,
-          color: active ? t.accent : accentColor,
+          color: t.text0,
           lineHeight: 1,
           display: 'block',
         }}>{initial}</span>
@@ -596,8 +585,7 @@ function DockIcon({
             position: 'absolute', top: dotInset, right: dotInset,
             width: dotSize, height: dotSize, borderRadius: '50%',
             background: sColor,
-            border: `${dotSize >= 6 ? 1.5 : 1}px solid ${t.glassBg}`,
-            boxShadow: `0 0 ${Math.max(3, dotSize - 1)}px ${sColor}`,
+            border: `${dotSize >= 6 ? 1.5 : 1}px solid ${t.raised}`,
             animation: 'eco-shimmer 1.1s ease-in-out infinite',
           }}/>
         )}
@@ -627,7 +615,6 @@ function DockIcon({
           transform: 'translateX(-50%)',
           width: 4, height: 4, borderRadius: '50%',
           background: t.accent,
-          boxShadow: `0 0 4px ${t.accent}`,
           pointerEvents: 'none',
         }}/>
       )}
@@ -647,10 +634,10 @@ function DockIcon({
               left: tipPos.left,
               bottom: tipPos.bottom,
               transform: 'translateX(-50%)',
-              padding: '6px 10px', borderRadius: 8,
-              background: t.bg1,
-              border: `1px solid ${t.glassBorderHi}`,
-              boxShadow: t.shadowLg,
+              padding: '6px 11px', borderRadius: 10,
+              background: t.bg,
+              border: `1px solid ${t.line2}`,
+              boxShadow: '0 10px 30px rgba(0,0,0,.22)',
               color: t.text0,
               fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
               whiteSpace: 'nowrap',

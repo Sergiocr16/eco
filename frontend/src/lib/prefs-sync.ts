@@ -11,7 +11,10 @@ const DOC_KEY = 'prefs';
 // photo: data-URL JPEG chiquito (128px, <8KB) de la foto de perfil. Va en prefs
 // para sincronizar cross-device como el resto. null = sin foto (limpiada).
 export type Prefs = {
-  themeMode?: string; accentHue?: number; lang?: string; photo?: string | null;
+  themeMode?: string; lang?: string; photo?: string | null;
+  // accentHue: acento del modelo anterior (acoplado al tema). Solo se lee para
+  // recordar cómo se veía el grafo; el vivo es accentOverride (null = el del tema).
+  accentHue?: number; accentOverride?: number | null;
   // Apariencia de Eco → tema de Claude Code elegido por el usuario (sin
   // entrada = el recomendado de design/claude-theme-map.ts).
   claudeThemes?: Record<string, string>;
@@ -40,6 +43,7 @@ function applyFromServer(value: unknown) {
   current = {
     themeMode: typeof v.themeMode === 'string' ? v.themeMode : current.themeMode,
     accentHue: typeof v.accentHue === 'number' ? v.accentHue : current.accentHue,
+    accentOverride: typeof v.accentOverride === 'number' || v.accentOverride === null ? v.accentOverride : current.accentOverride,
     lang: typeof v.lang === 'string' ? v.lang : current.lang,
     photo: typeof v.photo === 'string' ? v.photo : (v.photo === null ? null : current.photo),
     claudeThemes: isStringMap(v.claudeThemes) ? v.claudeThemes : current.claudeThemes,

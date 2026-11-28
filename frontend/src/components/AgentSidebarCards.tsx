@@ -9,7 +9,7 @@ import { useT } from '@/hooks/useI18n';
 
 export type AgentState = 'working' | 'waiting_permission' | 'waiting_input' | 'idle' | 'offline' | 'archived';
 
-type AgentStatus = {
+export type AgentStatus = {
   state: AgentState;
   pendingTools: string[];
   contextTokens: number | null;
@@ -17,8 +17,8 @@ type AgentStatus = {
 
 // El transcript no dice qué ventana tiene la sesión: 200k salvo que el uso ya
 // la supere, que solo es posible con la de 1M.
-const CONTEXT_STANDARD = 200_000;
-const CONTEXT_LARGE = 1_000_000;
+export const CONTEXT_STANDARD = 200_000;
+export const CONTEXT_LARGE = 1_000_000;
 
 const POLL_MS = 15_000;
 // `pty_busy_change` llega antes de que el CLI termine de escribir el transcript.
@@ -26,7 +26,7 @@ const SETTLE_MS = 700;
 
 // Estado real del agente: el backend cruza el PTY con el transcript de Claude
 // Code (el mismo cálculo que usa el MCP en `get_bubble`).
-function useAgentStatus(bubbleId: string): AgentStatus | null {
+export function useAgentStatus(bubbleId: string): AgentStatus | null {
   const [status, setStatus] = useState<AgentStatus | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -87,34 +87,36 @@ export function AgentStateCard({ bubbleId, filesCount, onGoToTerminal, onGoToGit
     : status.state === 'waiting_permission' ? t.warn
     : status.state === 'waiting_input' ? t.ok
     : t.text3;
-  const card = { padding: 12, borderRadius: 12, background: t.bg2 } as const;
-  const plain = { border: 0, cursor: 'pointer', textAlign: 'left', color: t.text0, fontFamily: t.fontSans } as const;
+  // Reset de <button> para que las tarjetas hereden la tipografía de la app.
+  const plain = { border: 0, textAlign: 'left', color: t.text0, font: 'inherit', width: '100%' } as const;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="eco-vstack" style={{ gap: 16 }}>
       {status && (
         <button type="button" onClick={onGoToTerminal}
-          style={{ ...plain, ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500 }}>
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0,
+          className="eco-vstack"
+          style={{ ...plain, gap: 14, background: 'transparent', padding: 0, cursor: 'pointer' }}>
+          <span className="eco-hstack eco-label" style={{ gap: 9 }}>
+            <span className="eco-dot eco-dot--lg" style={{
+              background: color,
               animation: status.state === 'working' ? 'eco-shimmer 1.4s ease-in-out infinite' : undefined,
             }}/>
             {tr(`detail.agent.state.${status.state}`)}
             {status.state === 'waiting_permission' && status.pendingTools.length > 0 && (
-              <code style={{ fontFamily: t.fontMono, fontSize: 11, fontWeight: 400, color: t.text2 }}>
+              <span className="eco-num eco-truncate" style={{ fontWeight: 400 }}>
                 {status.pendingTools.join(', ')}
-              </code>
+              </span>
             )}
           </span>
           {status.contextTokens != null && <ContextMeter tokens={status.contextTokens}/>}
         </button>
       )}
       <button type="button" onClick={onGoToGit}
-        style={{ ...plain, ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <span style={{ fontSize: 11, color: t.text2 }}>
+        className="eco-hstack eco-panelrow"
+        style={{ ...plain, justifyContent: 'space-between', gap: 12 }}>
+        <span className="eco-sub">
           {tr('detail.agent.files')}
         </span>
-        <span style={{ fontFamily: t.fontMono, fontSize: 20, fontWeight: 600, lineHeight: 1, color: filesCount > 0 ? t.text0 : t.text3 }}>
+        <span className="eco-mono" style={{ fontSize: 20, fontWeight: 500, lineHeight: 1, color: filesCount > 0 ? t.text0 : t.text3 }}>
           {filesCount}
         </span>
       </button>
@@ -138,7 +140,7 @@ function ContextMeter({ tokens }: { tokens: number }) {
   const head = tickColor(lit - 1);
   const c = RING / 2;
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+    <span className="eco-hstack" style={{ gap: 12, minWidth: 0 }}>
       <span style={{ position: 'relative', width: RING, height: RING, flexShrink: 0 }}>
         <svg width={RING} height={RING} viewBox={`0 0 ${RING} ${RING}`} style={{ display: 'block' }}>
           {Array.from({ length: TICKS }, (_, i) => {
@@ -146,7 +148,7 @@ function ContextMeter({ tokens }: { tokens: number }) {
             return (
               <line key={i}
                 x1={c} y1={3} x2={c} y2={on ? 11 : 9}
-                stroke={on ? tickColor(i) : t.bg3}
+                stroke={on ? tickColor(i) : t.line2}
                 strokeWidth={2.2} strokeLinecap="round"
                 transform={`rotate(${(i * 360) / TICKS} ${c} ${c})`}
               />
@@ -158,14 +160,14 @@ function ContextMeter({ tokens }: { tokens: number }) {
           fontFamily: t.fontMono, fontSize: 13, fontWeight: 600, color: head,
         }}>{pct}%</span>
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <span style={{ fontSize: 11, color: t.text2 }}>
+      <span className="eco-vstack" style={{ gap: 2, minWidth: 0 }}>
+        <span className="eco-sub">
           {tr('detail.agent.context')}
         </span>
-        <span style={{ fontFamily: t.fontMono, fontSize: 13, fontWeight: 500, color: t.text0, whiteSpace: 'nowrap' }}>
-          {Math.round(tokens / 1000)}k <span style={{ color: t.text3, fontWeight: 400 }}>/ {limit >= 1_000_000 ? '1M' : `${limit / 1000}k`}</span>
+        <span className="eco-mono" style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+          {Math.round(tokens / 1000)}k <span className="eco-faint" style={{ fontWeight: 400 }}>/ {limit >= 1_000_000 ? '1M' : `${limit / 1000}k`}</span>
         </span>
-        <span style={{ fontSize: 11, color: t.text3 }}>
+        <span className="eco-sub">
           {tr('detail.agent.context_free', { n: Math.round((limit - tokens) / 1000) })}
         </span>
       </span>

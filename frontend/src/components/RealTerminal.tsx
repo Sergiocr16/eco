@@ -576,7 +576,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
             // de otro color alrededor cuando hay padding o cuando el shell aún
             // no se conectó.
             background: terminalBg(t, isLight, tone),
-            borderRadius: 10,
+            borderRadius: 14,
             overflow: 'hidden',
             // Bajo zoom CSS (web) xterm mide las celdas con getBoundingClientRect,
             // que devuelve px visuales, y las aplica como px CSS: las celdas
@@ -587,20 +587,22 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
         />
         {dragOver && (
           <div style={{
-            position: 'absolute', inset: 0, borderRadius: 10,
-            border: `2px dashed ${t.accent}`, background: 'rgba(0,0,0,0.25)',
+            position: 'absolute', inset: 0, borderRadius: 14,
+            border: `2px dashed ${t.accent}`, background: t.accentSoft,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: t.text0, fontSize: 13, pointerEvents: 'none',
+            pointerEvents: 'none',
           }}>
-            {tr('term.drop.hint')}
+            <span className="eco-chip" style={{ background: t.bg, border: `1px solid ${t.line2}`, padding: '6px 14px' }}>
+              {tr('term.drop.hint')}
+            </span>
           </div>
         )}
         {dropErr && (
           <div style={{
             position: 'absolute', left: 10, right: 10, bottom: 10,
-            padding: '8px 10px', borderRadius: 8, fontSize: 12.5,
-            background: 'rgba(0,0,0,0.7)', border: `1px solid ${t.err}`, color: t.err,
-            pointerEvents: 'none',
+            padding: '8px 12px', borderRadius: 12, fontSize: 12.5,
+            background: t.bg, border: `1px solid ${t.line2}`, color: t.err,
+            boxShadow: t.shadowMd, pointerEvents: 'none',
           }}>
             {dropErr}
           </div>
@@ -617,7 +619,7 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
               ref={scrollThumbRef}
               style={{
                 position: 'absolute', left: 0, width: '100%', height: 0,
-                borderRadius: 2, background: 'rgba(229,231,235,0.5)',
+                borderRadius: 2, background: t.text3, opacity: 0.7,
               }}/>
           </div>
         )}
@@ -642,9 +644,10 @@ export function RealTerminal({ workspace, bubbleId, resetKey = 0, ptyId = 'main'
           // justo el que dice por qué el terminal no conectó.
           ...(isMobile ? {
             top: 10, left: 10, right: 10,
-            padding: '8px 10px', borderRadius: 8,
-            background: 'rgba(0,0,0,0.55)',
-            border: `1px solid ${status === 'error' ? t.err : t.glassBorder}`,
+            padding: '8px 12px', borderRadius: 12,
+            background: t.bg,
+            border: `1px solid ${t.line2}`,
+            boxShadow: t.shadowMd,
             fontSize: 12.5, textAlign: 'center',
           } : {
             top: 8, right: 12, fontSize: 10.5,

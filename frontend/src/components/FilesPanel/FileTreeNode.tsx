@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { useTokens } from '@/design/theme';
+import { cx } from '@/design/primitives';
 import { FileTypeIcon } from './file-icon';
 import type { TreeEntry } from './types';
 
@@ -34,23 +35,15 @@ export const FileTreeNode = memo(function FileTreeNode({
       type="button"
       data-tree-path={entry.path}
       onClick={() => isDir ? onToggleDir(entry.path) : onOpenFile(entry.path)}
+      className={cx('eco-nav-item eco-nav-item--sm', isActive && 'is-on')}
       style={{
-        display: 'flex', alignItems: 'center', gap: 4,
-        width: '100%', height: '100%', textAlign: 'left', boxSizing: 'border-box',
+        gap: 6, height: '100%', boxSizing: 'border-box',
         padding: `0 8px 0 ${indent}px`,
-        background: isActive
-          ? `color-mix(in oklch, ${t.accent} 18%, transparent)`
-          : 'transparent',
-        border: 0,
-        color: isDirty ? t.warn : (isActive ? t.text0 : (hasDirtyDescendant ? t.text0 : t.text1)),
-        fontWeight: isDirty ? 500 : (hasDirtyDescendant ? 500 : 400),
-        fontFamily: t.fontSans,
-        fontSize: 13,
-        cursor: 'pointer',
-        borderRadius: 0,
+        borderRadius: 9,
+        ...(isActive ? { background: t.raised } : null),
+        color: isDirty ? t.warn : ((isActive || hasDirtyDescendant) ? t.text0 : t.text1),
+        fontWeight: (isDirty || hasDirtyDescendant || isActive) ? 500 : 400,
       }}
-      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = t.bg3; }}
-      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
       title={entry.path}
     >
       <span style={{
@@ -66,7 +59,7 @@ export const FileTreeNode = memo(function FileTreeNode({
         ) : null}
       </span>
       {isDir ? (
-        <FolderGlyph open={showAsOpen} color={t.accent}/>
+        <FolderGlyph open={showAsOpen} color={t.text2}/>
       ) : (
         <FileTypeIcon path={entry.path} size={14}/>
       )}
@@ -76,12 +69,8 @@ export const FileTreeNode = memo(function FileTreeNode({
       {(isDirty || hasDirtyDescendant) && (
         <span
           aria-hidden
-          style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: t.warn,
-            flexShrink: 0, marginLeft: 4,
-            opacity: hasDirtyDescendant && !isDirty ? 0.55 : 1,
-          }}
+          className="eco-dot eco-dot--warn"
+          style={{ marginLeft: 4, opacity: hasDirtyDescendant && !isDirty ? 0.55 : 1 }}
         />
       )}
     </button>

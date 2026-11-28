@@ -3,7 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { setEcoConfig, readStoredToken } from './lib/eco-config';
 import { RootErrorBoundary, bootReloadOnce } from './components/RootErrorBoundary';
 import { applyStoredUiZoom } from './lib/ui-zoom';
+import '@fontsource-variable/hanken-grotesk';
+import '@fontsource-variable/geist-mono';
 import './index.css';
+import './design/eco.css';
 
 async function bootstrap() {
   // Antes del primer render: así el zoom persistido no parpadea a 100%.

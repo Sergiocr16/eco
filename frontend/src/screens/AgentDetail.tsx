@@ -15,22 +15,25 @@ import { useGitChanges } from '@/hooks/useGitChanges';
 import { useCategories } from '@/hooks/useCategories';
 import { GitPanel } from '@/components/GitPanel/GitPanel';
 import { GitMiniDock } from '@/components/GitMiniDock';
-import { AgentStateCard } from '@/components/AgentSidebarCards';
+import { AgentStateCard, useAgentStatus, CONTEXT_STANDARD, CONTEXT_LARGE } from '@/components/AgentSidebarCards';
+import { prStateColor } from '@/components/GitMiniDock';
+import { useBranches } from '@/hooks/useBranches';
+import { useCurrentPr } from '@/hooks/useCurrentPr';
 import { BrowserPanel } from '@/components/BrowserPanel';
 import { ServerPanel } from '@/components/ServerPanel';
 import { FilesPanel } from '@/components/FilesPanel/FilesPanel';
 import { NotesPanel } from '@/components/NotesPanel/NotesPanel';
 import { GitBusyToast } from '@/components/GitBusyToast';
-import { EcoMark, EcoMarkHorizontal } from '@/design/EcoMark';
+import { EcoGlyph } from '@/design/EcoMark';
 import {
   IconBtn, Pill, AgentGlyph, SectionLabel, bubbleLetter,
 } from '@/design/primitives';
 import {
-  IconArrowL, IconMore,
+  IconArrowL, IconMore, IconOverview, IconSmartphone,
   IconTerminal, IconLayers, IconGlobe, IconCpu,
   IconCheck, IconX, IconGithub, IconEdit,
   IconAgent, IconFolder, IconArchive, IconNewWindow,
-  IconPin, IconSwap, IconSplitH, IconSplitV, IconCommand,
+  IconPin, IconSwap, IconSplitH, IconSplitV, IconBranch, IconZap, IconChevD, IconChevU, IconChevL,
   type IconProps,
 } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
@@ -46,7 +49,7 @@ import { useSplitPanels, useSplitDir, setSplitDir } from '@/hooks/useSplitPanels
 import type { JSX } from 'react';
 
 function HeaderMenu({
-  workspaces, currentWorkspace, onClose, onRename, onChangeWorkspace,
+  onClose, onRename,
   onCloseBubble, onOpenInNewWindow, currentCategoryIds, onToggleCategory,
 }: {
   workspaces: string[];
@@ -59,120 +62,69 @@ function HeaderMenu({
   currentCategoryIds?: string[];
   onToggleCategory: (categoryId: string | undefined) => void;
 }) {
-  const t = useTokens();
   const tr = useT();
-  const [wsOpen, setWsOpen] = useState(false);
   const { categories } = useCategories();
+  const selectedCount = categories.filter((c) => currentCategoryIds?.includes(c.id)).length;
   useEffect(() => {
-    if (wsOpen) return;
     const onDocClick = () => onClose();
     document.addEventListener('click', onDocClick, { once: true });
     return () => document.removeEventListener('click', onDocClick);
-  }, [onClose, wsOpen]);
+  }, [onClose]);
 
   return (
     <div
       onClick={(e) => e.stopPropagation()}
+      className="eco-menu"
       style={{
-        position: 'absolute', top: 38, right: 0, zIndex: 30,
-        minWidth: 220, padding: 4,
-        background: t.bg1, border: `1px solid ${t.glassBorder}`,
-        borderRadius: 12, boxShadow: t.shadowLg,
+        position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 30,
+        width: 340, maxWidth: 'calc(100vw - 32px)', maxHeight: '70vh', overflowY: 'auto',
         display: 'flex', flexDirection: 'column',
       }}>
-      <button type="button" onClick={onRename} style={menuItemStyleAt(t)}>
-        <IconAgent size={13}/> {tr('detail.menu.rename')}
+      <button type="button" onClick={onRename} className="eco-menu__item">
+        <IconAgent size={15}/> {tr('detail.menu.rename')}
       </button>
-      {/* Categoría — solo si hay categorías configuradas en Settings. */}
-      {categories.length > 0 && (
-        <>
-          <div style={{
-            fontSize: 11, color: t.text3,
-            fontWeight: 500,
-            padding: '6px 10px 4px',
-          }}>{tr('dash.category.label')}</div>
-          {categories.map((c) => {
-            const active = currentCategoryIds?.includes(c.id) ?? false;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                // Toggle multi-selección: el menú queda abierto para marcar varias.
-                onClick={() => onToggleCategory(c.id)}
-                style={{ ...menuItemStyleAt(t), color: active ? t.text0 : t.text1 }}>
-                <span style={{
-                  width: 10, height: 10, borderRadius: '50%',
-                  background: c.color, flexShrink: 0,
-                  boxShadow: active ? `0 0 0 2px ${t.bg1}, 0 0 0 3px ${c.color}` : 'none',
-                }}/>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
-                {active && <IconCheck size={12}/>}
-              </button>
-            );
-          })}
-          {(currentCategoryIds?.length ?? 0) > 0 && (
-            <button
-              type="button"
-              onClick={() => { onToggleCategory(undefined); onClose(); }}
-              style={{ ...menuItemStyleAt(t), color: t.text3 }}>
-              <IconX size={11}/> {tr('dash.category.none')}
-            </button>
-          )}
-          <div style={{ height: 1, background: t.glassBorder, margin: '4px 8px' }}/>
-        </>
-      )}
-      <button type="button" onClick={() => setWsOpen((v) => !v)} style={menuItemStyleAt(t)}>
-        <IconFolder size={12}/>
-        <span style={{ flex: 1 }}>{tr('detail.menu.change_workspace')}</span>
-        <span style={{
-          fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-          maxWidth: 100, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{currentWorkspace.split('/').filter(Boolean).slice(-2).join('/') || '—'}</span>
-      </button>
-      {wsOpen && (
-        <div style={{
-          marginLeft: 24, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
-          maxHeight: 200, overflow: 'auto',
-          borderLeft: `1px solid ${t.glassBorder}`,
-        }}>
-          {workspaces.length === 0 ? (
-            <div style={{ padding: '6px 8px', fontSize: 11, color: t.text3 }}>
-              {tr('detail.menu.workspace_empty_picker')}
-            </div>
-          ) : workspaces.map((ws) => (
-            <button
-              key={ws} type="button"
-              onClick={() => { setWsOpen(false); onChangeWorkspace(ws); }}
-              style={{
-                ...menuItemStyleAt(t), fontFamily: t.fontMono, fontSize: 11,
-                color: ws === currentWorkspace ? t.accent : t.text1,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>
-              {ws}
-            </button>
-          ))}
-        </div>
-      )}
       {onOpenInNewWindow && (
-        <button type="button" onClick={onOpenInNewWindow} style={menuItemStyleAt(t)}>
-          <IconNewWindow size={12}/> {tr('detail.menu.open_window')}
+        <button type="button" onClick={onOpenInNewWindow} className="eco-menu__item">
+          <IconNewWindow size={15}/> {tr('detail.menu.open_window')}
         </button>
       )}
-      <div style={{ height: 1, background: t.glassBorder, margin: '4px 8px' }}/>
-      <button type="button" onClick={onCloseBubble} style={{ ...menuItemStyleAt(t), color: t.text1 }}>
-        <IconArchive size={12}/> {tr('detail.menu.archive')}
+      {/* Categorías en rejilla — solo si hay categorías configuradas en Settings. */}
+      {categories.length > 0 && (
+        <>
+          <div className="eco-menu__sep"/>
+          <div className="eco-menu__head">
+            <span style={{ flex: 1 }}>{tr('dash.category.label')}</span>
+            <span className="eco-mono">{selectedCount}/{categories.length}</span>
+            {selectedCount > 0 && (
+              <button type="button" className="eco-menu__link" onClick={() => onToggleCategory(undefined)}>
+                {tr('dash.category.clear')}
+              </button>
+            )}
+          </div>
+          <div className="eco-menu__grid">
+            {categories.map((c) => {
+              const active = currentCategoryIds?.includes(c.id) ?? false;
+              return (
+                <button
+                  key={c.id} type="button" title={c.name}
+                  // Toggle multi-selección: el menú queda abierto para marcar varias.
+                  onClick={() => onToggleCategory(c.id)}
+                  className={active ? 'eco-menu__cell is-on' : 'eco-menu__cell'}>
+                  <span className="eco-dot" style={{ background: c.color }}/>
+                  <span className="eco-truncate" style={{ flex: 1 }}>{c.name}</span>
+                  {active && <IconCheck size={12}/>}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+      <div className="eco-menu__sep"/>
+      <button type="button" onClick={onCloseBubble} className="eco-menu__item eco-menu__item--danger">
+        <IconArchive size={15}/> {tr('detail.menu.archive')}
       </button>
     </div>
   );
-}
-
-function menuItemStyleAt(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '8px 10px', borderRadius: 8, border: 0, background: 'transparent',
-    color: t.text1, fontFamily: t.fontSans, fontSize: 13, cursor: 'pointer',
-    textAlign: 'left' as const,
-  };
 }
 
 type Props = {
@@ -188,8 +140,6 @@ type Props = {
   // True cuando este AgentDetail ES la ventana aparte: oculta el mic y el
   // "abrir en ventana nueva"; el back cierra la ventana.
   solo?: boolean;
-  // El ícono de inicio vive en la franja del dock (App.tsx): la cabecera muestra solo el logo.
-  homeInDock?: boolean;
 };
 
 type Tab = 'terminal' | 'git' | 'browser' | 'server' | 'files' | 'notes';
@@ -230,7 +180,7 @@ const TAB_DEFS: Record<Tab, { labelKey: string; icon: (p: IconProps) => JSX.Elem
 export function AgentDetail({
   bubble, workspaces, onBack, onRename, onClose, onChangeWorkspace,
   onToggleCategory,
-  onOpenInNewWindow, solo = false, homeInDock = false,
+  onOpenInNewWindow, solo = false,
 }: Props) {
   const t = useTokens();
   const tr = useT();
@@ -340,8 +290,7 @@ export function AgentDetail({
               active={split.open.includes(id)}
               onClick={() => split.toggle(id)}
               pinned={split.pinned === id}
-              onTogglePin={hasSplit && split.open.includes(id) ? () => split.togglePin(id) : undefined}
-              compact={!isPhone}
+              onTogglePin={isPhone && !compact ? undefined : () => (split.open.includes(id) ? split.togglePin(id) : split.showPinned(id))}
               label={def.labelKey === 'Git' ? 'Git' : tr(def.labelKey)}
               icon={def.icon}
               badge={badge}
@@ -380,6 +329,9 @@ export function AgentDetail({
       display: 'flex', flexDirection: 'column',
       order: i === 0 ? 1 : 3,
       flex: `${grow} 1 0`, minWidth: 0, minHeight: 0, overflow: 'hidden',
+      // Al pasar de oculto a visible la animación arranca sola.
+      animation: 'eco-pane .24s var(--ease) both',
+      ...(isPhone ? null : { borderRadius: 22, background: t.card }),
     };
   };
 
@@ -408,12 +360,108 @@ export function AgentDetail({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
       <GitBusyToast bubbleId={bubble.id}/>
-      {!hideChrome && (
+      {!hideChrome && !isPhone && (
+      <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14, padding: '20px 28px 14px' }}>
+        <header className="eco-page-head">
+          <IconBtn icon={solo ? IconArrowL : IconOverview} size={44} onClick={onBack} title={tr('nav.dashboard')} style={{ background: t.card, alignSelf: 'center' }}/>
+          <div className="eco-page-head__main">
+            <div
+              className="eco-eyebrow eco-truncate"
+              title={`${bubble.workspace || '—'} · ${tr('detail.header.id')} ${bubble.id}`}>
+              {tr('nav.section.agents')} / {bubble.workspace ? bubble.workspace.split('/').filter(Boolean).pop() : '—'} · {tr('detail.header.id')} {bubble.id.slice(0, 10)}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 6 }}>
+              {renaming ? (
+                <input
+                  autoFocus
+                  className="eco-field"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+                    if (e.key === 'Escape') { setDraft(bubble.title); setRenaming(false); }
+                  }}
+                  style={{ fontSize: 22, height: 48, minWidth: 260, maxWidth: 520, flex: '1 1 260px' }}
+                />
+              ) : (
+                <h1
+                  className="eco-title eco-title--md eco-truncate"
+                  onDoubleClick={() => { setDraft(bubble.title); setRenaming(true); }}
+                  title={tr('dash.bubble.rename_tip')}
+                  style={{ cursor: 'text', minWidth: 0, maxWidth: '100%', paddingBottom: 4, marginTop: 0 }}>
+                  {bubble.title}
+                </h1>
+              )}
+              <span className="eco-chip">
+                <span className="eco-dot" style={{ background: sColor }}/>
+                {STATE_LABELS_I18N[state] || tr('state.idle')}
+              </span>
+              {bubbleCategories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  className="eco-chip"
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+                  title={category.name}
+                  style={{ border: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <span className="eco-dot" style={{ background: category.color }}/>
+                  {category.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="eco-page-head__actions" style={{ position: 'relative' }}>
+            <RemoteControlNavButton bubble={bubble}/>
+            {bubble.workspace && <ServerHeaderControl bubbleId={bubble.id} workspace={bubble.workspace}/>}
+            <IconBtn
+              icon={IconMore} size={44} active={menuOpen}
+              style={{ background: menuOpen ? t.hover : t.card }}
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}/>
+            {menuOpen && (
+              <HeaderMenu
+                workspaces={workspaces}
+                currentWorkspace={bubble.workspace}
+                onClose={() => setMenuOpen(false)}
+                onRename={() => { setMenuOpen(false); setDraft(bubble.title); setRenaming(true); }}
+                onChangeWorkspace={(ws) => { setMenuOpen(false); onChangeWorkspace(ws); }}
+                onCloseBubble={() => { setMenuOpen(false); onClose(); }}
+                onOpenInNewWindow={onOpenInNewWindow ? () => { setMenuOpen(false); onOpenInNewWindow(); } : undefined}
+                currentCategoryIds={bubble.categoryIds}
+                onToggleCategory={onToggleCategory}
+              />
+            )}
+          </div>
+        </header>
+        <div className="eco-tabs">
+          {tabButtons}
+          <div className="eco-spacer"/>
+          {sidebarCollapsed && (
+            <ContextChips bubble={bubble} filesCount={filesChanged.length} onExpand={() => setSidebarCollapsed(() => false)}/>
+          )}
+          {hasSplit && (
+            <div className="eco-seg eco-seg--sm eco-seg--icons">
+              <button type="button" className="eco-seg__item" title={tr('detail.split.swap')} aria-label={tr('detail.split.swap')} onClick={split.swap}>
+                <IconSwap size={15}/>
+              </button>
+              <button
+                type="button" className="eco-seg__item"
+                title={splitDir === 'row' ? tr('detail.split.stack') : tr('detail.split.side_by_side')}
+                aria-label={splitDir === 'row' ? tr('detail.split.stack') : tr('detail.split.side_by_side')}
+                onClick={() => setSplitDir(splitDir === 'row' ? 'column' : 'row')}>
+                {splitDir === 'row' ? <IconSplitV size={15}/> : <IconSplitH size={15}/>}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      )}
+
+      {!hideChrome && isPhone && (
       <div style={{
         display: 'flex', alignItems: 'center', gap: compact ? 6 : isPhone ? 8 : 10,
         padding: compact ? '0 8px' : isPhone ? '4px 12px' : '0 12px',
         ...(isPhone ? null : { height: 48, flexShrink: 0 }),
-        borderBottom: `1px solid ${t.glassBorder}`,
       }}>
         {/* Sin rail lateral en el detalle, este botón es la vuelta al inicio.
             En la ventana aparte cierra la ventana: ahí sigue siendo "atrás". */}
@@ -434,9 +482,7 @@ export function AgentDetail({
               height: 36, padding: '0 4px', border: 0, borderRadius: t.r2,
               background: 'transparent', color: t.text0, cursor: 'pointer', flexShrink: 0,
             }}>
-            {/* En el teléfono no hay ancho para las letras: solo el arco. */}
-            {isPhone ? <EcoMark size={26}/> : <EcoMarkHorizontal size={24}/>}
-            {!isPhone && !homeInDock && <IconCommand size={16} style={{ color: t.text2, marginLeft: 2 }}/>}
+            {isPhone ? <IconChevL size={22}/> : <EcoGlyph size={24}/>}
           </button>
           {!isPhone && (
             <span aria-hidden style={{ width: 1, height: 22, background: t.glassBorder, flexShrink: 0 }}/>
@@ -490,36 +536,29 @@ export function AgentDetail({
             {!isPhone && <Pill color={sColor}>{STATE_LABELS_I18N[state] || tr('state.idle')}</Pill>}
             {/* Chips de categorías — clickeables: abren el menú para cambiarlas.
                 "arriba donde está el nombre", como pidió el user. */}
-            {!compact && bubbleCategories.map((category) => (
+            {!compact && bubbleCategories.slice(0, isPhone ? 1 : undefined).map((category) => (
               <button
                 key={category.id}
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
                 title={category.name}
                 aria-label={category.name}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  borderRadius: 999,
-                  background: `color-mix(in oklch, ${category.color} 16%, transparent)`,
-                  border: `1px solid color-mix(in oklch, ${category.color} 45%, transparent)`,
-                  color: category.color, fontSize: 11, fontWeight: 500,
-                  fontFamily: t.fontSans, cursor: 'pointer',
-                  whiteSpace: 'nowrap', flexShrink: 0,
-                  // En el teléfono queda solo el punto de color: el nombre no
-                  // entra al lado del título y el color ya identifica. Sigue
-                  // siendo un botón que abre el menú, así que conserva un área
-                  // de toque decente (28px) aunque el dibujo sea chico.
-                  ...(isPhone
-                    ? { width: 28, height: 28, padding: 0 }
-                    : { padding: '2px 8px' }),
-                }}>
-                <span style={{
-                  borderRadius: '50%', background: category.color,
-                  ...(isPhone ? { width: 12, height: 12 } : { width: 7, height: 7 }),
-                }}/>
-                {!isPhone && category.name}
+                className="eco-chip eco-chip--btn"
+                style={{ flexShrink: 0, height: 28, padding: '0 10px', fontSize: 12, maxWidth: isPhone ? 110 : undefined }}>
+                <span className="eco-dot" style={{ background: category.color }}/>
+                <span className="eco-truncate">{category.name}</span>
               </button>
             ))}
+            {isPhone && !compact && bubbleCategories.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+                title={bubbleCategories.slice(1).map((c) => c.name).join(', ')}
+                className="eco-chip eco-chip--btn eco-mono"
+                style={{ flexShrink: 0, height: 28, padding: '0 8px', fontSize: 12 }}>
+                +{bubbleCategories.length - 1}
+              </button>
+            )}
             {/* Ruta e id en la misma fila: es lo primero que cede ancho. */}
             {!isPhone && (
               <span
@@ -573,14 +612,13 @@ export function AgentDetail({
       </div>
       )}
 
-      {!compact && !hideChrome && (
+      {isPhone && !compact && !hideChrome && (
       <div
-        className={isPhone ? 'eco-dock-scroll' : undefined}
+        className="eco-dock-scroll"
         style={{
           position: 'relative',
-          display: 'flex', gap: 2,
-          padding: isPhone ? '0 8px' : '0 10px',
-          borderBottom: `1px solid ${t.glassBorder}`,
+          display: 'flex', gap: 6,
+          padding: '8px 12px',
           alignItems: 'center',
           // Sin overflowX las 6 tabs (~600px con etiqueta) se cortan sin
           // aviso. En móvil van solo-icono para que entren las 6 de una y
@@ -607,7 +645,10 @@ export function AgentDetail({
 
       {/* position:relative es el ancla de la sheet del sidebar en móvil, que
           se dibuja como `position:absolute; inset:0` sobre el panel activo. */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+      <div style={{
+        flex: 1, display: 'flex', overflow: 'hidden', position: 'relative',
+        ...(isPhone || hideChrome ? null : { padding: '0 18px 18px', gap: 18 }),
+      }}>
         <div ref={splitRef} style={{
           flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative',
           display: 'flex', flexDirection: splitDir,
@@ -654,13 +695,15 @@ export function AgentDetail({
               onPointerDown={onDividerDown}
               onDoubleClick={() => split.setRatio(0.5)}
               onMouseEnter={(e) => { e.currentTarget.style.background = t.accent; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = draggingSplit ? t.accent : t.glassBorder; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = draggingSplit ? t.accent : (isPhone ? t.line : 'transparent'); }}
               style={{
                 order: 2, flex: 'none', touchAction: 'none',
                 width: splitDir === 'row' ? dividerSize : '100%',
                 height: splitDir === 'row' ? '100%' : dividerSize,
                 cursor: splitDir === 'row' ? 'col-resize' : 'row-resize',
-                background: draggingSplit ? t.accent : t.glassBorder,
+                background: draggingSplit ? t.accent : (isPhone ? t.line : 'transparent'),
+                borderRadius: 4,
+                ...(isPhone ? null : (splitDir === 'row' ? { margin: '0 6px' } : { margin: '6px 0' })),
                 transition: 'background 140ms',
               }}
             />
@@ -691,16 +734,15 @@ type FileChange = { path: string; change: string; agent: string; unstaged?: bool
 
 function TabBtn({
   active, onClick, label, icon: Icon, badge, iconOnly = false,
-  pinned = false, onTogglePin, compact = false,
+  pinned = false, onTogglePin,
   tabId, dragOver, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
 }: {
   active: boolean; onClick: () => void; label: string; icon: (p: IconProps) => JSX.Element; badge?: number;
   iconOnly?: boolean;
-  // Fijado: se queda al elegir un tercer panel. `onTogglePin` solo viene
-  // cuando hay dos paneles abiertos y este es uno de ellos.
+  // Fijado: se queda al elegir un tercer panel. `onTogglePin` viene siempre
+  // que la pantalla admite dos paneles; en un tab cerrado lo abre y lo fija.
   pinned?: boolean;
   onTogglePin?: () => void;
-  compact?: boolean;
   tabId?: string;
   dragOver?: boolean;
   onDragStart?: () => void;
@@ -739,47 +781,33 @@ function TabBtn({
       }}
       title={iconOnly ? label : undefined}
       aria-label={iconOnly ? label : undefined}
+      className={`eco-tab${active ? ' is-on' : ''}`}
       style={{
-        position: 'relative', flexShrink: 0,
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: iconOnly ? '12px 16px' : compact ? '12px 16px' : '12px 16px',
-        background: 'transparent', border: 0,
-        borderBottom: `2px solid ${showPin ? t.warn : active ? t.text1 : 'transparent'}`,
-        color: active ? t.text0 : t.text2, cursor: 'pointer',
-        fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-        transition: 'color 140ms', marginBottom: -1,
-        // Marcador visual durante el drag: barra vertical del color accent
-        // del lado izquierdo del target.
-        boxShadow: dragOver ? `inset 3px 0 0 ${t.accent}` : 'none',
+        position: 'relative',
+        ...(iconOnly ? { padding: '0 13px' } : null),
+        boxShadow: dragOver
+          ? `inset 3px 0 0 ${t.accent}`
+          : undefined,
       }}
     >
-      <span style={{ display: 'inline-flex', color: t.text0 }}><Icon size={iconOnly ? 18 : 14}/></span>
+      <Icon size={iconOnly ? 17 : 14}/>
       {!iconOnly && label}
       {badge != null && badge > 0 && (
-        <span style={{
-          padding: '1px 6px', background: t.bg3,
-          color: active ? t.text1 : t.text2,
-          borderRadius: 999, fontSize: 11, fontWeight: 500, fontFamily: t.fontMono,
-        }}>{badge}</span>
+        <span className="eco-mono" style={{ fontSize: 11.5 }}>{badge}</span>
       )}
       {onTogglePin && (
         <span
           role="button"
           tabIndex={0}
-          title={pinned ? tr('detail.split.unpin') : tr('detail.split.pin')}
-          aria-label={pinned ? tr('detail.split.unpin') : tr('detail.split.pin')}
-          aria-pressed={pinned}
+          title={showPin ? tr('detail.split.unpin') : tr('detail.split.pin')}
+          aria-label={showPin ? tr('detail.split.unpin') : tr('detail.split.pin')}
+          aria-pressed={showPin}
           onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onTogglePin(); }
           }}
-          style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 18, height: 18, borderRadius: 6, marginRight: -4,
-            color: pinned ? t.warn : t.text3,
-            background: pinned ? `color-mix(in oklch, ${t.warn} 16%, transparent)` : 'transparent',
-          }}>
-          <IconPin size={12}/>
+          className={`eco-tab__pin${showPin ? ' is-pinned' : ''}`}>
+          <IconPin size={13}/>
         </span>
       )}
     </button>
@@ -818,7 +846,6 @@ function writeExtraTerms(bubbleId: string, terms: ExtraTerm[]) {
 const activeTermByBubble = new Map<string, string>();
 
 function TerminalTabs({ bubble }: { bubble: Bubble }) {
-  const t = useTokens();
   const tr = useT();
   const [extras, setExtras] = useState<ExtraTerm[]>(() => readExtraTerms(bubble.id));
   const [activeId, setActiveId] = useState<string>(() => activeTermByBubble.get(bubble.id) ?? 'main');
@@ -883,9 +910,7 @@ function TerminalTabs({ bubble }: { bubble: Bubble }) {
           horizontal sin barra visible, igual que el sub-nav de Git. */}
       <div className="eco-dock-scroll" style={{
         display: 'flex', alignItems: 'center', gap: 4,
-        padding: '6px 10px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        background: t.bg0,
+        padding: '12px 16px 8px',
         overflowX: 'auto', flexShrink: 0,
       }}>
         {tabs.map((tab) => (
@@ -900,12 +925,8 @@ function TerminalTabs({ bubble }: { bubble: Bubble }) {
           type="button"
           onClick={addShell}
           title={tr('detail.terminal.new_tooltip')}
-          style={{
-            marginLeft: 4,
-            padding: '4px 8px', borderRadius: 8, border: `1px dashed ${t.glassBorder}`,
-            background: 'transparent', color: t.text2, cursor: 'pointer',
-            fontFamily: t.fontSans, fontSize: 12, lineHeight: 1,
-          }}
+          className="eco-subtab eco-subtab--add"
+          style={{ marginLeft: 4 }}
         >{tr('detail.terminal.new_btn')}</button>
       </div>
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
@@ -1003,22 +1024,12 @@ function TermTabBtn({
   onClose?: () => void;
   children: React.ReactNode;
 }) {
-  const t = useTokens();
   const tr = useT();
   return (
     <div
       onClick={onClick}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: onClose ? '4px 6px 4px 10px' : '4px 10px',
-        borderRadius: 8,
-        background: active ? t.bg3 : 'transparent',
-        color: active ? t.text0 : t.text2,
-        cursor: 'pointer',
-        fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-        transition: 'background 140ms, color 140ms',
-        userSelect: 'none',
-      }}
+      className={`eco-subtab${active ? ' is-on' : ''}`}
+      style={{ userSelect: 'none', ...(onClose ? { paddingRight: 7 } : null) }}
     >
       <span>{children}</span>
       {onClose && (
@@ -1319,39 +1330,26 @@ function CollapsibleSection({
 }) {
   const t = useTokens();
   return (
-    <div data-section={id}>
-      <button type="button" onClick={onToggle}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-          padding: '6px 4px 10px',
-          border: 0, background: 'transparent',
-          color: t.text2, cursor: 'pointer',
-          fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-          textAlign: 'left',
-        }}>
-        <span style={{
-          fontSize: 16, opacity: 0.85, color: t.text1,
-          transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-          transition: 'transform 180ms ease',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 18, height: 18, lineHeight: 1,
-        }}>▾</span>
-        <span>{title}</span>
+    <div data-section={id} className="eco-card eco-panelcard">
+      <button type="button" onClick={onToggle} className="eco-panelcard__head">
+        <span className="eco-panelcard__title">{title}</span>
         {count != null && (
-          <span style={{
-            padding: '1px 8px', background: t.bg3, borderRadius: 999,
-            fontSize: 11, color: t.text1, letterSpacing: 0,
-          }}>{count}</span>
+          <span className="eco-count">{count}</span>
         )}
         {accentDot && (
           <span style={{
             width: 6, height: 6, borderRadius: '50%',
             background: t.accent,
             animation: 'eco-shimmer 1.4s ease-in-out infinite',
-          }} title="Hay novedades"/>
+          }}/>
         )}
         <span style={{ flex: 1 }}/>
         {action}
+        <span className="eco-faint" style={{
+          display: 'inline-flex',
+          transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+          transition: 'transform 180ms ease',
+        }}><IconChevD size={14}/></span>
       </button>
       <AnimatePresence initial={false}>
         {!collapsed && (
@@ -1361,7 +1359,7 @@ function CollapsibleSection({
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
             style={{ overflow: 'hidden' }}>
-            <div style={{ paddingTop: 2 }}>{children}</div>
+            <div style={{ paddingTop: 14 }}>{children}</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1369,39 +1367,50 @@ function CollapsibleSection({
   );
 }
 
-function CollapsedBar({ onExpand, bubble }: { onExpand: () => void; bubble: Bubble }) {
+// Panel de contexto colapsado: chips compactos en la fila de tabs (rama, PR,
+// contexto del agente, skills). Cualquiera reabre el panel.
+function ContextChips({ bubble, filesCount, onExpand }: { bubble: Bubble; filesCount: number; onExpand: () => void }) {
   const t = useTokens();
   const tr = useT();
-  const animated = bubble.status === 'thinking' || bubble.status === 'executing'
-    || bubble.status === 'running' || bubble.status === 'pending';
-  const color = animated ? t.warn : t.text3;
+  const ws = bubble.workspace || '';
+  const { data: branches } = useBranches(ws, bubble.id);
+  const { pr } = useCurrentPr(ws, bubble.id);
+  const status = useAgentStatus(bubble.id);
+  const { skills } = useSkills(bubble.workspace);
+  const tokens = status?.contextTokens ?? null;
+  const limit = tokens != null && tokens > CONTEXT_STANDARD ? CONTEXT_LARGE : CONTEXT_STANDARD;
+  const pct = tokens != null ? Math.min(100, Math.round((tokens / limit) * 100)) : null;
+  const working = status?.state === 'working';
+  const prColor = pr ? (pr.checks && pr.checks.failed > 0 ? t.err : prStateColor(t, pr.state)) : t.text3;
+  const label = tr('detail.sidebar.show');
   return (
-    <div style={{
-      width: 36, flexShrink: 0,
-      borderLeft: `1px solid ${t.glassBorder}`,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-      padding: '12px 0',
-    }}>
-      <button
-        type="button"
-        onClick={onExpand}
-        title={tr('detail.sidebar.show')}
-        style={{
-          width: 30, height: 30, border: 0, borderRadius: 8,
-          background: 'transparent', color: t.text1, cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: t.fontMono, fontSize: 20, fontWeight: 500,
-          lineHeight: 1,
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>‹</button>
-      {/* Dot de status — visible aunque el panel esté colapsado */}
-      <span style={{
-        width: 8, height: 8, borderRadius: '50%',
-        background: color,
-        boxShadow: animated ? `0 0 6px ${color}` : 'none',
-        animation: animated ? 'eco-shimmer 1.4s ease-in-out infinite' : 'none',
-      }} title={animated ? tr('detail.status.active') : tr('detail.status.inactive')}/>
+    <div className="eco-ctxchips">
+      <button type="button" className="eco-chip eco-chip--btn eco-chip--lg eco-mono" onClick={onExpand} title={label}>
+        <IconBranch size={13}/><span className="eco-truncate" style={{ maxWidth: 180 }}>{branches?.current ?? '–'}</span>
+      </button>
+      {pr && (
+        <button type="button" className="eco-chip eco-chip--btn eco-chip--lg" onClick={onExpand} title={pr.title}>
+          <span className="eco-dot" style={{ background: prColor }}/>
+          <span className="eco-mono">#{pr.number}</span>
+          {pr.checks && pr.checks.total > 0 && <span className="eco-faint">{pr.checks.passed}/{pr.checks.total}</span>}
+        </button>
+      )}
+      {(pct != null || filesCount > 0) && <button type="button" className="eco-chip eco-chip--btn eco-chip--lg" onClick={onExpand} title={label}>
+        <span className="eco-dot" style={{ background: working ? t.ok : t.text3 }}/>
+        {pct != null && (
+          <>
+            <span className="eco-meter"><span style={{ width: `${pct}%` }}/></span>
+            <span className="eco-mono">{pct}%</span>
+          </>
+        )}
+        {filesCount > 0 && <span className="eco-faint eco-mono">{filesCount}</span>}
+      </button>}
+      <button type="button" className="eco-chip eco-chip--btn eco-chip--lg" onClick={onExpand} title={label}>
+        <IconZap size={13}/><span className="eco-mono">{skills.length}</span>
+      </button>
+      <button type="button" className="eco-iconbtn eco-iconbtn--soft" onClick={onExpand} title={label} aria-label={label}>
+        <IconChevD size={14}/>
+      </button>
     </div>
   );
 }
@@ -1507,7 +1516,8 @@ function AgentSidebar({
   // En móvil colapsado no queda ni la barra de 36px: el disparador está en
   // el header y esos 36px son el 11% del ancho útil del teléfono.
   if (collapsed) {
-    return isPhone ? null : <CollapsedBar onExpand={toggleCollapsed} bubble={bubble}/>;
+    // En escritorio el panel colapsado vive como chips en la fila de tabs (ContextChips).
+    return null;
   }
 
   const renderSection = (id: SectionId): ReactNode => {
@@ -1527,12 +1537,8 @@ function AgentSidebar({
         // Git va fijo arriba — header sin chevron ni toggle, así la rama
         // actual siempre está visible.
         return (
-          <div key="git" data-section="git">
-            <div style={{
-              padding: '6px 4px 10px',
-              color: t.text2,
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-            }}>Git</div>
+          <div key="git" data-section="git" className="eco-card eco-panelcard">
+            <div className="eco-panelcard__title" style={{ paddingBottom: 14 }}>Git</div>
             <GitMiniDock
               workspace={bubble.workspace}
               bubbleId={bubble.id}
@@ -1562,7 +1568,7 @@ function AgentSidebar({
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
-      background: t.bg0,
+      background: isPhone ? t.sheet : 'transparent',
       ...(isPhone ? {
         // Sheet a pantalla completa por encima del panel activo: un rail de
         // 360px al lado de 326px de contenido no entra de ninguna forma.
@@ -1571,7 +1577,6 @@ function AgentSidebar({
       } : {
         position: 'relative',
         width, flexShrink: 0,
-        borderLeft: `1px solid ${t.glassBorder}`,
       }),
     }}>
       {/* Splitter — área de 6 px en el borde izquierdo. Hover muestra el
@@ -1598,29 +1603,20 @@ function AgentSidebar({
 
       {/* Botón discreto arriba a la derecha para colapsar el panel. Esc
           también funciona (atajo registrado en el sidebar). */}
-      <div style={{
-        position: 'absolute', top: 8, right: 8, zIndex: 8,
-      }}>
-        <button type="button" onClick={toggleCollapsed}
-          title="Ocultar panel (Esc)"
-          style={{
-            width: 30, height: 30, border: 0, borderRadius: 8,
-            background: 'transparent', color: t.text2, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'monospace', fontSize: 20, fontWeight: 500,
-            lineHeight: 1,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>›</button>
-      </div>
+      <button type="button" onClick={toggleCollapsed}
+        title={tr('detail.sidebar.hide')} aria-label={tr('detail.sidebar.hide')}
+        className="eco-edge-btn"
+        style={{ position: 'absolute', top: isPhone ? 26 : 12, right: isPhone ? 32 : 16, zIndex: 8, boxShadow: 'none' }}>
+        <IconChevU size={15}/>
+      </button>
 
       {/* Scrollable area — top padding ajustado: el botón flotante de
           colapsar (›) vive en top:8/right:8 y la primera sección (Git)
           tiene su header a la izquierda, así que no se traslapan. */}
       <div style={{
         flex: 1, overflow: 'auto',
-        padding: '16px 20px 20px',
-        display: 'flex', flexDirection: 'column', gap: 20,
+        padding: isPhone ? '16px 20px 20px' : '0 2px 4px 0',
+        display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         {sectionOrder.map(renderSection)}
       </div>
@@ -1711,69 +1707,44 @@ function RemoteControlNavButton({ bubble }: { bubble: Bubble }) {
     emitRemoteChange(bubble.id, null);
   }
 
+  const box = isPhone ? 40 : 44;
+  const tipTitle = busy
+    ? tr('detail.remote.activating_short')
+    : err ? tr('detail.remote.err_tooltip', { err })
+      : isOn ? tr('detail.remote.on') : tr('detail.remote.off');
+  const tipSub = busy ? null : isOn ? tr('detail.remote.click_disable') : tr('detail.remote.click_enable');
   return (
-    <button
-      type="button"
-      onClick={isOn ? deactivate : (() => void activate())}
-      disabled={busy}
-      title={busy
-        ? tr('detail.remote.activating')
-        : isOn
-          ? tr('detail.remote.running_tooltip', { slug: active ?? '' })
-          : err
-            ? tr('detail.remote.err_tooltip', { err })
-            : tr('detail.remote.start_tooltip', { slug })}
-      // El rótulo es "Activar Claude remote control": al lado de 6 tabs de
-      // icono se come media barra. En táctil queda solo el indicador, con la
-      // misma info en el title.
-      aria-label={isOn ? tr('detail.remote.disable') : tr('detail.remote.enable')}
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        flexShrink: 0,
-        ...(isPhone
-          ? { width: 30, height: 30, padding: 0, borderRadius: 16, marginBottom: 2 }
-          : { height: 26, padding: '0 10px', borderRadius: 12, marginBottom: 4 }),
-        border: `1px solid ${err ? t.err : t.glassBorder}`,
-        background: 'transparent',
-        color: t.text1,
-        fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-        cursor: busy ? 'wait' : 'pointer',
-        transition: 'background 140ms, border-color 140ms',
-      }}
-      onMouseEnter={(e) => {
-        if (!busy) (e.currentTarget as HTMLButtonElement).style.background = t.bg2;
-      }}
-      onMouseLeave={(e) => {
-        if (!busy) (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-      }}
-    >
-      {/* Indicador: dot verde si corriendo, spinner sutil si activando, play si apagado */}
-      <span style={{
-        width: 10, height: 10,
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      }}>
+    <span className="eco-tipwrap">
+      <button
+        type="button"
+        onClick={isOn ? deactivate : (() => void activate())}
+        disabled={busy}
+        aria-label={isOn ? tr('detail.remote.disable') : tr('detail.remote.enable')}
+        className="eco-iconbtn"
+        style={{
+          position: 'relative', width: box, height: box, flexShrink: 0, background: t.card,
+          cursor: busy ? 'wait' : 'pointer',
+          ...(err ? { boxShadow: `inset 0 0 0 1px ${t.err}` } : null),
+        }}
+      >
+        <IconSmartphone size={20}/>
         {busy ? (
-          <svg width="10" height="10" viewBox="0 0 24 24" style={{ animation: 'eco-spin 1s linear infinite' }}>
-            <circle cx="12" cy="12" r="9" fill="none" stroke={t.text3} strokeWidth="2.5" strokeDasharray="14 50" strokeLinecap="round"/>
+          <svg width="10" height="10" viewBox="0 0 24 24"
+            style={{ position: 'absolute', top: 8, right: 8, animation: 'eco-spin 1s linear infinite' }}>
+            <circle cx="12" cy="12" r="9" fill="none" stroke={t.text2} strokeWidth="3" strokeDasharray="14 50" strokeLinecap="round"/>
           </svg>
         ) : isOn ? (
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%', background: t.ok,
-          }}/>
-        ) : (
-          <svg width="8" height="8" viewBox="0 0 24 24" fill={t.text2}>
-            <polygon points="7,5 19,12 7,19"/>
-          </svg>
-        )}
+          <span className="eco-iconbtn__dot" style={{ background: t.ok }}/>
+        ) : null}
+      </button>
+      <span className="eco-tipbox" role="tooltip">
+        <b>
+          <span className="eco-dot" style={{ background: isOn ? t.ok : t.text3, opacity: 1 }}/>
+          {tipTitle}
+        </b>
+        {tipSub && <span>{tipSub}</span>}
       </span>
-      {!isPhone && (
-        <span>
-          {busy
-            ? tr('detail.remote.activating_short')
-            : isOn ? tr('detail.remote.disable') : tr('detail.remote.enable')}
-        </span>
-      )}
-    </button>
+    </span>
   );
 }
 

@@ -1,12 +1,12 @@
-import { vw } from '@/lib/ui-zoom';
 import { useState } from 'react';
-import { useTokens } from '@/design/theme';
 import { Btn } from '@/design/primitives';
+import { EcoGlyph } from '@/design/EcoMark';
 import {
   IconUser, IconKey, IconCheck, IconArrowL,
 } from '@/design/icons';
 import type { AuthState, useAuth } from '@/hooks/useAuth';
 import { useT } from '@/hooks/useI18n';
+import { getTopInset, SAFE_TOP, SAFE_BOTTOM } from '@/lib/platform';
 import type { JSX } from 'react';
 
 type AuthHook = ReturnType<typeof useAuth>;
@@ -21,27 +21,21 @@ type Props = {
 type View = 'login' | 'reset';
 
 export function AuthScreen({ authState, authActions }: Props) {
-  const t = useTokens();
   const [view, setView] = useState<View>('login');
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 1,
-      background: t.windowBg, backgroundImage: t.windowBgImage, color: t.text0,
-      overflow: 'hidden',
+    <div className="eco-app" style={{
+      position: 'fixed', inset: 0, zIndex: 1, background: 'var(--bg)', overflow: 'auto',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: `calc(${getTopInset() + 24}px + ${SAFE_TOP}) 24px calc(24px + ${SAFE_BOTTOM})`,
     }}>
-      {/* Orbes animados de fondo */}
+      <div className="eco-hstack" style={{ alignSelf: 'flex-start' }}>
+        <EcoGlyph size={30}/>
+        <span style={{ fontSize: 16, fontWeight: 600 }}>eco</span>
+      </div>
 
-
-      <div style={{
-        position: 'absolute',
-        top: '50%', left: '50%',
-        transform: 'translate(-50%, -50%)',
-        zIndex: 2,
-        width: `min(380px, calc(${vw(100)} - 48px))`,
-        padding: '24px 4px',
-      }}>
-        <div style={{ position: 'relative' }}>
+      <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
+        <div style={{ width: '100%', maxWidth: 380 }}>
           {view === 'reset' ? (
             <ResetView authActions={authActions} onBack={() => setView('login')} />
           ) : (
@@ -52,14 +46,8 @@ export function AuthScreen({ authState, authActions }: Props) {
       </div>
 
       {/* eco · version — abajo a la derecha, discreto */}
-      <div style={{
-        position: 'absolute', bottom: 14, right: 18,
-        zIndex: 2,
-        color: t.text3, fontSize: 11, fontFamily: t.fontMono,
-        pointerEvents: 'none',
-        display: 'flex', alignItems: 'baseline', gap: 6,
-      }}>
-        <span style={{ color: t.text2, fontWeight: 500 }}>eco</span>
+      <div className="eco-num eco-hstack" style={{ alignSelf: 'flex-end', gap: 6, pointerEvents: 'none' }}>
+        <span className="eco-muted">eco</span>
         <span>v1.0.0</span>
       </div>
     </div>
@@ -69,34 +57,19 @@ export function AuthScreen({ authState, authActions }: Props) {
 // ─────────────────────────── Vistas (email + contraseña)
 
 function AuthCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
-  const t = useTokens();
   return (
-    <div style={{
-      position: 'relative', zIndex: 2,
-      background: t.bg1,
-      border: `1px solid ${t.glassBorder}`,
-      borderRadius: 16,
-      padding: '28px 24px',
-    }}>
-      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 500, color: t.text0, letterSpacing: -0.3 }}>{title}</h1>
-      {sub && <p style={{ margin: '6px 0 20px', fontSize: 13, color: t.text2, lineHeight: 1.5 }}>{sub}</p>}
-      {!sub && <div style={{ height: 14 }} />}
+    <div className="eco-pane" style={{ padding: '32px 28px 20px', borderRadius: 28, background: 'var(--sheet)' }}>
+      <h1 className="eco-title eco-title--md">{title}</h1>
+      {sub && <p className="eco-muted" style={{ margin: '8px 0 22px', lineHeight: 1.5 }}>{sub}</p>}
+      {!sub && <div style={{ height: 18 }} />}
       {children}
     </div>
   );
 }
 
-function linkStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return {
-    background: 'transparent', border: 0, padding: 0, cursor: 'pointer',
-    color: t.accent, fontFamily: t.fontSans, fontSize: 12,
-  };
-}
-
 function LoginView({ authActions, onReset }: {
   authActions: AuthHook; onReset: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -118,18 +91,17 @@ function LoginView({ authActions, onReset }: {
         <FormInput icon={IconKey} value={password} onChange={setPassword} placeholder={tr('auth.field.password')} type="password" onEnter={submit} />
       </FieldGroup>
       {err && <FormError>{err}</FormError>}
-      <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center' }}>
+      <Btn kind="primary" size="lg" onClick={submit} disabled={busy} className="eco-btn--block">
         {busy ? tr('auth.btn.enter_loading') : tr('auth.btn.enter')}
       </Btn>
       <FooterNote>
-        <button onClick={onReset} style={linkStyle(t)}>{tr('auth.login.forgot')}</button>
+        <Btn kind="ghost" size="sm" onClick={onReset}>{tr('auth.login.forgot')}</Btn>
       </FooterNote>
     </AuthCard>
   );
 }
 
 function ResetView({ authActions, onBack }: { authActions: AuthHook; onBack: () => void }) {
-  const t = useTokens();
   const tr = useT();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -147,7 +119,7 @@ function ResetView({ authActions, onBack }: { authActions: AuthHook; onBack: () 
   return (
     <AuthCard title={tr('auth.reset.title')} sub={tr('auth.reset.sub')}>
       {sent ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: t.text1, fontSize: 13, margin: '4px 0 16px' }}>
+        <div className="eco-banner eco-banner--ok">
           <IconCheck size={16} /> {tr('auth.reset.sent')}
         </div>
       ) : (
@@ -156,15 +128,13 @@ function ResetView({ authActions, onBack }: { authActions: AuthHook; onBack: () 
             <FormInput icon={IconUser} value={email} onChange={setEmail} placeholder={tr('auth.field.email')} autoFocus onEnter={submit} />
           </FieldGroup>
           {err && <FormError>{err}</FormError>}
-          <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ width: '100%', justifyContent: 'center' }}>
+          <Btn kind="primary" size="lg" onClick={submit} disabled={busy} className="eco-btn--block">
             {busy ? tr('auth.reset.btn_loading') : tr('auth.reset.btn')}
           </Btn>
         </>
       )}
       <FooterNote>
-        <button onClick={onBack} style={linkStyle(t)}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconArrowL size={12} /> {tr('auth.back')}</span>
-        </button>
+        <Btn kind="ghost" size="sm" icon={IconArrowL} onClick={onBack}>{tr('auth.back')}</Btn>
       </FooterNote>
     </AuthCard>
   );
@@ -173,7 +143,7 @@ function ResetView({ authActions, onBack }: { authActions: AuthHook; onBack: () 
 // ─────────────────────────── Helpers de form
 
 function FieldGroup({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>{children}</div>;
+  return <div className="eco-vstack" style={{ gap: 8, marginBottom: 12 }}>{children}</div>;
 }
 
 function FormInput({
@@ -187,59 +157,27 @@ function FormInput({
   autoFocus?: boolean;
   onEnter?: () => void;
 }) {
-  const t = useTokens();
-  const [focused, setFocused] = useState(false);
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', padding: 4,
-      borderRadius: 16,
-      background: t.bg2,
-      border: `1px solid ${focused ? t.accent : t.glassBorder}`,
-      transition: 'border-color 140ms',
-    }}>
-      <div style={{ padding: '0 10px', color: focused ? t.accent : t.text2 }}>
-        <Icon size={16}/>
-      </div>
+    <label className="eco-inputbar eco-inputbar--on-sheet">
+      <Icon size={16}/>
       <input
+        className="eco-input-bare"
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={placeholder}
         autoFocus={autoFocus}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
         onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } }}
-        style={{
-          flex: 1, background: 'transparent', border: 0, outline: 'none',
-          fontFamily: t.fontSans, fontSize: 14, color: t.text0,
-          padding: '12px 6px',
-        }}
       />
-    </div>
+    </label>
   );
 }
 
 function FormError({ children }: { children: React.ReactNode }) {
-  const t = useTokens();
-  return (
-    <div style={{
-      marginTop: 12, marginBottom: 8, fontSize: 12, color: t.err,
-      padding: '8px 12px', textAlign: 'left',
-      background: `color-mix(in oklch, ${t.err} 8%, transparent)`,
-      border: `1px solid color-mix(in oklch, ${t.err} 30%, transparent)`,
-      borderRadius: 8,
-    }}>{children}</div>
-  );
+  return <div className="eco-banner eco-banner--err" style={{ margin: '4px 0 12px' }}>{children}</div>;
 }
 
 function FooterNote({ children }: { children: React.ReactNode }) {
-  const t = useTokens();
-  return (
-    <div style={{
-      marginTop: 16, display: 'flex', alignItems: 'center', gap: 6,
-      color: t.text2, fontSize: 12, justifyContent: 'center', textAlign: 'center',
-      lineHeight: 1.5,
-    }}>{children}</div>
-  );
+  return <div className="eco-hstack" style={{ justifyContent: 'center', marginTop: 10 }}>{children}</div>;
 }
-

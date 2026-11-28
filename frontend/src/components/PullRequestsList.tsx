@@ -10,11 +10,8 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
-import { Glass, scrimStyle, dialogSurface } from '@/design/primitives';
-import {
-  IconBranch, IconChevR, IconChevD, IconCheck, IconX,
-  IconAlert, IconResume, IconExt, IconUser,
-} from '@/design/icons';
+import { IconBtn, IconTile } from '@/design/primitives';
+import { IconBranch, IconChevR, IconChevD, IconCheck, IconX, IconAlert, IconResume, IconExt } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 
@@ -105,61 +102,40 @@ export function PullRequestsList({ workspace, bubbleId }: Props) {
   const count = prs.length;
 
   return (
-    <Glass radius={10} style={{ padding: 8 }}>
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-          padding: '2px 0', border: 0, background: 'transparent',
-          cursor: 'pointer', color: t.text0, textAlign: 'left',
-        }}>
-        <div style={{
-          width: 22, height: 22, borderRadius: 6,
-          background: t.accentFaint, color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <IconBranch size={11}/>
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontFamily: t.fontMono, fontSize: 12, color: t.text0, fontWeight: 500,
-            lineHeight: 1.3,
+    <div style={{ padding: 12, borderRadius: 16, background: t.card }}>
+      <div className="eco-hstack" style={{ gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="eco-hstack eco-grow"
+          style={{
+            gap: 10, padding: 0, border: 0, background: 'transparent', font: 'inherit',
+            cursor: 'pointer', color: t.text0, textAlign: 'left',
           }}>
-            Pull Requests
-          </div>
-          <div style={{ fontSize: 11, color: t.text3, marginTop: 0 }}>
-            {data?.ok === false
-              ? 'no disponible'
-              : loading && !data
-              ? 'cargando…'
-              : `${count} abierto${count === 1 ? '' : 's'}`}
-          </div>
-        </div>
+          <IconTile icon={IconBranch} size="sm"/>
+          <span className="eco-grow">
+            <span className="eco-label" style={{ display: 'block' }}>Pull Requests</span>
+            <span className="eco-sub" style={{ display: 'block' }}>
+              {data?.ok === false
+                ? 'no disponible'
+                : loading && !data
+                ? 'cargando…'
+                : `${count} abierto${count === 1 ? '' : 's'}`}
+            </span>
+          </span>
+          <span style={{ display: 'inline-flex', color: t.text1, flexShrink: 0 }}>
+            {expanded ? <IconChevD size={16}/> : <IconChevR size={16}/>}
+          </span>
+        </button>
         {expanded && data?.ok && (
           <button type="button"
             onClick={(e) => { e.stopPropagation(); void refresh(); }}
             title="Refrescar"
-            style={{
-              width: 22, height: 22, border: 0, borderRadius: 6, padding: 0,
-              background: 'transparent', color: t.text3, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-            <IconResume size={11}/>
+            className="eco-iconbtn eco-iconbtn--xs">
+            <IconResume size={14}/>
           </button>
         )}
-        <span style={{
-          color: t.text1, fontSize: 16, fontFamily: t.fontMono,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 22, height: 22,
-          transition: 'transform 180ms ease',
-          flexShrink: 0,
-        }}>
-          {expanded ? <IconChevD size={16}/> : <IconChevR size={16}/>}
-        </span>
-      </button>
+      </div>
 
       <AnimatePresence>
         {actionMsg && (
@@ -169,24 +145,17 @@ export function PullRequestsList({ workspace, bubbleId }: Props) {
             exit={{ opacity: 0, height: 0, marginTop: 0 }}
             transition={{ duration: 0.16 }}
             style={{ overflow: 'hidden' }}>
-            <div style={{
-              padding: '6px 8px',
-              borderRadius: 6,
-              background: actionMsg.kind === 'ok'
-                ? `color-mix(in oklch, ${t.ok} 14%, transparent)`
-                : `color-mix(in oklch, ${t.err} 14%, transparent)`,
-              color: actionMsg.kind === 'ok' ? t.ok : t.err,
-              fontFamily: t.fontMono, fontSize: 11,
-              display: 'flex', alignItems: 'flex-start', gap: 6,
-              maxHeight: 90, overflow: 'auto', wordBreak: 'break-word',
+            <div className={`eco-banner eco-banner--${actionMsg.kind} eco-mono`} style={{
+              flexWrap: 'nowrap', alignItems: 'flex-start', gap: 8, padding: '8px 12px',
+              fontSize: 11.5, maxHeight: 90, overflow: 'auto', wordBreak: 'break-word',
             }}>
-              <span style={{ flexShrink: 0, marginTop: 1 }}>
-                {actionMsg.kind === 'ok' ? <IconCheck size={9}/> : '!'}
+              <span style={{ flexShrink: 0, marginTop: 2 }}>
+                {actionMsg.kind === 'ok' ? <IconCheck size={12}/> : <IconAlert size={12}/>}
               </span>
               <span style={{ flex: 1, whiteSpace: 'pre-wrap', minWidth: 0 }}>{actionMsg.text}</span>
               <button type="button" onClick={() => setActionMsg(null)}
-                style={{ background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
-                <IconX size={9}/>
+                style={{ background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, flexShrink: 0, display: 'inline-flex' }}>
+                <IconX size={12}/>
               </button>
             </div>
           </motion.div>
@@ -203,22 +172,21 @@ export function PullRequestsList({ workspace, bubbleId }: Props) {
             style={{ overflow: 'hidden' }}>
             <div style={{
               marginTop: 8,
-              borderTop: `1px solid ${t.glassBorder}`,
+              borderTop: `1px solid ${t.line}`,
               paddingTop: 8,
             }}>
               {loading && !data ? (
-                <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: t.text3 }}>Cargando…</div>
+                <div className="eco-empty" style={{ padding: 12 }}>Cargando…</div>
               ) : data?.ok === false ? (
                 <ErrorBlock error={data.error} code={data.code}/>
               ) : prs.length === 0 ? (
-                <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: t.text3 }}>
+                <div className="eco-empty" style={{ padding: 12 }}>
                   Sin PRs abiertos
                 </div>
               ) : (
                 <div style={{
                   maxHeight: 360, overflow: 'auto',
-                  display: 'flex', flexDirection: 'column', gap: 8,
-                  paddingRight: 2,
+                  display: 'flex', flexDirection: 'column', gap: 2,
                 }}>
                   {prs.map((p) => (
                     <PrRow key={p.number} pr={p}
@@ -239,7 +207,7 @@ export function PullRequestsList({ workspace, bubbleId }: Props) {
             onConfirm={() => void doCheckout(confirming)}/>
         )}
       </AnimatePresence>
-    </Glass>
+    </div>
   );
 }
 
@@ -261,15 +229,9 @@ function ErrorBlock({ error, code }: { error: string; code?: string }) {
       <>Este repo no tiene un remote de GitHub. Agregá uno con <code style={mono(t)}>git remote add origin …</code></>
     ) : null;
   return (
-    <div style={{
-      padding: '10px 10px', borderRadius: 8,
-      background: `color-mix(in oklch, ${t.warn} 10%, transparent)`,
-      color: t.text1,
-      fontSize: 11, lineHeight: 1.5,
-      display: 'flex', gap: 8, alignItems: 'flex-start',
-    }}>
-      <span style={{ color: t.warn, marginTop: 1 }}><IconAlert size={11}/></span>
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <div className="eco-banner eco-banner--warn" style={{ flexWrap: 'nowrap', alignItems: 'flex-start', lineHeight: 1.5 }}>
+      <span style={{ marginTop: 2, flexShrink: 0 }}><IconAlert size={13}/></span>
+      <div style={{ flex: 1, minWidth: 0, color: t.text1 }}>
         {friendly ?? error}
       </div>
     </div>
@@ -286,40 +248,19 @@ function compactNum(n: number): string {
 
 function PrRow({ pr, onClick }: { pr: PullRequest; onClick: () => void }) {
   const t = useTokens();
-  const [h, setH] = useState(false);
   return (
     <button
       type="button"
       onClick={onClick}
-      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      className="eco-nav-item"
       style={{
-        width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '12px 12px',
-        // `bg1` es sólido — sin esto el fondo del card es translúcido igual
-        // que el Glass envolvente y visualmente no hay límite.
-        background: h ? t.bg3 : t.bg1,
-        border: `1px solid ${h ? t.accent : t.glassBorderHi}`,
-        borderRadius: 10,
-        boxShadow: h ? '0 4px 12px rgba(0,0,0,0.25)' : '0 1px 2px rgba(0,0,0,0.15)',
-        color: t.text1, cursor: 'pointer', textAlign: 'left',
-        minHeight: 72,
-        // Clip cualquier hijo que se intente desbordar — defensa de profundidad.
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-        transition: 'background 120ms, border-color 120ms, box-shadow 120ms',
+        height: 'auto', flex: 'none', padding: '11px 12px', borderRadius: 14,
+        flexDirection: 'column', alignItems: 'stretch', gap: 4, color: t.text0,
       }}>
-      <span style={{
-        flexShrink: 0, marginTop: 2,
-        fontFamily: t.fontMono, fontSize: 11,
-        color: pr.isDraft ? t.text3 : t.accent,
-        fontWeight: 500,
-      }}>
-        #{pr.number}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 12, color: t.text0, fontWeight: 500,
-          lineHeight: 1.35,
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+        <span className="eco-mono" style={{ flex: 'none', fontSize: 12, color: t.text3 }}>#{pr.number}</span>
+        <span style={{
+          flex: 1, minWidth: 0, fontWeight: 500, lineHeight: 1.35,
           overflow: 'hidden', textOverflow: 'ellipsis',
           display: '-webkit-box',
           WebkitLineClamp: 2,
@@ -327,46 +268,28 @@ function PrRow({ pr, onClick }: { pr: PullRequest; onClick: () => void }) {
           wordBreak: 'break-word',
         }}>
           {pr.title}
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6, marginTop: 8,
-          fontSize: 11, color: t.text3, fontFamily: t.fontMono,
-          flexWrap: 'wrap', rowGap: 4,
-          minWidth: 0,
-        }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            minWidth: 0, maxWidth: '100%',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            flexShrink: 1,
-          }}>
-            <IconUser size={8}/>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{pr.author || '—'}</span>
-          </span>
-          {pr.isDraft && (
-            <span style={{
-              padding: '0 4px', borderRadius: 4,
-              background: t.bg3, color: t.text2,
-              fontSize: 11,
-              flexShrink: 0,
-            }}>draft</span>
-          )}
-          {pr.isFork && (
-            <span style={{
-              padding: '0 4px', borderRadius: 4,
-              background: `color-mix(in oklch, ${t.warn} 18%, transparent)`,
-              color: t.warn,
-              fontSize: 11,
-              flexShrink: 0,
-            }}>fork</span>
-          )}
-          {(pr.additions != null || pr.deletions != null) && (
-            <span style={{ display: 'inline-flex', gap: 4, flexShrink: 0 }}>
-              {pr.additions != null && <span style={{ color: t.ok }}>+{compactNum(pr.additions)}</span>}
-              {pr.deletions != null && <span style={{ color: t.err }}>−{compactNum(pr.deletions)}</span>}
-            </span>
-          )}
-        </div>
+        </span>
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        fontSize: 12.5, color: t.text3,
+        flexWrap: 'wrap', rowGap: 4, minWidth: 0,
+      }}>
+        <span className="eco-truncate" style={{ maxWidth: '100%' }}>{pr.author || '—'}</span>
+        {pr.isDraft && (
+          <span className="eco-mono" style={{
+            fontSize: 11.5, padding: '0 7px', borderRadius: 7,
+            background: t.sheet, color: t.text1, flexShrink: 0,
+          }}>draft</span>
+        )}
+        {pr.isFork && (
+          <span className="eco-mono" style={{
+            fontSize: 11.5, padding: '0 7px', borderRadius: 7,
+            background: t.warnSoft, color: t.warn, flexShrink: 0,
+          }}>fork</span>
+        )}
+        {pr.additions != null && <span className="eco-mono" style={{ color: t.ok }}>+{compactNum(pr.additions)}</span>}
+        {pr.deletions != null && <span className="eco-mono" style={{ color: t.err }}>−{compactNum(pr.deletions)}</span>}
       </div>
     </button>
   );
@@ -386,104 +309,59 @@ function CheckoutConfirmDialog({
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
+      className="eco-scrim"
+      style={{ zIndex: 9999 }}
       onClick={onCancel}>
-      <motion.div
-        initial={{ scale: 0.96, y: 6 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 6 }}
-        transition={{ duration: 0.18 }}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(520px, 100%)',
-          ...dialogSurface(t),
-          borderRadius: 16,
-          padding: 20,
+      <div className="eco-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile"><IconBranch size={20}/></span>
+          <h2 className="eco-dialog__title">
+            Ir a la rama del PR #{pr.number} para revisar
+          </h2>
+          <IconBtn icon={IconX} size={32} onClick={onCancel} title="Cerrar"/>
+        </div>
+        <div className="eco-dialog__body" style={{
+          overflow: 'hidden', textOverflow: 'ellipsis',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical' as const,
         }}>
+          {pr.title}
+        </div>
+
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+          padding: '12px 16px', borderRadius: 14,
+          background: t.card, color: t.text2, lineHeight: 1.7,
         }}>
-          <span style={{
-            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-            background: t.accentFaint, color: t.accent,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconBranch size={14}/>
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{
-              margin: 0, fontSize: 16, fontWeight: 500, color: t.text0,
-            }}>
-              Ir a la rama del PR #{pr.number} para revisar
-            </h3>
-            <div style={{ fontSize: 12, color: t.text2, marginTop: 2,
-              overflow: 'hidden', textOverflow: 'ellipsis',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical' as const,
-            }}>
-              {pr.title}
+          Eco va a hacer <code style={mono(t)}>gh pr checkout {pr.number}</code> en el worktree de este agente.
+          La rama actual (<code style={mono(t)}>{'eco/<id>'}</code>) queda al margen — podés volver desde el BranchPicker después.
+          {pr.isFork && (
+            <div className="eco-banner eco-banner--warn" style={{ marginTop: 8 }}>
+              <span>Este PR viene de un fork. <code style={mono(t)}>gh</code> creará un remote temporal y una rama local prefijada con el fork.</span>
             </div>
-          </div>
+          )}
         </div>
 
-        <div style={{
-          padding: '10px 12px', borderRadius: 10,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          marginBottom: 16,
-        }}>
-          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>
-            Eco va a hacer <code style={mono(t)}>gh pr checkout {pr.number}</code> en el worktree de este agente.
-            La rama actual (<code style={mono(t)}>{'eco/<id>'}</code>) queda al margen — podés volver desde el BranchPicker después.
-            {pr.isFork && (
-              <div style={{
-                marginTop: 6, padding: '4px 8px', borderRadius: 6,
-                background: `color-mix(in oklch, ${t.warn} 14%, transparent)`,
-                color: t.warn, fontSize: 11, fontFamily: t.fontMono,
-              }}>
-                Este PR viene de un fork. <code style={mono(t)}>gh</code> creará un remote temporal y una rama local prefijada con el fork.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <div className="eco-dialog__foot">
           <a href={pr.url} target="_blank" rel="noopener noreferrer"
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontSize: 13, textDecoration: 'none',
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-            }}>
-            <IconExt size={10}/> Ver en GitHub
+            className="eco-btn eco-btn--lg eco-btn--ghost"
+            style={{ textDecoration: 'none' }}>
+            <IconExt size={15}/> Ver en GitHub
           </a>
-          <button type="button" onClick={onCancel}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontSize: 13, cursor: 'pointer',
-            }}>Cancelar</button>
-          <button type="button" onClick={onConfirm}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: t.accent, color: t.accentOn, border: 0,
-              fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            }}>Ir a la rama</button>
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>Cancelar</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--primary" onClick={onConfirm}>Ir a la rama</button>
+          </div>
         </div>
-      </motion.div>
+      </div>
     </motion.div>
   ), document.body);
 }
 
 function mono(t: ReturnType<typeof useTokens>) {
   return {
-    fontFamily: t.fontMono, fontSize: 11,
-    padding: '1px 6px', borderRadius: 4,
-    background: t.bg3, color: t.text1,
+    fontFamily: t.fontMono, fontSize: 12,
+    padding: '1px 7px', borderRadius: 7,
+    background: t.raised, color: t.text0,
   };
 }

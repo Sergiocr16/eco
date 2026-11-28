@@ -1,12 +1,8 @@
 Eco Logo Colors
 
-Background (app icon): radial #1a1d28 → #06070b
-Mark gradient start: oklch(82% 0.14 170)   (~ teal claro)
-Mark gradient end:   oklch(68% 0.13 158)   (~ verde sage)
+Background (app icon): radial #26241f → #100f0d
+Mark: #d98562 (terracota, fijo; en tema claro la interfaz usa #b5532f)
 Text: #f5f5f7
-
-CSS gradient (perceptual):
-linear-gradient(135deg, oklch(82% 0.14 170) 0%, oklch(68% 0.13 158) 100%)
 
 Assets:
 - eco-mark.svg                 — solo el arco + dot (256×256, viewBox 56×56)

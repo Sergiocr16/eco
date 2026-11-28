@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useTokens } from '@/design/theme';
+import { Btn, IconBtn } from '@/design/primitives';
+import { IconX } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 
 // Aviso global del auto-update. Aparece apenas electron-updater detecta una
@@ -8,7 +9,6 @@ import { useT } from '@/hooks/useI18n';
 // dispara el main process. Solo en la app empaquetada de Windows (donde el
 // updater está habilitado).
 export function UpdateBanner() {
-  const t = useTokens();
   const tr = useT();
   const [phase, setPhase] = useState<'hidden' | 'downloading' | 'ready'>('hidden');
   const [version, setVersion] = useState('');
@@ -42,17 +42,14 @@ export function UpdateBanner() {
   const ready = phase === 'ready';
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
-      marginTop: 8, zIndex: 9998,
-      display: 'flex', alignItems: 'center', gap: 16,
-      padding: '10px 16px', borderRadius: 12,
-      background: t.bg2, color: t.text0,
-      border: `1px solid ${t.glassBorder}`,
-      boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
-      fontFamily: t.fontSans, fontSize: 13,
+    // Centrado con márgenes automáticos: la animación de .eco-menu usa
+    // transform y pisaría un translateX(-50%).
+    <div className="eco-menu eco-hstack" role="status" style={{
+      position: 'fixed', top: 0, left: 0, right: 0, margin: '8px auto 0',
+      width: 'fit-content', maxWidth: 'calc(100% - 24px)', minWidth: 0, zIndex: 9998,
+      gap: 12, padding: '8px 8px 8px 16px',
     }}>
-      <span>
+      <span className="eco-grow">
         {ready
           ? (version
             ? tr('update.banner.title').replace('{version}', version)
@@ -60,31 +57,19 @@ export function UpdateBanner() {
           : tr('update.banner.downloading').replace('{version}', version || '…').replace('{percent}', String(percent))}
       </span>
       {ready && (
-      <button
-        type="button"
-        disabled={installing}
-        onClick={() => {
-          setInstalling(true);
-          void window.electronAPI?.installAndRestart?.();
-        }}
-        style={{
-          padding: '6px 16px', borderRadius: 8,
-          border: `1px solid ${t.ok}`, background: 'transparent', color: t.ok,
-          fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-          cursor: installing ? 'wait' : 'pointer', opacity: installing ? 0.6 : 1,
-        }}>
-        {tr('update.banner.restart')}
-      </button>
+        <Btn
+          kind="primary"
+          size="sm"
+          disabled={installing}
+          onClick={() => {
+            setInstalling(true);
+            void window.electronAPI?.installAndRestart?.();
+          }}>
+          {tr('update.banner.restart')}
+        </Btn>
       )}
-      <button
-        type="button"
-        onClick={() => { dismissedVersion.current = version; setPhase('hidden'); }}
-        aria-label={tr('update.banner.dismiss')}
-        style={{
-          width: 24, height: 24, borderRadius: 6, border: 0,
-          background: 'transparent', color: t.text3, cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        }}>×</button>
+      <IconBtn icon={IconX} size={28} title={tr('update.banner.dismiss')}
+        onClick={() => { dismissedVersion.current = version; setPhase('hidden'); }}/>
     </div>
   );
 }

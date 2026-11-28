@@ -15,7 +15,7 @@ type Props = {
   scrollRef: RefObject<HTMLDivElement | null>;
 };
 
-const ROW_HEIGHT = 24;
+const ROW_HEIGHT = 28;
 
 type Row = { entry: TreeEntry; depth: number };
 

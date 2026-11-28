@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTokens } from '@/design/theme';
+import { IconCheck, IconExt } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 
 const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,read:org&description=Eco';
@@ -8,7 +8,6 @@ const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,read:org&d
 // GitHub + los scopes a marcar. Usado en Settings → GitHub y en el step
 // de GitHub del Onboarding.
 export function GithubTokenHelp() {
-  const t = useTokens();
   const tr = useT();
   const [open, setOpen] = useState(false);
 
@@ -17,38 +16,29 @@ export function GithubTokenHelp() {
   }
 
   return (
-    <div style={{ fontSize: 12, color: t.text2, fontFamily: t.fontSans, lineHeight: 1.55 }}>
+    <div className="eco-vstack" style={{ gap: 10, alignItems: 'flex-start' }}>
       <button
         type="button"
+        className="eco-btn eco-btn--outline eco-btn--xs"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        style={{
-          background: 'transparent', border: 0, padding: 0,
-          color: t.accent, fontFamily: t.fontSans, fontSize: 12,
-          cursor: 'pointer', textAlign: 'left',
-        }}
       >
         {open ? tr('settings.github.hide_help') : tr('settings.github.how_to_create')}
       </button>
 
       {open && (
-        <div style={{
-          marginTop: 10, padding: 16, borderRadius: 10,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          color: t.text1, fontSize: 13,
-        }}>
-          <div style={{ color: t.text2, marginBottom: 10 }}>
-            {tr('settings.github.help_intro')}
-          </div>
+        <div className="eco-inset eco-vstack" style={{ gap: 12, alignSelf: 'stretch', alignItems: 'flex-start' }}>
+          <div className="eco-muted">{tr('settings.github.help_intro')}</div>
 
-          <ol style={{ paddingLeft: 20, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <ol className="eco-vstack" style={{ paddingLeft: 20, margin: 0, gap: 8, alignSelf: 'stretch' }}>
             <li>{tr('settings.github.help_step1')}</li>
             <li>{tr('settings.github.help_step2')}</li>
             <li>{tr('settings.github.help_step3')}</li>
             <li>
-              <div style={{ fontWeight: 500, color: t.text0, marginBottom: 6 }}>
+              <div className="eco-label" style={{ marginBottom: 6 }}>
                 {tr('settings.github.help_scopes_title')}
               </div>
-              <ul style={{ paddingLeft: 0, margin: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <ul className="eco-vstack" style={{ paddingLeft: 0, margin: 0, listStyle: 'none', gap: 6 }}>
                 <ScopeRow scope="repo" required note={tr('settings.github.help_scope_repo')}/>
                 <ScopeRow scope="read:org" required note={tr('settings.github.help_scope_read_org')}/>
                 <ScopeRow scope="workflow" note={tr('settings.github.help_scope_workflow')}/>
@@ -57,16 +47,10 @@ export function GithubTokenHelp() {
             <li>{tr('settings.github.help_step4')}</li>
           </ol>
 
-          <button
-            type="button"
-            onClick={openTokenPage}
-            style={{
-              marginTop: 12,
-              padding: '6px 12px', borderRadius: 6, border: `1px solid ${t.accent}`,
-              background: 'transparent', color: t.accent,
-              fontFamily: t.fontSans, fontSize: 12, cursor: 'pointer', fontWeight: 500,
-            }}
-          >{tr('settings.github.open_github')}</button>
+          <button type="button" className="eco-btn eco-btn--soft eco-btn--xs" onClick={openTokenPage}>
+            <IconExt size={13}/>
+            {tr('settings.github.open_github')}
+          </button>
         </div>
       )}
     </div>
@@ -74,26 +58,20 @@ export function GithubTokenHelp() {
 }
 
 function ScopeRow({ scope, note, required }: { scope: string; note: string; required?: boolean }) {
-  const t = useTokens();
   return (
-    <li style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+    <li className="eco-hstack" style={{ alignItems: 'flex-start', gap: 8 }}>
       <span style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 14, height: 14, flexShrink: 0, marginTop: 2,
-        borderRadius: 4, background: required ? t.accent : 'transparent',
-        border: `1.5px solid ${required ? t.accent : t.text3}`,
-        color: t.accentOn, fontSize: 11, fontWeight: 600, lineHeight: 1,
+        width: 16, height: 16, flex: 'none', marginTop: 2, borderRadius: 5,
+        background: required ? 'var(--ac)' : 'transparent',
+        border: `1.5px solid ${required ? 'var(--ac)' : 'var(--tx3)'}`,
+        color: 'var(--ac-tx)',
       }}>
-        {required ? '✓' : ''}
+        {required && <IconCheck size={11} strokeWidth={3}/>}
       </span>
-      <div style={{ flex: 1 }}>
-        <code style={{
-          padding: '1px 6px', borderRadius: 4,
-          background: t.bg3, color: t.text0,
-          fontFamily: t.fontMono, fontSize: 12,
-          marginRight: 6,
-        }}>{scope}</code>
-        <span style={{ color: t.text2 }}>{note}</span>
+      <div className="eco-grow">
+        <code className="eco-chip eco-chip--on-card eco-mono" style={{ fontSize: 12, marginRight: 6 }}>{scope}</code>
+        <span className="eco-muted">{note}</span>
       </div>
     </li>
   );

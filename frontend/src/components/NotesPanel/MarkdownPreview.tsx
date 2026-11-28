@@ -25,9 +25,9 @@ export function MarkdownPreview({ source }: Props) {
     <div
       className="eco-md-preview"
       style={{
-        padding: '16px 20px', overflow: 'auto', flex: 1, minHeight: 0,
-        fontFamily: t.fontSans, fontSize: 14, lineHeight: 1.6,
-        color: t.text0, background: t.bg1,
+        padding: '18px 24px', overflow: 'auto', flex: 1, minHeight: 0,
+        fontFamily: t.fontSans, fontSize: 15, lineHeight: 1.6,
+        color: t.text0,
       }}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}

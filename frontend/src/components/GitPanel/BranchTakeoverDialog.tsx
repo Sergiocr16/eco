@@ -1,8 +1,7 @@
 import { createPortal } from 'react-dom';
-import { vw } from '@/lib/ui-zoom';
 import { useTokens } from '@/design/theme';
-import { scrimStyle, dialogSurface } from '@/design/primitives';
-import { IconAlert } from '@/design/icons';
+import { IconBtn } from '@/design/primitives';
+import { IconAlert, IconBranch, IconX } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 
 // Lo que devuelve el backend con code 'checkout.branch_in_other_worktree'.
@@ -35,61 +34,40 @@ export function BranchTakeoverDialog({ holder, busy, onCancel, onConfirm }: {
     ? (holder.title || holder.bubbleId)
     : holder.path;
   return createPortal(
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      ...scrimStyle(t),
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={busy ? undefined : onCancel}>
-      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{
-        width: 500, maxWidth: vw(92), padding: 20, borderRadius: 12,
-        ...dialogSurface(t, { border: t.accent }),
-        display: 'flex', flexDirection: 'column', gap: 12,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: t.text0 }}>
-          {holder.branch
+    <div className="eco-scrim" onClick={busy ? undefined : onCancel}>
+      <div role="dialog" aria-modal="true" className="eco-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile"><IconBranch size={20}/></span>
+          <h2 className="eco-dialog__title">{holder.branch
             ? tr('git.takeover.title', { branch: holder.branch })
-            : tr('git.takeover.title_nobranch')}
+            : tr('git.takeover.title_nobranch')}</h2>
+          <IconBtn icon={IconX} size={32} onClick={busy ? undefined : onCancel} title={tr('common.close')}/>
         </div>
-        <div style={{ fontSize: 12.5, color: t.text1, lineHeight: 1.55 }}>
+        <div className="eco-dialog__body">
           {tr(holder.bubbleId ? 'git.takeover.held_by_bubble' : 'git.takeover.held_by_path')}{' '}
           <span style={{ fontWeight: 600, color: t.text0, wordBreak: 'break-all' }}>{where}</span>
           {holder.archived && (
-            <span style={{ color: t.text3 }}> {tr('git.takeover.archived')}</span>
+            <span className="eco-faint"> {tr('git.takeover.archived')}</span>
           )}
         </div>
-        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5 }}>
+        <div className="eco-sub" style={{ lineHeight: 1.5 }}>
           {tr(holder.bubbleId ? 'git.takeover.body_bubble' : 'git.takeover.body_detach')}
         </div>
         {holder.dirty && (
-          <div style={{
-            display: 'flex', gap: 8, alignItems: 'flex-start',
-            padding: '8px 10px', borderRadius: 8,
-            background: `color-mix(in oklab, ${t.warn} 14%, transparent)`,
-            border: `1px solid color-mix(in oklab, ${t.warn} 35%, transparent)`,
-            color: t.text1, fontSize: 12, lineHeight: 1.5,
-          }}>
-            <span style={{ color: t.warn, flexShrink: 0, marginTop: 2, display: 'flex' }}>
+          <div className="eco-banner eco-banner--warn" style={{ flexWrap: 'nowrap', alignItems: 'flex-start', lineHeight: 1.5 }}>
+            <span style={{ flexShrink: 0, marginTop: 2, display: 'flex' }}>
               <IconAlert size={14}/>
             </span>
             <span>{tr('git.takeover.dirty')}</span>
           </div>
         )}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} disabled={busy}
-            style={{
-              height: 28, padding: '0 14px', borderRadius: 7,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontFamily: t.fontSans, fontSize: 12,
-              cursor: busy ? 'not-allowed' : 'pointer',
-            }}>{tr('common.cancel')}</button>
-          <button type="button" onClick={onConfirm} disabled={busy}
-            style={{
-              height: 28, padding: '0 14px', borderRadius: 7, border: 0,
-              background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 700,
-              cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1,
-            }}>{busy ? tr('git.takeover.moving') : tr('git.takeover.confirm')}</button>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel} disabled={busy}>{tr('common.cancel')}</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--primary" onClick={onConfirm} disabled={busy}>
+              {busy ? tr('git.takeover.moving') : tr('git.takeover.confirm')}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

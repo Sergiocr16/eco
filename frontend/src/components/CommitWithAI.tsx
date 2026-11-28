@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { useTokens } from '@/design/theme';
-import { Glass } from '@/design/primitives';
+import { Btn, IconTile } from '@/design/primitives';
 import { IconBolt } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
@@ -18,7 +17,6 @@ type Props = {
 // Estilo GitHub Desktop: título (1 línea) + descripción (multilínea), ambos
 // editables a mano. "Generar con IA" los rellena pero el user puede cambiarlos.
 export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
-  const t = useTokens();
   const tr = useT();
   const review = useReviewState(bubbleId);
   type Phase = 'idle' | 'suggesting' | 'committing' | 'done' | 'error';
@@ -89,99 +87,63 @@ export function CommitWithAI({ bubbleId, workspace, onCommitted }: Props) {
     }
   }
 
-  const fieldBase = {
-    width: '100%', boxSizing: 'border-box' as const,
-    background: t.bg2, border: `1px solid ${t.glassBorder}`,
-    borderRadius: 6, padding: '6px 8px',
-    color: t.text0, outline: 'none',
-  };
+  const cantCommit = phase === 'committing' || !title.trim();
 
   return (
-    <Glass radius={10} style={{ padding: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{
-          width: 22, height: 22, borderRadius: 6,
-          background: t.accentFaint, color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          <IconBolt size={11}/>
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, color: t.text0 }}>{tr('commit.title')}</div>
-          <div style={{ fontSize: 11, color: t.text3 }}>{tr('commit.sub')}</div>
+    <div className="eco-vstack" style={{ gap: 8 }}>
+      <div className="eco-hstack">
+        <IconTile icon={IconBolt} size="sm" accent/>
+        <div className="eco-grow">
+          <div className="eco-label">{tr('commit.title')}</div>
+          <div className="eco-sub">{tr('commit.sub')}</div>
         </div>
       </div>
 
       {phase === 'done' && commitResult && (
-        <div style={{
-          marginTop: 8, padding: '6px 8px', borderRadius: 6,
-          background: `color-mix(in oklch, ${t.ok} 12%, transparent)`,
-          color: t.ok, fontFamily: t.fontMono, fontSize: 11,
-          whiteSpace: 'pre-wrap', maxHeight: 80, overflow: 'auto',
+        <div className="eco-banner eco-banner--ok eco-mono" style={{
+          display: 'block', fontSize: 11.5, whiteSpace: 'pre-wrap', maxHeight: 80, overflow: 'auto',
         }}>{commitResult}</div>
       )}
       {phase === 'error' && err && (
-        <div style={{
-          marginTop: 8, padding: '6px 8px', borderRadius: 6,
-          background: `color-mix(in oklch, ${t.err} 12%, transparent)`,
-          color: t.err, fontFamily: t.fontMono, fontSize: 11,
-          whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
+        <div className="eco-banner eco-banner--err eco-mono" style={{
+          display: 'block', fontSize: 11.5, whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
         }}>{err}</div>
       )}
 
-      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={tr('commit.field.title')}
-          disabled={phase === 'committing'}
-          style={{ ...fieldBase, fontFamily: t.fontSans, fontSize: 12, fontWeight: 500 }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void commit(); }}
-        />
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder={tr('commit.field.body')}
-          rows={5}
-          disabled={phase === 'committing'}
-          style={{ ...fieldBase, fontFamily: t.fontMono, fontSize: 11, resize: 'vertical', minHeight: 64, lineHeight: 1.5 }}
-        />
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            type="button"
-            onClick={() => void suggest()}
-            disabled={busy}
-            style={{
-              flex: 1, height: 26, border: 0, borderRadius: 6,
-              background: t.bg3, color: t.text1,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-              cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
-            }}>
-            {phase === 'suggesting' ? (
-              <>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: t.accent, animation: 'eco-shimmer 0.9s ease-in-out infinite' }}/>
-                {tr('commit.analyzing')}
-              </>
-            ) : (
-              <><IconBolt size={11}/> {tr('commit.btn.generate')}</>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => void commit()}
-            disabled={phase === 'committing' || !title.trim()}
-            style={{
-              flex: 1.3, height: 26, border: 0, borderRadius: 6,
-              background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-              cursor: (phase === 'committing' || !title.trim()) ? 'default' : 'pointer',
-              opacity: (phase === 'committing' || !title.trim()) ? 0.6 : 1,
-            }}>
-            {phase === 'committing' ? tr('commit.committing') : tr('commit.btn.commit')}
-          </button>
-        </div>
+      <input
+        className="eco-field eco-field--sm"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder={tr('commit.field.title')}
+        disabled={phase === 'committing'}
+        style={{ fontWeight: 500 }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void commit(); }}
+      />
+      <textarea
+        className="eco-field eco-field--mono"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder={tr('commit.field.body')}
+        rows={5}
+        disabled={phase === 'committing'}
+        style={{ minHeight: 64 }}
+      />
+      <div className="eco-hstack" style={{ gap: 8 }}>
+        <Btn kind="raised" size="sm" onClick={() => void suggest()} disabled={busy}
+          icon={phase === 'suggesting' ? undefined : IconBolt}
+          style={{ flex: 1, minWidth: 0 }}>
+          {phase === 'suggesting' ? (
+            <>
+              <span className="eco-dot eco-dot--accent" style={{ animation: 'eco-shimmer 0.9s ease-in-out infinite' }}/>
+              {tr('commit.analyzing')}
+            </>
+          ) : tr('commit.btn.generate')}
+        </Btn>
+        <Btn kind="primary" size="sm" onClick={() => void commit()} disabled={cantCommit}
+          style={{ flex: 1.3, minWidth: 0 }}>
+          {phase === 'committing' ? tr('commit.committing') : tr('commit.btn.commit')}
+        </Btn>
       </div>
-    </Glass>
+    </div>
   );
 }

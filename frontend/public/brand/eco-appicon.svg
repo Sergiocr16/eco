@@ -3,17 +3,17 @@
   <title>Eco app icon</title>
   <defs>
     <radialGradient id="bg" cx="35%" cy="25%" r="80%">
-      <stop offset="0%" stop-color="#1a1d28"></stop>
-      <stop offset="100%" stop-color="#06070b"></stop>
+      <stop offset="0%" stop-color="#26241f"></stop>
+      <stop offset="100%" stop-color="#100f0d"></stop>
     </radialGradient>
     <linearGradient id="markGrad" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="oklch(82% 0.14 170)"></stop>
-      <stop offset="100%" stop-color="oklch(68% 0.13 158)"></stop>
+      <stop offset="0%" stop-color="#d98562"></stop>
+      <stop offset="100%" stop-color="#d98562"></stop>
     </linearGradient>
   </defs>
   <rect x="0" y="0" width="1024" height="1024" rx="229" ry="229" fill="url(#bg)"></rect>
   <g transform="translate(192 192) scale(11.42857)">
-    <path d="M 8.95 39 A 22 22 0 1 1 17 47.05" fill="none" stroke="url(#markGrad)" stroke-width="5" stroke-linecap="round"></path>
-    <circle cx="15.5" cy="40.5" r="3.6" fill="url(#markGrad)"></circle>
+    <path d="M 6.33 31.82 A 22 22 0 1 1 20.66 48.74" fill="none" stroke="url(#markGrad)" stroke-width="6" stroke-linecap="round"></path>
+    <circle cx="15.6" cy="36.4" r="4" fill="url(#markGrad)"></circle>
   </g>
 </svg>

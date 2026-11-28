@@ -1,13 +1,10 @@
-import { useTokens } from '@/design/theme';
-import { Glass, Pill, SectionLabel } from '@/design/primitives';
-import { IconFolder, IconFolderOpen, IconDiff, IconExt, IconEdit, IconPlus, IconClock, IconTrash } from '@/design/icons';
-import { Btn, IconBtn } from '@/design/primitives';
+import { Btn, Card, IconBtn, IconTile, PageHeader, cx } from '@/design/primitives';
+import { IconFolder, IconFolderOpen, IconFileDiff, IconArrowUpRight, IconEdit, IconPlus, IconClock, IconTrash } from '@/design/icons';
 import type { Bubble } from '@/lib/types';
 import { useMemo, useState } from 'react';
 import { useT } from '@/hooks/useI18n';
 import { useAllBubbleChanges } from '@/hooks/useGitChanges';
 import { workspaceName } from '@/lib/workspace-name';
-import { useIsPhone, isPhoneNow } from '@/hooks/useMediaQuery';
 
 type Props = {
   bubbles: Bubble[];
@@ -25,9 +22,7 @@ function opFromChange(change: string): ChangeOp {
 }
 
 export function FileExplorer({ bubbles, onOpenChange }: Props) {
-  const t = useTokens();
   const tr = useT();
-  const isPhone = useIsPhone();
   const [selected, setSelected] = useState<string | null>(null);
 
   // Las burbujas archivadas no cuentan: ni en el conteo por carpeta ni en los
@@ -62,33 +57,23 @@ export function FileExplorer({ bubbles, onOpenChange }: Props) {
   }, [gitChanges, bubbleMeta, selected]);
 
   return (
-    // El rail de 240px deja ~150px de contenido en el teléfono: las tarjetas
-    // de cambios quedaban cortadas por la derecha. En móvil la lista de
-    // carpetas se acuesta como tira de chips arriba y el contenido usa el
-    // ancho completo.
-    <div style={{
-      display: 'flex', height: '100%',
-      flexDirection: isPhone ? 'column' : 'row',
-    }}>
-      <div
-        className={isPhone ? 'eco-dock-scroll' : undefined}
-        style={isPhone ? {
-          flexShrink: 0, padding: '10px 12px',
-          borderBottom: `1px solid ${t.glassBorder}`,
-          overflowX: 'auto',
-        } : {
-          width: 240, flexShrink: 0, padding: '20px 12px',
-          borderRight: `1px solid ${t.glassBorder}`,
-          overflow: 'auto',
-        }}>
-        {!isPhone && <SectionLabel>{tr('files.active_folders')}</SectionLabel>}
-        <div style={{
-          display: 'flex',
-          flexDirection: isPhone ? 'row' : 'column',
-          gap: isPhone ? 6 : 2,
-        }}>
+    <div className="eco-page eco-page--scroll">
+      <PageHeader
+        eyebrow={tr('files.active_folders')}
+        title={<span title={selected ?? undefined}>{selected ? workspaceName(selected) : tr('files.all_folders')}</span>}
+        sub={(
+          <span className="eco-hstack" style={{ gap: 8 }}>
+            {tr('files.recent_changes')}
+            <span className="eco-count">{changes.length}</span>
+          </span>
+        )}
+      />
+
+      {/* En el teléfono la tarjeta de carpetas pasa a tira horizontal (eco.css). */}
+      <div className="eco-split">
+        <Card variant="nav" as="nav" className="eco-split__nav">
           {folders.length === 0 ? (
-            <div style={{ fontSize: 12, color: t.text3, padding: 8 }}>{tr('files.no_folders')}</div>
+            <div className="eco-sub" style={{ padding: '8px 12px' }}>{tr('files.no_folders')}</div>
           ) : (
             <>
               <FolderListRow
@@ -109,28 +94,13 @@ export function FileExplorer({ bubbles, onOpenChange }: Props) {
               ))}
             </>
           )}
-        </div>
-      </div>
+        </Card>
 
-      <div style={{
-        flex: 1, minHeight: 0, minWidth: 0, overflow: 'auto',
-        padding: isPhone ? '16px 12px 24px' : '20px 24px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-          <div style={{ color: t.accent }}><IconFolderOpen size={16}/></div>
-          <span style={{ fontFamily: t.fontMono, fontSize: 13, color: t.text0 }}
-            title={selected ?? undefined}>
-            {selected ? workspaceName(selected) : tr('files.all_folders')}
-          </span>
-        </div>
-        <SectionLabel count={changes.length}>{tr('files.recent_changes')}</SectionLabel>
-        {changes.length === 0 ? (
-          <div style={{ fontSize: 13, color: t.text2, padding: 24, textAlign: 'center' }}>
-            {tr('files.no_changes')}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {changes.map((c, i) => (
+        <div className="eco-split__body">
+          <Card variant="list">
+            {changes.length === 0 ? (
+              <div className="eco-empty">{tr('files.no_changes')}</div>
+            ) : changes.map((c, i) => (
               <ChangeRow
                 key={`${c.bubbleId}-${c.file}-${i}`}
                 change={c}
@@ -138,8 +108,8 @@ export function FileExplorer({ bubbles, onOpenChange }: Props) {
                 onOpen={() => onOpenChange(c.bubbleId, c.file, 'files')}
               />
             ))}
-          </div>
-        )}
+          </Card>
+        </div>
       </div>
     </div>
   );
@@ -153,53 +123,17 @@ function FolderListRow({ label, title, count, changes, active, onClick }: {
   active: boolean;
   onClick: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
-  const [h, setH] = useState(false);
   return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      title={title}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        borderRadius: isPhoneNow() ? 999 : 8, cursor: 'pointer',
-        padding: isPhoneNow() ? '8px 12px' : '8px 10px',
-        background: active ? t.bg3 : (h ? t.bg2 : 'transparent'),
-        color: active ? t.text0 : t.text1,
-        // Como chip en la tira horizontal: no se encoge ni parte el nombre.
-        ...(isPhoneNow() ? {
-          flexShrink: 0,
-          border: `1px solid ${active ? t.accentDim : t.glassBorder}`,
-        } : {}),
-      }}>
-      <div style={{ color: (count ?? 0) > 0 || active ? t.accent : t.text2, flexShrink: 0 }}>
-        <IconFolder size={14}/>
-      </div>
-      <span style={{
-        fontFamily: t.fontMono, fontSize: 12, minWidth: 0,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        ...(isPhoneNow() ? {} : { flex: 1 }),
-      }}>{label}</span>
+    <button type="button" onClick={onClick} title={title} className={cx('eco-nav-item', active && 'is-on')}>
+      {active ? <IconFolderOpen size={15}/> : <IconFolder size={15}/>}
+      <span className="eco-truncate eco-grow">{label}</span>
       {(changes ?? 0) > 0 && (
-        <span
-          title={tr('dash.rail.folder_changes', { n: changes! })}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '1px 6px', background: `color-mix(in oklch, ${t.warn} 16%, transparent)`,
-            color: t.warn, borderRadius: 999, fontSize: 11, fontWeight: 500,
-          }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: t.warn }}/>
-          {changes}
-        </span>
+        <span className="eco-num" title={tr('dash.rail.folder_changes', { n: changes! })}
+          style={{ color: 'var(--warn)', fontWeight: 500 }}>{changes}</span>
       )}
-      {(count ?? 0) > 0 && (
-        <span style={{
-          padding: '1px 6px', background: t.accentFaint, color: t.accent,
-          borderRadius: 999, fontSize: 11, fontWeight: 500,
-        }}>{count}</span>
-      )}
-    </div>
+      {(count ?? 0) > 0 && <span className="eco-num">{count}</span>}
+    </button>
   );
 }
 
@@ -208,50 +142,26 @@ function ChangeRow({ change, onDiff, onOpen }: {
   onDiff: () => void;
   onOpen: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   const opMeta = {
-    created: { color: t.ok, label: tr('files.op.created'), icon: IconPlus },
-    modified: { color: t.accent, label: tr('files.op.modified'), icon: IconEdit },
-    pending: { color: t.warn, label: tr('files.op.pending'), icon: IconClock },
-    deleted: { color: t.err, label: tr('files.op.deleted'), icon: IconTrash },
+    created: { color: 'var(--ok)', label: tr('files.op.created'), icon: IconPlus },
+    modified: { color: 'var(--ac)', label: tr('files.op.modified'), icon: IconEdit },
+    pending: { color: 'var(--warn)', label: tr('files.op.pending'), icon: IconClock },
+    deleted: { color: 'var(--err)', label: tr('files.op.deleted'), icon: IconTrash },
   }[change.op];
-  const Icon = opMeta.icon;
   return (
-    <Glass radius={12} hover style={{
-      padding: isPhoneNow() ? 10 : 16,
-      display: 'flex', alignItems: 'center', gap: isPhoneNow() ? 8 : 12,
-      // Icono + ruta + "Diff" + abrir en una fila dejan la ruta —lo único que
-      // identifica el cambio— reducida a nada. En móvil los botones bajan.
-      ...(isPhoneNow() ? { flexWrap: 'wrap' as const } : {}),
-    }}>
-      <div style={{
-        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-        background: `color-mix(in oklch, ${opMeta.color} 12%, transparent)`,
-        color: opMeta.color, border: `1px solid color-mix(in oklch, ${opMeta.color} 30%, transparent)`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}><Icon size={14}/></div>
-      <div
-        onClick={onDiff}
-        style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-        <div style={{
-          fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{change.file}</div>
-        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Pill color={opMeta.color}>{opMeta.label}</Pill>
-          <span style={{ fontSize: 12, color: t.text2 }}>
-            {tr('files.by')} <span style={{ color: t.text1 }}>{change.agent}</span>
-          </span>
+    <div className="eco-row eco-row--tight">
+      <IconTile icon={opMeta.icon} title={opMeta.label} style={{ color: opMeta.color }}/>
+      <div className="eco-row__main eco-row--click" onClick={onDiff}>
+        <div className="eco-mono eco-truncate" style={{ fontSize: 13 }}>{change.file}</div>
+        <div className="eco-row__desc eco-truncate">
+          {opMeta.label} {tr('files.by')} <span className="eco-muted">{change.agent}</span>
         </div>
       </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-        ...(isPhoneNow() ? { flexBasis: '100%', justifyContent: 'flex-end' } : {}),
-      }}>
-        <Btn kind="ghost" size="sm" icon={IconDiff} onClick={onDiff}>{tr('files.diff_btn')}</Btn>
-        <IconBtn icon={IconExt} size={28} title={tr('detail.files.open_editor')} onClick={onOpen}/>
+      <div className="eco-row__end">
+        <Btn kind="raised" size="sm" icon={IconFileDiff} onClick={onDiff}>{tr('files.diff_btn')}</Btn>
+        <IconBtn icon={IconArrowUpRight} size={28} title={tr('detail.files.open_editor')} onClick={onOpen}/>
       </div>
-    </Glass>
+    </div>
   );
 }

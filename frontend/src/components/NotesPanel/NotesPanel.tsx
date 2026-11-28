@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
+import { createPortal } from 'react-dom';
+import { Btn, IconBtn } from '@/design/primitives';
+import { IconFileText, IconPlus, IconTrash, IconX } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { translateBackendError } from '@/lib/backend-errors';
 import { ResizableSplit } from '@/components/GitPanel/ResizableSplit';
@@ -206,8 +209,8 @@ export function NotesPanel({ bubble }: Props) {
           {summaryError && (
             <div style={{
               position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-              padding: '8px 16px', borderRadius: t.r2,
-              background: t.windowBg, border: `1px solid ${t.err}`,
+              padding: '8px 16px', borderRadius: 14,
+              background: t.bg, border: `1px solid ${t.line2}`,
               color: t.err, fontSize: 13, fontFamily: t.fontSans,
               boxShadow: t.shadowMd, zIndex: 10,
             }}>
@@ -227,42 +230,25 @@ export function NotesPanel({ bubble }: Props) {
 }
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
-  const t = useTokens();
   const tr = useT();
   return (
-    <div style={{
+    <div className="eco-empty" style={{
       flex: 1, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      gap: 12, padding: 24, color: t.text2, fontFamily: t.fontSans,
+      gap: 12, padding: 24,
     }}>
-      <div style={{
-        width: 56, height: 56, borderRadius: 16,
-        background: t.bg2, color: t.text2, border: `1px solid ${t.glassBorder}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z"/>
-          <path d="M14 3v5h5M9 13h6M9 17h4"/>
-        </svg>
+      <div className="eco-tile eco-tile--lg" style={{ width: 52, height: 52, borderRadius: 16 }}>
+        <IconFileText size={22}/>
       </div>
-      <div style={{ fontSize: 14, color: t.text1, fontWeight: 500 }}>
+      <div className="eco-h3">
         {tr('notes.empty_title')}
       </div>
-      <div style={{ fontSize: 12, color: t.text3, textAlign: 'center', maxWidth: 320 }}>
+      <div className="eco-sub" style={{ maxWidth: 320 }}>
         {tr('notes.empty_desc')}
       </div>
-      <button
-        type="button"
-        onClick={onCreate}
-        style={{
-          padding: '8px 16px', borderRadius: t.r2,
-          background: t.bg3, color: t.text0, border: `1px solid ${t.glassBorder}`,
-          cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
-          marginTop: 8,
-        }}
-      >
+      <Btn kind="primary" icon={IconPlus} onClick={onCreate} style={{ marginTop: 4 }}>
         {tr('notes.empty_cta')}
-      </button>
+      </Btn>
     </div>
   );
 }
@@ -271,57 +257,30 @@ function DeleteConfirmDialog({ onCancel, onConfirm }: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
-  return (
+  // Portal: un ancestro con transform atraparía el `position: fixed` del velo.
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
-      style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 50,
-      }}
+      className="eco-scrim"
     >
-      <div style={{
-        maxWidth: 380, width: '90%', padding: 20,
-        background: t.windowBg, border: `1px solid ${t.glassBorder}`,
-        borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
-        boxShadow: t.shadowLg,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-          {tr('notes.delete_confirm_title')}
+      <div className="eco-dialog eco-dialog--sm eco-dialog--danger">
+        <div className="eco-dialog__head">
+          <div className="eco-dialog__tile eco-dialog__tile--danger"><IconTrash size={18}/></div>
+          <h2 className="eco-dialog__title">{tr('notes.delete_confirm_title')}</h2>
+          <IconBtn icon={IconX} title={tr('common.close')} onClick={onCancel}/>
         </div>
-        <div style={{ fontSize: 13, color: t.text1, marginBottom: 16 }}>
-          {tr('notes.delete_confirm_body')}
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              padding: '6px 12px', borderRadius: t.r2,
-              background: 'transparent', color: t.text1,
-              border: `1px solid ${t.glassBorder}`,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
-            }}
-          >
-            {tr('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            style={{
-              padding: '6px 12px', borderRadius: t.r2,
-              background: t.err, color: '#fff', border: 0,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
-            }}
-          >
-            {tr('notes.delete')}
-          </button>
+        <p className="eco-dialog__body">{tr('notes.delete_confirm_body')}</p>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>{tr('common.cancel')}</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--danger-solid" onClick={onConfirm}>{tr('notes.delete')}</button>
+          </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

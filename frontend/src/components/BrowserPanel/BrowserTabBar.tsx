@@ -1,6 +1,7 @@
-import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
-import { IconGlobe, IconX } from '@/design/icons';
+import { IconGlobe, IconX, IconPlus } from '@/design/icons';
+import { cx } from '@/design/primitives';
+import { isMobileNow } from '@/hooks/useMediaQuery';
 import { NewTabMenu } from './NewTabMenu';
 import type { BrowserTab, NewTabMode } from './types';
 
@@ -13,16 +14,13 @@ type Props = {
 };
 
 export function BrowserTabBar({ tabs, activeTabId, onActivate, onClose, onNewTab }: Props) {
-  const t = useTokens();
   const tr = useT();
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center',
-      borderBottom: `1px solid ${t.glassBorder}`,
-      background: t.bg0,
+    <div className="eco-noscrollbar" style={{
+      display: 'flex', alignItems: 'center', gap: 4,
+      padding: isMobileNow() ? '8px 8px 2px' : '12px 14px 2px',
       overflow: 'auto',
-      minHeight: 34,
       flexShrink: 0,
     }}>
       {tabs.map((tab) => (
@@ -41,19 +39,9 @@ export function BrowserTabBar({ tabs, activeTabId, onActivate, onClose, onNewTab
             type="button"
             title={tr('browser.tab.new')}
             aria-label={tr('browser.tab.new')}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 28, height: 28, margin: '0 6px',
-              background: 'transparent', border: 0, color: t.text2,
-              cursor: 'pointer', borderRadius: t.r2,
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.text0; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}
+            className="eco-iconbtn"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M8 3v10M3 8h10"/>
-            </svg>
+            <IconPlus size={14}/>
           </button>
         }
         onPick={onNewTab}
@@ -71,7 +59,6 @@ function TabPill({
   onClose: () => void;
   tr: (key: string, vars?: Record<string, string | number>) => string;
 }) {
-  const t = useTokens();
   const displayTitle = tab.title || hostnameOf(tab.url) || tr('browser.tab.untitled');
   return (
     <div
@@ -80,58 +67,31 @@ function TabPill({
       onClick={onActivate}
       onAuxClick={(e) => { if (e.button === 1) onClose(); }}  // middle-click cierra
       title={tab.url || displayTitle}
+      className={cx('eco-subtab', active && 'is-on')}
       style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '0 8px 0 10px',
-        height: '100%',
+        gap: 8, height: 32, padding: '0 6px 0 12px', borderRadius: 16,
         minWidth: 100, maxWidth: 220,
-        background: active ? t.bg2 : 'transparent',
-        borderRight: `1px solid ${t.glassBorder}`,
-        borderBottom: active ? `2px solid ${t.accent}` : '2px solid transparent',
-        color: active ? t.text0 : t.text2,
-        fontFamily: t.fontSans, fontSize: 12,
-        cursor: 'pointer', flexShrink: 0,
         userSelect: 'none',
       }}
-      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.bg1; }}
-      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
     >
-      <IconGlobe size={11} style={{ flexShrink: 0, color: t.text0 }}/>
-      <span style={{
-        flex: 1, minWidth: 0,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>{displayTitle}</span>
+      <IconGlobe size={13} style={{ flexShrink: 0 }}/>
+      <span className="eco-truncate" style={{ flex: 1 }}>{displayTitle}</span>
       {tab.isolated && (
         <span
           title={tr('browser.tab.isolated_badge_tooltip')}
-          style={{
-            flexShrink: 0,
-            padding: '1px 6px',
-            borderRadius: 4,
-            background: `color-mix(in oklch, ${t.warn} 20%, transparent)`,
-            border: `1px solid ${t.warn}`,
-            color: t.warn,
-            fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
-            fontFamily: t.fontMono,
-          }}
-        >ISO</span>
+          className="eco-chip eco-chip--warn eco-mono"
+          style={{ padding: '0 6px', borderRadius: 6, fontSize: 10.5, fontWeight: 600 }}
+        >iso</span>
       )}
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
         aria-label={tr('browser.tab.close')}
         title={tr('browser.tab.close')}
-        style={{
-          flexShrink: 0,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 18, height: 18, marginLeft: 2,
-          background: 'transparent', border: 0,
-          color: t.text3, cursor: 'pointer', borderRadius: 4,
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.err; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text3; }}
+        className="eco-iconbtn eco-iconbtn--danger"
+        style={{ width: 22, height: 22 }}
       >
-        <IconX size={10}/>
+        <IconX size={12}/>
       </button>
     </div>
   );

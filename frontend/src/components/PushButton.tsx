@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Glass } from '@/design/primitives';
+import { Btn, IconTile } from '@/design/primitives';
 import { IconBranch } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { useT } from '@/hooks/useI18n';
@@ -45,82 +45,40 @@ export function PushButton({ bubbleId, workspace }: Props) {
   const isDone = phase === 'done';
 
   return (
-    <Glass radius={10} style={{ padding: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{
-          width: 22, height: 22, borderRadius: 6,
-          background: t.accentFaint, color: t.accent,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <IconBranch size={11}/>
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: t.fontSans, fontSize: 12, fontWeight: 500, color: t.text0 }}>{tr('push.btn')}</div>
-          <div style={{ fontSize: 11, color: t.text3, marginTop: 0 }}>
-            {tr('push.sub')}
-          </div>
+    <div className="eco-card eco-card--sm" style={{ padding: 12 }}>
+      <div className="eco-hstack">
+        <IconTile icon={IconBranch} size="sm" accent/>
+        <div className="eco-grow">
+          <div className="eco-label">{tr('push.btn')}</div>
+          <div className="eco-sub">{tr('push.sub')}</div>
         </div>
         {phase !== 'confirm' && (
-          <button
-            type="button"
+          <Btn kind="primary" size="sm"
             onClick={() => setPhase('confirm')}
-            disabled={phase === 'pushing'}
-            style={{
-              height: 26, padding: '0 12px', border: 0, borderRadius: 6,
-              background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-              cursor: phase === 'pushing' ? 'default' : 'pointer',
-              opacity: phase === 'pushing' ? 0.6 : 1,
-            }}>
+            disabled={phase === 'pushing'}>
             {phase === 'pushing' ? tr('push.pushing') : tr('push.btn')}
-          </button>
+          </Btn>
         )}
       </div>
       {phase === 'confirm' && (
-        <div style={{
-          marginTop: 8, padding: '8px 10px', borderRadius: 8,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        }}>
-          <div style={{ fontSize: 11, color: t.text1, lineHeight: 1.5 }}>
-            {tr('push.confirm.q_pre')} <code style={{
-              fontFamily: t.fontMono, fontSize: 11,
-              padding: '1px 6px', borderRadius: 4,
-              background: t.bg3, color: t.text1,
+        <div className="eco-inset" style={{ marginTop: 10 }}>
+          <div className="eco-muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+            {tr('push.confirm.q_pre')} <code className="eco-mono" style={{
+              fontSize: 11.5, padding: '1px 7px', borderRadius: 7, background: t.card,
             }}>origin</code>{tr('push.confirm.q_post')}
           </div>
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
-            <button
-              type="button"
-              onClick={() => setPhase('idle')}
-              style={{
-                height: 26, padding: '0 12px', borderRadius: 6,
-                background: 'transparent', color: t.text2,
-                border: `1px solid ${t.glassBorder}`,
-                fontFamily: t.fontSans, fontSize: 11, cursor: 'pointer',
-              }}>{tr('common.cancel')}</button>
-            <button
-              type="button"
-              onClick={() => void push()}
-              style={{
-                height: 26, padding: '0 12px', border: 0, borderRadius: 6,
-                background: t.accent, color: t.accentOn,
-                fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-                cursor: 'pointer',
-              }}>{tr('push.confirm.do')}</button>
+          <div className="eco-hstack" style={{ gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+            <Btn kind="ghost" size="sm" onClick={() => setPhase('idle')}>{tr('common.cancel')}</Btn>
+            <Btn kind="primary" size="sm" onClick={() => void push()}>{tr('push.confirm.do')}</Btn>
           </div>
         </div>
       )}
       {msg && (isDone || isError) && (
-        <div style={{
-          marginTop: 6,
-          padding: '6px 8px', borderRadius: 6,
-          background: `color-mix(in oklch, ${isError ? t.err : t.ok} 12%, transparent)`,
-          color: isError ? t.err : t.ok,
-          fontFamily: t.fontMono, fontSize: 11,
+        <div className={`eco-banner eco-mono ${isError ? 'eco-banner--err' : 'eco-banner--ok'}`} style={{
+          marginTop: 8, display: 'block', fontSize: 11.5,
           whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'auto',
         }}>{msg}</div>
       )}
-    </Glass>
+    </div>
   );
 }

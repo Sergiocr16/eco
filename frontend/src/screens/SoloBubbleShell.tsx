@@ -4,7 +4,8 @@
 // duplicarse. Comparte backend, token y localStorage con la principal.
 
 import { useEffect, useState } from 'react';
-import { useTokens } from '../design/theme';
+import { Btn } from '../design/primitives';
+import { useIsPhone } from '../hooks/useMediaQuery';
 import { useBubbles } from '../hooks/useBubbles';
 import { useWorkspaces } from '../hooks/useWorkspaces';
 import { useEcoSocket } from '../hooks/useEcoSocket';
@@ -27,7 +28,7 @@ function closeThisWindow(bubbleId: string) {
 }
 
 export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
-  const t = useTokens();
+  const isPhone = useIsPhone();
   const tr = useT();
   const workspacesHook = useWorkspaces();
   const bubbles = useBubbles();
@@ -84,7 +85,7 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
 
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: t.windowBg, backgroundImage: t.windowBgImage }}/>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: 'var(--bg)' }}/>
       {topInset > 0 && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, height: topInset,
@@ -97,32 +98,25 @@ export function SoloBubbleShell({ bubbleId }: { bubbleId: string }) {
         position: 'fixed', top: topInset, left: 0, right: 0, bottom: 0,
         zIndex: 1, display: 'flex', flexDirection: 'column',
       }}>
-        {bubble ? (
-          <AgentDetail
-            bubble={bubble}
-            workspaces={workspacesHook.list.workspaces}
-            solo
-            onBack={() => closeThisWindow(bubbleId)}
-            onRename={(title) => bubbles.renameBubble(bubble.id, title)}
-            onClose={() => { bubbles.archiveBubble(bubble.id); closeThisWindow(bubbleId); }}
-            onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(bubble.id, ws)}
-            onToggleCategory={(catId) => bubbles.toggleBubbleCategory(bubble.id, catId)}
-          />
-        ) : (
-          <div style={{
-            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexDirection: 'column', gap: 12, color: t.text2, fontFamily: t.fontSans,
-          }}>
-            <div style={{ fontSize: 14 }}>{tr('solo.not_found')}</div>
-            <button
-              type="button"
-              onClick={() => closeThisWindow(bubbleId)}
-              style={{
-                padding: '8px 16px', borderRadius: 8, border: `1px solid ${t.glassBorder}`,
-                background: t.bg2, color: t.text1, cursor: 'pointer', fontSize: 13,
-              }}>{tr('solo.close')}</button>
-          </div>
-        )}
+        <div className="eco-app eco-sheet" style={isPhone ? undefined : { margin: topInset > 0 ? '0 10px 10px' : 10 }}>
+          {bubble ? (
+            <AgentDetail
+              bubble={bubble}
+              workspaces={workspacesHook.list.workspaces}
+              solo
+              onBack={() => closeThisWindow(bubbleId)}
+              onRename={(title) => bubbles.renameBubble(bubble.id, title)}
+              onClose={() => { bubbles.archiveBubble(bubble.id); closeThisWindow(bubbleId); }}
+              onChangeWorkspace={(ws) => bubbles.setBubbleWorkspace(bubble.id, ws)}
+              onToggleCategory={(catId) => bubbles.toggleBubbleCategory(bubble.id, catId)}
+            />
+          ) : (
+            <div className="eco-vstack eco-muted" style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <div>{tr('solo.not_found')}</div>
+              <Btn kind="soft" onClick={() => closeThisWindow(bubbleId)}>{tr('solo.close')}</Btn>
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

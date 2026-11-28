@@ -1,12 +1,11 @@
-import { vw } from '@/lib/ui-zoom';
-import { useEffect, useRef, useState } from 'react';
+import { vw, cssZoom } from '@/lib/ui-zoom';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTokens } from '@/design/theme';
 import { IconLock, IconArrowR, IconKey } from '@/design/icons';
-import { Btn, scrimStyle, dialogSurface } from '@/design/primitives';
+import { Btn } from '@/design/primitives';
 import { useT } from '@/hooks/useI18n';
 import { useProfile } from '@/hooks/useProfile';
 import { useIsPhone } from '@/hooks/useMediaQuery';
-import { SAFE_BOTTOM } from '@/lib/platform';
 import type { JSX } from 'react';
 
 type AuthActionResult = { ok: true } | { ok: false; error: string };
@@ -16,6 +15,8 @@ type Props = {
   onLock: () => void;
   onSignOut: () => void;
   onChangePassword: (current: string, next: string) => Promise<AuthActionResult>;
+  /** `row`: avatar + nombre (barra lateral expandida). */
+  variant?: 'avatar' | 'row';
 };
 
 function initial(username: string | null): string {
@@ -25,7 +26,7 @@ function initial(username: string | null): string {
   return trimmed[0]!.toUpperCase();
 }
 
-export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: Props) {
+export function AccountMenu({ username, onLock, onSignOut, onChangePassword, variant = 'avatar' }: Props) {
   const t = useTokens();
   const tr = useT();
   const profile = useProfile();
@@ -66,72 +67,57 @@ export function AccountMenu({ username, onLock, onSignOut, onChangePassword }: P
     onSignOut();
   }
 
+  const avatar = (
+    <span className="eco-avatar" style={open ? { borderColor: t.accent } : undefined}>
+      {profile.photo ? (
+        <img src={profile.photo} alt={username ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+      ) : initial(username)}
+    </span>
+  );
+  // El menú se abre hacia arriba desde el ancla, alineado a su borde izquierdo
+  // (a la derecha en el teléfono, donde el avatar vive al final de la barra).
+  const r = open ? anchorRef.current?.getBoundingClientRect() : null;
+  const z = cssZoom();
+  const popPos: CSSProperties = r
+    ? (isPhone
+      ? { right: 8, bottom: (window.innerHeight - r.top) / z + 8 }
+      : { left: Math.max(8, r.left / z), bottom: (window.innerHeight - r.top) / z + 8 })
+    : { left: 8, bottom: 8 };
+
   return (
     <>
       <button
         ref={anchorRef}
         type="button"
         title={tr('nav.account')}
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        style={{
-          width: 36, height: 36, borderRadius: '50%', border: 0, cursor: 'pointer',
-          background: open ? t.accentFaint : t.bg3,
-          color: open ? t.accent : t.text0, fontWeight: 500, fontSize: 14,
-          letterSpacing: -0.3,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'background 140ms, color 140ms',
-          padding: 0, overflow: 'hidden',
-          outline: open ? `2px solid ${t.accent}` : 'none',
-          outlineOffset: 1,
-        }}>
-        {profile.photo ? (
-          <img
-            src={profile.photo}
-            alt={username ?? ''}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        ) : initial(username)}
+        className={variant === 'row' ? 'eco-nav-item' : undefined}
+        style={variant === 'row'
+          ? { height: 44, padding: '0 8px', gap: 10, color: t.text0, fontWeight: 500 }
+          : { border: 0, padding: 0, background: 'transparent', cursor: 'pointer', borderRadius: '50%', display: 'flex' }}>
+        {avatar}
+        {variant === 'row' && <span className="eco-truncate">{username ?? '—'}</span>}
       </button>
 
       {open && (
         <div
           id="eco-account-popover"
+          className="eco-menu"
           style={{
-            position: 'fixed', zIndex: 200,
-            // El ancla cambia con el sidebar: al costado del rail de 64px en
-            // escritorio, arriba de la barra inferior en móvil.
-            ...(isPhone
-              ? { right: 8, bottom: `calc(64px + ${SAFE_BOTTOM})` }
-              : { left: 70, bottom: 16 }),
-            width: `min(240px, calc(${vw(100)} - 16px))`,
-            background: t.glassBg,
-            backdropFilter: 'blur(40px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-            border: `1px solid ${t.glassBorderHi}`,
-            borderRadius: 16,
-            boxShadow: t.shadowLg,
-            padding: 8,
+            position: 'fixed', zIndex: 200, ...popPos,
+            width: `min(260px, calc(${vw(100)} - 16px))`,
             display: 'flex', flexDirection: 'column', gap: 2,
           }}>
-          <div style={{
-            padding: '10px 12px 12px',
-            borderBottom: `1px solid ${t.glassBorder}`,
-            marginBottom: 4,
-            display: 'flex', alignItems: 'center', gap: 12,
-          }}>
+          <div className="eco-hstack" style={{ gap: 12, padding: '8px 8px 12px' }}>
             <ProfilePhotoControl/>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: t.text3, fontFamily: t.fontMono, marginBottom: 2 }}>
-                {tr('account.signed_in_as')}
-              </div>
-              <div style={{
-                fontSize: 14, color: t.text0, fontWeight: 500,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>
-                {username ?? '—'}
-              </div>
+            <div className="eco-grow">
+              <div className="eco-sub">{tr('account.signed_in_as')}</div>
+              <div className="eco-label eco-truncate">{username ?? '—'}</div>
             </div>
           </div>
+          <div className="eco-menu__sep" style={{ marginTop: 0 }}/>
 
           <MenuItem
             icon={IconLock}
@@ -163,7 +149,6 @@ function ChangePasswordDialog({ onChangePassword, onClose }: {
   onChangePassword: (current: string, next: string) => Promise<AuthActionResult>;
   onClose: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -189,35 +174,32 @@ function ChangePasswordDialog({ onChangePassword, onClose }: {
       onChange={(e) => set(e.target.value)}
       onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
       placeholder={placeholder}
-      style={{
-        padding: '10px 12px', borderRadius: 10, border: `1px solid ${t.glassBorder}`,
-        background: t.bg2, color: t.text0, fontSize: 13, fontFamily: t.fontSans, outline: 'none',
-      }}
+      className="eco-field eco-field--on-sheet"
     />
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, ...scrimStyle(t), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: `min(380px, calc(${vw(100)} - 48px))`, ...dialogSurface(t), borderRadius: 16, padding: 24 }}>
-        <h3 style={{ margin: '0 0 16px', color: t.text0, fontSize: 16 }}>{tr('account.password')}</h3>
+    <div className="eco-scrim" style={{ zIndex: 1000 }}>
+      <div className="eco-dialog" style={{ maxWidth: 400 }}>
+        <h3 className="eco-h2" style={{ marginBottom: 16 }}>{tr('account.password')}</h3>
         {done ? (
           <>
-            <p style={{ color: t.text1, fontSize: 13, margin: '0 0 16px' }}>{tr('account.password.done')}</p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Btn kind="primary" size="sm" onClick={onClose}>{tr('account.password.close')}</Btn>
+            <p className="eco-muted" style={{ margin: 0 }}>{tr('account.password.done')}</p>
+            <div className="eco-dialog__actions">
+              <Btn kind="primary" onClick={onClose}>{tr('account.password.close')}</Btn>
             </div>
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+            <div className="eco-vstack" style={{ gap: 10 }}>
               {input(current, setCurrent, tr('account.password.current'), true)}
               {input(next, setNext, tr('account.password.new'))}
               {input(confirm, setConfirm, tr('account.password.confirm'))}
             </div>
-            {err && <div style={{ marginBottom: 10, color: t.err, fontSize: 13 }}>{err}</div>}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <Btn kind="secondary" size="sm" onClick={onClose}>{tr('account.password.cancel')}</Btn>
-              <Btn kind="primary" size="sm" onClick={submit} disabled={busy}>{busy ? tr('account.password.saving') : tr('account.password.save')}</Btn>
+            {err && <div className="eco-banner eco-banner--err" style={{ marginTop: 12 }}>{err}</div>}
+            <div className="eco-dialog__actions">
+              <Btn kind="soft" onClick={onClose}>{tr('account.password.cancel')}</Btn>
+              <Btn kind="primary" onClick={submit} disabled={busy}>{busy ? tr('account.password.saving') : tr('account.password.save')}</Btn>
             </div>
           </>
         )}
@@ -235,38 +217,15 @@ function MenuItem({
   onClick: () => void;
   danger?: boolean;
 }) {
-  const t = useTokens();
-  const [h, setH] = useState(false);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '8px 10px', border: 0, borderRadius: 8,
-        background: h ? (danger ? `color-mix(in oklch, ${t.err} 14%, transparent)` : t.bg3) : 'transparent',
-        color: danger ? t.err : t.text1,
-        cursor: 'pointer', textAlign: 'left',
-        fontFamily: t.fontSans, fontSize: 13,
-        transition: 'background 120ms',
-      }}>
-      <div style={{
-        width: 28, height: 28, borderRadius: 8,
-        background: danger ? `color-mix(in oklch, ${t.err} 16%, transparent)` : t.bg2,
-        color: danger ? t.err : t.text1,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
-      }}>
-        <Icon size={14}/>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <span style={{ fontWeight: 500 }}>{label}</span>
-        {sub && (
-          <span style={{ fontSize: 11, color: t.text3, fontWeight: 400 }}>{sub}</span>
-        )}
-      </div>
+    <button type="button" role="menuitem" onClick={onClick}
+      className={`eco-menu__item${danger ? ' eco-menu__item--danger' : ''}`}
+      style={{ height: 'auto', padding: '8px 10px' }}>
+      <Icon size={15}/>
+      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <span>{label}</span>
+        {sub && <span className="eco-sub">{sub}</span>}
+      </span>
     </button>
   );
 }
@@ -298,8 +257,8 @@ function ProfilePhotoControl() {
         style={{
           width: 44, height: 44, borderRadius: '50%', border: 0, cursor: 'pointer',
           padding: 0, overflow: 'hidden',
-          background: profile.photo ? t.bg2 : t.accent,
-          color: t.accentOn, fontWeight: 500, fontSize: 20,
+          background: t.raised, boxShadow: `inset 0 0 0 1px ${t.line2}`,
+          color: t.text0, fontWeight: 600, fontSize: 16,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
         {profile.photo ? (
@@ -323,8 +282,8 @@ function ProfilePhotoControl() {
           disabled={busy}
           title={tr('account.photo.change')}
           style={{
-            width: 18, height: 18, borderRadius: '50%', border: `1.5px solid ${t.windowBg}`,
-            background: t.accent, color: t.accentOn,
+            width: 18, height: 18, borderRadius: '50%', border: `1.5px solid ${t.bg}`,
+            background: t.text0, color: t.bg,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: 0,
           }}>+</button>
@@ -335,8 +294,8 @@ function ProfilePhotoControl() {
             disabled={busy}
             title={tr('account.photo.remove')}
             style={{
-              width: 18, height: 18, borderRadius: '50%', border: `1.5px solid ${t.windowBg}`,
-              background: t.bg3, color: t.text1,
+              width: 18, height: 18, borderRadius: '50%', border: `1.5px solid ${t.bg}`,
+              background: t.hover, color: t.text0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: 0,
             }}>×</button>

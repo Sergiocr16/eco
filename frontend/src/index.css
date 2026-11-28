@@ -43,9 +43,11 @@ body::before {
   pointer-events: none;
 }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Geist", system-ui, sans-serif;
-  background: #0a0a0c;
-  color: #f4f6fb;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.4;
+  background: #151412;
+  color: #f3f1ea;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

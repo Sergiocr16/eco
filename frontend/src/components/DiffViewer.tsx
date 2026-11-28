@@ -2,8 +2,8 @@ import { vh, vw } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTokens, useTheme } from '@/design/theme';
 import { isLightTheme } from '@/design/tokens';
-import { scrimStyle, dialogSurface } from '@/design/primitives';
-import { IconX, IconDiff, IconSearch, IconCheck, IconTrash } from '@/design/icons';
+import { Btn, IconBtn, Chip, IconTile, Segmented } from '@/design/primitives';
+import { IconX, IconDiff, IconSearch, IconCheck, IconTrash, IconChevL, IconChevR } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { useT } from '@/hooks/useI18n';
 import { translateBackendError } from '@/lib/backend-errors';
@@ -309,31 +309,20 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
   return (
     <div style={{
       flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
-      background: t.windowBg,
       overflow: 'hidden',
     }}>
       {!hideHeader && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 10,
-          padding: isPhone ? '8px 10px' : '12px 20px',
-          borderBottom: `1px solid ${t.glassBorder}`,
+          padding: isPhone ? '10px 10px 6px' : '12px 16px 8px',
           // En el teléfono el header del diff (icono, ruta, dos toggles,
           // búsqueda y cerrar) no entra en una fila: envuelve en dos.
           flexWrap: isPhone ? 'wrap' : 'nowrap',
         }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            background: t.accentFaint, color: t.accent,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconDiff size={13}/>
-          </div>
+          <IconTile icon={IconDiff} size="sm" accent/>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontFamily: t.fontMono, fontSize: 13, color: t.text0,
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>{path}</div>
-            <div style={{ fontSize: 11, color: t.text2, marginTop: 1 }}>
+            <div className="eco-mono eco-truncate" style={{ fontSize: 13 }}>{path}</div>
+            <div className="eco-sub">
               {result?.mode === 'git' ? tr('diff.git') :
                 result?.mode === 'created' ? tr('diff.created') :
                 result?.mode === 'plain' ? tr('diff.plain') :
@@ -344,168 +333,95 @@ export function DiffPane({ path, workspace, bubbleId, onClose, pathList, onChang
           {/* Toggle Nuevos / Todos — visible solo en review mode, porque
               sino "nuevo" y "todo" son lo mismo (no hay nada aceptado). */}
           {reviewMode && (
-            <div style={{
-              display: 'inline-flex', alignItems: 'center',
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              borderRadius: 8, padding: 2,
-            }}>
-              {(['unstaged', 'all'] as const).map((s) => (
-                <button key={s} type="button"
-                  onClick={() => setDiffScope(s)}
-                  title={s === 'unstaged'
-                    ? tr('diff.scope.unstaged_tooltip')
-                    : tr('diff.scope.all_tooltip')}
-                  style={{
-                    padding: '4px 10px', borderRadius: 6, border: 0,
-                    background: diffScope === s ? t.accent : 'transparent',
-                    color: diffScope === s ? t.accentOn : t.text2,
-                    fontSize: 11, fontWeight: 500,
-                    fontFamily: t.fontSans, cursor: 'pointer',
-                  }}>
-                  {s === 'unstaged' ? tr('diff.scope.unstaged') : tr('diff.scope.all')}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              size="sm" onCard
+              value={diffScope}
+              onChange={setDiffScope}
+              options={[
+                { id: 'unstaged', label: tr('diff.scope.unstaged'), title: tr('diff.scope.unstaged_tooltip') },
+                { id: 'all', label: tr('diff.scope.all'), title: tr('diff.scope.all_tooltip') },
+              ]}
+            />
           )}
 
           {/* Toggle Compacto / Archivo completo — visible solo cuando el
               backend devolvió before/after (merge view disponible). */}
           {result?.before !== undefined && result?.after !== undefined && (
-            <button type="button"
+            <Btn kind="raised" size="sm"
               onClick={() => setCompactMode(!compactMode)}
               title={compactMode
                 ? tr('diff.compact.expand_tooltip')
-                : tr('diff.compact.compact_tooltip')}
-              style={{
-                padding: '6px 10px', borderRadius: 8,
-                background: t.bg2, color: t.text1,
-                border: `1px solid ${t.glassBorder}`,
-                fontSize: 11, fontWeight: 500,
-                fontFamily: t.fontSans, cursor: 'pointer',
-              }}>
+                : tr('diff.compact.compact_tooltip')}>
               {compactMode ? tr('diff.compact.full') : tr('diff.compact.compact')}
-            </button>
+            </Btn>
           )}
 
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '4px 8px', borderRadius: 8,
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-            color: t.text2,
-          }}>
-            <IconSearch size={12}/>
+          <div className="eco-inputbar eco-inputbar--sm" style={{ flex: 'none' }}>
+            <IconSearch size={13}/>
             <input
+              className="eco-input-bare eco-mono"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={tr('diff.search')}
               spellCheck={false}
               autoCorrect="off"
               style={{
-                background: 'transparent', border: 0, outline: 'none',
-                fontFamily: t.fontMono, color: t.text0,
                 // 16px evita el auto-zoom de iOS; el ancho fijo de 180 sumado
                 // al resto del header pedía ~500px de fila.
                 fontSize: isPhone ? 16 : 12,
-                width: isPhone ? 110 : 180,
+                flex: 'none', width: isPhone ? 110 : 180,
               }}
             />
             {query && (
-              <button type="button" onClick={() => setQuery('')}
-                style={{ background: 'transparent', border: 0, color: t.text3, cursor: 'pointer', padding: 0 }}>
+              <button type="button" className="eco-iconbtn eco-iconbtn--xs" onClick={() => setQuery('')}
+                style={{ width: 20, height: 20 }}>
                 <IconX size={12}/>
               </button>
             )}
           </div>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                width: 28, height: 28, borderRadius: 8, border: 0,
-                background: 'transparent', color: t.text2, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-              <IconX size={14}/>
-            </button>
-          )}
+          {onClose && <IconBtn icon={IconX} onClick={onClose} size={28}/>}
         </div>
       )}
 
       {/* Toolbar de review estilo Cursor — solo cuando el setting
           "Revisar cambios estilo Cursor" está activo Y hay diff git real. */}
         {reviewMode && result?.mode === 'git' && result.hasChanges && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 20px',
-            background: t.bg1,
-            borderBottom: `1px solid ${t.glassBorder}`,
-          }}>
+          <div className="eco-hstack eco-hstack--wrap" style={{ gap: 8, padding: '4px 16px 8px' }}>
             {fileAccepted && (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                padding: '4px 8px', borderRadius: 999,
-                background: `color-mix(in oklch, ${t.ok} 18%, transparent)`,
-                color: t.ok,
-                fontSize: 11, fontWeight: 500,
-              }}>
-                <IconCheck size={9}/> {tr('diff.reviewed')}
-              </span>
+              <Chip tone="ok"><IconCheck size={11}/> {tr('diff.reviewed')}</Chip>
             )}
             <span style={{ flex: 1 }}/>
-            <button type="button" onClick={() => void discardFileAll()}
-              title={tr('diff.discard_file_tooltip')}
-              style={{
-                padding: '6px 12px', borderRadius: 8,
-                background: 'transparent', color: t.err,
-                border: `1px solid ${t.err}`,
-                fontSize: 12, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 500,
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-              }}>
-              <IconTrash size={10}/> {tr('diff.discard_file')}
-            </button>
-            <button type="button" onClick={acceptFileAll}
+            <Btn kind="danger" size="sm" icon={IconTrash} onClick={() => void discardFileAll()}
+              title={tr('diff.discard_file_tooltip')}>
+              {tr('diff.discard_file')}
+            </Btn>
+            <Btn kind={fileAccepted ? 'raised' : 'primary'} size="sm" icon={IconCheck} onClick={acceptFileAll}
               disabled={fileAccepted}
-              title={tr('diff.accept_file_tooltip')}
-              style={{
-                padding: '6px 16px', borderRadius: 8,
-                background: fileAccepted ? t.bg3 : t.ok, color: fileAccepted ? t.text3 : '#fff',
-                border: 0,
-                fontSize: 12, fontWeight: 500,
-                cursor: fileAccepted ? 'default' : 'pointer',
-                fontFamily: t.fontSans,
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-              }}>
-              <IconCheck size={10}/> {fileAccepted ? tr('diff.reviewed') : tr('diff.accept_file')}
-            </button>
+              title={tr('diff.accept_file_tooltip')}>
+              {fileAccepted ? tr('diff.reviewed') : tr('diff.accept_file')}
+            </Btn>
           </div>
         )}
 
         {/* Mensaje transitorio de acción */}
         {actionMsg && (
-          <div style={{
-            padding: '6px 20px',
-            fontSize: 12, fontFamily: t.fontMono,
-            color: actionMsg.kind === 'ok' ? t.ok : t.err,
-            background: actionMsg.kind === 'ok'
-              ? `color-mix(in oklch, ${t.ok} 10%, transparent)`
-              : `color-mix(in oklch, ${t.err} 10%, transparent)`,
-            borderBottom: `1px solid ${t.glassBorder}`,
-          }}>{actionMsg.text}</div>
+          <div className={`eco-banner eco-banner--${actionMsg.kind === 'ok' ? 'ok' : 'err'} eco-mono`}
+            style={{ margin: '0 16px 8px', fontSize: 12 }}>{actionMsg.text}</div>
         )}
 
         <div style={{
           flex: 1, minHeight: 0, overflow: 'auto', padding: 0,
           display: 'flex', flexDirection: 'column',
-          background: t.bg0,
+          borderTop: `1px solid ${t.line}`,
         }}>
           {loading && (
-            <div style={{ padding: 24, fontSize: 13, color: t.text2 }}>{tr('diff.loading')}</div>
+            <div className="eco-muted" style={{ padding: 24 }}>{tr('diff.loading')}</div>
           )}
           {error && (
-            <div style={{ padding: 24, fontSize: 13, color: t.err }}>{error}</div>
+            <div style={{ padding: 24, color: t.err }}>{error}</div>
           )}
           {result && !result.hasChanges && !error && (
-            <div style={{ padding: 24, fontSize: 13, color: t.text2 }}>
+            <div className="eco-muted" style={{ padding: 24 }}>
               {result.message || tr('diff.no_changes')}
             </div>
           )}
@@ -558,23 +474,15 @@ type ModalProps = {
 };
 
 export function DiffViewer({ open, path, workspace, bubbleId, onClose, pathList, onChangePath }: ModalProps) {
-  const t = useTokens();
   if (!open || !path) return null;
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 160,
-        ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}>
+    <div className="eco-scrim" onClick={onClose} style={{ zIndex: 160 }}>
       <div
+        className="eco-dialog"
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: `min(1200px, ${vw(96)})`, height: vh(90),
-          ...dialogSurface(t),
-          borderRadius: 20,
+          width: `min(1200px, ${vw(96)})`, maxWidth: 'none', height: vh(90),
+          padding: 0, background: 'var(--card)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
         <DiffPane
@@ -619,17 +527,16 @@ type MergeViewProps = {
 // gris oscuro (no negro), y deja que el host scrollee (editor height auto).
 // Como EditorView.theme tiene mayor precedencia que el baseTheme del merge,
 // estos overrides ganan.
-function githubDiffTheme(isLight: boolean) {
+function githubDiffTheme(t: ReturnType<typeof useTokens>, isLight: boolean) {
   const dark = !isLight;
-  const bg = dark ? '#24292e' : '#ffffff';
-  const gutterBg = dark ? '#1c2024' : '#f6f8fa';
-  const gutterFg = dark ? '#768390' : '#8c959f';
-  // Fondo de línea a opacidad total (verde/rojo sólido). En oscuro usamos los
-  // verdes/rojos de GitHub que dejan legible el texto claro encima.
-  const addLine = dark ? '#1b5e2a' : '#aceebb';
-  const addGutter = dark ? '#238636' : '#6fdd8b';
-  const delLine = dark ? '#6e2329' : '#ffc8c2';
-  const delGutter = dark ? '#b62324' : '#ff9a91';
+  const mix = (c: string, pct: number) => `color-mix(in oklab, ${c} ${pct}%, ${t.raised})`;
+  const bg = t.raised;
+  const gutterBg = t.card;
+  const gutterFg = t.text3;
+  const addLine = mix(t.ok, 16);
+  const addGutter = mix(t.ok, 30);
+  const delLine = mix(t.err, 16);
+  const delGutter = mix(t.err, 30);
   return EditorView.theme({
     // Scroll: editor crece a su contenido, host (overflow:auto) scrollea.
     '&': { height: 'auto', backgroundColor: bg },
@@ -685,15 +592,13 @@ class HunkActionsWidget extends WidgetType {
     const c = this.get();
     const t = c.t;
     const wrap = document.createElement('div');
-    wrap.style.cssText = `display:flex;gap:6px;justify-content:flex-end;align-items:center;padding:4px 10px;background:${t.bg1};border-top:1px solid ${t.glassBorder};font-family:${t.fontSans};`;
+    wrap.style.cssText = `display:flex;gap:6px;justify-content:flex-end;align-items:center;padding:4px 10px;background:${t.card};border-top:1px solid ${t.line};font-family:${t.fontSans};`;
     const mk = (label: string, kind: 'accept' | 'reject') => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = label;
-      const color = kind === 'accept' ? t.ok : t.err;
-      b.style.cssText = kind === 'accept'
-        ? `padding:2px 10px;border-radius:6px;background:${t.ok};color:#fff;border:0;font-size:10.5px;font-weight:600;cursor:pointer;font-family:${t.fontSans};`
-        : `padding:2px 10px;border-radius:6px;background:transparent;color:${color};border:1px solid color-mix(in oklch, ${color} 50%, transparent);font-size:10.5px;font-weight:600;cursor:pointer;font-family:${t.fontSans};`;
+      b.className = kind === 'accept' ? 'eco-btn eco-btn--primary' : 'eco-btn eco-btn--danger';
+      b.style.cssText = 'height:22px;padding:0 11px;font-size:11.5px;';
       b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
       b.addEventListener('click', (e) => {
         e.preventDefault(); e.stopPropagation();
@@ -792,7 +697,7 @@ function DiffMergeView({
       // y palabras cambiadas con fondo sólido. También arregla el scroll: el
       // editor crece a su contenido (height auto, scroller visible) y el
       // contenedor host hace el scroll.
-      githubDiffTheme(isLight),
+      githubDiffTheme(t, isLight),
     ];
 
     const mv = new MergeView({
@@ -836,8 +741,8 @@ function DiffMergeView({
     // reales del merge — el inline gana sobre cualquier stylesheet. Los fondos
     // verde/rojo de línea son más específicos (van en .cm-changedLine), así que
     // no se pisan. setTimeout 0 para que el DOM del MergeView ya exista.
-    const codeBg = isLight ? '#ffffff' : '#24292e';
-    const gutBg = isLight ? '#f6f8fa' : '#1c2024';
+    const codeBg = t.raised;
+    const gutBg = t.card;
     mv.dom.style.background = codeBg;
     setTimeout(() => {
       mv.dom.querySelectorAll<HTMLElement>('.cm-editor, .cm-scroller, .cm-content').forEach((el) => {
@@ -895,39 +800,22 @@ function DiffMergeView({
       {/* Toolbar de navegación entre chunks. Aceptar/Rechazar viven por chunk
           (block widgets dentro del editor B), no acá. */}
       {totalChunks > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '6px 12px',
-          background: t.bg1,
-          borderBottom: `1px solid ${t.glassBorder}`,
-          fontSize: 12, fontFamily: t.fontSans,
-        }}>
-          <button type="button" onClick={prevChunk}
-            title={tr('diff.prev_change')}
-            style={navBtnStyle(t)}>◀</button>
-          <span style={{ color: t.text2, fontFamily: t.fontMono, minWidth: 70, textAlign: 'center' }}>
+        <div className="eco-hstack" style={{ gap: 6, padding: '6px 16px', borderBottom: `1px solid ${t.line}` }}>
+          <button type="button" className="eco-iconbtn eco-iconbtn--xs" onClick={prevChunk}
+            title={tr('diff.prev_change')}><IconChevL size={14}/></button>
+          <span className="eco-num" style={{ minWidth: 70, textAlign: 'center' }}>
             {tr('diff.change_counter', { n: activeChunk + 1, total: totalChunks })}
           </span>
-          <button type="button" onClick={nextChunk}
-            title={tr('diff.next_change')}
-            style={navBtnStyle(t)}>▶</button>
+          <button type="button" className="eco-iconbtn eco-iconbtn--xs" onClick={nextChunk}
+            title={tr('diff.next_change')}><IconChevR size={14}/></button>
         </div>
       )}
       <div ref={hostRef} style={{
         flex: 1, minHeight: 0, overflow: 'auto',
-        background: isLight ? '#ffffff' : '#24292e',
+        background: t.raised,
       }}/>
     </div>
   );
-}
-
-function navBtnStyle(t: ReturnType<typeof useTokens>): React.CSSProperties {
-  return {
-    padding: '4px 8px', borderRadius: 6,
-    background: 'transparent', color: t.text1,
-    border: `1px solid ${t.glassBorder}`,
-    fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans,
-  };
 }
 
 // ─── Parser de unified diff a hunks con líneas izquierda/derecha ───────────
@@ -1041,9 +929,9 @@ function DiffRender({
 
   if (mode === 'plain') {
     return (
-      <pre style={{
+      <pre className="eco-mono" style={{
         margin: 0, padding: '16px 20px',
-        fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.6,
+        fontSize: 12, lineHeight: 1.6,
         color: t.text1, whiteSpace: 'pre',
         overflow: 'auto',
       }}>{highlightInPre(diff, q, t)}</pre>
@@ -1070,69 +958,47 @@ function DiffRender({
 
   if (q && visibleHunks.length === 0) {
     return (
-      <div style={{ padding: 24, fontSize: 13, color: t.text2 }}>
+      <div className="eco-muted" style={{ padding: 24 }}>
         No hay coincidencias para «{query}».
       </div>
     );
   }
 
+  const tint = (c: string) => `color-mix(in oklab, ${c} 13%, transparent)`;
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {visibleHunks.map((h, i) => {
         const accepted = acceptedHunks?.has(h.origIndex) === true;
         return (
           <div key={h.origIndex} style={{ marginBottom: i === visibleHunks.length - 1 ? 0 : 8 }}>
-            <div style={{
-              padding: '6px 12px',
+            <div className="eco-mono" style={{
+              padding: '5px 12px',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: accepted
-                ? `color-mix(in oklch, ${t.ok} 10%, transparent)`
-                : `color-mix(in oklch, oklch(70% 0.14 240) 8%, transparent)`,
-              color: accepted ? t.ok : 'oklch(70% 0.14 240)',
-              fontFamily: t.fontMono, fontSize: 12,
-              borderTop: `1px solid ${t.glassBorder}`,
-              borderBottom: `1px solid ${t.glassBorder}`,
+              background: accepted ? tint(t.ok) : t.raised,
+              color: accepted ? t.ok : t.info,
+              fontSize: 12,
             }}>
               {accepted && <IconCheck size={11}/>}
-              <span style={{
-                flex: 1, minWidth: 0,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>{h.header}</span>
+              <span className="eco-truncate" style={{ flex: 1 }}>{h.header}</span>
               {reviewMode && (
-                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                  <button type="button"
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0, fontFamily: t.fontSans }}>
+                  <Btn kind="danger" size="sm" icon={IconX}
                     onClick={() => onRejectHunk?.(h.origIndex, h.rawText)}
-                    title={tr('diff.revert_hunk_tooltip')}
-                    style={{
-                      padding: '4px 8px', borderRadius: 6,
-                      background: 'transparent', color: t.err,
-                      border: `1px solid color-mix(in oklch, ${t.err} 50%, transparent)`,
-                      fontSize: 11, cursor: 'pointer', fontFamily: t.fontSans, fontWeight: 500,
-                      display: 'inline-flex', alignItems: 'center', gap: 4,
-                    }}>
-                    <IconX size={9}/> {tr('diff.reject')}
-                  </button>
-                  <button type="button"
+                    title={tr('diff.revert_hunk_tooltip')}>
+                    {tr('diff.reject')}
+                  </Btn>
+                  <Btn kind={accepted ? 'ghost' : 'primary'} size="sm" icon={IconCheck}
                     onClick={() => onAcceptHunk?.(h.origIndex, h.rawText)}
                     disabled={accepted}
-                    title={tr('diff.accept_hunk_tooltip')}
-                    style={{
-                      padding: '4px 10px', borderRadius: 6,
-                      background: accepted ? t.bg3 : t.ok, color: accepted ? t.text3 : '#fff',
-                      border: 0,
-                      fontSize: 11, fontWeight: 500,
-                      cursor: accepted ? 'default' : 'pointer',
-                      fontFamily: t.fontSans,
-                      display: 'inline-flex', alignItems: 'center', gap: 4,
-                    }}>
-                    <IconCheck size={9}/> {accepted ? tr('diff.accepted_short') : tr('diff.accept')}
-                  </button>
+                    title={tr('diff.accept_hunk_tooltip')}>
+                    {accepted ? tr('diff.accepted_short') : tr('diff.accept')}
+                  </Btn>
                 </div>
               )}
             </div>
-            <table style={{
+            <table className="eco-mono" style={{
               width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed',
-              fontFamily: t.fontMono, fontSize: 12, lineHeight: 1.55,
+              fontSize: 12, lineHeight: 1.55,
             }}>
               <colgroup>
                 <col style={{ width: 44 }}/>
@@ -1163,7 +1029,7 @@ function highlightMatch(text: string, q: string): React.ReactNode {
     if (idx > i) out.push(text.slice(i, idx));
     out.push(
       <mark key={idx} style={{
-        background: 'oklch(85% 0.18 90 / 0.55)',
+        background: 'var(--warn-soft)', outline: '1px solid var(--warn)',
         color: 'inherit', padding: 0, borderRadius: 4,
       }}>{text.slice(idx, idx + q.length)}</mark>
     );
@@ -1190,9 +1056,9 @@ function DiffRowView({ row, query }: { row: DiffRow; query: string }) {
 
   const cellStyle = (kind: DiffSide): React.CSSProperties => {
     const bg = kind === 'added'
-      ? `color-mix(in oklch, ${t.ok} 12%, transparent)`
+      ? `color-mix(in oklab, ${t.ok} 13%, transparent)`
       : kind === 'deleted'
-        ? `color-mix(in oklch, ${t.err} 12%, transparent)`
+        ? `color-mix(in oklab, ${t.err} 13%, transparent)`
         : 'transparent';
     const fg = kind === 'added' ? t.ok
       : kind === 'deleted' ? t.err
@@ -1201,21 +1067,21 @@ function DiffRowView({ row, query }: { row: DiffRow; query: string }) {
       padding: '0 10px',
       whiteSpace: 'pre',
       background: bg, color: fg,
-      borderRight: `1px solid ${t.glassBorder}`,
+      borderRight: `1px solid ${t.line}`,
       verticalAlign: 'top',
       overflow: 'hidden', textOverflow: 'ellipsis',
     };
   };
   const numStyle = (kind: DiffSide): React.CSSProperties => {
     const bg = kind === 'added'
-      ? `color-mix(in oklch, ${t.ok} 18%, transparent)`
+      ? `color-mix(in oklab, ${t.ok} 20%, transparent)`
       : kind === 'deleted'
-        ? `color-mix(in oklch, ${t.err} 18%, transparent)`
-        : `color-mix(in oklch, ${t.text0} 4%, transparent)`;
+        ? `color-mix(in oklab, ${t.err} 20%, transparent)`
+        : 'transparent';
     return {
       width: 44, padding: '0 6px', textAlign: 'right',
       color: t.text3, background: bg,
-      borderRight: `1px solid ${t.glassBorder}`,
+      borderRight: `1px solid ${t.line}`,
       userSelect: 'none', verticalAlign: 'top',
       fontVariantNumeric: 'tabular-nums',
     };

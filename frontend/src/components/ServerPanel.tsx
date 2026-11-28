@@ -9,7 +9,7 @@ import { cssZoom, useCssZoom } from '@/lib/ui-zoom';
 // pasado a /dev/start /dev/stop /dev/restart.
 
 import { useEffect, useRef, useState } from 'react';
-import type { MutableRefObject } from 'react';
+import type { MutableRefObject, ReactNode } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -18,10 +18,10 @@ import { useTokens, useTheme } from '@/design/theme';
 import { isLightTheme } from '@/design/tokens';
 import { buildXtermTheme, terminalBg } from '@/lib/terminal-theme';
 import {
-  IconPlay, IconStop, IconResume, IconCpu, IconAlert,
+  IconPlay, IconStop, IconRotateCw, IconCpu, IconAlert,
   IconTrash, IconSettings, IconChevD, IconChevR, IconExt, IconGlobe,
 } from '@/design/icons';
-import { Glass, Btn } from '@/design/primitives';
+
 import { apiFetch } from '@/lib/api';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { useWorkspaceServerDefaults } from '@/hooks/useWorkspaceServerDefaults';
@@ -311,19 +311,15 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ flex: 1, overflow: 'auto', padding: isPhone ? '12px 12px' : '20px 24px' }}>
-        {/* Header con estado(s) */}
+      <div style={{ flex: 1, overflow: 'auto', padding: isPhone ? 12 : '18px 20px' }}>
+       {/* Columna de alto natural: como hijos flex del scroll, los logs se encogerían. */}
+       <div className="eco-vstack" style={{ gap: 18 }}>
+        {/* Header con estado(s) + acciones globales — corren ambos slots en
+            dual. Los tres rótulos en español piden ~430px: envuelven. */}
         <PanelHeader
           dual={dual}
           slots={slots}
-          bubbleId={bubbleId}
-          onRestartRole={(role) => void runActionForRole(role, 'restart')}
-        />
-
-        {/* Botones de acción globales — corren ambos slots en dual.
-            Los tres rótulos en español piden ~430px de fila: envuelven. */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-          {(() => {
+          actions={(() => {
             const activeRoles: SlotRole[] = !dual ? ['main'] : ['frontend', 'backend'];
             const anyRunning = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting');
             const anyStoppable = activeRoles.some((r) => slots[r].status === 'running' || slots[r].status === 'starting' || slots[r].status === 'error');
@@ -339,206 +335,137 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             const busyAction = activeRoles
               .map((r) => slots[r].actionBusy)
               .find(Boolean) as 'start' | 'stop' | 'restart' | undefined;
+            // Como en el diseño: una píldora con solo íconos. Apagado ofrece
+            // iniciar; encendido, reiniciar y detener.
             return (
-              <>
-                <Btn kind="primary" size="md" onClick={() => void runAllAction('up')}
-                  disabled={anyBusy || anyRunning} icon={IconPlay}>
-                  {busyAction === 'start' ? tr('server.busy.starting') : startLabel}
-                </Btn>
-                <Btn kind="secondary" size="md" onClick={() => void runAllAction('restart')}
-                  disabled={anyBusy} icon={IconResume}>
-                  {busyAction === 'restart' ? tr('server.busy.restarting') : restartLabel}
-                </Btn>
-                <Btn kind="danger" size="md" onClick={() => void runAllAction('down')}
-                  disabled={anyBusy || !anyStoppable} icon={IconStop}>
-                  {busyAction === 'stop' ? tr('server.busy.stopping') : stopLabel}
-                </Btn>
-              </>
+              <div className="eco-ctlpill">
+                {!anyStoppable ? (
+                  <button type="button" className="eco-iconbtn" style={{ color: t.ok }}
+                    disabled={anyBusy || anyRunning}
+                    title={busyAction === 'start' ? tr('server.busy.starting') : startLabel}
+                    aria-label={startLabel}
+                    onClick={() => void runAllAction('up')}><IconPlay size={16}/></button>
+                ) : (
+                  <>
+                    <button type="button" className="eco-iconbtn" disabled={anyBusy}
+                      title={busyAction === 'restart' ? tr('server.busy.restarting') : restartLabel}
+                      aria-label={restartLabel}
+                      onClick={() => void runAllAction('restart')}><IconRotateCw size={16}/></button>
+                    <button type="button" className="eco-iconbtn" style={{ color: t.err }} disabled={anyBusy}
+                      title={busyAction === 'stop' ? tr('server.busy.stopping') : stopLabel}
+                      aria-label={stopLabel}
+                      onClick={() => void runAllAction('down')}><IconStop size={14}/></button>
+                  </>
+                )}
+              </div>
             );
           })()}
-        </div>
+        />
 
         {/* Header de la sección de configuración con toggle de colapso */}
         <button
           type="button"
           onClick={() => setConfigCollapsed(!configCollapsed)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            width: '100%', padding: '6px 8px', marginBottom: 8,
-            background: 'transparent', border: 0,
-            cursor: 'pointer', color: t.text2,
-            fontFamily: t.fontSans, fontSize: 11,
-            fontWeight: 500,
-            textAlign: 'left',
-            borderRadius: 6,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-          {configCollapsed ? <IconChevR size={11}/> : <IconChevD size={11}/>}
-          <IconSettings size={11}/>
+          aria-expanded={!configCollapsed}
+          className="eco-btn eco-btn--ghost eco-btn--sm"
+          style={{ alignSelf: 'flex-start', padding: '0 10px' }}>
+          {configCollapsed ? <IconChevR size={14}/> : <IconChevD size={14}/>}
+          <IconSettings size={14}/>
           {tr('server.config.section')}
         </button>
 
         {!configCollapsed && (
-          <>
+          <div className="eco-pane eco-vstack">
             {/* Config del server: la define el admin por workspace. Read-only acá:
                 el member solo inicia/detiene; admin la edita en Settings → Folders. */}
             {(dual ? (cmdFrontend || cmdBackend) : cmdMain) ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {!dual ? (
-                  <ReadonlyCmd label={tr('server.cmd.main_label')} value={cmdMain}/>
-                ) : (
-                  <>
-                    <ReadonlyCmd label="Frontend" value={cmdFrontend}/>
-                    <ReadonlyCmd label="Backend" value={cmdBackend}/>
-                  </>
-                )}
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  {!dual ? (
+                    <ReadonlyCmd label={tr('server.cmd.main_label')} value={cmdMain}/>
+                  ) : (
+                    <>
+                      <ReadonlyCmd label="Frontend" value={cmdFrontend}/>
+                      <ReadonlyCmd label="Backend" value={cmdBackend}/>
+                    </>
+                  )}
+                </div>
                 {Object.keys(wsDefaults.defaults.env).length > 0 && (
-                  <div style={{
-                    padding: 10, borderRadius: 10,
-                    background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                  }}>
-                    <div style={{ fontSize: 11, color: t.text2, fontWeight: 500, marginBottom: 4 }}>
-                      {tr('server.cfg.env_label')}
+                  <div className="eco-inset" style={{ padding: '12px 16px 4px' }}>
+                    <div className="eco-hstack" style={{ paddingBottom: 8 }}>
+                      <span className="eco-eyebrow eco-grow">{tr('server.cfg.env_label')}</span>
+                      <span className="eco-num">{Object.keys(wsDefaults.defaults.env).length}</span>
                     </div>
                     {Object.entries(wsDefaults.defaults.env).map(([k, v]) => (
-                      <code key={k} style={{
-                        display: 'block', fontFamily: t.fontMono, fontSize: 12,
-                        color: t.text0, wordBreak: 'break-all', lineHeight: 1.6,
-                      }}>{k}={v}</code>
+                      <code key={k} className="eco-mono" style={{
+                        display: 'block', fontSize: 12.5, padding: '8px 0',
+                        borderTop: `1px solid ${t.line}`,
+                        color: t.text1, overflowWrap: 'anywhere',
+                      }}><span style={{ color: t.text0, fontWeight: 500 }}>{k}</span>={v}</code>
                     ))}
                   </div>
                 )}
-                <div style={{ fontSize: 11, color: t.text3, lineHeight: 1.5, marginTop: 2 }}>
+                <div className="eco-sub" style={{ padding: '0 4px' }}>
                   {tr('server.cfg.edit_hint')}
                 </div>
-              </div>
+              </>
             ) : (
-              <div style={{
-                padding: '12px 16px', borderRadius: 10,
-                background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                fontSize: 12, color: t.text2, lineHeight: 1.5,
-              }}>
+              <div className="eco-banner" style={{ background: t.raised }}>
                 {tr('server.cfg.none')}
               </div>
             )}
 
         {/* En dual, picker de qué panel de logs se ve grande por defecto */}
         {dual && (
-          <div style={{
-            padding: '10px 12px', marginBottom: 12, borderRadius: 10,
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 2 }}>
-              {tr('server.logview.title')}
-            </div>
-            <div style={{ fontSize: 11, color: t.text2, marginBottom: 8, lineHeight: 1.45 }}>
-              {tr('server.logview.sub')}
-            </div>
-            <div style={{
-              // Tres columnas en 300px dan tarjetas de ~86px para dos líneas
-              // de texto; una sola columna se lee.
-              display: 'grid',
-              gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, 1fr)',
-              gap: 6,
-            }}>
-              {([
-                { id: 'both',     label: tr('server.opt.both'), sub: tr('server.logview.both_sub') },
-                { id: 'frontend', label: 'Frontend',            sub: tr('server.logview.frontend_sub') },
-                { id: 'backend',  label: 'Backend',             sub: tr('server.logview.backend_sub') },
-              ] as const).map((opt) => {
-                const selected = (!minFront && !minBack && opt.id === 'both')
-                  || (minBack && !minFront && opt.id === 'frontend')
-                  || (minFront && !minBack && opt.id === 'backend');
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      if (opt.id === 'both') { setMin('frontend', false); setMin('backend', false); }
-                      else if (opt.id === 'frontend') { setMin('frontend', false); setMin('backend', true); }
-                      else { setMin('frontend', true); setMin('backend', false); }
-                    }}
-                    style={{
-                      padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                      border: `1px solid ${selected ? t.accent : t.glassBorder}`,
-                      background: selected ? t.accentFaint : t.bg3,
-                      color: selected ? t.accent : t.text1,
-                      fontFamily: t.fontSans, textAlign: 'left',
-                    }}>
-                    <div style={{ fontSize: 12, fontWeight: 500 }}>{opt.label}</div>
-                    <div style={{ fontSize: 11, color: t.text3, marginTop: 1 }}>{opt.sub}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <OptionGroup
+            title={tr('server.logview.title')}
+            sub={tr('server.logview.sub')}
+            stacked={isPhone}
+            options={[
+              { id: 'both',     label: tr('server.opt.both'), sub: tr('server.logview.both_sub') },
+              { id: 'frontend', label: 'Frontend',            sub: tr('server.logview.frontend_sub') },
+              { id: 'backend',  label: 'Backend',             sub: tr('server.logview.backend_sub') },
+            ]}
+            value={(!minFront && !minBack) ? 'both' : (minBack && !minFront) ? 'frontend' : (minFront && !minBack) ? 'backend' : null}
+            onPick={(id) => {
+              if (id === 'both') { setMin('frontend', false); setMin('backend', false); }
+              else if (id === 'frontend') { setMin('frontend', false); setMin('backend', true); }
+              else { setMin('frontend', true); setMin('backend', false); }
+            }}
+          />
         )}
 
         {/* En dual, qué reinicia el botón global "Reiniciar servidor" */}
         {dual && (
-          <div style={{
-            padding: '10px 12px', marginBottom: 12, borderRadius: 10,
-            background: t.bg2, border: `1px solid ${t.glassBorder}`,
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: t.text0, marginBottom: 2 }}>
-              {tr('server.restartmode.title')}
-            </div>
-            <div style={{ fontSize: 11, color: t.text2, marginBottom: 8, lineHeight: 1.45 }}>
-              {tr('server.restartmode.sub')}
-            </div>
-            <div style={{
-              // Tres columnas en 300px dan tarjetas de ~86px para dos líneas
-              // de texto; una sola columna se lee.
-              display: 'grid',
-              gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, 1fr)',
-              gap: 6,
-            }}>
-              {([
-                { id: 'both',     label: tr('server.opt.both'), sub: 'frontend + backend' },
-                { id: 'frontend', label: 'Frontend', sub: tr('server.restartmode.frontend_sub') },
-                { id: 'backend',  label: 'Backend',  sub: tr('server.restartmode.backend_sub') },
-              ] as const).map((opt) => {
-                const selected = restartMode === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setRestartMode(opt.id)}
-                    style={{
-                      padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                      border: `1px solid ${selected ? t.accent : t.glassBorder}`,
-                      background: selected ? t.accentFaint : t.bg3,
-                      color: selected ? t.accent : t.text1,
-                      fontFamily: t.fontSans, textAlign: 'left',
-                    }}>
-                    <div style={{ fontSize: 12, fontWeight: 500 }}>{opt.label}</div>
-                    <div style={{ fontSize: 11, color: t.text3, marginTop: 1 }}>{opt.sub}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <OptionGroup
+            title={tr('server.restartmode.title')}
+            sub={tr('server.restartmode.sub')}
+            stacked={isPhone}
+            options={[
+              { id: 'both',     label: tr('server.opt.both'), sub: 'frontend + backend' },
+              { id: 'frontend', label: 'Frontend', sub: tr('server.restartmode.frontend_sub') },
+              { id: 'backend',  label: 'Backend',  sub: tr('server.restartmode.backend_sub') },
+            ]}
+            value={restartMode}
+            onPick={setRestartMode}
+          />
         )}
 
         {/* Descripción de cómo funciona */}
-        <Glass radius={10} style={{ padding: 16, marginTop: 16, background: t.bg2 }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
-            fontSize: 11, color: t.accent, fontWeight: 500,
-          }}>
-            <IconCpu size={11}/> {tr('server.help.how_it_works')}
+        <div className="eco-inset" style={{ padding: '14px 16px' }}>
+          <div className="eco-hstack" style={{ gap: 7, marginBottom: 6, color: t.accent, fontWeight: 500, fontSize: 12.5 }}>
+            <IconCpu size={13}/> {tr('server.help.how_it_works')}
           </div>
-          <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.55 }}>
+          <div className="eco-sub" style={{ color: t.text1, lineHeight: 1.6 }}>
             {tr('server.help.body_a')} <code style={mono(t)}>$PORT</code> {dual ? tr('server.help.body_dual') : tr('server.help.body_single')} {tr('server.help.body_b')} <code style={mono(t)}>vite --port $PORT</code>, <code style={mono(t)}>process.env.PORT</code>{tr('server.help.body_c')} <code style={mono(t)}>lsof</code>.
           </div>
           {dual && (
-            <div style={{
+            <div className="eco-sub" style={{
               marginTop: 10, paddingTop: 10,
-              borderTop: `1px solid ${t.glassBorder}`,
-              fontSize: 12, color: t.text2, lineHeight: 1.55,
+              borderTop: `1px solid ${t.line}`,
+              color: t.text1, lineHeight: 1.6,
             }}>
-              <div style={{ fontWeight: 500, color: t.text1, marginBottom: 4 }}>
+              <div className="eco-label" style={{ marginBottom: 4 }}>
                 {tr('server.help.dual.title')}
               </div>
               {tr('server.help.dual.body_a')} <strong>{tr('server.help.dual.body_b')}</strong> {tr('server.help.dual.body_c')} <strong>{tr('server.help.dual.body_d')}</strong> {tr('server.help.dual.body_e')} <code style={mono(t)}>BACKEND_URL</code>, <code style={mono(t)}>BACKEND_PORT</code>, <code style={mono(t)}>API_PORT</code>.
@@ -553,8 +480,8 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               </div>
             </div>
           )}
-        </Glass>
-          </>
+        </div>
+          </div>
         )}
 
         {/* Logs — single pane si no es dual, dos columnas si lo es. En dual,
@@ -565,7 +492,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             // Dos panes de log lado a lado dan ~160px cada uno en el teléfono:
             // ilegibles. Apilados cada uno usa el ancho completo.
             display: 'flex', flexDirection: isPhone ? 'column' : 'row',
-            gap: 10, marginTop: 16,
+            gap: 16,
             alignItems: 'stretch',
           }}>
             <div style={{
@@ -575,6 +502,8 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               transition: 'flex 200ms ease, max-width 200ms ease',
             }}>
               <LogsPane
+                slot={slots.frontend}
+                onRestart={() => void runActionForRole('frontend', 'restart')}
                 label="Frontend"
                 role="frontend"
                 accent={t.accent}
@@ -593,6 +522,8 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
               transition: 'flex 200ms ease, max-width 200ms ease',
             }}>
               <LogsPane
+                slot={slots.backend}
+                onRestart={() => void runActionForRole('backend', 'restart')}
                 label="Backend"
                 role="backend"
                 accent={t.warn}
@@ -606,9 +537,10 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             </div>
           </div>
         ) : (
-          <div style={{ marginTop: 16 }}>
+          <div>
             <LogsPane
-              label="Logs"
+              slot={slots.main}
+              label={tr('server.logs.title')}
               role="main"
               accent={t.accent}
               bubbleId={bubbleId}
@@ -618,6 +550,7 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
             />
           </div>
         )}
+       </div>
       </div>
     </div>
   );
@@ -626,21 +559,65 @@ export function ServerPanel({ bubbleId, workspace, visible }: { bubbleId: string
 function ReadonlyCmd({ label, value }: { label: string; value: string }) {
   const t = useTokens();
   return (
-    <div style={{ padding: 10, borderRadius: 10, background: t.bg2, border: `1px solid ${t.glassBorder}` }}>
-      <div style={{ fontSize: 11, color: t.text2, fontWeight: 500, marginBottom: 4 }}>{label}</div>
-      <code style={{
-        display: 'block', fontFamily: t.fontMono, fontSize: 12,
-        color: value ? t.text0 : t.text3, wordBreak: 'break-all',
+    <div className="eco-inset" style={{ flex: '1 1 260px', minWidth: 0, padding: '12px 16px' }}>
+      <div className="eco-eyebrow" style={{ marginBottom: 6 }}>{label}</div>
+      <code className="eco-mono" style={{
+        display: 'block', fontSize: 13,
+        color: value ? t.text0 : t.text3, overflowWrap: 'anywhere',
       }}>{value || '—'}</code>
+    </div>
+  );
+}
+
+// Selector de tres opciones con descripción (qué log se ve, qué se reinicia).
+function OptionGroup<T extends string>({ title, sub, options, value, onPick, stacked }: {
+  title: string; sub: string;
+  options: Array<{ id: T; label: string; sub: string }>;
+  value: T | null;
+  onPick: (id: T) => void;
+  stacked: boolean;
+}) {
+  const t = useTokens();
+  return (
+    <div className="eco-inset" style={{ padding: '14px 16px' }}>
+      <div className="eco-label">{title}</div>
+      <div className="eco-sub" style={{ marginBottom: 10 }}>{sub}</div>
+      <div style={{
+        // Tres columnas en 300px dan tarjetas de ~86px para dos líneas
+        // de texto; una sola columna se lee.
+        display: 'grid',
+        gridTemplateColumns: stacked ? '1fr' : 'repeat(3, 1fr)',
+        gap: 8,
+      }}>
+        {options.map((opt) => {
+          const selected = value === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onPick(opt.id)}
+              style={{
+                padding: '10px 14px', borderRadius: 14, cursor: 'pointer',
+                border: `1px solid ${selected ? t.accentLine : 'transparent'}`,
+                background: selected ? t.accentSoft : t.card,
+                color: t.text0, font: 'inherit', textAlign: 'left',
+              }}>
+              <div className="eco-label">{opt.label}</div>
+              <div className="eco-sub">{opt.sub}</div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 function mono(t: ReturnType<typeof useTokens>) {
   return {
-    fontFamily: t.fontMono, fontSize: 11,
-    padding: '1px 6px', borderRadius: 4,
-    background: t.bg3, color: t.text1,
+    fontFamily: t.fontMono, fontSize: 11.5,
+    padding: '1px 6px', borderRadius: 6,
+    background: t.card, color: t.text0,
   };
 }
 
@@ -659,156 +636,47 @@ function statusLabelFor(s: Status, tr: ReturnType<typeof useT>) {
 }
 
 function PanelHeader({
-  dual, slots, bubbleId, onRestartRole,
+  dual, slots, actions,
 }: {
   dual: boolean;
   slots: Record<SlotRole, SlotState>;
-  bubbleId: string;
-  onRestartRole: (role: SlotRole) => void;
+  actions: ReactNode;
 }) {
   const t = useTokens();
   const tr = useT();
-  const isDual = dual;
-  const visibleRoles: SlotRole[] = isDual ? ['frontend', 'backend'] : ['main'];
-
+  const isPhone = useIsPhone();
+  const roles: SlotRole[] = dual ? ['frontend', 'backend'] : ['main'];
+  const agg: Status = roles.some((r) => slots[r].status === 'error') ? 'error'
+    : roles.some((r) => slots[r].status === 'starting') ? 'starting'
+    : roles.some((r) => slots[r].status === 'running') ? 'running' : 'stopped';
   return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-          background: t.bg2, color: t.text2, border: `1px solid ${t.glassBorder}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <IconCpu size={20}/>
+    <div className="eco-card eco-hstack eco-hstack--wrap" style={{ gap: '12px 16px', padding: isPhone ? 16 : '20px 24px' }}>
+      <div className="eco-tile eco-tile--lg" title={statusLabelFor(agg, tr)} style={{
+        color: agg === 'stopped' ? t.text1 : statusColorFor(agg, t),
+        animation: agg === 'starting' ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
+      }}>
+        <IconCpu size={20}/>
+      </div>
+      <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+        <div style={{ fontSize: isPhone ? 17 : 22, fontWeight: isPhone ? 500 : 400, letterSpacing: isPhone ? undefined : '-.02em', color: t.text0 }}>
+          {dual ? tr('server.header.dual_title') : tr('server.header.single_title')}
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 500, color: t.text0, marginBottom: 2 }}>
-            {isDual ? tr('server.header.dual_title') : tr('server.header.single_title')}
-          </div>
-          <div style={{ fontSize: 12, color: t.text2 }}>
-            {isDual ? tr('server.header.dual_sub') : tr('server.header.single_sub')}
-          </div>
+        <div className="eco-muted">
+          {dual ? tr('server.header.dual_sub') : tr('server.header.single_sub')}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {visibleRoles.map((role) => {
-          const s = slots[role];
-          const sColor = statusColorFor(s.status, t);
-          return (
-            <div key={role} style={{
-              // minWidth 0: sin esto la tarjeta no baja del ancho de la URL
-              // completa y el panel gana scroll horizontal en el teléfono.
-              flex: '1 1 220px', minWidth: 0,
-              padding: '8px 10px',
-              borderRadius: 10,
-              background: t.bg2, border: `1px solid ${t.glassBorder}`,
-              display: 'flex', alignItems: 'center', gap: 8,
-            }}>
-              {isDual && (
-                <span style={{
-                  fontSize: 11, fontFamily: t.fontMono,
-                  color: t.text2,
-                  marginRight: 2, fontWeight: 500,
-                }}>{role}</span>
-              )}
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%', background: sColor,
-                animation: s.status === 'starting' ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
-                flexShrink: 0,
-              }}/>
-              <span style={{ fontFamily: t.fontMono, fontSize: 11, color: t.text2 }}>
-                {statusLabelFor(s.status, tr)}
-              </span>
-              {s.url && (
-                <>
-                  <span style={{
-                    flex: 1, fontFamily: t.fontMono, fontSize: 11,
-                    color: t.text2, minWidth: 0,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>{s.url}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Orden importa: PRIMERO cambiamos de tab para que el
-                      // BrowserPanel monte (KeepAliveBrowser lo monta al
-                      // volverse visible). DESPUÉS, con un delay, emitimos
-                      // el navigate — si lo emitimos antes, el BrowserPanel
-                      // todavía no registró su listener `eco:browser_navigate`
-                      // y el evento se pierde (bug del "primer click no abre
-                      // el URL, el segundo sí").
-                      ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId });
-                      const url = s.url;
-                      window.setTimeout(() => {
-                        ecoEmit('eco:browser_navigate', { bubbleId, url });
-                      }, 120);
-                    }}
-                    title={tr('server.action.open_browser')}
-                    style={{
-                      flexShrink: 0,
-                      width: 22, height: 22, padding: 0, borderRadius: 6,
-                      border: 0, background: 'transparent',
-                      color: t.accent, cursor: 'pointer',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                    <IconGlobe size={12}/>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try { window.open(s.url, '_blank', 'noopener,noreferrer'); } catch { /* noop */ }
-                    }}
-                    title={tr('server.action.open_os')}
-                    style={{
-                      flexShrink: 0,
-                      width: 22, height: 22, padding: 0, borderRadius: 6,
-                      border: 0, background: 'transparent',
-                      color: t.text2, cursor: 'pointer',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                    <IconExt size={11}/>
-                  </button>
-                </>
-              )}
-              {s.actionError && (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  fontSize: 11, color: t.err,
-                }} title={s.actionError}>
-                  <IconAlert size={11}/>
-                </span>
-              )}
-              {isDual && (s.status === 'running' || s.status === 'starting' || s.status === 'error') && (
-                <button
-                  type="button"
-                  onClick={() => onRestartRole(role)}
-                  disabled={!!s.actionBusy}
-                  title={`Reiniciar ${role}`}
-                  style={{
-                    flexShrink: 0,
-                    marginLeft: s.url ? 0 : 'auto',
-                    width: 22, height: 22, padding: 0, borderRadius: 6,
-                    border: 0, background: 'transparent',
-                    color: s.actionBusy ? t.text3 : t.text2,
-                    cursor: s.actionBusy ? 'default' : 'pointer',
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                  onMouseEnter={(e) => { if (!s.actionBusy) e.currentTarget.style.background = t.bg3; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                  <IconResume size={12}/>
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {actions}
     </div>
   );
 }
 
 function LogsPane({
   label, role, accent, minimized, onToggle,
-  bubbleId, workspace, logSource, visible,
+  bubbleId, workspace, logSource, visible, slot, onRestart,
 }: {
+  slot: SlotState;
+  // Solo en dual: reinicia este proceso sin tocar el otro.
+  onRestart?: () => void;
   label: string;
   role: SlotRole;
   accent: string;
@@ -869,28 +737,25 @@ function LogsPane({
   };
 
   return (
-    <div style={{
-      borderRadius: 10, overflow: 'hidden',
-      border: `1px solid ${t.glassBorder}`,
-      background: terminalBg(t, isLight),
-      display: 'flex', flexDirection: 'column',
-      height: minimized ? 'auto' : paneHeight,
+    <div className="eco-card" style={{
+      display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 18px 6px',
+      height: minimized ? 'auto' : paneHeight + 110, paddingBottom: minimized ? 16 : 6,
     }}>
-      <div style={{
-        padding: '6px 10px',
-        background: t.bg3,
-        borderBottom: minimized ? 'none' : `1px solid ${t.glassBorder}`,
-        display: 'flex', alignItems: 'center', gap: 8,
-      }}>
-        <span style={{
-          width: 6, height: 6, borderRadius: '50%', background: accent,
-          flexShrink: 0,
-        }}/>
-        <span style={{
-          fontSize: 11, fontFamily: t.fontMono, color: t.text2,
-          fontWeight: 500,
-        }}>{label}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: t.text3, fontFamily: t.fontMono }}>
+      <div className="eco-hstack" style={{ gap: 10, minHeight: 28 }}>
+        <span className="eco-truncate" style={{ fontSize: 16, fontWeight: 500 }}>{label}</span>
+        <span className="eco-chip eco-chip--on-card" style={{ flexShrink: 0 }}>
+          <span className="eco-dot" style={{
+            background: statusColorFor(slot.status, t),
+            animation: slot.status === 'starting' ? 'eco-shimmer 1.1s ease-in-out infinite' : 'none',
+          }}/>
+          {statusLabelFor(slot.status, tr)}
+        </span>
+        {slot.actionError && (
+          <span style={{ display: 'inline-flex', color: t.err, flexShrink: 0 }} title={slot.actionError}>
+            <IconAlert size={14}/>
+          </span>
+        )}
+        <span className="eco-num" style={{ marginLeft: 'auto', flexShrink: 0 }}>
           {logSize.toLocaleString()} chars
         </span>
         {logSize > 0 && (
@@ -898,54 +763,79 @@ function LogsPane({
             type="button"
             onClick={() => clearRef.current?.()}
             title={tr('server.logs.clear_tooltip')}
-            style={{
-              width: 22, height: 22, borderRadius: 6, border: 0,
-              background: 'transparent', color: t.text2, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; e.currentTarget.style.color = t.err; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}>
-            <IconTrash size={11}/>
+            aria-label={tr('server.logs.clear_tooltip')}
+            className="eco-iconbtn eco-iconbtn--xs eco-iconbtn--danger">
+            <IconTrash size={14}/>
+          </button>
+        )}
+        {onRestart && (slot.status === 'running' || slot.status === 'starting' || slot.status === 'error') && (
+          <button type="button" onClick={onRestart} disabled={!!slot.actionBusy}
+            title={tr('detail.server.restart')} aria-label={tr('detail.server.restart')}
+            className="eco-iconbtn eco-iconbtn--xs">
+            <IconRotateCw size={14}/>
           </button>
         )}
         {onToggle && (
           <button
             type="button"
             onClick={onToggle}
-            title={minimized ? 'Expandir' : 'Minimizar'}
-            style={{
-              width: 22, height: 22, borderRadius: 6, border: 0,
-              background: 'transparent', color: t.text2, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-            {minimized ? <IconChevR size={11}/> : <IconChevD size={11}/>}
+            title={tr(minimized ? 'server.logs.expand' : 'server.logs.minimize')}
+            aria-label={tr(minimized ? 'server.logs.expand' : 'server.logs.minimize')}
+            className="eco-iconbtn eco-iconbtn--xs">
+            {minimized ? <IconChevR size={14}/> : <IconChevD size={14}/>}
           </button>
         )}
       </div>
+      {slot.url && (
+        <div className="eco-hstack" style={{
+          gap: 6, minHeight: 38, padding: '0 6px 0 14px', borderRadius: 19, background: t.raised, minWidth: 0, flexShrink: 0,
+        }}>
+          <span className="eco-mono eco-truncate eco-grow" style={{ fontSize: 12 }}>{slot.url}</span>
+          <button
+            type="button"
+            onClick={() => {
+              // Primero el tab (el BrowserPanel monta perezoso) y después el
+              // navigate: emitido antes, el listener todavía no existe.
+              ecoEmit('eco:switch_tab', { tab: 'browser', bubbleId });
+              const url = slot.url;
+              window.setTimeout(() => { ecoEmit('eco:browser_navigate', { bubbleId, url }); }, 120);
+            }}
+            title={tr('server.action.open_browser')} aria-label={tr('server.action.open_browser')}
+            className="eco-iconbtn eco-iconbtn--xs" style={{ color: t.accent }}>
+            <IconGlobe size={14}/>
+          </button>
+          <button
+            type="button"
+            onClick={() => { try { window.open(slot.url, '_blank', 'noopener,noreferrer'); } catch { /* noop */ } }}
+            title={tr('server.action.open_os')} aria-label={tr('server.action.open_os')}
+            className="eco-iconbtn eco-iconbtn--xs">
+            <IconExt size={14}/>
+          </button>
+        </div>
+      )}
       {!minimized && (
-        <TerminalLogs
-          role={role} accent={accent}
-          bubbleId={bubbleId} workspace={workspace} logSource={logSource}
-          onSizeChange={setLogSize} clearRef={clearRef} visible={visible}
-        />
+        <div style={{
+          flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+          borderRadius: 14, overflow: 'hidden',
+          background: terminalBg(t, isLight),
+        }}>
+          <TerminalLogs
+            role={role} accent={accent}
+            bubbleId={bubbleId} workspace={workspace} logSource={logSource}
+            onSizeChange={setLogSize} clearRef={clearRef} visible={visible}
+          />
+        </div>
       )}
       {!minimized && (
         <div
           onPointerDown={startResize}
           title={tr('server.config.resize_tooltip')}
           style={{
-            height: 8, flexShrink: 0, cursor: 'ns-resize',
-            background: t.bg3, borderTop: `1px solid ${t.glassBorder}`,
+            height: 12, flexShrink: 0, cursor: 'ns-resize',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             touchAction: 'none',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg2; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = t.bg3; }}>
-          <div style={{ width: 28, height: 3, borderRadius: 4, background: t.text3, opacity: 0.6 }}/>
+          }}>
+          <div style={{ width: 32, height: 3, borderRadius: 2, background: t.line2 }}/>
         </div>
       )}
     </div>
@@ -1236,7 +1126,7 @@ function TerminalLogs({
   return (
     <div ref={wrapperRef} style={{
       flex: 1, minHeight: 0,
-      padding: 8,
+      padding: '10px 12px',
       background: terminalBg(t, isLight),
       overflow: 'hidden',
       position: 'relative',
@@ -1251,31 +1141,20 @@ function TerminalLogs({
 
       {/* Floating action bar — aparece cuando hay texto seleccionado */}
       {showBar && (
-        <div style={{
+        <div className="eco-hstack" style={{
           position: 'absolute', top: 8, right: 12, zIndex: 5,
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: '6px 10px', borderRadius: 999,
-          background: t.bg1, border: `1px solid ${t.accent}`,
-          boxShadow: `0 6px 18px rgba(0,0,0,0.4)`,
+          gap: 8, padding: '4px 4px 4px 12px', borderRadius: 999,
+          background: t.bg, border: `1px solid ${t.line2}`,
+          boxShadow: t.shadowMd,
         }}>
-          <span style={{
-            fontSize: 11, color: t.text2, fontFamily: t.fontMono,
-            marginRight: 2,
-          }}>
+          <span className="eco-num">
             {selection.length === 1 ? tr('server.logs.chars_one') : tr('server.logs.chars_many', { n: selection.length })}
           </span>
           <button
             type="button"
             onClick={() => void sendSelectionToClaude()}
             disabled={sending || !bubbleId}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 12px', borderRadius: 999, border: 0,
-              background: t.accent, color: t.accentOn,
-              fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-              cursor: sending ? 'wait' : 'pointer',
-              opacity: sending ? 0.7 : 1,
-            }}>
+            className="eco-btn eco-btn--xs eco-btn--primary">
             {sending ? tr('server.logs.sending') : tr('server.logs.send')}
           </button>
         </div>
@@ -1285,12 +1164,12 @@ function TerminalLogs({
       {feedback && (
         <div style={{
           position: 'absolute', bottom: 10, right: 12, zIndex: 5,
-          padding: '6px 12px', borderRadius: 8,
-          background: t.bg1,
-          border: `1px solid ${feedback.ok ? t.ok : t.err}`,
+          padding: '6px 12px', borderRadius: 12,
+          background: t.bg,
+          border: `1px solid ${t.line2}`,
           color: feedback.ok ? t.ok : t.err,
-          fontSize: 12, fontFamily: t.fontSans, fontWeight: 500,
-          maxWidth: 280,
+          fontSize: 12.5, fontFamily: t.fontSans, fontWeight: 500,
+          maxWidth: 280, boxShadow: t.shadowMd,
         }}>
           {feedback.text}
         </div>
@@ -1298,4 +1177,3 @@ function TerminalLogs({
     </div>
   );
 }
-

@@ -8,14 +8,12 @@ import { cssZoom } from '@/lib/ui-zoom';
 // Git del sidebar): se refresca con `eco:git_refresh`, cuando el PTY del
 // agente se aquieta (`gh pr create` desde la terminal) y por poll.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTokens } from '@/design/theme';
-import { Glass, scrimStyle, dialogSurface } from '@/design/primitives';
-import {
-  IconBranch, IconCheck, IconX, IconAlert, IconExt, IconChevD,
-} from '@/design/icons';
+import { IconBtn } from '@/design/primitives';
+import { IconBranch, IconCheck, IconX, IconAlert, IconExt, IconChevD, IconGithub } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { useT } from '@/hooks/useI18n';
@@ -164,10 +162,10 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
   // cambie de rama.
   const state = pr?.state ?? 'OPEN';
   const stateColor =
-    state === 'MERGED' ? t.ok
+    state === 'MERGED' ? t.info
     : state === 'CLOSED' ? t.err
     : pr?.isDraft ? t.text2
-    : t.accent;
+    : t.ok;
   const stateLabel =
     state === 'MERGED' ? tr('prs.banner.state.merged')
     : state === 'CLOSED' ? tr('prs.banner.state.closed')
@@ -180,111 +178,82 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
   const isDraft = !!pr?.isDraft;
   const canReady = !!pr && pr.state === 'OPEN' && isDraft && !busy;
 
+  // La tarjeta se usa sobre la hoja (móvil): fondo `card`, piezas en `raised`.
+  const shell = { padding: 14, borderRadius: 16, background: t.card } as const;
+
   if (!pr) {
     // Sin PR asociado a la rama actual — sólo mostramos un mensaje
     // transitorio si hay feedback pendiente (ej. tras un close).
     return msg ? (
-      <Glass radius={10} style={{ padding: 8 }}>
+      <div style={shell}>
         <FeedbackInline msg={msg} onClose={() => setMsg(null)}/>
-      </Glass>
+      </div>
     ) : null;
   }
 
+  const openDetailProps = onOpenDetail ? {
+    role: 'button' as const,
+    tabIndex: 0,
+    onClick: () => onOpenDetail(pr.number),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetail(pr.number); }
+    },
+  } : {};
+
   return (
-    <Glass radius={10} style={{ padding: 10, borderColor: stateColor, position: 'relative' }}>
+    <div style={{ ...shell, position: 'relative', display: 'flex', flexDirection: 'column', gap: 8 }}>
       {/* Header: pill estado + ver en github */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
-      }}>
+      <div className="eco-hstack" style={{ gap: 8 }}>
         <span
-          {...(onOpenDetail ? {
-            role: 'button' as const,
-            tabIndex: 0,
-            onClick: () => onOpenDetail(pr.number),
-            onKeyDown: (e: React.KeyboardEvent) => {
-              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetail(pr.number); }
-            },
-            title: tr('prs.banner.open_detail'),
-          } : {})}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: onOpenDetail ? '6px 10px' : '2px 8px', borderRadius: 999,
-            background: `color-mix(in oklch, ${stateColor} 18%, transparent)`,
-            color: stateColor,
-            fontSize: 11, fontWeight: 500,
-            flexShrink: 0,
-            ...(onOpenDetail ? {
-              cursor: 'pointer',
-              border: `1px solid color-mix(in oklch, ${stateColor} 45%, transparent)`,
-            } : {}),
-          }}>
-          <IconBranch size={9}/>
+          {...openDetailProps}
+          {...(onOpenDetail ? { title: tr('prs.banner.open_detail') } : {})}
+          className="eco-chip eco-chip--on-card eco-mono"
+          style={{ fontSize: 12, ...(onOpenDetail ? { cursor: 'pointer' } : {}) }}>
+          <IconBranch size={12}/>
           PR #{pr.number}
         </span>
         <span style={{
-          fontSize: 11, color: stateColor, fontWeight: 500,
-          flexShrink: 0,
+          fontSize: 11.5, fontWeight: 500,
+          padding: '1px 8px', borderRadius: 8, flexShrink: 0,
+          color: stateColor,
+          background: `color-mix(in oklab, ${stateColor} 13%, transparent)`,
         }}>{stateLabel}</span>
-        <span style={{ flex: 1 }}/>
+        <span className="eco-spacer"/>
         <a href={pr.url} target="_blank" rel="noopener noreferrer"
           title={tr('prs.banner.view_github_tooltip')}
-          style={{
-            width: 22, height: 22, borderRadius: 6,
-            background: 'transparent', color: t.text3,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-          <IconExt size={11}/>
+          aria-label={tr('prs.banner.view_github_tooltip')}
+          className="eco-iconbtn eco-iconbtn--xs">
+          <IconExt size={13}/>
         </a>
       </div>
 
       {/* Título del PR */}
       <div
-        {...(onOpenDetail ? {
-          role: 'button' as const,
-          tabIndex: 0,
-          onClick: () => onOpenDetail(pr.number),
-          onKeyDown: (e: React.KeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetail(pr.number); }
-          },
-        } : {})}
+        {...openDetailProps}
         style={{
-          fontSize: 12, color: t.text0, fontWeight: 500,
-          lineHeight: 1.4,
-          marginBottom: 6,
+          fontWeight: 500, lineHeight: 1.4, color: t.text0,
           display: '-webkit-box',
           WebkitLineClamp: 3,
           WebkitBoxOrient: 'vertical' as const,
           overflow: 'hidden', textOverflow: 'ellipsis',
-          wordBreak: 'break-word',
+          wordBreak: 'break-word', textWrap: 'pretty',
           ...(onOpenDetail ? { cursor: 'pointer' } : {}),
         }} title={onOpenDetail ? tr('prs.banner.open_detail') : pr.title}>
         {pr.title}
       </div>
 
       {/* Ramas y conflictos */}
-      <div style={{
+      <div className="eco-num" style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        fontFamily: t.fontMono, fontSize: 11, color: t.text3,
-        marginBottom: 10,
         flexWrap: 'wrap', rowGap: 4,
       }}>
-        <span style={{
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          maxWidth: '100%',
-        }} title={`${pr.headRefName} → ${pr.baseRefName}`}>
+        <span className="eco-truncate" style={{ maxWidth: '100%' }}
+          title={`${pr.headRefName} → ${pr.baseRefName}`}>
           {pr.headRefName} → {pr.baseRefName}
         </span>
         {conflicting && (
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '1px 6px', borderRadius: 4,
-            background: `color-mix(in oklch, ${t.err} 14%, transparent)`,
-            color: t.err,
-            fontSize: 11, fontWeight: 500,
-            flexShrink: 0,
-          }}>
-            <IconAlert size={9}/> {tr('prs.banner.conflicts')}
+          <span className="eco-chip eco-chip--err" style={{ fontSize: 11.5, padding: '1px 8px' }}>
+            <IconAlert size={11}/> {tr('prs.banner.conflicts')}
           </span>
         )}
       </div>
@@ -292,9 +261,9 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
       <AnimatePresence>
         {msg && (
           <motion.div
-            initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-            animate={{ opacity: 1, height: 'auto', marginBottom: 8 }}
-            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.16 }}
             style={{ overflow: 'hidden' }}>
             <FeedbackInline msg={msg} onClose={() => setMsg(null)}/>
@@ -304,7 +273,7 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
 
       {/* Acciones — sólo PR abierto */}
       {pr.state === 'OPEN' && (
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
           {/* Mientras el PR es borrador, el merge está bloqueado por GitHub: en su
               lugar ofrecemos sacarlo de borrador (el sidebar no da para 3 botones). */}
           {isDraft && (
@@ -312,103 +281,67 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
               onClick={() => setConfirming('ready')}
               disabled={!canReady}
               title={tr('prs.banner.ready_tooltip')}
-              style={{
-                flex: 1, minWidth: 0,
-                padding: '6px 8px', borderRadius: 8, border: 0,
-                background: canReady ? t.accent : t.bg3,
-                color: canReady ? t.accentOn : t.text3,
-                fontSize: 11, fontWeight: 500, fontFamily: t.fontSans,
-                cursor: canReady ? 'pointer' : 'not-allowed',
-                opacity: busy === 'readying' ? 0.7 : 1,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              }}>
-              <IconCheck size={10}/>
-              {busy === 'readying' ? tr('prs.banner.readying') : tr('prs.banner.ready_btn')}
+              className="eco-btn eco-btn--xs eco-btn--solid"
+              style={{ flex: 1, minWidth: 0 }}>
+              <IconCheck size={13}/>
+              <span className="eco-truncate">
+                {busy === 'readying' ? tr('prs.banner.readying') : tr('prs.banner.ready_btn')}
+              </span>
             </button>
           )}
 
           {/* Merge split button */}
           {!isDraft && (
-            <div ref={mergeBtnRef} style={{ position: 'relative', display: 'inline-flex', flex: 1, minWidth: 0 }}>
+            <div ref={mergeBtnRef} style={{ position: 'relative', display: 'inline-flex', gap: 1, flex: 1, minWidth: 0 }}>
               <button type="button"
                 onClick={() => setConfirming({ method: 'merge' })}
                 disabled={!canMerge}
                 title={conflicting ? tr('prs.banner.conflict_tooltip') : tr('prs.banner.merge_tooltip')}
-                style={{
-                  flex: 1, minWidth: 0,
-                  padding: '6px 8px',
-                  borderTopLeftRadius: 8, borderBottomLeftRadius: 8,
-                  borderTopRightRadius: 0, borderBottomRightRadius: 0,
-                  border: 0,
-                  background: canMerge ? t.ok : t.bg3,
-                  color: canMerge ? '#fff' : t.text3,
-                  fontSize: 11, fontWeight: 500, fontFamily: t.fontSans,
-                  cursor: canMerge ? 'pointer' : 'not-allowed',
-                  opacity: busy === 'merging' ? 0.7 : 1,
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                }}>
-                <IconCheck size={10}/>
-                {busy === 'merging' ? tr('prs.banner.merging') : tr('prs.banner.merge_btn')}
+                className="eco-btn eco-btn--xs eco-btn--primary"
+                style={{ flex: 1, minWidth: 0, borderRadius: '999px 0 0 999px' }}>
+                <IconCheck size={13}/>
+                <span className="eco-truncate">
+                  {busy === 'merging' ? tr('prs.banner.merging') : tr('prs.banner.merge_btn')}
+                </span>
               </button>
               <button type="button"
                 onClick={() => setShowMergeMenu((v) => !v)}
                 disabled={!canMerge}
                 title={tr('prs.banner.merge_method_tooltip')}
-                style={{
-                  padding: '6px 8px',
-                  borderTopLeftRadius: 0, borderBottomLeftRadius: 0,
-                  borderTopRightRadius: 8, borderBottomRightRadius: 8,
-                  border: 0, borderLeft: `1px solid color-mix(in oklch, ${t.ok} 60%, black)`,
-                  background: canMerge ? t.ok : t.bg3,
-                  color: canMerge ? '#fff' : t.text3,
-                  cursor: canMerge ? 'pointer' : 'not-allowed',
-                  display: 'inline-flex', alignItems: 'center',
-                  flexShrink: 0,
-                }}>
-                <IconChevD size={9}/>
+                aria-label={tr('prs.banner.merge_method_tooltip')}
+                className="eco-btn eco-btn--xs eco-btn--primary"
+                style={{ padding: '0 9px 0 7px', borderRadius: '0 999px 999px 0' }}>
+                <IconChevD size={13}/>
               </button>
               {/* Menú porteado a <body>. Sin AnimatePresence: un portal como
                   hijo directo de AnimatePresence no se trackea bien y el menú
-                  no llegaba a montarse. La entrada igual se anima con
-                  initial→animate del motion.div. */}
+                  no llegaba a montarse. */}
               {showMergeMenu && (() => {
                 const r = mergeBtnRef.current?.getBoundingClientRect();
                 // Px visuales → px CSS (zoom CSS en web).
                 const z = cssZoom();
                 return createPortal(
-                    <motion.div
+                    <div
                       ref={mergeMenuRef}
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.12 }}
+                      className="eco-menu"
                       style={{
                         position: 'fixed', zIndex: 400,
                         top: r ? r.bottom / z + 4 : 0,
                         right: r ? Math.max(8, (window.innerWidth - r.right) / z) : 8,
-                        background: t.bg1,
-                        border: `1px solid ${t.glassBorder}`,
-                        borderRadius: 8, padding: 4,
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                        minWidth: 200,
+                        minWidth: 220,
                       }}>
                       {(['merge', 'squash', 'rebase'] as const).map((m) => (
                         <button key={m} type="button"
                           onClick={() => { setShowMergeMenu(false); setConfirming({ method: m }); }}
-                          style={{
-                            width: '100%', padding: '8px 10px', borderRadius: 6,
-                            border: 0, background: 'transparent', color: t.text1,
-                            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-                            textAlign: 'left', cursor: 'pointer',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                          <div>{m === 'merge' ? tr('prs.banner.method.merge.label') : m === 'squash' ? tr('prs.banner.method.squash.label') : tr('prs.banner.method.rebase.label')}</div>
-                          <div style={{ fontSize: 11, color: t.text3, marginTop: 1 }}>
+                          className="eco-menu__item"
+                          style={{ height: 'auto', padding: '8px 10px', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+                          <span className="eco-label">{m === 'merge' ? tr('prs.banner.method.merge.label') : m === 'squash' ? tr('prs.banner.method.squash.label') : tr('prs.banner.method.rebase.label')}</span>
+                          <span className="eco-sub">
                             {m === 'merge' ? tr('prs.banner.method.merge.desc') : m === 'squash' ? tr('prs.banner.method.squash.desc') : tr('prs.banner.method.rebase.desc')}
-                          </div>
+                          </span>
                         </button>
                       ))}
-                    </motion.div>,
+                    </div>,
                     document.body,
                   );
               })()}
@@ -419,17 +352,8 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
             onClick={() => setConfirming('close')}
             disabled={!canClose}
             title={tr('prs.banner.close_tooltip')}
-            style={{
-              padding: '6px 10px', borderRadius: 8,
-              border: `1px solid ${t.glassBorder}`,
-              background: 'transparent', color: t.text2,
-              fontSize: 11, fontFamily: t.fontSans,
-              cursor: canClose ? 'pointer' : 'not-allowed',
-              opacity: busy === 'closing' ? 0.7 : 1,
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              flexShrink: 0,
-            }}>
-            <IconX size={10}/>
+            className="eco-btn eco-btn--xs eco-btn--danger">
+            <IconX size={13}/>
             {busy === 'closing' ? tr('prs.banner.closing') : tr('prs.banner.close_btn')}
           </button>
         </div>
@@ -460,7 +384,7 @@ export function CurrentPrBanner({ workspace, bubbleId, onOpenDetail }: Props) {
             }}/>
         )}
       </AnimatePresence>
-    </Glass>
+    </div>
   );
 }
 
@@ -470,29 +394,75 @@ function FeedbackInline({
   msg: { kind: 'ok' | 'err'; text: string };
   onClose: () => void;
 }) {
-  const t = useTokens();
+  const tr = useT();
   return (
-    <div style={{
-      padding: '6px 8px',
-      borderRadius: 6,
-      background: msg.kind === 'ok'
-        ? `color-mix(in oklch, ${t.ok} 14%, transparent)`
-        : `color-mix(in oklch, ${t.err} 14%, transparent)`,
-      color: msg.kind === 'ok' ? t.ok : t.err,
-      fontFamily: t.fontMono, fontSize: 11,
-      display: 'flex', alignItems: 'flex-start', gap: 6,
-      maxHeight: 90, overflow: 'auto', wordBreak: 'break-word',
+    <div className={`eco-banner eco-banner--${msg.kind} eco-mono`} style={{
+      flexWrap: 'nowrap', alignItems: 'flex-start', gap: 8, padding: '8px 12px',
+      fontSize: 11.5, maxHeight: 90, overflow: 'auto', wordBreak: 'break-word',
     }}>
-      <span style={{ flexShrink: 0, marginTop: 1 }}>
-        {msg.kind === 'ok' ? <IconCheck size={9}/> : '!'}
+      <span style={{ flexShrink: 0, marginTop: 2 }}>
+        {msg.kind === 'ok' ? <IconCheck size={12}/> : <IconAlert size={12}/>}
       </span>
       <span style={{ flex: 1, whiteSpace: 'pre-wrap', minWidth: 0 }}>{msg.text}</span>
-      <button type="button" onClick={onClose}
-        style={{ background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
-        <IconX size={9}/>
+      <button type="button" onClick={onClose} aria-label={tr('common.close')}
+        style={{ background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, flexShrink: 0, display: 'inline-flex' }}>
+        <IconX size={12}/>
       </button>
     </div>
   );
+}
+
+// Marco común de los tres diálogos de confirmación. Portal a <body> para que
+// ningún ancestro con transform atrape el position:fixed.
+function ConfirmShell({
+  title, prTitle, children, onCancel, confirm, danger,
+}: {
+  title: string;
+  prTitle: string;
+  children: ReactNode;
+  onCancel: () => void;
+  confirm: ReactNode;
+  danger?: boolean;
+}) {
+  const t = useTokens();
+  const tr = useT();
+  return createPortal((
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      className="eco-scrim"
+      style={{ zIndex: 9999 }}
+      onClick={onCancel}>
+      <div className={`eco-dialog${danger ? ' eco-dialog--danger' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <div className="eco-dialog__head">
+          <span className={`eco-dialog__tile${danger ? ' eco-dialog__tile--danger' : ''}`}>
+            {danger ? <IconAlert size={20}/> : <IconGithub size={20}/>}
+          </span>
+          <h2 className="eco-dialog__title">{title}</h2>
+          <IconBtn icon={IconX} size={32} onClick={onCancel} title={tr('common.close')}/>
+        </div>
+        <div className="eco-dialog__section">
+          <div><code style={codeChip(t)}>{prTitle}</code></div>
+          <div className="eco-dialog__body">{children}</div>
+        </div>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>{tr('common.cancel')}</button>
+            {confirm}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  ), document.body);
+}
+
+function codeChip(t: ReturnType<typeof useTokens>) {
+  return {
+    fontFamily: t.fontMono, fontSize: 12,
+    padding: '2px 9px', borderRadius: 8,
+    background: t.card, color: t.text0,
+    overflowWrap: 'anywhere',
+  } as const;
 }
 
 function ConfirmMergeDialog({
@@ -511,61 +481,15 @@ function ConfirmMergeDialog({
   const methodDesc = method === 'merge' ? tr('prs.banner.confirm_merge.method_merge.desc')
     : method === 'squash' ? tr('prs.banner.confirm_merge.method_squash.desc')
     : tr('prs.banner.confirm_merge.method_rebase.desc');
-  return createPortal((
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
-      onClick={onCancel}>
-      <motion.div
-        initial={{ scale: 0.96, y: 6 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 6 }}
-        transition={{ duration: 0.18 }}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(480px, 100%)',
-          ...dialogSurface(t),
-          borderRadius: 16,
-          padding: 20,
-        }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500, color: t.text0 }}>
-          {tr('prs.banner.confirm_merge.title', { n: pr.number })}
-        </h3>
-        <div style={{
-          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 16,
-          lineHeight: 1.5,
-        }}>
-          <code style={{
-            fontFamily: t.fontMono, fontSize: 11,
-            padding: '1px 6px', borderRadius: 4,
-            background: t.bg3, color: t.text1,
-          }}>{pr.title}</code>
-          <div style={{ marginTop: 6 }}>
-            {tr('prs.banner.confirm_merge.method')}: <strong style={{ color: t.text1 }}>{methodLabel}</strong> — {methodDesc}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontSize: 13, cursor: 'pointer',
-            }}>{tr('common.cancel')}</button>
-          <button type="button" onClick={onConfirm}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: t.ok, color: '#fff', border: 0,
-              fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            }}>{tr('prs.banner.merge_btn')}</button>
-        </div>
-      </motion.div>
-    </motion.div>
-  ), document.body);
+  return (
+    <ConfirmShell
+      title={tr('prs.banner.confirm_merge.title', { n: pr.number })}
+      prTitle={pr.title}
+      onCancel={onCancel}
+      confirm={<button type="button" className="eco-btn eco-btn--lg eco-btn--primary" onClick={onConfirm}>{tr('prs.banner.merge_btn')}</button>}>
+      {tr('prs.banner.confirm_merge.method')}: <strong style={{ color: t.text0 }}>{methodLabel}</strong> — {methodDesc}
+    </ConfirmShell>
+  );
 }
 
 function ConfirmReadyDialog({
@@ -575,63 +499,16 @@ function ConfirmReadyDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
-  return createPortal((
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
-      onClick={onCancel}>
-      <motion.div
-        initial={{ scale: 0.96, y: 6 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 6 }}
-        transition={{ duration: 0.18 }}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(480px, 100%)',
-          ...dialogSurface(t),
-          borderRadius: 16,
-          padding: 20,
-        }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500, color: t.text0 }}>
-          {tr('prs.banner.confirm_ready.title', { n: pr.number })}
-        </h3>
-        <div style={{
-          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 16,
-          lineHeight: 1.5,
-        }}>
-          <code style={{
-            fontFamily: t.fontMono, fontSize: 11,
-            padding: '1px 6px', borderRadius: 4,
-            background: t.bg3, color: t.text1,
-          }}>{pr.title}</code>
-          <div style={{ marginTop: 6 }}>
-            {tr('prs.banner.confirm_ready.body')}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontSize: 13, cursor: 'pointer',
-            }}>{tr('common.cancel')}</button>
-          <button type="button" onClick={onConfirm}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: t.accent, color: t.accentOn, border: 0,
-              fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            }}>{tr('prs.ready_confirm.confirm')}</button>
-        </div>
-      </motion.div>
-    </motion.div>
-  ), document.body);
+  return (
+    <ConfirmShell
+      title={tr('prs.banner.confirm_ready.title', { n: pr.number })}
+      prTitle={pr.title}
+      onCancel={onCancel}
+      confirm={<button type="button" className="eco-btn eco-btn--lg eco-btn--primary" onClick={onConfirm}>{tr('prs.ready_confirm.confirm')}</button>}>
+      {tr('prs.banner.confirm_ready.body')}
+    </ConfirmShell>
+  );
 }
 
 function ConfirmCloseDialog({
@@ -643,68 +520,16 @@ function ConfirmCloseDialog({
 }) {
   const t = useTokens();
   const tr = useT();
-  // Portal a <body> — el sidebar tiene ancestors con backdrop-filter del
-  // Glass que pueden atrapar position:fixed.
-  return createPortal((
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
-      onClick={onCancel}>
-      <motion.div
-        initial={{ scale: 0.96, y: 6 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 6 }}
-        transition={{ duration: 0.18 }}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(480px, 100%)',
-          ...dialogSurface(t),
-          borderRadius: 16,
-          padding: 20,
-        }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500, color: t.text0 }}>
-          {tr('prs.banner.confirm_close.title', { n: pr.number })}
-        </h3>
-        <div style={{
-          fontSize: 12, color: t.text2, marginTop: 6, marginBottom: 16,
-          lineHeight: 1.5,
-        }}>
-          <code style={{
-            fontFamily: t.fontMono, fontSize: 11,
-            padding: '1px 6px', borderRadius: 4,
-            background: t.bg3, color: t.text1,
-          }}>{pr.title}</code>
-          <div style={{ marginTop: 6 }}>
-            {tr('prs.banner.confirm_close.body_pre')}
-            <code style={{
-              fontFamily: t.fontMono, fontSize: 11,
-              padding: '1px 4px', borderRadius: 4,
-              background: t.bg3, color: t.text1,
-              margin: '0 4px',
-            }}>{pr.headRefName}</code>
-            {tr('prs.banner.confirm_close.body_post')}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: 'transparent', color: t.text2,
-              border: `1px solid ${t.glassBorder}`,
-              fontSize: 13, cursor: 'pointer',
-            }}>{tr('common.cancel')}</button>
-          <button type="button" onClick={onConfirm}
-            style={{
-              padding: '8px 16px', borderRadius: 8,
-              background: t.err, color: '#fff', border: 0,
-              fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            }}>{tr('prs.detail.close_btn')}</button>
-        </div>
-      </motion.div>
-    </motion.div>
-  ), document.body);
+  return (
+    <ConfirmShell
+      title={tr('prs.banner.confirm_close.title', { n: pr.number })}
+      prTitle={pr.title}
+      onCancel={onCancel}
+      danger
+      confirm={<button type="button" className="eco-btn eco-btn--lg eco-btn--danger-solid" onClick={onConfirm}>{tr('prs.detail.close_btn')}</button>}>
+      {tr('prs.banner.confirm_close.body_pre')}
+      <code style={{ ...codeChip(t), margin: '0 4px' }}>{pr.headRefName}</code>
+      {tr('prs.banner.confirm_close.body_post')}
+    </ConfirmShell>
+  );
 }

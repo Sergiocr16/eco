@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useTokens } from '@/design/theme';
+import { createPortal } from 'react-dom';
+import { cx, IconBtn } from '@/design/primitives';
+import { IconAlert, IconX } from '@/design/icons';
 import { useT } from '@/hooks/useI18n';
 import { apiFetch } from '@/lib/api';
 import { emit, on as ecoOn } from '@/lib/eco-bus';
@@ -30,7 +32,6 @@ const LAZY_DEPTH = 1;
 const FILE_SIZE_HARD_CAP = 512 * 1024;
 
 export function FilesPanel({ bubbleId, workspace }: Props) {
-  const t = useTokens();
   const tr = useT();
 
   // Árbol cargado por niveles. Cada vez que se expande un dir, hacemos fetch
@@ -439,28 +440,27 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
       mobileRightLabel={tr('files.mobile.editor')}
       left={(
         <div style={{
-          display: 'flex', flexDirection: 'column', height: '100%',
-          background: t.glassBg, color: t.text1, fontFamily: t.fontSans,
+          display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0,
         }}>
-          <div style={{
-            display: 'flex', borderBottom: `1px solid ${t.glassBorder}`,
-          }}>
-            <LeftViewTab
-              active={leftView === 'tree'}
-              label={tr('files.tree.collapsed_label')}
-              onClick={() => setLeftView('tree')}
-            />
-            <LeftViewTab
-              active={leftView === 'search'}
-              label={tr('files.tree.toggle_search')}
-              onClick={() => setLeftView('search')}
-            />
+          <div style={{ padding: '12px 12px 0' }}>
+            <div className="eco-seg eco-seg--on-card eco-seg--sm" role="tablist" style={{ display: 'flex' }}>
+              <LeftViewTab
+                active={leftView === 'tree'}
+                label={tr('files.tree.collapsed_label')}
+                onClick={() => setLeftView('tree')}
+              />
+              <LeftViewTab
+                active={leftView === 'search'}
+                label={tr('files.tree.toggle_search')}
+                onClick={() => setLeftView('search')}
+              />
+            </div>
           </div>
           {leftView === 'tree' ? (
             <>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 2,
-                padding: '4px 6px', borderBottom: `1px solid ${t.glassBorder}`,
+                padding: '6px 12px 2px',
               }}>
                 <span style={{ flex: 1 }}/>
                 {/* Quick Open solo se abría con Cmd+P, o sea que sin teclado
@@ -499,13 +499,13 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
                   </svg>
                 </TreeToolbarBtn>
               </div>
-            <div ref={treeScrollRef} style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
+            <div ref={treeScrollRef} style={{ flex: 1, overflow: 'auto', padding: '4px 8px 10px' }}>
               {treeLoading ? (
-                <div style={{ padding: 12, color: t.text2, fontSize: 13 }}>{tr('files.tree.loading')}</div>
+                <div className="eco-empty eco-sub">{tr('files.tree.loading')}</div>
               ) : treeError ? (
-                <div style={{ padding: 12, color: t.err, fontSize: 13 }}>{treeError}</div>
+                <div className="eco-banner eco-banner--err" style={{ margin: 4 }}>{treeError}</div>
               ) : entries.length === 0 ? (
-                <div style={{ padding: 12, color: t.text2, fontSize: 13 }}>{tr('files.tree.empty')}</div>
+                <div className="eco-empty eco-sub">{tr('files.tree.empty')}</div>
               ) : (
                 <FileTree
                   entries={entries}
@@ -518,11 +518,7 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
                 />
               )}
               {truncated && (
-                <div style={{
-                  padding: '8px 12px', margin: 8, fontSize: 11, color: t.warn,
-                  background: `color-mix(in oklch, ${t.warn} 12%, transparent)`,
-                  border: `1px solid ${t.warn}`, borderRadius: t.r2,
-                }}>
+                <div className="eco-banner eco-banner--warn" style={{ margin: '8px 4px 0' }}>
                   {tr('files.tree.truncated')}
                 </div>
               )}
@@ -579,22 +575,14 @@ export function FilesPanel({ bubbleId, workspace }: Props) {
 function TreeToolbarBtn({ title, onClick, children }: {
   title: string; onClick: () => void; children: ReactNode;
 }) {
-  const t = useTokens();
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
       aria-label={title}
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 24, height: 24, padding: 0,
-        background: 'transparent', border: 0, color: t.text2,
-        cursor: 'pointer', borderRadius: t.r2,
-        transition: 'background 120ms, color 120ms',
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.text0; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}
+      className="eco-iconbtn eco-iconbtn--xs"
+      style={{ width: 28, height: 28, borderRadius: 999 }}
     >
       {children}
     </button>
@@ -604,20 +592,14 @@ function TreeToolbarBtn({ title, onClick, children }: {
 function LeftViewTab({ active, label, onClick }: {
   active: boolean; label: string; onClick: () => void;
 }) {
-  const t = useTokens();
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
-      style={{
-        flex: 1, padding: '8px 10px',
-        background: active ? t.bg2 : 'transparent',
-        color: active ? t.text0 : t.text2,
-        border: 0,
-        borderBottom: `2px solid ${active ? t.accent : 'transparent'}`,
-        cursor: 'pointer',
-        fontFamily: t.fontSans, fontSize: 11, fontWeight: 500,
-      }}
+      className={cx('eco-seg__item', active && 'is-on')}
+      style={{ flex: 1, minWidth: 0 }}
     >
       {label}
     </button>
@@ -630,69 +612,36 @@ function StaleConflictDialog({ path, onReload, onOverwrite, onCancel }: {
   onOverwrite: () => void;
   onCancel: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-      }}
-    >
-      <div style={{
-        maxWidth: 420, width: '90%', padding: 20,
-        background: t.windowBg, border: `1px solid ${t.glassBorder}`,
-        borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
-        boxShadow: t.shadowLg,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-          {tr('files.editor.stale_title')}
+  // Portal: un ancestro con transform atraparía el `position: fixed` del velo.
+  return createPortal(
+    <div role="dialog" aria-modal="true" className="eco-scrim">
+      <div className="eco-dialog">
+        <div className="eco-dialog__head">
+          <div className="eco-dialog__tile"><IconAlert size={18}/></div>
+          <h2 className="eco-dialog__title">{tr('files.editor.stale_title')}</h2>
+          <IconBtn icon={IconX} title={tr('common.close')} onClick={onCancel}/>
         </div>
-        <div style={{ fontSize: 13, color: t.text1, marginBottom: 8 }}>
-          {tr('files.editor.stale_body')}
-        </div>
-        <div style={{ fontSize: 12, color: t.text2, fontFamily: t.fontMono, marginBottom: 16, wordBreak: 'break-all' }}>
+        <p className="eco-dialog__body">{tr('files.editor.stale_body')}</p>
+        <div className="eco-inset eco-mono" style={{ fontSize: 12.5, background: 'var(--card)', overflowWrap: 'anywhere' }}>
           {path}
         </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              padding: '6px 12px', borderRadius: t.r2,
-              background: 'transparent', color: t.text1, border: `1px solid ${t.glassBorder}`,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
-            }}
-          >
-            {tr('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={onOverwrite}
-            style={{
-              padding: '6px 12px', borderRadius: t.r2,
-              background: 'transparent', color: t.warn, border: `1px solid ${t.warn}`,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
-            }}
-          >
-            {tr('files.editor.stale_overwrite')}
-          </button>
-          <button
-            type="button"
-            onClick={onReload}
-            style={{
-              padding: '6px 12px', borderRadius: t.r2,
-              background: t.accent, color: t.accentOn, border: 0,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
-            }}
-          >
-            {tr('files.editor.stale_reload')}
-          </button>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" onClick={onCancel} className="eco-btn eco-btn--lg eco-btn--outline">
+              {tr('common.cancel')}
+            </button>
+            <button type="button" onClick={onOverwrite} className="eco-btn eco-btn--lg eco-btn--outline" style={{ color: 'var(--warn)' }}>
+              {tr('files.editor.stale_overwrite')}
+            </button>
+            <button type="button" onClick={onReload} className="eco-btn eco-btn--lg eco-btn--primary">
+              {tr('files.editor.stale_reload')}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

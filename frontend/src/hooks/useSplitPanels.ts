@@ -78,6 +78,11 @@ export function useSplitPanels<T extends string>(
     setState((s) => ({ ...s, pinned: s.pinned === id ? null : id }));
   }, []);
 
+  // Pin de un tab cerrado: lo abre y lo deja fijado.
+  const showPinned = useCallback((id: T) => {
+    setState((s) => ({ ...withPanelShown(s, id, maxOpen), pinned: id }));
+  }, [maxOpen]);
+
   const swap = useCallback(() => {
     setState((s) => (s.open.length < 2 ? s : { ...s, open: [...s.open].reverse(), ratio: 1 - s.ratio }));
   }, []);
@@ -89,7 +94,7 @@ export function useSplitPanels<T extends string>(
   // Sin lugar para dos (teléfono) solo se muestra el primero; el estado
   // guardado se conserva para cuando vuelva a haber espacio.
   const open = allowSplit ? state.open : state.open.slice(0, 1);
-  return { open, ratio: state.ratio, pinned: allowSplit ? state.pinned : null, show, toggle, togglePin, swap, setRatio };
+  return { open, ratio: state.ratio, pinned: allowSplit ? state.pinned : null, show, toggle, togglePin, showPinned, swap, setRatio };
 }
 
 // Orientación del split, global para todas las bubbles. Store de módulo: hay

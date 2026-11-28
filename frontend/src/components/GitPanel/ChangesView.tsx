@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTokens } from '@/design/theme';
-import { Btn, scrimStyle, dialogSurface } from '@/design/primitives';
-import { IconCheck, IconFile, IconFolderOpen, IconTrash } from '@/design/icons';
+import { Btn, IconBtn } from '@/design/primitives';
+import { IconCheck, IconFile, IconFolderOpen, IconTrash, IconAlert, IconX } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 import { emit as ecoEmit } from '@/lib/eco-bus';
 import { DiffPane } from '@/components/DiffViewer';
@@ -111,29 +111,19 @@ export function ChangesView({ files, workspace, bubbleId, loading }: Props) {
     // del panel). Mostramos el EmptyState ocupando todo el ancho del tab.
     // Tampoco mostramos el commit form — sin diff no hay nada para commitear.
     return (
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
+      <div className="eco-vstack eco-muted" style={{
+        flex: 1, alignItems: 'center', justifyContent: 'center',
         minHeight: 0, padding: 40, gap: 10,
-        background: t.bg0, color: t.text2,
       }}>
         {loading ? (
           <>
-            <span style={{
-              width: 22, height: 22, borderRadius: '50%',
-              border: `2px solid ${t.glassBorder}`,
-              borderTopColor: t.accent,
-              animation: 'eco-spin 0.8s linear infinite',
-              display: 'inline-block',
-            }}/>
-            <div style={{ fontSize: 13, color: t.text2 }}>{tr('git.changes.searching')}</div>
+            <span className="eco-spinner" style={{ width: 22, height: 22 }}/>
+            <div>{tr('git.changes.searching')}</div>
           </>
         ) : (
           <>
-            <div style={{ fontSize: 14, color: t.text1, fontWeight: 500 }}>
-              {tr('detail.files.empty')}
-            </div>
-            <div style={{ fontSize: 12, color: t.text3, maxWidth: 380, textAlign: 'center', lineHeight: 1.5 }}>
+            <div className="eco-label eco-muted">{tr('detail.files.empty')}</div>
+            <div className="eco-sub" style={{ maxWidth: 380, textAlign: 'center' }}>
               {tr('git.changes.empty_detail')}
             </div>
           </>
@@ -150,39 +140,35 @@ export function ChangesView({ files, workspace, bubbleId, loading }: Props) {
       minLeft={220}
       mobileShow={selected ? 'right' : 'left'}
       left={
-        <div style={{
-          display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
-          background: t.bg0,
-        }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           {/* Header con conteo + accept all */}
-          <div style={{
-            padding: '8px 12px',
-            borderBottom: `1px solid ${t.glassBorder}`,
-            display: 'flex', alignItems: 'center', gap: 8,
-            flexShrink: 0,
-          }}>
-            <div style={{ flex: 1, fontSize: 12, color: t.text2, minWidth: 0 }}>
-              <strong style={{ color: t.text0 }}>{files.length}</strong> {files.length === 1 ? tr('git.changes.file_one') : tr('git.changes.file_many')}
-              {reviewMode && pending > 0 && (
-                <span style={{ marginLeft: 6, color: t.warn }}>
-                  · {pending} {pending === 1 ? tr('git.changes.pending_one') : tr('git.changes.pending_many')}
-                </span>
-              )}
+          <div className="eco-hstack eco-hstack--wrap" style={{ padding: '12px 16px 8px', gap: '6px 8px', flexShrink: 0 }}>
+            <div className="eco-muted" style={{ flex: '1 1 120px', minWidth: 0 }}>
+              <strong style={{ color: t.text0, fontWeight: 600 }}>{files.length}</strong> {files.length === 1 ? tr('git.changes.file_one') : tr('git.changes.file_many')}
             </div>
-            {reviewMode && pending > 0 && (
-              <Btn kind="ghost" size="sm" icon={IconCheck} onClick={() => void acceptAllFiles()}>
-                {tr('git.changes.accept_all')}
-              </Btn>
-            )}
             {files.length > 0 && (
-              <Btn kind="ghost" size="sm" icon={IconTrash} onClick={() => setDiscardAllOpen(true)}>
+              <Btn kind="danger" size="sm" icon={IconTrash} onClick={() => setDiscardAllOpen(true)}>
                 {tr('git.changes.discard_all')}
               </Btn>
             )}
           </div>
+          {reviewMode && pending > 0 && (
+            <div className="eco-banner eco-banner--warn" style={{ margin: '0 12px 8px', flexShrink: 0 }}>
+              <span className="eco-dot eco-dot--warn"/>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {pending} {pending === 1 ? tr('git.changes.pending_one') : tr('git.changes.pending_many')}
+              </span>
+              <Btn kind="raised" size="sm" icon={IconCheck} onClick={() => void acceptAllFiles()}>
+                {tr('git.changes.accept_all')}
+              </Btn>
+            </div>
+          )}
 
           {/* Lista compacta */}
-          <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <div style={{
+            flex: 1, overflow: 'auto', minHeight: 0, padding: '0 8px 8px',
+            display: 'flex', flexDirection: 'column', gap: 2,
+          }}>
             {files.map((f) => {
               const hasUnstaged = f.unstaged !== false;
               const accepted = reviewMode && !hasUnstaged && review.isAccepted(f.path);
@@ -206,7 +192,7 @@ export function ChangesView({ files, workspace, bubbleId, loading }: Props) {
         </div>
       }
       right={
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, background: t.bg0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
           {selected ? (
             <DiffPane
               key={selected}
@@ -215,9 +201,8 @@ export function ChangesView({ files, workspace, bubbleId, loading }: Props) {
               bubbleId={bubbleId}
             />
           ) : (
-            <div style={{
+            <div className="eco-sub" style={{
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: t.text3, fontSize: 12,
             }}>
               {tr('git.changes.pick_file')}
             </div>
@@ -241,55 +226,32 @@ function DiscardAllDialog({ count, onCancel, onConfirm }: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const t = useTokens();
   const tr = useT();
   return (
     <div
       role="dialog"
       aria-modal="true"
+      className="eco-scrim"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
-      style={{
-        position: 'fixed', inset: 0, ...scrimStyle(t),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 100,
-      }}
     >
-      <div style={{
-        maxWidth: 440, width: '90%', padding: 20,
-        ...dialogSurface(t),
-        borderRadius: t.r3, color: t.text0, fontFamily: t.fontSans,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-          {tr('git.changes.discard_all_title')}
+      <div className="eco-dialog eco-dialog--sm eco-dialog--danger">
+        <div className="eco-dialog__head">
+          <span className="eco-dialog__tile eco-dialog__tile--danger"><IconAlert size={20}/></span>
+          <h2 className="eco-dialog__title">{tr('git.changes.discard_all_title')}</h2>
+          <IconBtn icon={IconX} size={32} onClick={onCancel} title={tr('common.close')}/>
         </div>
-        <div style={{ fontSize: 13, color: t.text1, marginBottom: 16, lineHeight: 1.5 }}>
+        <div className="eco-dialog__body">
           {count === 1
             ? tr('git.changes.discard_all_body_one')
             : tr('git.changes.discard_all_body_many', { n: count })}
         </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              padding: '6px 12px', borderRadius: t.r2,
-              background: 'transparent', color: t.text1, border: `1px solid ${t.glassBorder}`,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
-            }}
-          >
-            {tr('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            style={{
-              padding: '6px 12px', borderRadius: t.r2,
-              background: t.err, color: '#fff', border: 0,
-              cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans, fontWeight: 500,
-            }}
-          >
-            {tr('git.changes.discard_all')}
-          </button>
+        <div className="eco-dialog__foot">
+          <div className="eco-dialog__actions">
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--outline" onClick={onCancel}>{tr('common.cancel')}</button>
+            <button type="button" className="eco-btn eco-btn--lg eco-btn--danger-solid" onClick={onConfirm}>
+              {tr('git.changes.discard_all')}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -309,7 +271,6 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
   const tr = useT();
   const isPhone = useIsPhone();
   const hasUnstaged = file.unstaged !== false;
-  const dotColor = accepted ? t.ok : t.warn;
   // Acorta el path: si es muy largo, mostramos solo el último componente +
   // dir padre. El path completo está en el tooltip.
   const parts = file.path.split('/');
@@ -321,46 +282,24 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
     <div
       onClick={onClick}
       title={file.path}
-      style={{
-        // 5 hijos en una fila con targets de 22px: en táctil se sube la
-        // altura y se esconde el botón de abrir-en-editor (queda un toque
-        // más lejos, desde el propio panel de Files).
-        padding: isPhone ? '12px 12px' : '8px 12px',
-        display: 'flex', alignItems: 'center', gap: 8,
-        background: isSelected ? t.accentFaint : 'transparent',
-        borderLeft: isSelected ? `3px solid ${t.accent}` : '3px solid transparent',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        cursor: 'pointer',
-        userSelect: 'none',
-      }}
-      onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = t.bg1; }}
-      onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}>
+      className={`eco-nav-item${isSelected ? ' is-on' : ''}`}
+      style={{ flex: 'none', gap: 8, padding: '0 6px 0 12px', userSelect: 'none', fontWeight: 400 }}>
       {reviewMode && (
         <span
           title={accepted ? tr('git.changes.dot.accepted') : tr('git.changes.dot.pending')}
-          style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: dotColor,
-            flexShrink: 0,
-          }}/>
+          className={`eco-dot eco-dot--lg ${accepted ? 'eco-dot--ok' : 'eco-dot--warn'}`}/>
       )}
-      <IconFile size={12}/>
-      <code style={{
-        flex: 1, fontFamily: t.fontMono, fontSize: 12,
-        color: t.text0,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        minWidth: 0,
-      }}>{display}</code>
+      <IconFile size={13}/>
+      <code className="eco-mono eco-truncate" style={{ flex: 1, fontSize: 12, color: t.text0 }}>{display}</code>
       {hasUnstaged && file.change === 'created' && (
-        <span style={{
-          fontSize: 11, fontWeight: 600, color: t.ok,
-          padding: '1px 6px', borderRadius: 4,
-          background: `color-mix(in oklch, ${t.ok} 14%, transparent)`,
-        }}>+</span>
+        <span className="eco-chip eco-chip--ok eco-mono" style={{ padding: '0 7px', fontSize: 11.5, fontWeight: 600 }}>+</span>
       )}
+      {/* En teléfono se esconde abrir-en-editor: queda un toque más lejos,
+          desde el propio panel de Files. */}
       {!isPhone && (
         <button
           type="button"
+          className="eco-iconbtn eco-iconbtn--xs"
           onClick={(e) => {
             e.stopPropagation();
             ecoEmit('eco:switch_tab', { tab: 'files', bubbleId });
@@ -368,21 +307,11 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
           }}
           title={tr('files.open_in_editor')}
           aria-label={tr('files.open_in_editor')}
-          style={{
-            flexShrink: 0,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 22, height: 22, padding: 0,
-            background: 'transparent', color: t.text2,
-            border: 0, cursor: 'pointer', borderRadius: t.r2,
-            transition: 'background 120ms, color 120ms',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.accent; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text2; }}
         >
           <IconFolderOpen size={13}/>
         </button>
       )}
-      <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0, display: 'flex' }}>
         <DiscardFileButton
           path={file.path}
           workspace={workspace}
@@ -399,12 +328,7 @@ function FileRow({ file, accepted, reviewMode, isSelected, onClick, workspace, b
 function CommitFormColumn({ workspace, bubbleId }: { workspace: string; bubbleId: string }) {
   const t = useTokens();
   return (
-    <div style={{
-      padding: 10,
-      borderTop: `1px solid ${t.glassBorder}`,
-      background: t.bg1,
-      flexShrink: 0,
-    }}>
+    <div style={{ padding: '12px 14px 14px', borderTop: `1px solid ${t.line}`, flexShrink: 0 }}>
       <CommitWithAI workspace={workspace} bubbleId={bubbleId}/>
     </div>
   );

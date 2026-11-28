@@ -1,8 +1,10 @@
-import { vh, vw } from '@/lib/ui-zoom';
+import { vh } from '@/lib/ui-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
-import { scrimStyle, dialogSurface } from '@/design/primitives';
+import { cx, IconBtn } from '@/design/primitives';
+import { IconSearch, IconX } from '@/design/icons';
+import { isMobileNow } from '@/hooks/useMediaQuery';
 import { useT } from '@/hooks/useI18n';
 import { FileTypeIcon } from './file-icon';
 import type { TreeEntry } from './types';
@@ -82,23 +84,28 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
 
   if (!open) return null;
 
+  // En táctil va arriba: centrado o como hoja inferior quedaría bajo el teclado.
+  const touch = isMobileNow();
   return (
     <div
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{
-        position: 'fixed', inset: 0, ...scrimStyle(t),
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        paddingTop: vh(16), zIndex: 100,
-      }}
+      className="eco-scrim"
+      style={touch ? { alignItems: 'flex-start', padding: 12 } : { alignItems: 'flex-start', paddingTop: vh(12) }}
     >
-      <div style={{
-        width: `min(560px, ${vw(90)})`,
-        ...dialogSurface(t),
-        borderRadius: t.r3,
-        display: 'flex', flexDirection: 'column', maxHeight: vh(70), overflow: 'hidden',
+      <div className="eco-dialog eco-dialog--lg" style={{
+        maxHeight: vh(touch ? 60 : 70), overflow: 'hidden',
+        ...(touch ? { borderRadius: 24, borderBottom: `1px solid ${t.line}`, padding: 16 } : null),
       }}>
+        <div className="eco-dialog__head">
+          <div className="eco-dialog__tile"><IconSearch size={18}/></div>
+          <h2 className="eco-dialog__title">{tr('files.quickopen.title')}</h2>
+          <IconBtn icon={IconX} title={tr('common.close')} onClick={onClose}/>
+        </div>
+        <div className="eco-optlist" style={{ flex: 1 }}>
+        <div className="eco-optlist__search">
+        <IconSearch size={15}/>
         <input
           ref={inputRef}
           value={query}
@@ -115,15 +122,12 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
             }
           }}
           placeholder={tr('files.quickopen.placeholder')}
-          style={{
-            padding: '12px 16px', fontSize: 14, fontFamily: t.fontSans,
-            background: t.bg1, color: t.text0, border: 0,
-            borderBottom: `1px solid ${t.glassBorder}`, outline: 'none',
-          }}
+          className="eco-input-bare"
         />
-        <div ref={listRef} style={{ overflow: 'auto', flex: 1 }}>
+        </div>
+        <div ref={listRef} className="eco-optlist__scroll" style={{ flex: 1 }}>
           {matches.length === 0 ? (
-            <div style={{ padding: 16, color: t.text2, fontSize: 13, fontFamily: t.fontSans }}>
+            <div className="eco-empty">
               {tr('files.quickopen.no_match')}
             </div>
           ) : (
@@ -144,20 +148,15 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
                   data-idx={idx}
                   onMouseDown={(e) => { e.preventDefault(); onPick(path); onClose(); }}
                   onMouseEnter={() => setFocusedIdx(idx)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 16px',
-                    background: isActive ? `color-mix(in oklch, ${t.accent} 18%, transparent)` : 'transparent',
-                    cursor: 'pointer', fontSize: 13, fontFamily: t.fontSans,
-                    color: isActive ? t.text0 : t.text1,
-                  }}
+                  className={cx('eco-option', isActive && 'is-on')}
+                  style={{ padding: '7px 12px' }}
                 >
                   <FileTypeIcon path={path} size={14}/>
-                  <span style={{ fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span className="eco-option__title" style={{ minWidth: 0 }}>
                     {highlight(name, namePos, t.accent)}
                   </span>
                   {dir && (
-                    <span style={{ color: t.text3, fontSize: 11, marginLeft: 'auto', fontFamily: t.fontMono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>
+                    <span className="eco-option__sub" style={{ marginLeft: 'auto', flexShrink: 1 }}>
                       {highlight(dir, dirPos, t.accent)}
                     </span>
                   )}
@@ -165,6 +164,10 @@ export function QuickOpen({ entries, open, onClose, onPick, recentPaths }: Props
               );
             })
           )}
+        </div>
+        </div>
+        <div className="eco-dialog__foot">
+          <span className="eco-dialog__hint">{tr('files.quickopen.hint')}</span>
         </div>
       </div>
     </div>

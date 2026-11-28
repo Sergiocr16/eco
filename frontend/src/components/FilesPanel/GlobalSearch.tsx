@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
+import { IconSearch } from '@/design/icons';
 import { apiFetch } from '@/lib/api';
 
 type Props = {
@@ -111,29 +112,28 @@ export function GlobalSearch({ bubbleId, workspace, onPick, seed }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header con input */}
-      <div style={{ padding: '8px 10px', borderBottom: `1px solid ${t.glassBorder}` }}>
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={tr('files.search.placeholder')}
-          style={{
-            width: '100%', padding: '6px 8px', borderRadius: t.r2,
-            background: t.bg1, color: t.text0, border: `1px solid ${t.glassBorder}`,
-            fontSize: 13, fontFamily: t.fontSans, outline: 'none',
-          }}
-        />
-        <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 11, color: t.text2, fontFamily: t.fontSans }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-            <input type="checkbox" checked={regex} onChange={(e) => setRegex(e.target.checked)}/>
+      <div style={{ padding: '10px 12px 6px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <label className="eco-inputbar eco-inputbar--sm">
+          <IconSearch size={14}/>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={tr('files.search.placeholder')}
+            className="eco-input-bare"
+          />
+        </label>
+        <div className="eco-sub" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', padding: '0 4px' }}>
+          <label style={CHECK}>
+            <input type="checkbox" checked={regex} onChange={(e) => setRegex(e.target.checked)} style={{ accentColor: 'var(--ac)' }}/>
             {tr('files.search.regex')}
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-            <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)}/>
+          <label style={CHECK}>
+            <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} style={{ accentColor: 'var(--ac)' }}/>
             {tr('files.search.case_sensitive')}
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-            <input type="checkbox" checked={wholeWord} onChange={(e) => setWholeWord(e.target.checked)}/>
+          <label style={CHECK}>
+            <input type="checkbox" checked={wholeWord} onChange={(e) => setWholeWord(e.target.checked)} style={{ accentColor: 'var(--ac)' }}/>
             {tr('files.search.whole_word')}
           </label>
         </div>
@@ -141,29 +141,25 @@ export function GlobalSearch({ bubbleId, workspace, onPick, seed }: Props) {
           value={includePattern}
           onChange={(e) => setIncludePattern(e.target.value)}
           placeholder={tr('files.search.include_pattern')}
-          style={{
-            width: '100%', padding: '4px 8px', marginTop: 6, borderRadius: t.r2,
-            background: t.bg1, color: t.text1, border: `1px solid ${t.glassBorder}`,
-            fontSize: 11, fontFamily: t.fontMono, outline: 'none',
-          }}
+          className="eco-field eco-field--sm eco-field--mono"
         />
       </div>
       {/* Estado */}
       {error && (
-        <div style={{ padding: '8px 10px', fontSize: 12, color: t.err, fontFamily: t.fontSans }}>{error}</div>
+        <div className="eco-banner eco-banner--err" style={{ margin: '4px 12px' }}>{error}</div>
       )}
       {loading && (
-        <div style={{ padding: '8px 10px', fontSize: 12, color: t.text2, fontFamily: t.fontSans }}>
+        <div className="eco-sub" style={{ padding: '6px 16px' }}>
           {tr('files.search.searching')}
         </div>
       )}
       {!loading && !error && query.trim() && hits.length === 0 && (
-        <div style={{ padding: '8px 10px', fontSize: 12, color: t.text2, fontFamily: t.fontSans }}>
+        <div className="eco-sub" style={{ padding: '6px 16px' }}>
           {tr('files.search.no_results')}
         </div>
       )}
       {!loading && hits.length > 0 && (
-        <div style={{ padding: '4px 10px', fontSize: 11, color: t.text2, fontFamily: t.fontSans }}>
+        <div className="eco-sub" style={{ padding: '4px 16px' }}>
           {hits.length === 1
             ? tr('files.search.results_count_one', { n: 1 })
             : tr('files.search.results_count_many', { n: hits.length })}
@@ -171,42 +167,30 @@ export function GlobalSearch({ bubbleId, workspace, onPick, seed }: Props) {
         </div>
       )}
       {/* Resultados agrupados */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '4px 8px 10px' }}>
         {groups.map(([p, hs]) => {
           const lastSep = p.lastIndexOf('/');
           const name = lastSep >= 0 ? p.slice(lastSep + 1) : p;
           const dir = lastSep >= 0 ? p.slice(0, lastSep) : '';
           return (
-          <div key={p} style={{ marginBottom: 4 }}>
-            <div style={{
+          <div key={p} style={{ marginBottom: 6 }}>
+            <div className="eco-mono" style={{
               display: 'flex', alignItems: 'baseline', gap: 6,
-              padding: '4px 10px', fontSize: 11, fontFamily: t.fontMono,
-              background: t.bg2,
+              padding: '6px 8px 2px', fontSize: 12,
             }}>
-              <span style={{ color: t.text1, fontWeight: 500 }}>{name}</span>
-              {dir && <span style={{ color: t.text3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{dir}</span>}
+              <span style={{ color: t.text0, fontWeight: 500 }}>{name}</span>
+              {dir && <span className="eco-truncate" style={{ color: t.text3 }}>{dir}</span>}
             </div>
             {hs.map((h, idx) => (
               <button
                 key={`${p}:${h.line}:${h.column}:${idx}`}
                 type="button"
                 onClick={() => onPick(h.path, h.line, h.column)}
-                style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 8,
-                  width: '100%', textAlign: 'left',
-                  padding: '4px 10px 4px 20px',
-                  background: 'transparent', border: 0,
-                  color: t.text1, cursor: 'pointer',
-                  fontFamily: t.fontMono, fontSize: 12,
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = t.bg3}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                className="eco-nav-item eco-nav-item--sm eco-mono"
+                style={{ height: 'auto', minHeight: 26, padding: '4px 8px', gap: 8, borderRadius: 8, fontSize: 12, color: t.text1 }}
               >
-                <span style={{ color: t.text3, minWidth: 40, textAlign: 'right' }}>{h.line}</span>
-                <span style={{
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  flex: 1, minWidth: 0,
-                }}>
+                <span style={{ color: t.text3, minWidth: 34, textAlign: 'right', flexShrink: 0 }}>{h.line}</span>
+                <span className="eco-truncate" style={{ flex: 1 }}>
                   {highlightPreview(h.preview.trim(), query, regex, caseSensitive, t.accent)}
                 </span>
               </button>
@@ -218,6 +202,8 @@ export function GlobalSearch({ bubbleId, workspace, onPick, seed }: Props) {
     </div>
   );
 }
+
+const CHECK = { display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' } as const;
 
 // Resalta las coincidencias de la query dentro de la línea de preview. En modo
 // no-regex resalta ocurrencias literales (case-(in)sensitive); en regex intenta

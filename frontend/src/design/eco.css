@@ -1,0 +1,703 @@
+/* Sistema de clases de Eco (rediseño v2). Catálogo y reglas de uso en
+   DESIGN.md. Las variables de color las escribe ThemeProvider (design/theme.tsx)
+   desde design/tokens.ts; los valores de :root son solo el primer pintado. */
+
+:root {
+  --bg: #151412; --sheet: #1e1d1b; --card: #272623; --raised: #32302d; --hover: #383633;
+  --line: #35332f; --line2: #4d4a45;
+  --tx: #f3f1ea; --tx2: #bdbab0; --tx3: #8f8c83; --tx4: #6a675f;
+  /* Color de marca: el logo no sigue al acento elegido por el usuario. */
+  --brand: #d98562;
+  --ac: #d98562; --ac-tx: #1c1b19; --ac-soft: rgba(217,133,98,.12); --ac-line: rgba(217,133,98,.32);
+  --ok: #86bd92; --ok-soft: rgba(134,189,146,.14); --warn: #e0b05c; --warn-soft: rgba(224,176,92,.14);
+  --err: #e07f7a; --info: #86aee0; --scrim: rgba(0,0,0,.5);
+  --shadow-md: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px -10px rgba(0,0,0,.5);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,.4);
+  --font-sans: "Hanken Grotesk Variable", "Hanken Grotesk", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", "SF Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --r-card: 22px; --r-sheet: 24px; --r-tile: 11px; --r-item: 10px; --r-menu: 18px;
+  --h-lg: 44px; --h-md: 36px; --h-sm: 32px; --h-xs: 28px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --page-pad: 28px 32px 32px;
+}
+
+html[data-theme="light"] { --brand: #b5532f; }
+
+/* ───────── Base ───────── */
+.eco-app {
+  font-family: var(--font-sans); font-size: 13.5px; line-height: 1.4;
+  color: var(--tx); -webkit-font-smoothing: antialiased;
+}
+.eco-mono { font-family: var(--font-mono); }
+.eco-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eco-grow { flex: 1 1 0; min-width: 0; }
+.eco-spacer { flex: 1; }
+.eco-hstack { display: flex; align-items: center; gap: 10px; }
+.eco-hstack--wrap { flex-wrap: wrap; }
+.eco-vstack { display: flex; flex-direction: column; gap: 12px; }
+.eco-noscrollbar { scrollbar-width: none; }
+.eco-noscrollbar::-webkit-scrollbar { display: none; }
+
+@keyframes eco-page { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes eco-pane { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@keyframes eco-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes eco-ring { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--ac) 65%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
+
+/* ───────── Tipografía ───────── */
+.eco-eyebrow {
+  font-size: 12px; letter-spacing: .01em; color: var(--tx3);
+}
+.eco-eyebrow--sm { font-size: 11.5px; font-weight: 500; }
+.eco-title {
+  margin: 0; font-size: 42px; line-height: 1.05; font-weight: 400; letter-spacing: -.035em; color: var(--tx);
+}
+.eco-title--md { font-size: 28px; letter-spacing: -.025em; }
+.eco-h2 { margin: 0; font-size: 18px; font-weight: 500; color: var(--tx); }
+.eco-h3 { margin: 0; font-size: 16px; font-weight: 500; color: var(--tx); }
+.eco-label { font-weight: 500; color: var(--tx); }
+.eco-sub { font-size: 12.5px; color: var(--tx3); text-wrap: pretty; }
+.eco-muted { color: var(--tx2); }
+.eco-faint { color: var(--tx3); }
+.eco-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--tx3); }
+.eco-stat { font-size: 36px; line-height: 1.05; letter-spacing: -.03em; }
+
+/* ───────── Página ───────── */
+.eco-sheet {
+  position: relative; flex: 1; min-width: 0; min-height: 0;
+  background: var(--sheet); border-radius: var(--r-sheet);
+  display: flex; flex-direction: column;
+}
+.eco-page {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 22px;
+  padding: var(--page-pad); animation: eco-page .36s var(--ease) both;
+}
+.eco-page--scroll { overflow: auto; }
+/* En una página con scroll los hijos no se encogen: un hijo con overflow
+   oculto (el grafo) se aplastaba y la página dejaba de desbordar. */
+.eco-page--scroll > * { flex-shrink: 0; }
+.eco-page-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; }
+.eco-page-head__main { flex: 1 1 320px; min-width: 0; }
+.eco-page-head__main .eco-title { margin-top: 6px; }
+.eco-page-head__sub { margin-top: 4px; color: var(--tx2); }
+.eco-page-head__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.eco-pane { animation: eco-pane .24s var(--ease) both; }
+/* Entrada del detalle de un agente: su contenedor pasa de display none a flex
+   y la animación arranca sola en cada visita. */
+.eco-screen-in { animation: eco-page .3s var(--ease) both; }
+/* Página con navegación lateral en tarjeta (Settings, Changes). */
+.eco-split { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.eco-split__nav { flex: 1 1 200px; max-width: 260px; min-width: 0; }
+.eco-split__body { flex: 4 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+
+/* ───────── Superficies ───────── */
+.eco-card { background: var(--card); border-radius: var(--r-card); padding: 18px 22px; min-width: 0; }
+.eco-card--list { padding: 4px 22px; }
+.eco-card--nav { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.eco-card--flush { padding: 0; overflow: hidden; }
+.eco-card--stack { display: flex; flex-direction: column; gap: 12px; }
+.eco-card--click { cursor: pointer; transition: background-color .14s var(--ease); }
+.eco-card--click:hover { background: var(--hover); }
+/* Lienzo del grafo: la misma superficie de tarjeta, con una luz central y
+   bordes que caen hacia el fondo para dar profundidad. */
+.eco-graphsurface {
+  flex: 0 0 auto; min-width: 0; display: flex; flex-direction: column; position: relative;
+  border-radius: var(--r-card, 22px); overflow: hidden;
+  background:
+    radial-gradient(70% 60% at 50% 46%, color-mix(in oklch, var(--ac) 9%, transparent) 0%, transparent 70%),
+    radial-gradient(120% 100% at 50% 45%, var(--card) 40%, color-mix(in oklch, var(--card) 55%, var(--bg)) 100%);
+}
+/* Píldora de controles con solo íconos (iniciar / reiniciar / detener). */
+.eco-ctlpill { display: inline-flex; align-items: center; gap: 4px; height: 44px; padding: 0 4px; border-radius: 22px; background: var(--raised); flex: none; }
+/* Tarjeta del panel de contexto del agente (Git, Agent, Skills): título
+   dentro de la tarjeta y bloques internos en `raised`. */
+.eco-panelcard { padding: 18px 18px 18px; flex: none; }
+.eco-panelcard__head {
+  width: 100%; display: flex; align-items: center; gap: 8px; padding: 0; border: 0;
+  background: transparent; color: var(--tx); font: inherit; text-align: left; cursor: pointer;
+}
+.eco-panelcard__title { font-size: 16px; font-weight: 500; letter-spacing: -.01em; color: var(--tx); }
+.eco-panelrow { min-height: 44px; padding: 0 16px; border-radius: 16px; background: var(--raised); cursor: pointer; }
+.eco-panelrow:hover { background: var(--hover); }
+.eco-card--sm { border-radius: 18px; padding: 16px; }
+.eco-raised { background: var(--raised); }
+.eco-inset { background: var(--raised); border-radius: 14px; padding: 11px 12px; }
+.eco-divider { height: 1px; background: var(--line); border: 0; margin: 0; }
+
+/* Fila de una tarjeta-lista: mosaico + texto + control. La línea separa de la
+   fila anterior; la primera no la lleva. */
+.eco-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  padding: 16px 0; border-top: 1px solid var(--line); min-width: 0;
+}
+.eco-row:first-child, .eco-row--first { border-top-color: transparent; }
+.eco-row--tight { padding: 12px 0; }
+.eco-row--click { cursor: pointer; }
+.eco-row__main { flex: 1 1 260px; min-width: 0; }
+.eco-row__title { font-weight: 500; }
+.eco-row__desc { font-size: 12.5px; color: var(--tx3); text-wrap: pretty; }
+.eco-row__end { display: flex; align-items: center; gap: 8px; flex: none; }
+
+/* Mosaico de ícono o inicial. */
+.eco-tile {
+  flex: none; width: 36px; height: 36px; border-radius: var(--r-tile);
+  background: var(--raised); color: var(--tx2);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 12.5px;
+}
+.eco-tile--sm { width: 30px; height: 30px; border-radius: 9px; font-size: 11.5px; }
+.eco-tile--lg { width: 44px; height: 44px; border-radius: 13px; font-size: 14px; }
+.eco-tile--on-raised { background: var(--card); }
+.eco-tile--accent { color: var(--ac); }
+.eco-avatar {
+  flex: none; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--raised); border: 1px solid var(--line2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 600; overflow: hidden;
+}
+
+/* ───────── Botones ───────── */
+.eco-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: var(--h-md); padding: 0 16px; border-radius: 999px;
+  border: 1px solid transparent; background: transparent; color: var(--tx);
+  font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; flex: none;
+  transition: background-color .14s var(--ease), color .14s var(--ease), border-color .14s var(--ease), opacity .14s var(--ease);
+}
+.eco-btn:disabled, .eco-btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.eco-btn:focus-visible, .eco-iconbtn:focus-visible, .eco-tab:focus-visible, .eco-seg__item:focus-visible, .eco-nav-item:focus-visible, .eco-menu__item:focus-visible {
+  outline: 2px solid var(--ac); outline-offset: 2px;
+}
+.eco-btn--xs { height: var(--h-xs); padding: 0 11px; font-size: 12.5px; gap: 6px; }
+.eco-btn--sm { height: var(--h-sm); padding: 0 13px; gap: 7px; }
+.eco-btn--lg { height: var(--h-lg); padding: 0 20px; }
+.eco-btn--block { width: 100%; }
+.eco-btn--primary { background: var(--ac); color: var(--ac-tx); font-weight: 600; }
+.eco-btn--primary:hover:not(:disabled) { background: color-mix(in oklab, var(--ac) 88%, var(--tx)); }
+.eco-btn--solid { background: var(--tx); color: var(--sheet); font-weight: 600; }
+.eco-btn--solid:hover:not(:disabled) { background: color-mix(in oklab, var(--tx) 86%, var(--sheet)); }
+.eco-btn--soft { background: var(--card); }
+.eco-btn--soft:hover:not(:disabled) { background: var(--hover); }
+.eco-btn--secondary { background: var(--hover); }
+.eco-btn--secondary:hover:not(:disabled) { background: var(--line2); }
+.eco-btn--raised { background: var(--raised); }
+.eco-btn--raised:hover:not(:disabled) { background: var(--hover); }
+.eco-btn--ghost { color: var(--tx2); }
+.eco-btn--ghost:hover:not(:disabled) { background: var(--hover); color: var(--tx); }
+.eco-btn--outline { border-color: var(--line2); color: var(--tx2); }
+.eco-btn--outline:hover:not(:disabled) { background: var(--hover); color: var(--tx); }
+.eco-btn--dashed { border: 1px dashed var(--line2); color: var(--tx2); }
+.eco-btn--dashed:hover:not(:disabled) { color: var(--tx); border-color: var(--tx3); }
+.eco-btn--danger { color: var(--err); }
+.eco-btn--danger:hover:not(:disabled) { background: color-mix(in oklab, var(--err) 13%, transparent); }
+.eco-btn--danger-solid { background: var(--err); color: var(--sheet); font-weight: 600; }
+
+.eco-iconbtn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: var(--h-sm); height: var(--h-sm); border-radius: 999px; padding: 0;
+  border: 1px solid transparent; background: transparent; color: var(--tx2); cursor: pointer;
+  transition: background-color .14s var(--ease), color .14s var(--ease);
+}
+.eco-iconbtn:hover:not(:disabled) { background: var(--hover); color: var(--tx); }
+.eco-iconbtn.is-on { background: var(--raised); color: var(--tx); }
+.eco-iconbtn:disabled { opacity: .4; cursor: not-allowed; }
+.eco-iconbtn--xs { width: 24px; height: 24px; border-radius: 7px; }
+.eco-iconbtn--md { width: var(--h-md); height: var(--h-md); }
+.eco-iconbtn--lg { width: var(--h-lg); height: var(--h-lg); }
+.eco-iconbtn--soft { background: var(--card); }
+.eco-iconbtn--raised { background: var(--raised); }
+.eco-iconbtn--danger:hover:not(:disabled) { color: var(--err); }
+/* Botón redondo que asoma del borde de una superficie (colapsar barra/panel). */
+.eco-edge-btn {
+  width: 28px; height: 28px; border-radius: 50%; padding: 0;
+  background: var(--raised); border: 1px solid var(--line); color: var(--tx2);
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.eco-edge-btn:hover { color: var(--tx); }
+/* En táctil el dibujo sigue de 28px; el área de toque crece a 44. */
+@media (pointer: coarse) { .eco-edge-btn::after { content: ''; position: absolute; inset: -8px; } }
+
+/* ───────── Segmentado, tabs, chips ───────── */
+.eco-seg { display: inline-flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--card); flex: none; }
+.eco-seg--on-card { background: var(--raised); }
+.eco-seg__item {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: var(--h-md); padding: 0 14px; border-radius: 999px; border: 0;
+  background: transparent; color: var(--tx2); font: inherit; font-weight: 500;
+  white-space: nowrap; cursor: pointer;
+  transition: background-color .14s var(--ease), color .14s var(--ease);
+}
+.eco-seg__item:hover { color: var(--tx); }
+.eco-seg__item.is-on { background: var(--raised); color: var(--tx); }
+.eco-seg--on-card .eco-seg__item.is-on { background: var(--card); }
+.eco-seg--sm .eco-seg__item { height: var(--h-xs); padding: 0 12px; }
+.eco-seg--md .eco-seg__item { height: var(--h-sm); }
+.eco-seg--icons .eco-seg__item { width: 34px; padding: 0; }
+
+/* Tab de primer nivel: la activa va invertida. */
+.eco-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.eco-tab {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  height: var(--h-md); padding: 0 15px; border-radius: 999px; border: 0;
+  background: var(--card); color: var(--tx2); font: inherit; font-weight: 500;
+  white-space: nowrap; cursor: pointer;
+  transition: background-color .14s var(--ease), color .14s var(--ease);
+}
+.eco-tab:hover { color: var(--tx); }
+.eco-tab.is-on { background: var(--tx); color: var(--sheet); }
+/* Pin del tab: tenue en reposo, color de acento y relleno cuando está fijado. */
+.eco-tab__pin {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 22px; height: 22px; margin: 0 -8px 0 6px; border-radius: 50%;
+  color: inherit; opacity: .4;
+  transition: opacity .14s var(--ease), background-color .14s var(--ease), color .14s var(--ease);
+}
+.eco-tab__pin:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
+.eco-tab__pin.is-pinned { color: var(--ac); opacity: 1; }
+.eco-tab__pin svg { transform: rotate(35deg); }
+.eco-tab__pin.is-pinned svg { fill: currentColor; fill-opacity: .28; }
+.eco-tab.is-open { box-shadow: inset 0 0 0 1px var(--line2); color: var(--tx); }
+/* Tab de segundo nivel, dentro de una tarjeta (Claude | Codex | Shell). */
+.eco-subtab {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  padding: 4px 13px; border-radius: 14px; border: 0; background: transparent;
+  color: var(--tx2); font: inherit; white-space: nowrap; cursor: pointer;
+}
+.eco-subtab:hover { color: var(--tx); }
+.eco-subtab.is-on { background: var(--raised); color: var(--tx); font-weight: 500; }
+.eco-subtab--add { border: 1px dashed var(--line2); padding: 3px 12px; }
+
+.eco-chip {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  font-size: 12.5px; padding: 3px 11px; border-radius: 12px;
+  background: var(--card); color: var(--tx); white-space: nowrap; max-width: 100%;
+}
+.eco-chip--on-card { background: var(--raised); }
+.eco-chip--accent { background: var(--ac-soft); color: var(--ac); }
+.eco-chip--ok { background: var(--ok-soft); color: var(--ok); }
+.eco-chip--warn { background: var(--warn-soft); color: var(--warn); }
+.eco-chip--err { background: color-mix(in oklab, var(--err) 13%, transparent); color: var(--err); }
+.eco-chip--btn { cursor: pointer; border: 0; font-family: inherit; height: var(--h-md); padding: 0 13px; border-radius: 999px; }
+.eco-chip--btn:hover { background: var(--hover); }
+.eco-count {
+  font-family: var(--font-mono); font-size: 12px; padding: 1px 8px; border-radius: 9px;
+  background: var(--card); color: var(--tx2);
+}
+.eco-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tx3); }
+.eco-dot--lg { width: 8px; height: 8px; }
+.eco-dot--ok { background: var(--ok); }
+.eco-dot--warn { background: var(--warn); }
+.eco-dot--err { background: var(--err); }
+.eco-dot--info { background: var(--info); }
+.eco-dot--accent { background: var(--ac); }
+.eco-spinner {
+  flex: none; width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%;
+  border: 1.5px solid var(--ac); border-top-color: transparent;
+  animation: eco-spin .8s linear infinite;
+}
+.eco-kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px;
+  background: var(--raised); border: 1px solid var(--line);
+  font-family: var(--font-mono); font-size: 11px; color: var(--tx2);
+}
+.eco-progress { height: 5px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+.eco-progress > i { display: block; height: 100%; background: var(--ac); }
+
+/* ───────── Formularios ───────── */
+.eco-field {
+  width: 100%; height: var(--h-lg); padding: 0 16px; border-radius: 999px;
+  border: 1px solid transparent; outline: none; background: var(--raised);
+  color: var(--tx); font: inherit;
+}
+.eco-field::placeholder, .eco-input-bare::placeholder { color: var(--tx3); }
+.eco-field:focus { border-color: var(--ac-line); }
+.eco-field--on-sheet { background: var(--card); }
+.eco-field--sm { height: var(--h-md); }
+.eco-field--mono { font-family: var(--font-mono); font-size: 13px; }
+textarea.eco-field { height: auto; min-height: 96px; padding: 12px 16px; border-radius: 16px; resize: vertical; line-height: 1.5; }
+select.eco-field { padding-right: 32px; }
+/* Contenedor-píldora con ícono + input desnudo + acción al final. */
+.eco-inputbar {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  height: var(--h-lg); padding: 0 16px; border-radius: 999px;
+  background: var(--raised); color: var(--tx3);
+}
+.eco-inputbar--on-sheet { background: var(--card); }
+.eco-inputbar--action { padding-right: 6px; height: 46px; }
+.eco-inputbar--sm { height: var(--h-md); padding: 0 12px; gap: 9px; }
+.eco-input-bare {
+  flex: 1; min-width: 0; border: 0; outline: none; background: transparent;
+  color: var(--tx); font: inherit; padding: 0;
+}
+.eco-field-label { font-size: 12.5px; color: var(--tx2); }
+.eco-toggle {
+  flex: none; width: 40px; height: 24px; border-radius: 12px; padding: 0 3px; border: 0;
+  background: var(--line2); display: flex; align-items: center; justify-content: flex-start; cursor: pointer;
+  transition: background-color .14s var(--ease);
+}
+.eco-toggle > i { width: 18px; height: 18px; border-radius: 50%; background: var(--sheet); transition: transform .14s var(--ease); }
+.eco-toggle.is-on { background: var(--ac); }
+.eco-toggle.is-on > i { background: var(--ac-tx); transform: translateX(16px); }
+.eco-toggle:disabled { opacity: .5; cursor: not-allowed; }
+.eco-stepper { display: inline-flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: var(--raised); }
+
+/* ───────── Navegación y menús ───────── */
+.eco-nav-item {
+  display: flex; align-items: center; gap: 11px; width: 100%; min-width: 0;
+  height: 38px; padding: 0 12px; border-radius: var(--r-tile); border: 0;
+  background: transparent; color: var(--tx2); font: inherit; text-align: left; cursor: pointer;
+  transition: background-color .14s var(--ease), color .14s var(--ease);
+}
+.eco-nav-item:hover { background: var(--hover); }
+.eco-nav-item.is-on { background: var(--raised); color: var(--tx); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+.eco-nav-item.is-on > svg:first-child { color: var(--ac); }
+.eco-nav-item--sm { height: 34px; border-radius: var(--r-item); font-size: 13px; gap: 10px; color: var(--tx); }
+.eco-nav-item--sm.is-on { background: var(--hover); box-shadow: none; font-weight: 400; }
+/* Navegación compacta de la barra expandida: una fila de íconos. */
+.eco-navrow { flex: none; display: flex; gap: 2px; padding: 4px; border-radius: 16px; background: var(--card); }
+.eco-navrow__item {
+  position: relative; flex: 1 1 0; min-width: 0; height: 36px; padding: 0; border: 0; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--tx2); cursor: pointer;
+}
+.eco-navrow__item:hover { background: var(--hover); color: var(--tx); }
+.eco-navrow__item.is-on { background: var(--raised); color: var(--ac); box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+.eco-navrow__badge {
+  position: absolute; top: 2px; left: calc(50% + 6px);
+  font-family: var(--font-mono); font-size: 10px; line-height: 1; color: var(--ac);
+}
+@media (pointer: coarse) { .eco-navrow__item { height: 44px; } }
+/* Botón de ícono con marca en la esquina (contador o punto de estado) y
+   tooltip propio de dos líneas, que aparece debajo al pasar el cursor. */
+.eco-tipwrap { position: relative; display: inline-flex; flex: none; }
+.eco-tipbox {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; width: max-content; max-width: 280px;
+  display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border-radius: 14px;
+  background: var(--tx); color: var(--sheet); font-size: 12.5px; line-height: 1.3; text-align: left;
+  pointer-events: none; opacity: 0; transform: translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.eco-tipbox b { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.eco-tipbox span { opacity: .75; }
+.eco-tipwrap:hover .eco-tipbox, .eco-tipwrap:focus-within .eco-tipbox { opacity: 1; transform: none; }
+@media (hover: none) { .eco-tipbox { display: none; } }
+.eco-tipbox--float {
+  position: fixed; top: auto; right: auto; z-index: 10000; opacity: 1; transform: none; gap: 6px;
+  animation: eco-fade 120ms ease both;
+}
+.eco-tipbox--float b { font-weight: 500; }
+/* Categorías de un agente: un tramo de 8px por categoría; con una sola es un punto. */
+.eco-catbar { flex: none; display: inline-flex; height: 8px; border-radius: 4px; overflow: hidden; }
+.eco-catbar > span { width: 8px; height: 8px; }
+.eco-iconbtn__dot {
+  position: absolute; top: 9px; right: 9px; width: 8px; height: 8px; border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.eco-nav-item:disabled { opacity: .5; cursor: default; }
+
+.eco-menu {
+  padding: 6px; border-radius: var(--r-menu); background: var(--bg);
+  border: 1px solid var(--line2); box-shadow: 0 14px 36px rgba(0,0,0,.22);
+  animation: eco-pane .18s var(--ease) both; min-width: 200px; color: var(--tx);
+  font-family: var(--font-sans); font-size: 13.5px;
+}
+.eco-menu__item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0;
+  height: 36px; padding: 0 10px; border-radius: var(--r-item); border: 0;
+  background: transparent; color: var(--tx); font: inherit; text-align: left; cursor: pointer;
+}
+.eco-menu__item > svg:first-child { flex: none; color: var(--tx2); }
+.eco-menu__item:hover:not(:disabled), .eco-menu__item.is-on { background: var(--hover); }
+.eco-menu__item--danger, .eco-menu__item--danger > svg:first-child { color: var(--err); }
+.eco-menu__item:disabled { opacity: .45; cursor: not-allowed; }
+.eco-menu__sep { height: 1px; margin: 6px 4px; background: var(--line); }
+.eco-menu__label { padding: 6px 10px 8px; }
+
+/* ───────── Diálogos ─────────
+   Anatomía: .eco-scrim > .eco-dialog > __head (tile + título + cerrar),
+   secciones (.eco-dialog__section con .eco-field-label), __foot (pista + acciones). */
+.eco-scrim {
+  position: fixed; inset: 0; z-index: 200; background: var(--scrim);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.eco-dialog {
+  width: 100%; max-width: 480px; max-height: 100%; overflow: auto;
+  display: flex; flex-direction: column; gap: 18px;
+  padding: 24px; border-radius: 28px; background: var(--sheet); color: var(--tx);
+  border: 1px solid var(--line); box-shadow: var(--shadow-lg);
+  animation: eco-page .28s var(--ease) both;
+  font-family: var(--font-sans); font-size: 13.5px;
+}
+.eco-dialog--sm { max-width: 420px; }
+.eco-dialog--lg { max-width: 640px; }
+.eco-dialog--danger { border-color: color-mix(in oklab, var(--err) 45%, var(--line)); }
+.eco-dialog__head { display: flex; align-items: center; gap: 14px; }
+.eco-dialog__tile {
+  flex: none; width: 42px; height: 42px; border-radius: 13px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ac-soft); color: var(--ac);
+}
+.eco-dialog__tile--danger { background: color-mix(in oklab, var(--err) 16%, transparent); color: var(--err); }
+.eco-dialog__title { flex: 1; min-width: 0; margin: 0; font-size: 19px; font-weight: 500; letter-spacing: -.015em; color: var(--tx); }
+.eco-dialog__body { margin: 0; color: var(--tx2); line-height: 1.55; }
+.eco-dialog__section { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.eco-dialog__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.eco-dialog__hint { flex: 1; min-width: 0; font-size: 12.5px; color: var(--tx3); }
+.eco-dialog__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-left: auto; }
+.eco-dialog .eco-field { border-radius: 14px; background: var(--card); border-color: var(--line); }
+.eco-dialog .eco-field:focus { border-color: var(--ac-line); }
+
+/* Lista de opciones seleccionables (carpetas, ramas, cuentas). */
+.eco-optlist { display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 18px; background: var(--card); min-height: 0; }
+.eco-optlist__scroll { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.eco-optlist__search { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 14px; color: var(--tx3); }
+.eco-option {
+  flex: none; display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 12px;
+  border: 1.5px solid transparent; border-radius: 13px; background: transparent; color: var(--tx);
+  font: inherit; text-align: left; cursor: pointer; transition: background .14s, border-color .14s;
+}
+.eco-option:hover { background: var(--hover); }
+.eco-option.is-on { border-color: var(--ac); background: var(--ac-soft); }
+.eco-option__tile {
+  flex: none; width: 34px; height: 34px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; background: var(--raised); color: var(--tx2);
+}
+.eco-option.is-on .eco-option__tile { background: var(--ac); color: var(--ac-tx); }
+.eco-option__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.eco-option__title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eco-option__sub { font-family: var(--font-mono); font-size: 12px; color: var(--tx3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eco-option__check { flex: none; color: var(--ac); }
+/* Chip elegible dentro de un diálogo (rama base, etc.). */
+.eco-choice {
+  height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line2); background: transparent;
+  color: var(--tx2); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.eco-choice:hover { background: var(--hover); color: var(--tx); }
+.eco-choice.is-on { border-color: var(--ac); background: var(--ac-soft); color: var(--ac); }
+.eco-choice--dashed { border-style: dashed; }
+.eco-choice--mono { font-family: var(--font-mono); }
+.eco-banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 10px 14px; border-radius: 14px; background: var(--card); color: var(--tx2); font-size: 12.5px;
+}
+.eco-banner--warn { background: var(--warn-soft); color: var(--warn); }
+.eco-banner--err { background: color-mix(in oklab, var(--err) 13%, transparent); color: var(--err); }
+.eco-banner--ok { background: var(--ok-soft); color: var(--ok); }
+.eco-banner--accent { background: var(--ac-soft); color: var(--ac); }
+.eco-empty { padding: 28px 0; text-align: center; color: var(--tx3); }
+
+/* ───────── Táctil y teléfono ─────────
+   Mismo corte que hooks/useMediaQuery.ts: táctil = dimensionado (44pt, inputs
+   de 16px); teléfono = colapso del layout. */
+@media (pointer: coarse), (max-width: 820px) {
+  :root { --h-md: 40px; --h-sm: 36px; --h-xs: 32px; }
+  .eco-field, .eco-input-bare { font-size: 16px; }
+  .eco-iconbtn--xs { width: 32px; height: 32px; border-radius: 9px; }
+  .eco-menu__item { height: 44px; }
+  .eco-nav-item { height: 44px; }
+  .eco-toggle { width: 51px; height: 31px; border-radius: 16px; }
+  .eco-toggle > i { width: 25px; height: 25px; }
+  .eco-toggle.is-on > i { transform: translateX(20px); }
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 699px) {
+  :root { --page-pad: 18px 16px 24px; --r-card: 18px; }
+  .eco-sheet { border-radius: 0; }
+  .eco-page { gap: 16px; }
+  .eco-title { font-size: 28px; letter-spacing: -.025em; }
+  .eco-stat { font-size: 30px; }
+  .eco-card { padding: 16px; }
+  .eco-card--list { padding: 2px 16px; }
+  .eco-card--nav { padding: 6px; }
+  .eco-card--flush { padding: 0; }
+  .eco-row { padding: 14px 0; }
+  .eco-row__main { flex-basis: 150px; }
+  .eco-split__nav { max-width: none; flex-basis: 100%; }
+  /* La nav lateral de una página pasa a tira horizontal con scroll. */
+  .eco-split__nav.eco-card--nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .eco-split__nav.eco-card--nav::-webkit-scrollbar { display: none; }
+  .eco-split__nav.eco-card--nav .eco-nav-item { width: auto; flex: none; }
+  .eco-scrim { align-items: flex-end; padding: 0; }
+  .eco-dialog, .eco-dialog--sm, .eco-dialog--lg {
+    max-width: none; border-radius: 24px 24px 0 0; border-bottom: 0;
+    padding: 20px 16px calc(16px + env(safe-area-inset-bottom, 0px)); max-height: 88dvh;
+  }
+  .eco-dialog__hint { display: none; }
+  .eco-dialog__actions { width: 100%; }
+  .eco-dialog__actions > .eco-btn { flex: 1; height: 48px; font-size: 16px; }
+  .eco-choice { height: 44px; padding: 0 16px; font-size: 13.5px; }
+  .eco-option { padding: 12px; }
+}
+
+/* ───────── Shell: barra lateral, navegación inferior, mosaicos ───────── */
+.eco-sidebar {
+  flex: none; width: var(--sidebar-w, 228px); min-height: 0; display: flex; flex-direction: column; gap: 2px;
+  padding: 18px 12px 14px; color: var(--tx);
+}
+/* Marco de la barra: anima el ancho al contraer y expandir. */
+.eco-sidebar-frame {
+  flex: none; min-height: 0; display: flex;
+  transition: width 240ms var(--ease);
+}
+.eco-sidebar-frame.is-animating { overflow: hidden; }
+.eco-sidebar-frame.is-animating > .eco-sidebar { animation: eco-fade 240ms var(--ease) both; }
+[data-sidebar-resizing] .eco-sidebar-frame { transition: none; }
+@keyframes eco-fade { from { opacity: 0; } to { opacity: 1; } }
+/* Agarre para cambiar el ancho de la barra: franja sobre el borde de la hoja. */
+.eco-sidebar-resize {
+  position: absolute; left: -6px; top: 20px; bottom: 20px; width: 12px; z-index: 44;
+  cursor: col-resize; touch-action: none;
+}
+.eco-sidebar-resize::after {
+  content: ''; position: absolute; left: 5px; top: 0; bottom: 0; width: 2px; border-radius: 2px;
+  background: var(--ac); opacity: 0; transition: opacity 120ms ease;
+}
+.eco-sidebar-resize:hover::after, .eco-sidebar-resize:active::after { opacity: 0.6; }
+.eco-sidebar--mini { width: 78px; align-items: center; gap: 4px; padding: 18px 0 12px; }
+.eco-sidebar__list {
+  flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 1px;
+  margin: 0 -4px; padding: 0 4px; scrollbar-width: thin;
+}
+.eco-sidebar__group {
+  display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; width: 100%;
+  border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 13px;
+  color: var(--tx3); text-align: left;
+}
+.eco-sidebar__group:hover { color: var(--tx); }
+.eco-sidebar__grouprow { display: flex; align-items: center; min-width: 0; }
+.eco-sidebar__grouprow .eco-sidebar__group { flex: 1; min-width: 0; width: auto; }
+.eco-sidebar__move { display: flex; flex: none; padding-right: 4px; opacity: 0; transition: opacity .12s var(--ease); }
+.eco-sidebar__grouprow:hover .eco-sidebar__move, .eco-sidebar__move:focus-within { opacity: 1; }
+@media (pointer: coarse) { .eco-sidebar__move { opacity: 1; } }
+.eco-sidebar__tiles {
+  flex: 1; min-height: 0; width: 100%; overflow: auto; margin-top: 6px; padding: 4px 0 22px;
+}
+/* La lista de agentes se desvanece en los bordes en vez de cortarse en seco. */
+.eco-sidebar__tiles, .eco-sidebar__list {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 36px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 36px), transparent 100%);
+}
+.eco-sidebar__list { padding-top: 6px; padding-bottom: 24px; }
+.eco-focusbtn {
+  position: relative; flex: none; width: 36px; height: 36px; border: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--hover); color: var(--tx); cursor: pointer;
+}
+.eco-focusbtn:hover { background: var(--raised); }
+.eco-focusbtn.is-on { color: var(--ac); box-shadow: inset 0 0 0 1px var(--ac); }
+.eco-focusmenu__title { display: flex; align-items: center; gap: 9px; padding: 8px 10px 10px; font-size: 14.5px; font-weight: 500; }
+.eco-focusmenu__title > svg { color: var(--ac); }
+.eco-focusbtn__n {
+  position: absolute; top: -3px; right: -2px; font-family: var(--font-mono); font-size: 10px; line-height: 1; color: var(--ac);
+}
+.eco-mininav { position: fixed; z-index: 9000; min-width: 220px; border-radius: 18px; }
+.eco-mininav .eco-menu__item.is-on > svg:first-child { color: var(--ac); }
+.eco-mininav__count { font-family: var(--font-mono); font-size: 12px; color: var(--ac); }
+/* Buscador de la barra contraída: botón + panel flotante con la lista de agentes. */
+.eco-minisearch {
+  flex: none; width: 60px; height: 36px; margin-top: 8px; border: 0; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--hover); color: var(--tx); cursor: pointer;
+}
+.eco-minisearch:hover { background: var(--raised); }
+.eco-minisearch.is-on { color: var(--ac); }
+.eco-minisearch__box {
+  position: fixed; z-index: 9000; width: 300px; max-width: calc(100vw - 110px); max-height: min(520px, calc(100vh - 120px));
+  display: flex; flex-direction: column; padding: 6px; border-radius: 20px;
+}
+.eco-minisearch__list { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; padding-bottom: 4px; }
+.eco-minisearch__row {
+  width: 100%; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  border: 0; border-radius: var(--r-item); background: transparent; color: var(--tx);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.eco-minisearch__row:hover, .eco-minisearch__row.is-on { background: var(--hover); }
+.eco-minisearch__code { flex: none; width: 30px; font-size: 11.5px; color: var(--tx2); }
+.eco-minisearch__empty { padding: 14px 12px; color: var(--tx2); }
+.eco-nav-item--icon { width: 38px; height: 36px; padding: 0; justify-content: center; flex: none; }
+
+.eco-agent-row {
+  flex: none; display: flex; align-items: center; height: 34px; border-radius: var(--r-item);
+  padding-right: 6px; font-size: 13px; color: var(--tx);
+}
+.eco-agent-row:hover, .eco-agent-row.is-on { background: var(--hover); }
+.eco-agent-row__main {
+  flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 0 4px 0 12px; border: 0; background: transparent; color: inherit; font: inherit;
+  text-align: left; cursor: pointer; border-radius: var(--r-item);
+}
+.eco-agent-row__more { color: var(--tx3); }
+.eco-agent-row__more:hover:not(:disabled) { background: var(--raised); }
+
+.eco-tilegroup {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  margin: 0 9px 10px; padding: 8px 0 9px; border-radius: 16px; background: var(--hover);
+}
+.eco-tilegroup__label {
+  max-width: 54px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10.5px; font-weight: 500; color: var(--tx2);
+}
+.eco-agent-tile {
+  position: relative; flex: none; width: 42px; height: 42px; border-radius: 12px; padding: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 0; background: var(--raised); color: var(--tx); cursor: pointer; font: inherit;
+}
+.eco-agent-tile:hover { background: var(--sheet); }
+/* Activo: el mosaico crece un poco; el borde de categorías se queda igual. */
+/* El activo crece con transform: animar width/height recalculaba toda la
+   lista en cada cuadro y se veía a saltos. */
+.eco-agent-tile { transition: transform .2s var(--ease); }
+.eco-agent-tile.is-on { transform: scale(1.19); z-index: 1; }
+.eco-agent-tile.is-busy { animation: eco-ring 1.6s ease-out infinite; }
+.eco-agent-tile__code { font-size: 12.5px; font-weight: 600; line-height: 1.15; }
+.eco-agent-tile__num { font-family: var(--font-mono); font-size: 9.5px; line-height: 1.1; color: var(--tx2); }
+/* Borde de categorías: el fondo (color o arcos) se enmascara al grosor del borde. */
+.eco-agent-tile__ring {
+  position: absolute; inset: 0; border-radius: inherit; padding: 2px; pointer-events: none;
+  background: var(--tx3);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+
+.eco-bottomnav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: space-around; gap: 4px;
+  background: var(--bg); border-top: 1px solid var(--line);
+}
+.eco-bottomnav__item {
+  position: relative; width: 48px; height: 40px; border-radius: 12px; border: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--tx2); cursor: pointer;
+}
+.eco-bottomnav__item.is-on { background: var(--raised); color: var(--ac); }
+.eco-bottomnav__badge {
+  position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--tx); color: var(--sheet);
+  font-family: var(--font-mono); font-size: 10px; display: flex; align-items: center; justify-content: center;
+}
+
+/* Variantes pedidas al migrar pantallas. */
+.eco-dialog__tile--warn { background: color-mix(in oklab, var(--warn) 18%, transparent); color: var(--warn); }
+.eco-option--danger.is-on { border-color: var(--err); background: color-mix(in oklab, var(--err) 12%, transparent); }
+.eco-option--danger.is-on .eco-option__tile { background: var(--err); color: var(--sheet); }
+.eco-choice:disabled { opacity: .45; cursor: not-allowed; }
+.eco-menu__item[data-highlighted] { background: var(--hover); color: var(--tx); outline: none; }
+
+/* Chips de contexto del detalle (panel lateral colapsado). */
+.eco-ctxchips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; animation: eco-page .24s var(--ease) both; }
+.eco-chip--lg { height: 36px; padding: 0 13px; gap: 7px; font-size: 12.5px; }
+.eco-meter { width: 44px; height: 5px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+.eco-meter > span { display: block; height: 100%; background: var(--ac); }
+
+/* Menú con rejilla de opciones (categorías del agente). */
+.eco-menu__head { display: flex; align-items: baseline; gap: 8px; padding: 6px 10px 8px; font-size: 12px; color: var(--tx3); }
+.eco-menu__link { border: 0; background: none; padding: 0; font: inherit; font-size: 12.5px; color: var(--tx2); cursor: pointer; }
+.eco-menu__link:hover { color: var(--tx); }
+.eco-menu__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 0 4px 6px; }
+.eco-menu__cell { display: flex; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; font: inherit; font-size: 13px; color: var(--tx2); text-align: left; cursor: pointer; }
+.eco-menu__cell:hover { background: var(--hover); }
+.eco-menu__cell.is-on { background: var(--raised); color: var(--tx); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line2); }
+.eco-menu__sub { margin: 0 4px 4px 28px; padding-left: 4px; border-left: 1px solid var(--line); max-height: 200px; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
+@media (pointer: coarse) { .eco-menu__cell { height: 40px; } }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTokens } from '@/design/theme';
-import { IconArrowL, IconResume, IconGlobe, IconExt, IconX, IconCopy, IconTerminal, IconMore, IconAgent } from '@/design/icons';
+import { IconArrowL, IconRotateCw, IconGlobe, IconExt, IconX, IconCopy, IconTerminal, IconMore, IconAgent, IconMinus, IconPlus, IconAlert } from '@/design/icons';
+import { cx, menuSurface } from '@/design/primitives';
 import { on as ecoOn, emit as ecoEmit } from '@/lib/eco-bus';
 import { canEmbedArbitrarySites } from '@/lib/platform';
 import { SmartBrowserView, type SmartBrowserHandle } from './SmartBrowserView';
@@ -8,7 +9,7 @@ import { writeToBubblePty } from '@/lib/pty-bridge';
 import { takeBrowserUrl, hasRecentBrowserActivity } from '@/lib/browser-pending';
 import { useBrowserZoom } from '@/lib/browser-zoom';
 import { useT } from '@/hooks/useI18n';
-import { useIsPhone, useIsPhoneLandscape, isPhoneNow, isPhoneLandscapeNow } from '@/hooks/useMediaQuery';
+import { useIsPhone, useIsPhoneLandscape, isPhoneNow } from '@/hooks/useMediaQuery';
 import { BrowserTabBar } from './BrowserPanel/BrowserTabBar';
 import { BrowserMirror } from './BrowserPanel/BrowserMirror';
 import { ViewportMenu } from './BrowserPanel/ViewportMenu';
@@ -116,7 +117,18 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
   // abre a demanda desde el contador.
   const compact = useIsPhoneLandscape();
   // Teléfono de pie: una sola fila; lo secundario va detrás del botón "más".
-  const narrow = isPhone && !compact;
+  // También en escritorio cuando el panel queda angosto (split): la barra pide
+  // ~600px y con menos los controles se cortaban.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [tight, setTight] = useState(false);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setTight(el.clientWidth > 0 && el.clientWidth < 600));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const narrow = (isPhone && !compact) || (!isPhone && tight);
   const [moreOpen, setMoreOpen] = useState(false);
   const [tabStripOpen, setTabStripOpen] = useState(false);
   const hasNativeDevTools = canEmbedArbitrarySites();
@@ -352,6 +364,8 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
     if (p.bubbleId === bubbleId) bumpZoomRef.current(p.dir);
   }), [bubbleId]);
 
+  // En el teléfono apaisado los botones bajan a 32 para que la fila entre.
+  const navBtn: CSSProperties | undefined = compact ? { width: 32, height: 32 } : undefined;
   const extras = (
     <>
         {canMirror && (
@@ -360,8 +374,8 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             onClick={() => { mirrorDismissed.current = false; setMirror(true); }}
             title={tr('browser.mirror.enter')}
             aria-label={tr('browser.mirror.enter')}
-            style={navBtnStyle(t)}>
-            <IconAgent size={13}/>
+            className="eco-iconbtn" style={navBtn}>
+            <IconAgent size={14}/>
           </button>
         )}
         <button
@@ -369,24 +383,24 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
           onClick={() => void copyUrl()}
           disabled={!activeTab?.url}
           title={copyMsg || (activeTab?.url ? tr('browser.copy_url_tooltip', { url: activeTab.url }) : tr('browser.no_url_tooltip'))}
+          className="eco-iconbtn"
           style={{
-            ...navBtnStyle(t),
-            opacity: activeTab?.url ? 1 : 0.4,
-            color: copyMsg === tr('common.copied') ? t.ok : (copyMsg ? t.err : t.text1),
+            ...navBtn,
+            ...(copyMsg ? { color: copyMsg === tr('common.copied') ? t.ok : t.err } : null),
           }}>
-          <IconCopy size={12}/>
+          <IconCopy size={14}/>
         </button>
         <button
           type="button"
           onClick={() => void sendUrlToClaude()}
           disabled={!activeTab?.url || sendingToClaude}
           title={sendMsg || (activeTab?.url ? tr('browser.send_to_claude_tooltip', { url: activeTab.url }) : tr('browser.no_url_tooltip'))}
+          className="eco-iconbtn"
           style={{
-            ...navBtnStyle(t),
-            opacity: activeTab?.url ? (sendingToClaude ? 0.6 : 1) : 0.4,
-            color: sendMsg?.startsWith('Error') ? t.err : (sendMsg ? t.ok : t.text1),
+            ...navBtn,
+            ...(sendMsg ? { color: sendMsg.startsWith('Error') ? t.err : t.ok } : null),
           }}>
-          <IconTerminal size={12}/>
+          <IconTerminal size={14}/>
         </button>
         {activeTab && (
           <ViewportMenu
@@ -398,21 +412,19 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             aplica escalando un viewport más ancho (no es el pinch del
             sistema), bajarlo hace que el sitio se renderice con ancho de
             desktop y entre entero en la pantalla. */}
-        {!emulating && <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0,
-          padding: compact ? '0 2px' : '2px 4px', borderRadius: 6,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        }}>
+        {!emulating && <div className="eco-stepper" style={{ flexShrink: 0, padding: compact ? 2 : undefined }}>
           <button type="button" onClick={() => bumpZoom('out')} title={tr('browser.zoom_out')}
-            style={{ ...zoomBtnStyle(t) }}>−</button>
+            aria-label={tr('browser.zoom_out')}
+            className="eco-iconbtn" style={zoomBtnStyle()}><IconMinus size={13}/></button>
           <button type="button" onClick={() => bumpZoom('reset')} title={tr('browser.zoom_reset')}
+            className="eco-mono"
             style={{
-              minWidth: 38, padding: '0 4px', height: 22, border: 0, borderRadius: 4,
-              background: 'transparent', color: t.text1, cursor: 'pointer',
-              fontFamily: t.fontMono, fontSize: 11,
+              minWidth: 40, padding: '0 2px', border: 0, background: 'transparent',
+              color: t.text0, cursor: 'pointer', fontSize: 12.5,
             }}>{Math.round(zoom * 100)}%</button>
           <button type="button" onClick={() => bumpZoom('in')} title={tr('browser.zoom_in')}
-            style={{ ...zoomBtnStyle(t) }}>+</button>
+            aria-label={tr('browser.zoom_in')}
+            className="eco-iconbtn" style={zoomBtnStyle()}><IconPlus size={13}/></button>
         </div>}
         {hasNativeDevTools && (
           <button
@@ -420,28 +432,30 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             onClick={() => activeRef()?.openDevTools()}
             disabled={!activeTab?.url}
             title={tr('browser.devtools_tooltip')}
-            style={{
-              ...navBtnStyle(t),
-              opacity: activeTab?.url ? 1 : 0.4,
-              fontFamily: t.fontMono, fontSize: 11, fontWeight: 500,
-              width: 32,
-            }}>{'{ }'}</button>
+            aria-label={tr('browser.devtools_tooltip')}
+            className="eco-iconbtn eco-mono"
+            style={{ ...navBtn, fontSize: 11.5, fontWeight: 500 }}>{'{ }'}</button>
         )}
         <button
           type="button"
           onClick={openInOs}
           disabled={!activeTab?.url}
           title={tr('browser.open_in_os')}
-          style={{ ...navBtnStyle(t), opacity: activeTab?.url ? 1 : 0.4 }}>
-          <IconExt size={11}/>
+          aria-label={tr('browser.open_in_os')}
+          className="eco-iconbtn" style={navBtn}>
+          <IconExt size={14}/>
         </button>
     </>
   );
 
+  // En escritorio/tablet la página vive en un recuadro `raised` dentro de la
+  // tarjeta del panel; en el teléfono y a pantalla completa va de borde a borde.
+  const inset = !isPhone && !immersive;
+
   return (
-    <div style={{
-      flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
-      background: t.bg0, position: 'relative',
+    <div ref={rootRef} style={{
+      flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0,
+      position: 'relative',
     }}>
       {mirror && (
         <BrowserMirror bubbleId={bubbleId} onExit={() => { mirrorDismissed.current = true; setMirror(false); }}/>
@@ -461,32 +475,29 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
           teléfono envuelve, y los que solo tienen sentido en escritorio
           (chip de path, presets de viewport, zoom) no se dibujan. */}
       <div style={{
-        display: immersive ? 'none' : 'flex', alignItems: 'center', gap: compact ? 4 : 6,
-        padding: compact ? '4px 8px' : narrow ? '6px 8px' : '8px 12px',
-        borderBottom: narrow && moreOpen ? 0 : `1px solid ${t.glassBorder}`,
-        background: t.bg1,
+        display: immersive ? 'none' : 'flex', alignItems: 'center', gap: 4,
+        padding: compact ? '4px 8px' : narrow ? '6px 8px' : '6px 14px 10px',
       }}>
         <button
           type="button"
           onClick={() => activeRef()?.back()}
           title={tr('browser.back')}
-          style={navBtnStyle(t)}>
-          <IconArrowL size={12}/>
+          aria-label={tr('browser.back')}
+          className="eco-iconbtn" style={navBtn}>
+          <IconArrowL size={14}/>
         </button>
         <button
           type="button"
           onClick={reload}
           title={tr('browser.reload')}
+          aria-label={tr('browser.reload')}
           disabled={!activeTab?.url}
-          style={{ ...navBtnStyle(t), opacity: activeTab?.url ? 1 : 0.4 }}>
-          <IconResume size={12}/>
+          className="eco-iconbtn" style={navBtn}>
+          <IconRotateCw size={14}/>
         </button>
-        <div style={{
-          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
-          padding: '4px 10px', borderRadius: 8,
-          background: t.bg2, border: `1px solid ${t.glassBorder}`,
-        }}>
-          <IconGlobe size={11}/>
+        <div className="eco-inputbar eco-inputbar--sm eco-grow"
+          style={compact ? { height: 32 } : undefined}>
+          <IconGlobe size={13}/>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -496,23 +507,19 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             autoCorrect="off"
             autoCapitalize="off"
             enterKeyHint="go"
-            style={{
-              flex: 1, minWidth: 0,
-              background: 'transparent', border: 0, outline: 'none',
-              fontFamily: t.fontMono, color: t.text0,
-              // 16px evita el auto-zoom de iOS al enfocar la barra.
-              fontSize: isPhone ? 16 : 12,
-            }}
+            className="eco-input-bare eco-mono"
+            // 16px evita el auto-zoom de iOS al enfocar la barra.
+            style={{ fontSize: isPhone ? 16 : 12.5 }}
           />
           {draft && (
             <button type="button" onClick={() => { setDraft(''); }}
-              style={{ background: 'transparent', border: 0, color: t.text3, cursor: 'pointer', padding: 0 }}>
-              <IconX size={11}/>
+              style={{ background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, display: 'inline-flex' }}>
+              <IconX size={12}/>
             </button>
           )}
         </div>
         {(() => {
-          if (isPhone) return null;
+          if (isPhone || narrow) return null;
           if (!activeTab?.url) return null;
           let path = '';
           try {
@@ -520,14 +527,8 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             path = (u.pathname || '') + (u.search || '') + (u.hash || '');
           } catch { path = ''; }
           return (
-            <div title={activeTab.url} style={{
-              padding: '2px 10px', borderRadius: 999,
-              background: t.bg2,
-              color: t.text2,
-              fontFamily: t.fontMono, fontSize: 11,
-              border: `1px solid ${t.glassBorder}`,
-              maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
+            <div title={activeTab.url} className="eco-chip eco-chip--on-card eco-mono"
+              style={{ display: 'block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', color: t.text3, fontSize: 12 }}>
               url: <span style={{ color: t.text0 }}>{path || '/'}</span>
             </div>
           );
@@ -536,13 +537,8 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
           type="button"
           onClick={() => setActiveUrl(draft)}
           disabled={!draft.trim()}
-          style={{
-            padding: '4px 12px', height: compact ? 32 : 26, flexShrink: 0, borderRadius: 8, border: 0,
-            background: t.accent, color: t.accentOn,
-            fontFamily: t.fontSans, fontSize: 12, fontWeight: 500,
-            cursor: draft.trim() ? 'pointer' : 'not-allowed',
-            opacity: draft.trim() ? 1 : 0.5,
-          }}>{tr('browser.go')}</button>}
+          className="eco-btn eco-btn--solid"
+          style={{ margin: '0 2px', ...(compact ? { height: 32 } : null) }}>{tr('browser.go')}</button>}
         {isPhone && (
           <button
             type="button"
@@ -550,12 +546,12 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             title={tr('browser.tabs.toggle')}
             aria-label={tr('browser.tabs.toggle')}
             aria-pressed={tabStripOpen}
+            className={cx('eco-iconbtn eco-mono', tabStripOpen && 'is-on')}
             style={{
-              ...navBtnStyle(t),
-              fontFamily: t.fontMono, fontSize: 12, fontWeight: 500,
-              color: tabStripOpen ? t.accent : t.text1,
-              border: `1.5px solid ${tabStripOpen ? t.accent : t.text3}`,
-              background: 'transparent',
+              ...navBtn,
+              fontSize: 12, fontWeight: 500,
+              borderColor: tabStripOpen ? t.accent : t.line2,
+              color: tabStripOpen ? t.accent : undefined,
             }}>{tabs.length}</button>
         )}
         {!narrow && extras}
@@ -565,7 +561,7 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             onClick={onToggleImmersive}
             title={tr('browser.immersive.enter')}
             aria-label={tr('browser.immersive.enter')}
-            style={navBtnStyle(t)}>
+            className="eco-iconbtn" style={navBtn}>
             <ImmersiveIcon exit={false}/>
           </button>
         )}
@@ -576,17 +572,15 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
             title={tr('browser.more')}
             aria-label={tr('browser.more')}
             aria-expanded={moreOpen}
-            style={{ ...navBtnStyle(t), color: moreOpen ? t.accent : t.text1 }}>
-            <IconMore size={14}/>
+            className={cx('eco-iconbtn', moreOpen && 'is-on')}>
+            <IconMore size={15}/>
           </button>
         )}
       </div>
       {narrow && moreOpen && !immersive && (
         <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 4,
           padding: '0 8px 6px',
-          borderBottom: `1px solid ${t.glassBorder}`,
-          background: t.bg1,
         }}>
           {extras}
         </div>
@@ -594,7 +588,10 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
 
       {/* Contenido: render TODOS los webviews, solo el activo visible */}
       <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+        <div style={{
+          flex: 1, position: 'relative', minHeight: 0,
+          ...(inset ? { margin: '0 10px 10px', borderRadius: 14, overflow: 'hidden', background: t.raised } : null),
+        }}>
           {tabs.map((tab) => (
             <TabContent
               key={tab.id}
@@ -619,42 +616,41 @@ export function BrowserPanel({ bubbleId, workspace, immersive = false, onToggleI
               onClick={onToggleImmersive}
               title={tr('browser.immersive.exit')}
               aria-label={tr('browser.immersive.exit')}
+              className="eco-iconbtn"
               style={{
                 position: 'absolute', top: 8, right: 8, zIndex: 11,
-                width: 40, height: 40, borderRadius: 20, padding: 0,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(20, 22, 28, 0.55)', color: '#fff',
-                border: '1px solid rgba(255, 255, 255, 0.35)',
-                backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-                cursor: 'pointer',
+                width: 40, height: 40,
+                background: t.bg, color: t.text0, borderColor: t.line2,
+                boxShadow: t.shadowMd,
               }}>
               <ImmersiveIcon exit/>
             </button>
           )}
           {loadFailed && activeTab?.url && (
             <div style={{
+              ...menuSurface(t),
               position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-              padding: '10px 16px', borderRadius: 10,
-              background: t.bg1, border: `1px solid ${t.warn}`,
-              color: t.text0, fontSize: 13, lineHeight: 1.5,
-              maxWidth: 'min(420px, 90%)',
-              boxShadow: t.shadowLg, zIndex: 10,
+              padding: '12px 14px',
+              color: t.text0, lineHeight: 1.5,
+              width: 'max-content', maxWidth: 'min(420px, 90%)',
+              zIndex: 10,
               display: 'flex', alignItems: 'flex-start', gap: 10,
             }}>
-              <div style={{
-                flexShrink: 0, marginTop: 1, color: t.warn, fontSize: 20, lineHeight: 1,
-              }}>!</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 500, marginBottom: 4 }}>{tr('browser.blocked.title')}</div>
-                <div style={{ fontSize: 12, color: t.text2 }}>
+              <span style={{ flexShrink: 0, marginTop: 2, color: t.warn, display: 'inline-flex' }}>
+                <IconAlert size={16}/>
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="eco-label" style={{ marginBottom: 2 }}>{tr('browser.blocked.title')}</div>
+                <div className="eco-sub">
                   {tr('browser.blocked.desc')}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setLoadFailed(false)}
-                style={{ background: 'transparent', border: 0, color: t.text3, cursor: 'pointer', padding: 0 }}>
-                <IconX size={12}/>
+                aria-label={tr('common.close')}
+                className="eco-iconbtn eco-iconbtn--xs">
+                <IconX size={13}/>
               </button>
             </div>
           )}
@@ -690,33 +686,29 @@ function TabContent({
         position: 'absolute', inset: 0,
         display: visible ? 'flex' : 'none',
         flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: 24, gap: 16,
+        padding: '24px 18px', gap: 12, textAlign: 'center', overflow: 'auto',
       }}>
         <div style={{
-          width: 56, height: 56, borderRadius: 16,
-          background: t.accentFaint, color: t.accent,
+          width: 52, height: 52, borderRadius: 16, flexShrink: 0,
+          background: t.accentSoft, color: t.accent,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <IconGlobe size={22}/>
         </div>
-        <div style={{ fontSize: 14, color: t.text1, fontWeight: 500 }}>
+        <div className="eco-h3">
           {tr('browser.home.title')}
         </div>
-        <div style={{ fontSize: 12, color: t.text3, textAlign: 'center', maxWidth: 360 }}>
+        <div className="eco-sub" style={{ maxWidth: 420 }}>
           {tr('browser.home.desc')}
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 8 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
           {SHORTCUTS.map((s) => (
             <button
               key={s.url}
               type="button"
               onClick={() => onShortcutGo(s.url)}
-              style={{
-                padding: '6px 12px', borderRadius: 999,
-                background: t.bg2, border: `1px solid ${t.glassBorder}`,
-                color: t.text1, fontFamily: t.fontMono, fontSize: 12,
-                cursor: 'pointer',
-              }}>{s.label}</button>
+              className="eco-btn eco-btn--xs eco-btn--outline eco-mono"
+              style={{ fontSize: 12, fontWeight: 400, color: t.text0 }}>{s.label}</button>
           ))}
         </div>
       </div>
@@ -763,23 +755,7 @@ function ImmersiveIcon({ exit }: { exit: boolean }) {
   );
 }
 
-function zoomBtnStyle(t: ReturnType<typeof useTokens>): CSSProperties {
+function zoomBtnStyle(): CSSProperties {
   const mob = isPhoneNow();
-  return {
-    width: mob ? 32 : 18, height: mob ? 32 : 22, padding: 0, border: 0, borderRadius: 4,
-    background: 'transparent', color: t.text1, cursor: 'pointer',
-    fontFamily: t.fontMono, fontSize: 13, lineHeight: 1,
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  };
-}
-
-function navBtnStyle(t: ReturnType<typeof useTokens>): CSSProperties {
-  const size = isPhoneLandscapeNow() ? 32 : isPhoneNow() ? 36 : 26;
-  return {
-    width: size, height: size, borderRadius: 6, border: 0,
-    flexShrink: 0,
-    background: t.bg2, color: t.text1, cursor: 'pointer',
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    padding: 0,
-  };
+  return { width: mob ? 32 : 26, height: mob ? 32 : 26 };
 }

@@ -8,10 +8,11 @@ export function ShaPill({ sha, abbrev }: { sha?: string; abbrev: string }) {
   return (
     <code
       title={sha}
+      className="eco-mono"
       style={{
-        fontFamily: t.fontMono, fontSize: 11,
-        padding: '1px 6px', borderRadius: 6,
-        background: t.bg3, color: t.text1,
+        flex: 'none', fontSize: 11.5,
+        padding: '1px 7px', borderRadius: 7,
+        background: t.sheet, color: t.text1,
         cursor: sha ? 'pointer' : 'default',
       }}
       onClick={(e) => {
@@ -24,35 +25,23 @@ export function ShaPill({ sha, abbrev }: { sha?: string; abbrev: string }) {
 }
 
 export function EmptyState({ message, hint }: { message: string; hint?: ReactNode }) {
-  const t = useTokens();
   return (
-    <div style={{
-      flex: 1, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      padding: 40, gap: 8, color: t.text2,
+    <div className="eco-vstack" style={{
+      flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8,
     }}>
-      <div style={{ fontSize: 13, color: t.text1, fontWeight: 500 }}>{message}</div>
-      {hint && <div style={{ fontSize: 12, color: t.text3, maxWidth: 380, textAlign: 'center' }}>{hint}</div>}
+      <div className="eco-label eco-muted">{message}</div>
+      {hint && <div className="eco-sub" style={{ maxWidth: 380, textAlign: 'center' }}>{hint}</div>}
     </div>
   );
 }
 
 export function SubpanelLoading({ label }: { label?: string }) {
-  const t = useTokens();
   const tr = useT();
   return (
-    <div style={{
-      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 32, color: t.text2, fontSize: 13,
-      flexDirection: 'column', gap: 10,
+    <div className="eco-vstack eco-muted" style={{
+      flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10,
     }}>
-      <span style={{
-        width: 18, height: 18, borderRadius: '50%',
-        border: `2px solid ${t.glassBorder}`,
-        borderTopColor: t.accent,
-        animation: 'eco-spin 0.8s linear infinite',
-        display: 'inline-block',
-      }}/>
+      <span className="eco-spinner" style={{ width: 18, height: 18 }}/>
       <span>{label ?? tr('common.loading')}</span>
     </div>
   );

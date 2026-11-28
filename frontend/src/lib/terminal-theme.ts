@@ -12,8 +12,8 @@
 import type { ITheme } from '@xterm/xterm';
 import type { Tokens } from '@/design/tokens';
 
-const NEUTRAL_DARK = { bg: '#0c0e14', fg: '#e5e7eb' };
-const NEUTRAL_LIGHT = { bg: '#f5f5f7', fg: '#1d1d1f' };
+const NEUTRAL_DARK = { bg: '#151412', fg: '#f3f1ea' };
+const NEUTRAL_LIGHT = { bg: '#fbfaf7', fg: '#1f1e1c' };
 
 // Paletas ANSI fijas por tono. La de xterm por defecto está pensada para
 // fondo negro: amarillo/cian claros sobre blanco son ilegibles.

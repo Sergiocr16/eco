@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { useTokens } from '@/design/theme';
 import { useT } from '@/hooks/useI18n';
-import { IconX } from '@/design/icons';
+import { IconX, IconPlus, IconSearch, IconList } from '@/design/icons';
+import { Btn, cx } from '@/design/primitives';
 import type { Note } from './types';
 
 type Props = {
@@ -20,7 +21,6 @@ type Props = {
 export function NotesList({
   notes, activeNoteId, query, onQueryChange, onActivate, onDelete, onCreate, onSummarize, canSummarize, summarizing,
 }: Props) {
-  const t = useTokens();
   const tr = useT();
 
   // Filtro por título o body (case-insensitive).
@@ -32,81 +32,44 @@ export function NotesList({
 
   return (
     <div style={{
-      display: 'flex', flexDirection: 'column', height: '100%',
-      background: t.glassBg, minWidth: 0,
+      display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0,
     }}>
       {/* Toolbar: + nueva + buscar */}
       <div style={{
-        padding: '8px 10px', borderBottom: `1px solid ${t.glassBorder}`,
+        padding: '12px 12px 8px',
         display: 'flex', flexDirection: 'column', gap: 8,
       }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            type="button"
-            onClick={onCreate}
-            title={tr('notes.new')}
-            style={{
-              flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              padding: '6px 10px', height: 28, borderRadius: t.r2, border: 0,
-              background: t.accent, color: t.accentOn,
-              cursor: 'pointer', fontSize: 12, fontFamily: t.fontSans, fontWeight: 500,
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <path d="M8 3v10M3 8h10"/>
-            </svg>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Btn kind="primary" icon={IconPlus} onClick={onCreate} title={tr('notes.new')} style={{ flex: '1 1 auto' }}>
             {tr('notes.new')}
-          </button>
+          </Btn>
           <button
             type="button"
             onClick={onSummarize}
             disabled={!canSummarize || summarizing}
             title={canSummarize ? tr('notes.summarize_tooltip') : tr('notes.summary_empty_chat')}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              padding: '6px 10px', height: 28, borderRadius: t.r2,
-              background: 'transparent', color: t.text1,
-              border: `1px solid ${t.glassBorder}`,
-              cursor: canSummarize && !summarizing ? 'pointer' : 'not-allowed',
-              opacity: canSummarize && !summarizing ? 1 : 0.45,
-              fontSize: 12, fontFamily: t.fontSans, fontWeight: 500,
-              whiteSpace: 'nowrap',
-            }}
+            className="eco-btn eco-btn--raised"
           >
-            {summarizing ? (
-              <span style={{
-                width: 10, height: 10, borderRadius: '50%',
-                border: `1.5px solid ${t.glassBorder}`,
-                borderTopColor: t.accent,
-                animation: 'eco-spin 0.7s linear infinite',
-                display: 'inline-block',
-              }}/>
-            ) : (
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 4h12M2 8h8M2 12h12"/>
-              </svg>
-            )}
+            {summarizing ? <span className="eco-spinner"/> : <IconList size={15}/>}
             {tr('notes.summarize')}
           </button>
         </div>
-        <input
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          placeholder={tr('notes.search')}
-          style={{
-            padding: '6px 10px', borderRadius: t.r2,
-            background: t.bg1, color: t.text0,
-            border: `1px solid ${t.glassBorder}`, outline: 'none',
-            fontSize: 12, fontFamily: t.fontSans,
-          }}
-        />
+        <label className="eco-inputbar eco-inputbar--sm">
+          <IconSearch size={14}/>
+          <input
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder={tr('notes.search')}
+            className="eco-input-bare"
+          />
+        </label>
       </div>
       {/* Lista */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '2px 12px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {filtered.length === 0 ? (
           // With no notes at all the editor side already shows the empty state.
           notes.length === 0 ? null : (
-            <div style={{ padding: 16, color: t.text2, fontSize: 12, fontFamily: t.fontSans }}>
+            <div className="eco-empty eco-sub">
               {tr('notes.no_match')}
             </div>
           )
@@ -137,30 +100,20 @@ function NoteRow({ note, active, onActivate, onDelete }: {
   return (
     <div
       onClick={onActivate}
+      className={cx('eco-menu__item', active && 'is-on')}
       style={{
-        position: 'relative',
-        padding: '8px 12px',
-        borderBottom: `1px solid ${t.glassBorder}`,
-        background: active ? `color-mix(in oklch, ${t.accent} 18%, transparent)` : 'transparent',
-        cursor: 'pointer',
-        display: 'flex', flexDirection: 'column', gap: 2,
+        flex: 'none', height: 'auto', padding: '10px 8px 10px 14px', borderRadius: 14,
+        flexDirection: 'column', alignItems: 'stretch', gap: 2,
         userSelect: 'none',
+        border: `1px solid ${active ? t.accentLine : 'transparent'}`,
+        ...(active ? { background: t.accentSoft } : null),
       }}
-      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.bg3; }}
-      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
     >
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
-      }}>
-        <div style={{
-          flex: 1, minWidth: 0,
-          color: note.title.trim() ? t.text0 : t.text3,
-          fontFamily: t.fontSans, fontSize: 13, fontWeight: 500,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
+      <div className="eco-hstack" style={{ gap: 8, minWidth: 0 }}>
+        <div className="eco-label eco-truncate" style={{ flex: 1, color: note.title.trim() ? t.text0 : t.text3 }}>
           {title}
         </div>
-        <span style={{ color: t.text3, fontSize: 11, fontFamily: t.fontMono, flexShrink: 0 }}>
+        <span style={{ color: t.text3, fontSize: 12, flexShrink: 0 }}>
           {stamp}
         </span>
         <button
@@ -168,23 +121,13 @@ function NoteRow({ note, active, onActivate, onDelete }: {
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           aria-label={tr('notes.delete')}
           title={tr('notes.delete')}
-          style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 18, height: 18, padding: 0,
-            background: 'transparent', color: t.text3, border: 0,
-            cursor: 'pointer', borderRadius: 4, flexShrink: 0,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = t.bg3; e.currentTarget.style.color = t.err; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.text3; }}
+          className="eco-iconbtn eco-iconbtn--xs eco-iconbtn--danger"
         >
-          <IconX size={10}/>
+          <IconX size={13}/>
         </button>
       </div>
       {preview && (
-        <div style={{
-          color: t.text2, fontSize: 12, fontFamily: t.fontSans,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
+        <div className="eco-truncate" style={{ color: t.text1, fontSize: 12.5 }}>
           {preview}
         </div>
       )}
